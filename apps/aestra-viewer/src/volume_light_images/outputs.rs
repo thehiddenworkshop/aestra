@@ -170,6 +170,9 @@ mod cohorts;
 #[path = "smoke_live_costs.rs"]
 mod live_costs;
 
+#[path = "persistent_smoke_show.rs"]
+mod persistent_show;
+
 fn advance(app: &mut App, owner: Entity, target: u64) {
     app.world_mut()
         .get_mut::<EffectPlayer>(owner)

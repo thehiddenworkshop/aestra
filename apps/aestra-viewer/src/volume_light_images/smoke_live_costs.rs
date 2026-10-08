@@ -6,9 +6,10 @@ use aestra_bevy::gpu::{
 use serde_json::{Value as Json, json};
 
 #[derive(Clone, Copy, Debug)]
-enum Case {
+pub(super) enum Case {
     Cohorts { roots: usize, draw: bool },
     Show,
+    PersistentShow { draw: bool },
 }
 
 impl Case {
@@ -18,6 +19,10 @@ impl Case {
                 format!("cohorts-{roots}-{}", if draw { "draw" } else { "no-draw" })
             }
             Self::Show => "show-unlit-baseline".into(),
+            Self::PersistentShow { draw } => format!(
+                "show-persistent-{}",
+                if draw { "draw" } else { "no-smoke-draw" }
+            ),
         }
     }
 
@@ -25,16 +30,18 @@ impl Case {
         match self {
             Self::Cohorts { .. } => 1080,
             Self::Show => 1680,
+            Self::PersistentShow { .. } => 2400,
         }
     }
 }
 
-fn fixture(tier: &str, case: Case) -> Arc<aestra_bevy::CompiledEffectProject> {
+pub(super) fn fixture(tier: &str, case: Case) -> Arc<aestra_bevy::CompiledEffectProject> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
     let effect = EffectAsset::from_ron(
         &fs::read_to_string(root.join(match case {
             Case::Cohorts { .. } => "effects/fireworks_smoke_cohorts.aestra.ron",
             Case::Show => "effects/fireworks_show.aestra.ron",
+            Case::PersistentShow { .. } => "effects/fireworks_show_persistent_smoke.aestra.ron",
         }))
         .unwrap(),
     )
@@ -53,6 +60,24 @@ fn fixture(tier: &str, case: Case) -> Arc<aestra_bevy::CompiledEffectProject> {
         Arc::make_mut(&mut compiled.root).emitters[0]
             .renderers
             .clear();
+    }
+    if let Case::PersistentShow { draw: false } = case {
+        for child in compiled.dependencies.values_mut() {
+            let child = Arc::make_mut(child);
+            let smoke_materials: Vec<_> = child
+                .material_instances
+                .iter()
+                .filter(|material| {
+                    material.program.id().to_string() == "a3574a00-0000-4000-8000-000000f81200"
+                })
+                .map(|material| material.id)
+                .collect();
+            for emitter in &mut child.emitters {
+                emitter
+                    .renderers
+                    .retain(|renderer| !smoke_materials.contains(&renderer.material));
+            }
+        }
     }
     Arc::new(compiled)
 }
@@ -92,7 +117,7 @@ fn run(tier: &str, case: Case) -> Json {
                 );
             }
         }
-        Case::Show => {
+        Case::Show | Case::PersistentShow { .. } => {
             *app.world_mut().get_mut::<Transform>(owner).unwrap() = Transform::IDENTITY;
             let mut cameras = app
                 .world_mut()
@@ -103,7 +128,11 @@ fn run(tier: &str, case: Case) -> Json {
             // Match the public normal show's ordering and representative-only lights.
             app.world_mut()
                 .resource_mut::<AestraSettings>()
-                .transparent_order = aestra_bevy::TransparentOrderMode::Fast;
+                .transparent_order = if matches!(case, Case::Show) {
+                aestra_bevy::TransparentOrderMode::Fast
+            } else {
+                aestra_bevy::TransparentOrderMode::DepthBackToFront
+            };
             let mut policy = LightingQualityPolicy::preset(tier).unwrap();
             policy.particle.enabled = false;
             policy.particle.max_lights = 0;
@@ -304,8 +333,15 @@ fn run(tier: &str, case: Case) -> Json {
             "capacity-stable sort must reuse buffers"
         );
     } else {
-        assert_eq!(end_frames, vec![1560]);
-        assert_eq!(peak_clips, 6);
+        assert_eq!(
+            end_frames,
+            vec![if matches!(case, Case::Show) {
+                1560
+            } else {
+                2220
+            }]
+        );
+        assert_eq!(peak_clips, if matches!(case, Case::Show) { 6 } else { 13 });
         assert!(
             peak_alive > 0,
             "must benchmark real child effects, not empty carrier"
@@ -343,15 +379,46 @@ fn run(tier: &str, case: Case) -> Json {
         "end_frames":end_frames,"resolution":[960,540],"fixed_step_hz":60,"seed":"0xf83b000000000001",
         "history":"playback-only","render_gpu_ms":metrics.into_iter().map(|(k,v)|(k,distribution(v))).collect::<BTreeMap<_,_>>(),
         "selected_cap":selected_cap,"representative_cap":representative_cap,"representative_admission":representative_admission,
-        "root_scale":if matches!(case,Case::Show){1.0}else{0.1},
+        "root_scale":if matches!(case,Case::Show | Case::PersistentShow { .. }){1.0}else{0.1},
         "transparent_order":if matches!(case,Case::Show){"fast"}else{"depth-back-to-front"},
+        "show_variant":if matches!(case,Case::PersistentShow { .. }){"opt-in saved persistent lit-smoke candidate; representative-only; no HDR/environment/audio; not cross-draw/art/finale acceptance"}else{"historical cohort or unchanged unlit show baseline"},
         "simulation_gpu_ms_by_source":simulation.into_iter().map(|(k,v)|(k,distribution(v))).collect::<BTreeMap<_,_>>(),
         "max_observed_fixed_ticks_per_simulation_window":max_fixed_ticks,"observed_checkpoint_capture_bytes":checkpoint_bytes,
         "app_update_wall_ms":distribution(wall),"peak_async_alive":peak_alive,"peak_async_smoke":peak_smoke,
         "peak_active_clips":peak_clips,"peak_sort_pairs":sort_pairs,"peak_sort_owned_bytes":sort_bytes,
         "late_sort_allocations":late_sort_allocations,"admission":admission,"retired_sort_bytes":sort.owned_buffer_bytes,
         "final_populations":final_populations,
-        "scope":"Live forward playback including births and cleanup. Async diagnostic arrivals are deduplicated, not frame-aligned; late paused warmup results can cross the boundary and final live results can arrive after sampling. Do not sum pass percentiles or per-source simulation percentiles. Render-graph scope includes simulation/render GPU work, not preparation, CPU/game/audio or presentation. app.update wall excludes the tooling sleep and is not GPU completion time. Show is an unlit existing-asset baseline with public representative caps, without public host HDR/environment; coincident roots are a synthetic cross-draw cost stress, not approved sorting or a migrated show."})
+        "scope":"Live forward playback including births and cleanup. Async diagnostic arrivals are deduplicated, not frame-aligned; late paused warmup results can cross the boundary and final live results can arrive after sampling. Do not sum pass percentiles or per-source simulation percentiles. Render-graph scope includes simulation/render GPU work, not preparation, CPU/game/audio or presentation. app.update wall excludes the tooling sleep and is not GPU completion time. See show_variant for unchanged baseline versus migration candidate. Shows use public representative caps without HDR/environment/audio; coincident roots are synthetic cross-draw stress, not approved sorting or choreography."})
+}
+
+#[test]
+#[ignore = "native F8.1C3 authored persistent-show matched costs; run alone"]
+fn persistent_smoke_show_live_matched_draw_costs() {
+    let root = PathBuf::from(
+        std::env::var_os("AESTRA_PERSISTENT_SHOW_COSTS")
+            .expect("use a fresh absolute report directory"),
+    );
+    assert!(root.is_absolute());
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("accepted.json"), b"{\"accepted\":false}").unwrap();
+    for repetition in 1..=2 {
+        for tier in ["high", "medium", "low"] {
+            for draw in [true, false] {
+                let case = Case::PersistentShow { draw };
+                let report = run(tier, case);
+                fs::write(
+                    root.join(format!("{}-{tier}-r{repetition}.json", case.label())),
+                    serde_json::to_vec_pretty(&report).unwrap(),
+                )
+                .unwrap();
+            }
+        }
+    }
+    fs::write(
+        root.join("accepted.json"),
+        b"{\"accepted\":true,\"runs\":12}",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -429,5 +496,36 @@ fn no_draw_control_preserves_authored_smoke_simulation_and_outputs() {
         }
         assert!(!drawn.root.emitters[0].renderers.is_empty());
         assert!(control.root.emitters[0].renderers.is_empty());
+    }
+}
+
+#[test]
+fn persistent_show_no_draw_control_preserves_all_authored_simulation_and_routes() {
+    for tier in ["high", "medium", "low"] {
+        let drawn = fixture(tier, Case::PersistentShow { draw: true });
+        let control = fixture(tier, Case::PersistentShow { draw: false });
+        assert_eq!(drawn.root.effect_clips, control.root.effect_clips);
+        for (id, child) in &drawn.dependencies {
+            let other = &control.dependencies[id];
+            assert_eq!(child.max_particles, other.max_particles);
+            assert_eq!(child.event_links, other.event_links);
+            assert_eq!(child.event_routes, other.event_routes);
+            assert_eq!(child.point_lights, other.point_lights);
+            assert_eq!(child.material_instances, other.material_instances);
+            let mut removed = 0;
+            for (a, b) in child.emitters.iter().zip(&other.emitters) {
+                assert_eq!(a.max_particles, b.max_particles);
+                assert_eq!(a.execution, b.execution);
+                assert_eq!(a.scene_outputs, b.scene_outputs);
+                if matches!(a.name.as_str(), "Launch smoke" | "Burst smoke") {
+                    assert_eq!(a.renderers.len(), 1);
+                    assert!(b.renderers.is_empty());
+                    removed += 1;
+                } else {
+                    assert_eq!(a.renderers, b.renderers);
+                }
+            }
+            assert_eq!(removed, 2);
+        }
     }
 }

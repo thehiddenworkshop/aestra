@@ -1,0 +1,3563 @@
+{
+  "milestone": "F8.1C3",
+  "date": "2026-10-08",
+  "status": "bounded opt-in candidate qualified; not default-show replacement or complete F8 acceptance",
+  "parent_commit": "72715005",
+  "toolchain": "1.98.1-x86_64-pc-windows-msvc",
+  "profile": "repository optimized test",
+  "public_host": "bevy/aestra-bevy/examples/fireworks.rs",
+  "candidate": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+  "contract": {
+    "clips": 13,
+    "child_window_seconds": 18,
+    "root_seconds": 37,
+    "burst_smoke_lifetime_seconds": [
+      12,
+      14
+    ],
+    "representative_caps": [
+      8,
+      4,
+      2
+    ],
+    "selected_star_outputs": false,
+    "history": "playback-only",
+    "unchanged": [
+      "original show and sources",
+      "clip times/transforms/seeds/star-color overrides",
+      "event links/capacities/cue routes",
+      "non-burst-smoke emitters"
+    ],
+    "no_host_injected_births": true
+  },
+  "rejected_attempt": {
+    "path": "target/fireworks-f8/persistent-show-images-2026-10-08/high/report.json",
+    "sha256": "dfdcc530aa5cb08519f9ecaa800e0088596e1516d411e4383e0fc3809fc0e803",
+    "report": {
+      "accepted": false,
+      "density_off": [
+        0,
+        0
+      ],
+      "density_restored": [
+        0,
+        0
+      ],
+      "final_populations": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "frozen_repeat": [
+        0,
+        0
+      ],
+      "illumination": [
+        {
+          "active": 3,
+          "light_difference": [
+            2779,
+            34
+          ],
+          "phase": "overlap-break",
+          "restored": [
+            0,
+            0
+          ]
+        },
+        {
+          "active": 0,
+          "light_difference": [
+            0,
+            0
+          ],
+          "phase": "late-break",
+          "restored": [
+            0,
+            0
+          ]
+        }
+      ],
+      "natural_drained_pixels": [
+        0,
+        0
+      ],
+      "natural_zero": true,
+      "retired_sort": [
+        0,
+        0
+      ],
+      "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+      "slice": "F8.1C3",
+      "tail_populations": [
+        {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            48,
+            0,
+            0,
+            0,
+            0
+          ],
+          "time": 12.983333587646484
+        },
+        {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            27
+          ],
+          "time": 13.983333587646484
+        },
+        {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            35,
+            0,
+            0
+          ],
+          "time": 13.983333587646484
+        },
+        {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            27,
+            0
+          ],
+          "time": 13.983333587646484
+        },
+        {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "time": 18
+        },
+        {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "time": 18
+        }
+      ],
+      "tail_visibility": [
+        1802,
+        33
+      ],
+      "tier": "high"
+    },
+    "reason": "18.3-second async cue-boundary sample has no active light; preserved rejected. Corrected measurement inside unchanged pulse at18.4, unchanged >=100-pixel threshold. Not exact cue delivery latency certification."
+  },
+  "visuals": {
+    "resolution": [
+      480,
+      360
+    ],
+    "root_scale": 1,
+    "sample_root_seconds": [
+      9.3,
+      18.4,
+      30,
+      33,
+      37
+    ],
+    "initial_qualified_runs": [
+      {
+        "directory": "target/fireworks-f8/persistent-show-qualified-images-2026-10-08",
+        "reports": [
+          {
+            "path": "target/fireworks-f8/persistent-show-qualified-images-2026-10-08/high/report.json",
+            "sha256": "8691f75bc69b250e0e65f2f660400d8d918da5915781f561811811e441ae7fb5",
+            "report": {
+              "accepted": true,
+              "density_off": [
+                0,
+                0
+              ],
+              "density_restored": [
+                0,
+                0
+              ],
+              "final_populations": [
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "frozen_repeat": [
+                0,
+                0
+              ],
+              "illumination": [
+                {
+                  "active": 3,
+                  "light_difference": [
+                    2779,
+                    34
+                  ],
+                  "phase": "overlap-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "active": 1,
+                  "light_difference": [
+                    2017,
+                    19
+                  ],
+                  "phase": "late-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                }
+              ],
+              "light_sample_root_times": [
+                9.3,
+                18.4
+              ],
+              "natural_drained_pixels": [
+                0,
+                0
+              ],
+              "natural_zero": true,
+              "retired_sort": [
+                0,
+                0
+              ],
+              "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+              "slice": "F8.1C3",
+              "tail_populations": [
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    48,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 12.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    27
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    35,
+                    0,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    27,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                }
+              ],
+              "tail_visibility": [
+                1802,
+                33
+              ],
+              "tier": "high"
+            }
+          },
+          {
+            "path": "target/fireworks-f8/persistent-show-qualified-images-2026-10-08/low/report.json",
+            "sha256": "65856fa8a6ccee41333098a963d6c960140ef0fff48c816c8303d3bdc7112674",
+            "report": {
+              "accepted": true,
+              "density_off": [
+                0,
+                0
+              ],
+              "density_restored": [
+                0,
+                0
+              ],
+              "final_populations": [
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "frozen_repeat": [
+                0,
+                0
+              ],
+              "illumination": [
+                {
+                  "active": 2,
+                  "light_difference": [
+                    1882,
+                    17
+                  ],
+                  "phase": "overlap-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "active": 1,
+                  "light_difference": [
+                    1028,
+                    16
+                  ],
+                  "phase": "late-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                }
+              ],
+              "light_sample_root_times": [
+                9.3,
+                18.4
+              ],
+              "natural_drained_pixels": [
+                0,
+                0
+              ],
+              "natural_zero": true,
+              "retired_sort": [
+                0,
+                0
+              ],
+              "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+              "slice": "F8.1C3",
+              "tail_populations": [
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    12,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 12.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    6
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    10,
+                    0,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    7,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                }
+              ],
+              "tail_visibility": [
+                744,
+                18
+              ],
+              "tier": "low"
+            }
+          },
+          {
+            "path": "target/fireworks-f8/persistent-show-qualified-images-2026-10-08/medium/report.json",
+            "sha256": "1be1be2fbdd64421c037f48278844343fd8ff65f05e4b6806bf9933d47046fab",
+            "report": {
+              "accepted": true,
+              "density_off": [
+                0,
+                0
+              ],
+              "density_restored": [
+                0,
+                0
+              ],
+              "final_populations": [
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "frozen_repeat": [
+                0,
+                0
+              ],
+              "illumination": [
+                {
+                  "active": 3,
+                  "light_difference": [
+                    2582,
+                    29
+                  ],
+                  "phase": "overlap-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "active": 1,
+                  "light_difference": [
+                    1518,
+                    18
+                  ],
+                  "phase": "late-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                }
+              ],
+              "light_sample_root_times": [
+                9.3,
+                18.4
+              ],
+              "natural_drained_pixels": [
+                0,
+                0
+              ],
+              "natural_zero": true,
+              "retired_sort": [
+                0,
+                0
+              ],
+              "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+              "slice": "F8.1C3",
+              "tail_populations": [
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    24,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 12.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    12
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    18,
+                    0,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    13,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                }
+              ],
+              "tail_visibility": [
+                1095,
+                25
+              ],
+              "tier": "medium"
+            }
+          }
+        ],
+        "images": [
+          {
+            "path": "high/density-off.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "high/density-restored.png",
+            "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+          },
+          {
+            "path": "high/empty.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "high/ended.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "high/frozen.png",
+            "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+          },
+          {
+            "path": "high/late-break-lit.png",
+            "sha256": "37ad9ce23265f17c4616648875d530bf0120be273ecdeaf59ff197109844e67c"
+          },
+          {
+            "path": "high/late-break-off.png",
+            "sha256": "deac33883a19a1231cfffebb84e61ab8dbf0a9c5357d8d3f54926fc17250ff10"
+          },
+          {
+            "path": "high/late-break-restored.png",
+            "sha256": "37ad9ce23265f17c4616648875d530bf0120be273ecdeaf59ff197109844e67c"
+          },
+          {
+            "path": "high/natural-drain.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "high/overlap-break-lit.png",
+            "sha256": "511409d72d547dd390ea1daa981b9301395b52dd33913507ab1ba651b13559e0"
+          },
+          {
+            "path": "high/overlap-break-off.png",
+            "sha256": "94c9a5db2fdde5110618bafcab6f00dfa5e27567d3d79f164fd08fee52479f03"
+          },
+          {
+            "path": "high/overlap-break-restored.png",
+            "sha256": "511409d72d547dd390ea1daa981b9301395b52dd33913507ab1ba651b13559e0"
+          },
+          {
+            "path": "high/tail.png",
+            "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+          },
+          {
+            "path": "low/density-off.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "low/density-restored.png",
+            "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+          },
+          {
+            "path": "low/empty.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "low/ended.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "low/frozen.png",
+            "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+          },
+          {
+            "path": "low/late-break-lit.png",
+            "sha256": "20ef50c78a6d98e5644236001aa769f02d7ec375e755a3124ca959442868eea7"
+          },
+          {
+            "path": "low/late-break-off.png",
+            "sha256": "459889d587c04f70156d4d09a84d7e34c2a218f5d8041d1bf67e95ead25d18a0"
+          },
+          {
+            "path": "low/late-break-restored.png",
+            "sha256": "20ef50c78a6d98e5644236001aa769f02d7ec375e755a3124ca959442868eea7"
+          },
+          {
+            "path": "low/natural-drain.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "low/overlap-break-lit.png",
+            "sha256": "9cdc0fd72904edae87fb048399ea200b29834473825983548b637523ff16d00f"
+          },
+          {
+            "path": "low/overlap-break-off.png",
+            "sha256": "df61cfc8edf1c0ee6300e5515ba747cd2cb9238339dea08aeaa9adba05db867f"
+          },
+          {
+            "path": "low/overlap-break-restored.png",
+            "sha256": "9cdc0fd72904edae87fb048399ea200b29834473825983548b637523ff16d00f"
+          },
+          {
+            "path": "low/tail.png",
+            "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+          },
+          {
+            "path": "medium/density-off.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "medium/density-restored.png",
+            "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+          },
+          {
+            "path": "medium/empty.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "medium/ended.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "medium/frozen.png",
+            "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+          },
+          {
+            "path": "medium/late-break-lit.png",
+            "sha256": "202228c56d7c013fd53c83cff58f1bfeb4e780efe4c86f0f4fa26094c2ec1ffb"
+          },
+          {
+            "path": "medium/late-break-off.png",
+            "sha256": "df332d4609e27daed05cee9eac70924ddf351c1f8cf2b3b91e44e32020c58941"
+          },
+          {
+            "path": "medium/late-break-restored.png",
+            "sha256": "202228c56d7c013fd53c83cff58f1bfeb4e780efe4c86f0f4fa26094c2ec1ffb"
+          },
+          {
+            "path": "medium/natural-drain.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "medium/overlap-break-lit.png",
+            "sha256": "163edf06ab2556fa08266e2c295b56d1c71f4b14a96695961b5604e4e303668a"
+          },
+          {
+            "path": "medium/overlap-break-off.png",
+            "sha256": "930d06cf9f8f1a79ea5edbd90fe155fb78f4c8c281014ffed521dfce3aeeb3d5"
+          },
+          {
+            "path": "medium/overlap-break-restored.png",
+            "sha256": "163edf06ab2556fa08266e2c295b56d1c71f4b14a96695961b5604e4e303668a"
+          },
+          {
+            "path": "medium/tail.png",
+            "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+          }
+        ]
+      },
+      {
+        "directory": "target/fireworks-f8/persistent-show-qualified-repeat-2026-10-08",
+        "reports": [
+          {
+            "path": "target/fireworks-f8/persistent-show-qualified-repeat-2026-10-08/high/report.json",
+            "sha256": "8691f75bc69b250e0e65f2f660400d8d918da5915781f561811811e441ae7fb5",
+            "report": {
+              "accepted": true,
+              "density_off": [
+                0,
+                0
+              ],
+              "density_restored": [
+                0,
+                0
+              ],
+              "final_populations": [
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "frozen_repeat": [
+                0,
+                0
+              ],
+              "illumination": [
+                {
+                  "active": 3,
+                  "light_difference": [
+                    2779,
+                    34
+                  ],
+                  "phase": "overlap-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "active": 1,
+                  "light_difference": [
+                    2017,
+                    19
+                  ],
+                  "phase": "late-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                }
+              ],
+              "light_sample_root_times": [
+                9.3,
+                18.4
+              ],
+              "natural_drained_pixels": [
+                0,
+                0
+              ],
+              "natural_zero": true,
+              "retired_sort": [
+                0,
+                0
+              ],
+              "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+              "slice": "F8.1C3",
+              "tail_populations": [
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    48,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 12.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    27
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    35,
+                    0,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    27,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                }
+              ],
+              "tail_visibility": [
+                1802,
+                33
+              ],
+              "tier": "high"
+            }
+          },
+          {
+            "path": "target/fireworks-f8/persistent-show-qualified-repeat-2026-10-08/low/report.json",
+            "sha256": "65856fa8a6ccee41333098a963d6c960140ef0fff48c816c8303d3bdc7112674",
+            "report": {
+              "accepted": true,
+              "density_off": [
+                0,
+                0
+              ],
+              "density_restored": [
+                0,
+                0
+              ],
+              "final_populations": [
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "frozen_repeat": [
+                0,
+                0
+              ],
+              "illumination": [
+                {
+                  "active": 2,
+                  "light_difference": [
+                    1882,
+                    17
+                  ],
+                  "phase": "overlap-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "active": 1,
+                  "light_difference": [
+                    1028,
+                    16
+                  ],
+                  "phase": "late-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                }
+              ],
+              "light_sample_root_times": [
+                9.3,
+                18.4
+              ],
+              "natural_drained_pixels": [
+                0,
+                0
+              ],
+              "natural_zero": true,
+              "retired_sort": [
+                0,
+                0
+              ],
+              "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+              "slice": "F8.1C3",
+              "tail_populations": [
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    12,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 12.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    6
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    10,
+                    0,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    7,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                }
+              ],
+              "tail_visibility": [
+                744,
+                18
+              ],
+              "tier": "low"
+            }
+          },
+          {
+            "path": "target/fireworks-f8/persistent-show-qualified-repeat-2026-10-08/medium/report.json",
+            "sha256": "1be1be2fbdd64421c037f48278844343fd8ff65f05e4b6806bf9933d47046fab",
+            "report": {
+              "accepted": true,
+              "density_off": [
+                0,
+                0
+              ],
+              "density_restored": [
+                0,
+                0
+              ],
+              "final_populations": [
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "frozen_repeat": [
+                0,
+                0
+              ],
+              "illumination": [
+                {
+                  "active": 3,
+                  "light_difference": [
+                    2582,
+                    29
+                  ],
+                  "phase": "overlap-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "active": 1,
+                  "light_difference": [
+                    1518,
+                    18
+                  ],
+                  "phase": "late-break",
+                  "restored": [
+                    0,
+                    0
+                  ]
+                }
+              ],
+              "light_sample_root_times": [
+                9.3,
+                18.4
+              ],
+              "natural_drained_pixels": [
+                0,
+                0
+              ],
+              "natural_zero": true,
+              "retired_sort": [
+                0,
+                0
+              ],
+              "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+              "slice": "F8.1C3",
+              "tail_populations": [
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    24,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 12.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    12
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    18,
+                    0,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    13,
+                    0
+                  ],
+                  "time": 13.983333587646484
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                },
+                {
+                  "counts": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "time": 18
+                }
+              ],
+              "tail_visibility": [
+                1095,
+                25
+              ],
+              "tier": "medium"
+            }
+          }
+        ],
+        "images": [
+          {
+            "path": "high/density-off.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "high/density-restored.png",
+            "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+          },
+          {
+            "path": "high/empty.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "high/ended.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "high/frozen.png",
+            "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+          },
+          {
+            "path": "high/late-break-lit.png",
+            "sha256": "37ad9ce23265f17c4616648875d530bf0120be273ecdeaf59ff197109844e67c"
+          },
+          {
+            "path": "high/late-break-off.png",
+            "sha256": "deac33883a19a1231cfffebb84e61ab8dbf0a9c5357d8d3f54926fc17250ff10"
+          },
+          {
+            "path": "high/late-break-restored.png",
+            "sha256": "37ad9ce23265f17c4616648875d530bf0120be273ecdeaf59ff197109844e67c"
+          },
+          {
+            "path": "high/natural-drain.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "high/overlap-break-lit.png",
+            "sha256": "511409d72d547dd390ea1daa981b9301395b52dd33913507ab1ba651b13559e0"
+          },
+          {
+            "path": "high/overlap-break-off.png",
+            "sha256": "94c9a5db2fdde5110618bafcab6f00dfa5e27567d3d79f164fd08fee52479f03"
+          },
+          {
+            "path": "high/overlap-break-restored.png",
+            "sha256": "511409d72d547dd390ea1daa981b9301395b52dd33913507ab1ba651b13559e0"
+          },
+          {
+            "path": "high/tail.png",
+            "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+          },
+          {
+            "path": "low/density-off.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "low/density-restored.png",
+            "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+          },
+          {
+            "path": "low/empty.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "low/ended.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "low/frozen.png",
+            "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+          },
+          {
+            "path": "low/late-break-lit.png",
+            "sha256": "20ef50c78a6d98e5644236001aa769f02d7ec375e755a3124ca959442868eea7"
+          },
+          {
+            "path": "low/late-break-off.png",
+            "sha256": "459889d587c04f70156d4d09a84d7e34c2a218f5d8041d1bf67e95ead25d18a0"
+          },
+          {
+            "path": "low/late-break-restored.png",
+            "sha256": "20ef50c78a6d98e5644236001aa769f02d7ec375e755a3124ca959442868eea7"
+          },
+          {
+            "path": "low/natural-drain.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "low/overlap-break-lit.png",
+            "sha256": "9cdc0fd72904edae87fb048399ea200b29834473825983548b637523ff16d00f"
+          },
+          {
+            "path": "low/overlap-break-off.png",
+            "sha256": "df61cfc8edf1c0ee6300e5515ba747cd2cb9238339dea08aeaa9adba05db867f"
+          },
+          {
+            "path": "low/overlap-break-restored.png",
+            "sha256": "9cdc0fd72904edae87fb048399ea200b29834473825983548b637523ff16d00f"
+          },
+          {
+            "path": "low/tail.png",
+            "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+          },
+          {
+            "path": "medium/density-off.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "medium/density-restored.png",
+            "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+          },
+          {
+            "path": "medium/empty.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "medium/ended.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "medium/frozen.png",
+            "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+          },
+          {
+            "path": "medium/late-break-lit.png",
+            "sha256": "202228c56d7c013fd53c83cff58f1bfeb4e780efe4c86f0f4fa26094c2ec1ffb"
+          },
+          {
+            "path": "medium/late-break-off.png",
+            "sha256": "df332d4609e27daed05cee9eac70924ddf351c1f8cf2b3b91e44e32020c58941"
+          },
+          {
+            "path": "medium/late-break-restored.png",
+            "sha256": "202228c56d7c013fd53c83cff58f1bfeb4e780efe4c86f0f4fa26094c2ec1ffb"
+          },
+          {
+            "path": "medium/natural-drain.png",
+            "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+          },
+          {
+            "path": "medium/overlap-break-lit.png",
+            "sha256": "163edf06ab2556fa08266e2c295b56d1c71f4b14a96695961b5604e4e303668a"
+          },
+          {
+            "path": "medium/overlap-break-off.png",
+            "sha256": "930d06cf9f8f1a79ea5edbd90fe155fb78f4c8c281014ffed521dfce3aeeb3d5"
+          },
+          {
+            "path": "medium/overlap-break-restored.png",
+            "sha256": "163edf06ab2556fa08266e2c295b56d1c71f4b14a96695961b5604e4e303668a"
+          },
+          {
+            "path": "medium/tail.png",
+            "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+          }
+        ]
+      }
+    ],
+    "repeat_png_count": 39,
+    "repeat_png_differences": 0,
+    "final_strict_gate": {
+      "directory": "target/fireworks-f8/persistent-show-final-gate-2026-10-08",
+      "reports": [
+        {
+          "path": "target/fireworks-f8/persistent-show-final-gate-2026-10-08/high/report.json",
+          "sha256": "8691f75bc69b250e0e65f2f660400d8d918da5915781f561811811e441ae7fb5",
+          "report": {
+            "accepted": true,
+            "density_off": [
+              0,
+              0
+            ],
+            "density_restored": [
+              0,
+              0
+            ],
+            "final_populations": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "frozen_repeat": [
+              0,
+              0
+            ],
+            "illumination": [
+              {
+                "active": 3,
+                "light_difference": [
+                  2779,
+                  34
+                ],
+                "phase": "overlap-break",
+                "restored": [
+                  0,
+                  0
+                ]
+              },
+              {
+                "active": 1,
+                "light_difference": [
+                  2017,
+                  19
+                ],
+                "phase": "late-break",
+                "restored": [
+                  0,
+                  0
+                ]
+              }
+            ],
+            "light_sample_root_times": [
+              9.3,
+              18.4
+            ],
+            "natural_drained_pixels": [
+              0,
+              0
+            ],
+            "natural_zero": true,
+            "retired_sort": [
+              0,
+              0
+            ],
+            "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+            "slice": "F8.1C3",
+            "tail_populations": [
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  48,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 12.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  27
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  35,
+                  0,
+                  0
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  27,
+                  0
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 18
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 18
+              }
+            ],
+            "tail_visibility": [
+              1802,
+              33
+            ],
+            "tier": "high"
+          }
+        },
+        {
+          "path": "target/fireworks-f8/persistent-show-final-gate-2026-10-08/low/report.json",
+          "sha256": "65856fa8a6ccee41333098a963d6c960140ef0fff48c816c8303d3bdc7112674",
+          "report": {
+            "accepted": true,
+            "density_off": [
+              0,
+              0
+            ],
+            "density_restored": [
+              0,
+              0
+            ],
+            "final_populations": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "frozen_repeat": [
+              0,
+              0
+            ],
+            "illumination": [
+              {
+                "active": 2,
+                "light_difference": [
+                  1882,
+                  17
+                ],
+                "phase": "overlap-break",
+                "restored": [
+                  0,
+                  0
+                ]
+              },
+              {
+                "active": 1,
+                "light_difference": [
+                  1028,
+                  16
+                ],
+                "phase": "late-break",
+                "restored": [
+                  0,
+                  0
+                ]
+              }
+            ],
+            "light_sample_root_times": [
+              9.3,
+              18.4
+            ],
+            "natural_drained_pixels": [
+              0,
+              0
+            ],
+            "natural_zero": true,
+            "retired_sort": [
+              0,
+              0
+            ],
+            "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+            "slice": "F8.1C3",
+            "tail_populations": [
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  12,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 12.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  6
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  10,
+                  0,
+                  0
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  7,
+                  0
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 18
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 18
+              }
+            ],
+            "tail_visibility": [
+              744,
+              18
+            ],
+            "tier": "low"
+          }
+        },
+        {
+          "path": "target/fireworks-f8/persistent-show-final-gate-2026-10-08/medium/report.json",
+          "sha256": "1be1be2fbdd64421c037f48278844343fd8ff65f05e4b6806bf9933d47046fab",
+          "report": {
+            "accepted": true,
+            "density_off": [
+              0,
+              0
+            ],
+            "density_restored": [
+              0,
+              0
+            ],
+            "final_populations": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "frozen_repeat": [
+              0,
+              0
+            ],
+            "illumination": [
+              {
+                "active": 3,
+                "light_difference": [
+                  2582,
+                  29
+                ],
+                "phase": "overlap-break",
+                "restored": [
+                  0,
+                  0
+                ]
+              },
+              {
+                "active": 1,
+                "light_difference": [
+                  1518,
+                  18
+                ],
+                "phase": "late-break",
+                "restored": [
+                  0,
+                  0
+                ]
+              }
+            ],
+            "light_sample_root_times": [
+              9.3,
+              18.4
+            ],
+            "natural_drained_pixels": [
+              0,
+              0
+            ],
+            "natural_zero": true,
+            "retired_sort": [
+              0,
+              0
+            ],
+            "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+            "slice": "F8.1C3",
+            "tail_populations": [
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  24,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 12.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  12
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  18,
+                  0,
+                  0
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  13,
+                  0
+                ],
+                "time": 13.983333587646484
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 18
+              },
+              {
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "time": 18
+              }
+            ],
+            "tail_visibility": [
+              1095,
+              25
+            ],
+            "tier": "medium"
+          }
+        }
+      ],
+      "images": [
+        {
+          "path": "high/density-off.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "high/density-restored.png",
+          "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+        },
+        {
+          "path": "high/empty.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "high/ended.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "high/frozen.png",
+          "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+        },
+        {
+          "path": "high/late-break-lit.png",
+          "sha256": "37ad9ce23265f17c4616648875d530bf0120be273ecdeaf59ff197109844e67c"
+        },
+        {
+          "path": "high/late-break-off.png",
+          "sha256": "deac33883a19a1231cfffebb84e61ab8dbf0a9c5357d8d3f54926fc17250ff10"
+        },
+        {
+          "path": "high/late-break-restored.png",
+          "sha256": "37ad9ce23265f17c4616648875d530bf0120be273ecdeaf59ff197109844e67c"
+        },
+        {
+          "path": "high/natural-drain.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "high/overlap-break-lit.png",
+          "sha256": "511409d72d547dd390ea1daa981b9301395b52dd33913507ab1ba651b13559e0"
+        },
+        {
+          "path": "high/overlap-break-off.png",
+          "sha256": "94c9a5db2fdde5110618bafcab6f00dfa5e27567d3d79f164fd08fee52479f03"
+        },
+        {
+          "path": "high/overlap-break-restored.png",
+          "sha256": "511409d72d547dd390ea1daa981b9301395b52dd33913507ab1ba651b13559e0"
+        },
+        {
+          "path": "high/tail.png",
+          "sha256": "096ebf08e05e4a4e4e53f72b4b674009389cf08ab74595f78332ae5b8b07f5e6"
+        },
+        {
+          "path": "low/density-off.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "low/density-restored.png",
+          "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+        },
+        {
+          "path": "low/empty.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "low/ended.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "low/frozen.png",
+          "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+        },
+        {
+          "path": "low/late-break-lit.png",
+          "sha256": "20ef50c78a6d98e5644236001aa769f02d7ec375e755a3124ca959442868eea7"
+        },
+        {
+          "path": "low/late-break-off.png",
+          "sha256": "459889d587c04f70156d4d09a84d7e34c2a218f5d8041d1bf67e95ead25d18a0"
+        },
+        {
+          "path": "low/late-break-restored.png",
+          "sha256": "20ef50c78a6d98e5644236001aa769f02d7ec375e755a3124ca959442868eea7"
+        },
+        {
+          "path": "low/natural-drain.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "low/overlap-break-lit.png",
+          "sha256": "9cdc0fd72904edae87fb048399ea200b29834473825983548b637523ff16d00f"
+        },
+        {
+          "path": "low/overlap-break-off.png",
+          "sha256": "df61cfc8edf1c0ee6300e5515ba747cd2cb9238339dea08aeaa9adba05db867f"
+        },
+        {
+          "path": "low/overlap-break-restored.png",
+          "sha256": "9cdc0fd72904edae87fb048399ea200b29834473825983548b637523ff16d00f"
+        },
+        {
+          "path": "low/tail.png",
+          "sha256": "21974f53025d2e4ff102c58e4e2bbe27a20174df0cac5d2e779bcabd9ed84456"
+        },
+        {
+          "path": "medium/density-off.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "medium/density-restored.png",
+          "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+        },
+        {
+          "path": "medium/empty.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "medium/ended.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "medium/frozen.png",
+          "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+        },
+        {
+          "path": "medium/late-break-lit.png",
+          "sha256": "202228c56d7c013fd53c83cff58f1bfeb4e780efe4c86f0f4fa26094c2ec1ffb"
+        },
+        {
+          "path": "medium/late-break-off.png",
+          "sha256": "df332d4609e27daed05cee9eac70924ddf351c1f8cf2b3b91e44e32020c58941"
+        },
+        {
+          "path": "medium/late-break-restored.png",
+          "sha256": "202228c56d7c013fd53c83cff58f1bfeb4e780efe4c86f0f4fa26094c2ec1ffb"
+        },
+        {
+          "path": "medium/natural-drain.png",
+          "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+        },
+        {
+          "path": "medium/overlap-break-lit.png",
+          "sha256": "163edf06ab2556fa08266e2c295b56d1c71f4b14a96695961b5604e4e303668a"
+        },
+        {
+          "path": "medium/overlap-break-off.png",
+          "sha256": "930d06cf9f8f1a79ea5edbd90fe155fb78f4c8c281014ffed521dfce3aeeb3d5"
+        },
+        {
+          "path": "medium/overlap-break-restored.png",
+          "sha256": "163edf06ab2556fa08266e2c295b56d1c71f4b14a96695961b5604e4e303668a"
+        },
+        {
+          "path": "medium/tail.png",
+          "sha256": "302e718471a5ebba97236af8901401797a4c494879b5d8021ba1c18f09be96e6"
+        }
+      ],
+      "elapsed_seconds": 89.67,
+      "matches_all_39_previous_pngs": true,
+      "requires_four_nonempty_final_population_arrays": true
+    }
+  },
+  "live_costs": {
+    "accepted": {
+      "accepted": true,
+      "runs": 12
+    },
+    "elapsed_seconds": 334.4,
+    "paired_peak_population_and_light_admission_match": true,
+    "sequential_native_apps": true,
+    "concurrent_builds_or_native_workloads": false,
+    "measurement": "2400 fixed-60Hz forward updates; paused initial readiness/120warmup; later first-use clip/preparation retained; deduplicated async diagnostic/per-owner timing samples",
+    "scope": "960x540 LDR public audience camera with representative-only lights, no public HDR/environment/audio. Independent distributions, not frame-paired incremental deltas. Cohort-only raw smoke/final population fields not used for show count claims.",
+    "runs": [
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-draw-high-r1.json",
+        "sha256": "1aa59d3bc7bde662813262e5a54094c54a4467d3a415aee6ec81d3735f0e9834",
+        "case": "show-persistent-draw",
+        "tier": "high",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 17.183744,
+          "median_ms": 3.438592,
+          "p95_ms": 9.111552,
+          "p99_ms": 13.113344,
+          "samples": 2296
+        },
+        "alpha_sort_gpu_ms": {
+          "max_ms": 0.874496,
+          "median_ms": 0.29184,
+          "p95_ms": 0.673792,
+          "p99_ms": 0.780288,
+          "samples": 2003
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 14.8224,
+          "median_ms": 2.325504,
+          "p95_ms": 7.348224,
+          "p99_ms": 11.194368,
+          "samples": 2296
+        },
+        "app_update_wall_ms": {
+          "max_ms": 74.5994,
+          "median_ms": 7.9994000000000005,
+          "p95_ms": 21.0756,
+          "p99_ms": 30.161,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 1.590272,
+            "median_ms": 0.49152,
+            "p95_ms": 1.010688,
+            "p99_ms": 1.31072,
+            "samples": 3218
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 1.830912,
+            "median_ms": 0.63488,
+            "p95_ms": 1.293312,
+            "p99_ms": 1.680384,
+            "samples": 3224
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.609728,
+            "median_ms": 0.462848,
+            "p95_ms": 0.948224,
+            "p99_ms": 1.209344,
+            "samples": 5369
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.907264,
+            "median_ms": 0.309248,
+            "p95_ms": 0.620544,
+            "p99_ms": 0.823296,
+            "samples": 2150
+          }
+        },
+        "peak_async_total_alive": 1872,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 26,
+        "peak_sort_owned_bytes": 245856,
+        "late_sort_allocations": 48,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 8,
+        "representative_admission": {
+          "accepted": 13,
+          "binding_invalid": 0,
+          "budget_dropped": 0,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-draw-high-r2.json",
+        "sha256": "491c09b2bac74287678748afcdca373990886bbb13c52dec969a3922be749a53",
+        "case": "show-persistent-draw",
+        "tier": "high",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 17.496064,
+          "median_ms": 3.328,
+          "p95_ms": 9.63072,
+          "p99_ms": 13.308928,
+          "samples": 2296
+        },
+        "alpha_sort_gpu_ms": {
+          "max_ms": 0.789504,
+          "median_ms": 0.289792,
+          "p95_ms": 0.70656,
+          "p99_ms": 0.740352,
+          "samples": 2003
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 15.056896,
+          "median_ms": 2.253824,
+          "p95_ms": 7.576576,
+          "p99_ms": 11.460608,
+          "samples": 2296
+        },
+        "app_update_wall_ms": {
+          "max_ms": 74.2183,
+          "median_ms": 7.7073,
+          "p95_ms": 22.8294,
+          "p99_ms": 30.2731,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 1.6128,
+            "median_ms": 0.477184,
+            "p95_ms": 1.009664,
+            "p99_ms": 1.286144,
+            "samples": 3218
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 1.82272,
+            "median_ms": 0.610304,
+            "p95_ms": 1.28512,
+            "p99_ms": 1.661952,
+            "samples": 3223
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 3.31776,
+            "median_ms": 0.44544,
+            "p95_ms": 0.914432,
+            "p99_ms": 1.19296,
+            "samples": 5371
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 1.303552,
+            "median_ms": 0.301056,
+            "p95_ms": 0.61952,
+            "p99_ms": 0.816128,
+            "samples": 2150
+          }
+        },
+        "peak_async_total_alive": 1872,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 26,
+        "peak_sort_owned_bytes": 245856,
+        "late_sort_allocations": 72,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 8,
+        "representative_admission": {
+          "accepted": 13,
+          "binding_invalid": 0,
+          "budget_dropped": 0,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-draw-low-r1.json",
+        "sha256": "0a6a015f2b20c743b1f1ea1f7fccd24b12db6f0f73b16a468dc35d719f52ec76",
+        "case": "show-persistent-draw",
+        "tier": "low",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 16.956416,
+          "median_ms": 3.315712,
+          "p95_ms": 9.510912,
+          "p99_ms": 12.258304,
+          "samples": 2296
+        },
+        "alpha_sort_gpu_ms": {
+          "max_ms": 0.905216,
+          "median_ms": 0.315392,
+          "p95_ms": 0.740352,
+          "p99_ms": 0.842752,
+          "samples": 2002
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 14.454784,
+          "median_ms": 2.264064,
+          "p95_ms": 7.443456,
+          "p99_ms": 10.390528,
+          "samples": 2296
+        },
+        "app_update_wall_ms": {
+          "max_ms": 74.21079999999999,
+          "median_ms": 7.7978,
+          "p95_ms": 21.8331,
+          "p99_ms": 31.077299999999997,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 1.49504,
+            "median_ms": 0.4864,
+            "p95_ms": 1.01376,
+            "p99_ms": 1.292288,
+            "samples": 3226
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 1.96608,
+            "median_ms": 0.62976,
+            "p95_ms": 1.293312,
+            "p99_ms": 1.707008,
+            "samples": 3230
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.57184,
+            "median_ms": 0.39936,
+            "p95_ms": 0.813056,
+            "p99_ms": 1.072128,
+            "samples": 5376
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.968704,
+            "median_ms": 0.3072,
+            "p95_ms": 0.621568,
+            "p99_ms": 0.835584,
+            "samples": 2153
+          }
+        },
+        "peak_async_total_alive": 312,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 26,
+        "peak_sort_owned_bytes": 245856,
+        "late_sort_allocations": 144,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 2,
+        "representative_admission": {
+          "accepted": 11,
+          "binding_invalid": 0,
+          "budget_dropped": 2,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-draw-low-r2.json",
+        "sha256": "1a19b6d6276116b2a9297a8e27d658e3f24a4eab4eb07de5e1d835fae0d51d5b",
+        "case": "show-persistent-draw",
+        "tier": "low",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 16.959488,
+          "median_ms": 3.193856,
+          "p95_ms": 8.933376,
+          "p99_ms": 12.326912,
+          "samples": 2273
+        },
+        "alpha_sort_gpu_ms": {
+          "max_ms": 0.914432,
+          "median_ms": 0.305152,
+          "p95_ms": 0.649216,
+          "p99_ms": 0.821248,
+          "samples": 1979
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 14.596096,
+          "median_ms": 2.149376,
+          "p95_ms": 6.9376,
+          "p99_ms": 10.447872,
+          "samples": 2273
+        },
+        "app_update_wall_ms": {
+          "max_ms": 74.6748,
+          "median_ms": 7.7273000000000005,
+          "p95_ms": 20.3515,
+          "p99_ms": 29.453300000000002,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 2.581504,
+            "median_ms": 0.474112,
+            "p95_ms": 0.98816,
+            "p99_ms": 1.307648,
+            "samples": 3213
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 2.44224,
+            "median_ms": 0.617472,
+            "p95_ms": 1.262592,
+            "p99_ms": 1.701888,
+            "samples": 3220
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 5.53984,
+            "median_ms": 0.395264,
+            "p95_ms": 0.807936,
+            "p99_ms": 1.0752,
+            "samples": 5360
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.918528,
+            "median_ms": 0.304128,
+            "p95_ms": 0.610304,
+            "p99_ms": 0.840704,
+            "samples": 2147
+          }
+        },
+        "peak_async_total_alive": 312,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 26,
+        "peak_sort_owned_bytes": 245856,
+        "late_sort_allocations": 144,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 2,
+        "representative_admission": {
+          "accepted": 11,
+          "binding_invalid": 0,
+          "budget_dropped": 2,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-draw-medium-r1.json",
+        "sha256": "25ead9e05ad0bf461a6fe646ba855fa90ce456d57b89cd1b0cd0f1a282ab3a30",
+        "case": "show-persistent-draw",
+        "tier": "medium",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 17.15712,
+          "median_ms": 3.3792,
+          "p95_ms": 9.22624,
+          "p99_ms": 12.954624,
+          "samples": 2275
+        },
+        "alpha_sort_gpu_ms": {
+          "max_ms": 0.920576,
+          "median_ms": 0.308224,
+          "p95_ms": 0.672768,
+          "p99_ms": 0.84992,
+          "samples": 1979
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 14.7712,
+          "median_ms": 2.277376,
+          "p95_ms": 7.263232,
+          "p99_ms": 10.994688,
+          "samples": 2275
+        },
+        "app_update_wall_ms": {
+          "max_ms": 73.4326,
+          "median_ms": 8.0453,
+          "p95_ms": 20.7848,
+          "p99_ms": 29.6616,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 3.744768,
+            "median_ms": 0.482304,
+            "p95_ms": 0.99328,
+            "p99_ms": 1.313792,
+            "samples": 3224
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 1.876992,
+            "median_ms": 0.62464,
+            "p95_ms": 1.278976,
+            "p99_ms": 1.714176,
+            "samples": 3227
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.24928,
+            "median_ms": 0.420864,
+            "p95_ms": 0.864256,
+            "p99_ms": 1.1264,
+            "samples": 5369
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.907264,
+            "median_ms": 0.310272,
+            "p95_ms": 0.623616,
+            "p99_ms": 0.831488,
+            "samples": 2153
+          }
+        },
+        "peak_async_total_alive": 744,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 26,
+        "peak_sort_owned_bytes": 245856,
+        "late_sort_allocations": 72,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 4,
+        "representative_admission": {
+          "accepted": 13,
+          "binding_invalid": 0,
+          "budget_dropped": 0,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-draw-medium-r2.json",
+        "sha256": "1d0aabc53ac771206345080d35ba02f896fa73e4f36525e34784e865ec984e0b",
+        "case": "show-persistent-draw",
+        "tier": "medium",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 16.813056,
+          "median_ms": 3.209216,
+          "p95_ms": 9.664512,
+          "p99_ms": 12.495872,
+          "samples": 2277
+        },
+        "alpha_sort_gpu_ms": {
+          "max_ms": 0.830464,
+          "median_ms": 0.303104,
+          "p95_ms": 0.731136,
+          "p99_ms": 0.797696,
+          "samples": 1982
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 14.4384,
+          "median_ms": 2.149376,
+          "p95_ms": 7.579648,
+          "p99_ms": 10.637312,
+          "samples": 2277
+        },
+        "app_update_wall_ms": {
+          "max_ms": 74.3897,
+          "median_ms": 7.6415,
+          "p95_ms": 23.2483,
+          "p99_ms": 32.4215,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 1.393664,
+            "median_ms": 0.509952,
+            "p95_ms": 1.03936,
+            "p99_ms": 1.268736,
+            "samples": 3225
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 2.36544,
+            "median_ms": 0.658432,
+            "p95_ms": 1.34144,
+            "p99_ms": 1.65888,
+            "samples": 3225
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 2.893824,
+            "median_ms": 0.431104,
+            "p95_ms": 0.879616,
+            "p99_ms": 1.104896,
+            "samples": 5374
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.896,
+            "median_ms": 0.321536,
+            "p95_ms": 0.659456,
+            "p99_ms": 0.813056,
+            "samples": 2152
+          }
+        },
+        "peak_async_total_alive": 744,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 26,
+        "peak_sort_owned_bytes": 245856,
+        "late_sort_allocations": 72,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 4,
+        "representative_admission": {
+          "accepted": 13,
+          "binding_invalid": 0,
+          "budget_dropped": 0,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-no-smoke-draw-high-r1.json",
+        "sha256": "e10362ca3d8107d7623c4ff9889b77e0eebfb460f531a8c3a061ab305d4f3947",
+        "case": "show-persistent-no-smoke-draw",
+        "tier": "high",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 16.603136,
+          "median_ms": 3.359744,
+          "p95_ms": 8.653824,
+          "p99_ms": 12.745728,
+          "samples": 2266
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 15.010816,
+          "median_ms": 2.623488,
+          "p95_ms": 7.425024,
+          "p99_ms": 11.41248,
+          "samples": 2266
+        },
+        "app_update_wall_ms": {
+          "max_ms": 74.2356,
+          "median_ms": 7.3027,
+          "p95_ms": 21.139000000000003,
+          "p99_ms": 31.0092,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 1.400832,
+            "median_ms": 0.499712,
+            "p95_ms": 1.060864,
+            "p99_ms": 1.329152,
+            "samples": 3206
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 1.815552,
+            "median_ms": 0.635904,
+            "p95_ms": 1.332224,
+            "p99_ms": 1.72032,
+            "samples": 3219
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.60256,
+            "median_ms": 0.457728,
+            "p95_ms": 0.93184,
+            "p99_ms": 1.236992,
+            "samples": 5358
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.934912,
+            "median_ms": 0.31232,
+            "p95_ms": 0.644096,
+            "p99_ms": 0.859136,
+            "samples": 2148
+          }
+        },
+        "peak_async_total_alive": 1872,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 0,
+        "peak_sort_owned_bytes": 0,
+        "late_sort_allocations": 0,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 8,
+        "representative_admission": {
+          "accepted": 13,
+          "binding_invalid": 0,
+          "budget_dropped": 0,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-no-smoke-draw-high-r2.json",
+        "sha256": "d5ccfad9981d793bc892cf5ae67e4889f3c769e14c98d4239a62f04d23d28818",
+        "case": "show-persistent-no-smoke-draw",
+        "tier": "high",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 15.322112,
+          "median_ms": 3.321856,
+          "p95_ms": 8.283136,
+          "p99_ms": 12.003328,
+          "samples": 2291
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 13.82912,
+          "median_ms": 2.59072,
+          "p95_ms": 7.088128,
+          "p99_ms": 10.841088,
+          "samples": 2291
+        },
+        "app_update_wall_ms": {
+          "max_ms": 75.5573,
+          "median_ms": 7.1655,
+          "p95_ms": 18.7015,
+          "p99_ms": 27.8236,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 1.393664,
+            "median_ms": 0.4864,
+            "p95_ms": 0.992256,
+            "p99_ms": 1.323008,
+            "samples": 3207
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 2.784256,
+            "median_ms": 0.625664,
+            "p95_ms": 1.265664,
+            "p99_ms": 1.700864,
+            "samples": 3224
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.419264,
+            "median_ms": 0.462848,
+            "p95_ms": 0.928768,
+            "p99_ms": 1.236992,
+            "samples": 5357
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.90112,
+            "median_ms": 0.308224,
+            "p95_ms": 0.61952,
+            "p99_ms": 0.854016,
+            "samples": 2151
+          }
+        },
+        "peak_async_total_alive": 1872,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 0,
+        "peak_sort_owned_bytes": 0,
+        "late_sort_allocations": 0,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 8,
+        "representative_admission": {
+          "accepted": 13,
+          "binding_invalid": 0,
+          "budget_dropped": 0,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-no-smoke-draw-low-r1.json",
+        "sha256": "98ab33005ad19da78cdcff9d15058f1e2b0311ed576a5558fb990d40baa74de8",
+        "case": "show-persistent-no-smoke-draw",
+        "tier": "low",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 16.217088,
+          "median_ms": 3.309568,
+          "p95_ms": 8.476672,
+          "p99_ms": 11.961344,
+          "samples": 2333
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 14.587904,
+          "median_ms": 2.567168,
+          "p95_ms": 7.161856,
+          "p99_ms": 10.698752,
+          "samples": 2333
+        },
+        "app_update_wall_ms": {
+          "max_ms": 72.5485,
+          "median_ms": 6.8573,
+          "p95_ms": 18.474899999999998,
+          "p99_ms": 27.688000000000002,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 2.63168,
+            "median_ms": 0.487424,
+            "p95_ms": 1.005568,
+            "p99_ms": 1.3568,
+            "samples": 3213
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 2.417664,
+            "median_ms": 0.633856,
+            "p95_ms": 1.293312,
+            "p99_ms": 1.748992,
+            "samples": 3221
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.227776,
+            "median_ms": 0.408576,
+            "p95_ms": 0.79872,
+            "p99_ms": 1.11104,
+            "samples": 5363
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.984064,
+            "median_ms": 0.313344,
+            "p95_ms": 0.633856,
+            "p99_ms": 0.871424,
+            "samples": 2149
+          }
+        },
+        "peak_async_total_alive": 312,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 0,
+        "peak_sort_owned_bytes": 0,
+        "late_sort_allocations": 0,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 2,
+        "representative_admission": {
+          "accepted": 11,
+          "binding_invalid": 0,
+          "budget_dropped": 2,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-no-smoke-draw-low-r2.json",
+        "sha256": "5fed6d17e244b7d8b88057c6f3473389e190aab9a4ae13691d7d0d99b60258f8",
+        "case": "show-persistent-no-smoke-draw",
+        "tier": "low",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 15.97952,
+          "median_ms": 3.206144,
+          "p95_ms": 8.480768,
+          "p99_ms": 11.926528,
+          "samples": 2325
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 14.33088,
+          "median_ms": 2.4832,
+          "p95_ms": 7.228416,
+          "p99_ms": 10.679296,
+          "samples": 2325
+        },
+        "app_update_wall_ms": {
+          "max_ms": 73.85210000000001,
+          "median_ms": 6.799,
+          "p95_ms": 18.8612,
+          "p99_ms": 28.0075,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 2.951168,
+            "median_ms": 0.485376,
+            "p95_ms": 1.00352,
+            "p99_ms": 1.32608,
+            "samples": 3205
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 1.861632,
+            "median_ms": 0.627712,
+            "p95_ms": 1.297408,
+            "p99_ms": 1.71008,
+            "samples": 3220
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.358848,
+            "median_ms": 0.408576,
+            "p95_ms": 0.792576,
+            "p99_ms": 1.101824,
+            "samples": 5351
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.922624,
+            "median_ms": 0.31232,
+            "p95_ms": 0.632832,
+            "p99_ms": 0.84992,
+            "samples": 2147
+          }
+        },
+        "peak_async_total_alive": 312,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 0,
+        "peak_sort_owned_bytes": 0,
+        "late_sort_allocations": 0,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 2,
+        "representative_admission": {
+          "accepted": 11,
+          "binding_invalid": 0,
+          "budget_dropped": 2,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-no-smoke-draw-medium-r1.json",
+        "sha256": "e0a92c60e80c5ec491c821fbf881cb828f1bc5b5dbea1419c9d7225bc133a02a",
+        "case": "show-persistent-no-smoke-draw",
+        "tier": "medium",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 15.363072,
+          "median_ms": 3.472384,
+          "p95_ms": 8.306688,
+          "p99_ms": 11.779072,
+          "samples": 2302
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 13.841408,
+          "median_ms": 2.69312,
+          "p95_ms": 7.14752,
+          "p99_ms": 10.58816,
+          "samples": 2302
+        },
+        "app_update_wall_ms": {
+          "max_ms": 72.9566,
+          "median_ms": 7.6697,
+          "p95_ms": 18.9342,
+          "p99_ms": 27.677500000000002,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 1.512448,
+            "median_ms": 0.487424,
+            "p95_ms": 0.997376,
+            "p99_ms": 1.366016,
+            "samples": 3201
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 1.916928,
+            "median_ms": 0.630784,
+            "p95_ms": 1.28,
+            "p99_ms": 1.763328,
+            "samples": 3220
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.297408,
+            "median_ms": 0.428032,
+            "p95_ms": 0.840704,
+            "p99_ms": 1.122304,
+            "samples": 5347
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.975872,
+            "median_ms": 0.313344,
+            "p95_ms": 0.62976,
+            "p99_ms": 0.878592,
+            "samples": 2147
+          }
+        },
+        "peak_async_total_alive": 744,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 0,
+        "peak_sort_owned_bytes": 0,
+        "late_sort_allocations": 0,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 4,
+        "representative_admission": {
+          "accepted": 13,
+          "binding_invalid": 0,
+          "budget_dropped": 0,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      },
+      {
+        "path": "target/fireworks-f8/persistent-show-live-costs-2026-10-08/show-persistent-no-smoke-draw-medium-r2.json",
+        "sha256": "a5423f1830dd903b23995f47a03ae1a4d597d0cc613019680c8445518bc0b395",
+        "case": "show-persistent-no-smoke-draw",
+        "tier": "medium",
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "updates": 2400,
+        "end_frames": [
+          2220
+        ],
+        "resolution": [
+          960,
+          540
+        ],
+        "fixed_step_hz": 60,
+        "seed": "0xf83b000000000001",
+        "history": "playback-only",
+        "render_graph_gpu_ms": {
+          "max_ms": 15.048704,
+          "median_ms": 3.321856,
+          "p95_ms": 8.339456,
+          "p99_ms": 12.068864,
+          "samples": 2302
+        },
+        "simulate_gpu_ms": {
+          "max_ms": 13.539328,
+          "median_ms": 2.56512,
+          "p95_ms": 7.046144,
+          "p99_ms": 10.775552,
+          "samples": 2302
+        },
+        "app_update_wall_ms": {
+          "max_ms": 74.7743,
+          "median_ms": 6.9312000000000005,
+          "p95_ms": 18.8435,
+          "p99_ms": 28.5341,
+          "samples": 2400
+        },
+        "simulation_gpu_ms_by_source": {
+          "Fireworks Crackle — Persistent Smoke Candidate": {
+            "max_ms": 3.299328,
+            "median_ms": 0.502784,
+            "p95_ms": 1.030144,
+            "p99_ms": 1.321984,
+            "samples": 3207
+          },
+          "Fireworks Crossette — Persistent Smoke Candidate": {
+            "max_ms": 3.299328,
+            "median_ms": 0.644096,
+            "p95_ms": 1.3312,
+            "p99_ms": 1.7152,
+            "samples": 3224
+          },
+          "Fireworks Multi-break — Persistent Smoke Candidate": {
+            "max_ms": 1.616896,
+            "median_ms": 0.432128,
+            "p95_ms": 0.85504,
+            "p99_ms": 1.125376,
+            "samples": 5355
+          },
+          "Fireworks Strobe — Persistent Smoke Candidate": {
+            "max_ms": 0.925696,
+            "median_ms": 0.32256,
+            "p95_ms": 0.653312,
+            "p99_ms": 0.858112,
+            "samples": 2151
+          }
+        },
+        "peak_async_total_alive": 744,
+        "peak_active_clips": 13,
+        "peak_sort_pairs": 0,
+        "peak_sort_owned_bytes": 0,
+        "late_sort_allocations": 0,
+        "retired_sort_bytes": 0,
+        "observed_checkpoint_capture_bytes": 0,
+        "max_observed_fixed_ticks_per_simulation_window": 2,
+        "selected_cap": 0,
+        "representative_cap": 4,
+        "representative_admission": {
+          "accepted": 13,
+          "binding_invalid": 0,
+          "budget_dropped": 0,
+          "invalid": 0
+        },
+        "transparent_order": "depth-back-to-front"
+      }
+    ]
+  },
+  "sources": [
+    {
+      "path": "rust-toolchain.toml",
+      "sha256": "86810d0ace88a635a96ed7a8d7d432afa6950c0c0b99f78f6e905ed9616a9882"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "0b4b47d5b24111d2cd017b1c73a94dc0ec748379519042513840c2301d1d4f1a"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "58ba265c196a1318c65f8398d1b802319c5409058885cecabf9e2491ddd6f11c"
+    },
+    {
+      "path": "bevy/aestra-bevy/Cargo.toml",
+      "sha256": "f744231dcf249ca95b608b3857782b79d3b93e4583e4694ff1332a6aaf78ba00"
+    },
+    {
+      "path": "apps/aestra-viewer/Cargo.toml",
+      "sha256": "609f4fc4b4bed607675d4de28da5cbfe9f790f22bf5879a2784927bc46042690"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks.rs",
+      "sha256": "03149fbad49e837a39b634961f90e4f99e603fb595e76818c526cf84b01ef213"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/project.rs",
+      "sha256": "21914870f358f6234812c4a251ef52a674b2eb53f4fa78cae146177d556ee175"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/persistent_smoke_show_tests.rs",
+      "sha256": "cd2327dd26a9551aa975ed4e871eca13de5dcd5c3140ada478d1d3b76ba4dd7a"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/persistent_smoke_show.rs",
+      "sha256": "f527379c817d4966d114250b3fee4d84600dc67a9ff7b4bba38e1576d60fe98b"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/smoke_live_costs.rs",
+      "sha256": "7dfd2609c59b599ceef6d8c85bcc20d7cf5366c264588205f98ad59dd51be83e"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "1ba53efd92daa46d65337251eaf64b26e731bb71daeadc6e8171bce4014025d0"
+    },
+    {
+      "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron",
+      "sha256": "c1e37b06bb5e9de3109fc87784122a23604a902884037df5f9e752c432661cc4"
+    },
+    {
+      "path": "assets/test/materials/smoke_billow.aestra.material-function.ron",
+      "sha256": "6a8818220a54b6980b751601c22763b8318e73de8c50387816e89e3bd5456c21"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_persistent_smoke.aestra.ron",
+      "sha256": "0ba33d317842c3ddc7582b12faaa72a8def330fafbf400a94512a50455bcbcd0",
+      "qualification_sha256": "a4ab34db5a16a045a82b78072e09957bd54c617ddb800082c490dd2cd52928a8",
+      "commit_cleanup": "Removed one trailing blank line after qualification; authored RON semantics unchanged."
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_persistent_smoke.aestra.ron",
+      "sha256": "e03e96e5037b7d6abdfb1cafb138ba11fb02b4446555a69fa862a151cb0c624b",
+      "qualification_sha256": "f381d7db84231a6e15d543acfa6bb4d43a28068c3c0b4f7c49c7d76a4e1ce571",
+      "commit_cleanup": "Removed one trailing blank line after qualification; authored RON semantics unchanged."
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_persistent_smoke.aestra.ron",
+      "sha256": "0f9fc062eb024c40173dded37a53cf4e86adca5984954dc4ee2c06a440b4946e",
+      "qualification_sha256": "59fcb15618820c04dffd2cec36381e953711793493abfe99505edfd6ef19344b",
+      "commit_cleanup": "Removed one trailing blank line after qualification; authored RON semantics unchanged."
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+      "sha256": "ed38f17f3a103da58673ef753c550c291bbb6c7bb6c1c3fe5fdd3540b64634e5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_persistent_smoke.aestra.ron",
+      "sha256": "cb5629e77ddf49abfc995c425386feaa3cd73972fa58001ba60b2bf8d3be9aef",
+      "qualification_sha256": "589c991fdd43f22495f973df6e19c4f45f9078b25af87d5546b5df2859bb3244",
+      "commit_cleanup": "Removed one trailing blank line after qualification; authored RON semantics unchanged."
+    },
+    {
+      "path": "assets/test/effects/fireworks_show.aestra.ron",
+      "sha256": "dd2bc77cc19aaa84cfcdccb24a5c1554b168f5ea664541ea4c28882e09a4c011"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break.aestra.ron",
+      "sha256": "91cd5b6c696f37c988f59e33802ee99ad6c15c3a67d9692055d7f078d0aa7e78"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle.aestra.ron",
+      "sha256": "4414a563bbfc7c7a02447ad044eaf7da7189c6de24eed4ea88e57c7610c21d63"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette.aestra.ron",
+      "sha256": "4e9a0e1baf488865215e84016c031e7992e4530de957fc49537225e181c68f56"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe.aestra.ron",
+      "sha256": "c8ca64f617abd86efa1273c991676d58db732a602d42abf8092e0eda7d19ca00"
+    }
+  ],
+  "remaining_gates": [
+    "cross-draw transparency correctness",
+    "public-host HDR/environment reference smoke-art review",
+    "continuous selected-star lighting",
+    "generic fluid injection",
+    "large-pool/production-finale certification",
+    "complete F8 acceptance"
+  ],
+  "validation": {
+    "public_example_audio_tests": 16,
+    "viewer_tests": 98,
+    "viewer_ignored_native_or_export_tests": 26,
+    "strict_clippy": true,
+    "format": true
+  }
+}

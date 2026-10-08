@@ -63,7 +63,7 @@ fn main() -> AppExit {
         })
         .insert_resource(AestraSettings {
             presentation: PresentationMode::Gpu,
-            transparent_order: if options.particle_smoke_lighting {
+            transparent_order: if options.particle_smoke_lighting || options.persistent_smoke_show {
                 aestra_bevy::TransparentOrderMode::DepthBackToFront
             } else {
                 aestra_bevy::TransparentOrderMode::Fast
@@ -89,7 +89,7 @@ fn main() -> AppExit {
             audio::FireworksAudioPlugin,
         ));
     let lighting = options.lighting_policy();
-    // The full show remains representative-only. The saved smoke fixture authors
+    // Both shows remain representative-only. The saved smoke fixture authors
     // bounded star outputs; native injection never copies selected positions to CPU.
     if options.smoke_lighting {
         app.add_plugins(AestraParticleLightPlugin)
@@ -293,7 +293,9 @@ fn status(
         return;
     };
     *frame_ms += (time.delta_secs() * 1000.0 - *frame_ms) * 0.05;
-    let title = if options.smoke_cohorts {
+    let title = if options.persistent_smoke_show {
+        "AESTRA / PERSISTENT SMOKE SHOW CANDIDATE"
+    } else if options.smoke_cohorts {
         "AESTRA / SHELL-BORN SMOKE COHORTS"
     } else if options.smoke_persistence {
         "AESTRA / SMOKE PERSISTENCE PROTOTYPE"

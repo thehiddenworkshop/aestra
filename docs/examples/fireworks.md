@@ -28,6 +28,34 @@ consuming the beginning of the show. Representative flash lights use the saved
 The environment is deliberately minimal: dark background, ground and two dark
 PBR receiver structures (non-emissive, lit by moon/burst lights).
 
+## Opt-in persistent lit-smoke show candidate (F8.1C3)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --persistent-smoke-show
+cargo run --release --locked -p aestra-bevy --example fireworks --features fireworks-audio -- --persistent-smoke-show --tier medium
+```
+
+This loads `effects/fireworks_show_persistent_smoke.aestra.ron` and four separate saved
+shell variants. The default 26-second show and its sources remain unchanged. The candidate
+keeps all 13 launch times, transforms, seeds, star colors, event links, capacities and
+sound/representative-light routes. Burst smoke uses the shared lit seeded-billow program,
+12–14-second lifetimes and 18-second clip windows. The show lasts 37 seconds, including
+a two-second quiet tail after the last clip. No host timer injects smoke births.
+
+It keeps the full audience camera, HDR/bloom, environment, audio options and controls;
+it is not a 0.1-scale smoke lab. Its representative-light budgets remain 8/4/2, with no
+invented selected-star outputs. Per-draw GPU depth sorting is enabled for its alpha smoke;
+this does not solve inter-draw transparency. The flag cannot be combined with a smoke lab;
+an explicit `--effect` still overrides its default path.
+
+The native viewer gate separately checks authored overlap lighting, reversible mute/density
+controls, a visible 30-second tail, natural zero populations at 33 seconds while late clips
+remain owned, and final buffer retirement. LDR capture/cost tooling excludes the public
+host's HDR/environment/audio. This is a migration candidate, not photo-approved smoke,
+production-finale density, continuous selected-star lighting or complete F8 acceptance.
+See [`persistent-smoke-show-2026-10-08.md`](../../benchmarks/fireworks/persistent-smoke-show-2026-10-08.md)
+for reproducible controls, matched live costs and the retained failed cue-boundary sample.
+
 ## Editor to host
 
 1. In the editor, use File → Open Project and select `assets/test`.
@@ -279,8 +307,9 @@ change 66 captures from the historical baseline. See
 [`smoke-live-costs-2026-10-08.md`](../../benchmarks/fireworks/smoke-live-costs-2026-10-08.md)
 for historical costs and
 [`smoke-final-tick-2026-10-08.md`](../../benchmarks/fireworks/smoke-final-tick-2026-10-08.md)
-for corrected costs, cleanup and reproduction. The next gate is an opt-in saved-show
-candidate with lit persistent smoke under authored overlap; the normal show remains unlit.
+for corrected costs, cleanup and reproduction. F8.1C3 adds the opt-in saved-show candidate
+above; the normal show remains unchanged/unlit. Cross-draw transparency and public-host
+HDR smoke-art review are the next gates, not another replay optimization.
 
 ## Normal show status
 
@@ -289,6 +318,8 @@ currently use particle smoke and representative burst lights. Continuous selecte
 lighting is not authored/enabled here; F7's benchmark-fixture lights are not silently
 injected into saved show assets. The dedicated F8.3B saved fixture above now qualifies both
 light families on fluid smoke, and F8.3C qualifies the opt-in particle material on an isolated
-puff. The full show's particle smoke remains unlit; full-show overlap/costs remain separate.
+puff. The default show's particle smoke remains unlit. The separate F8.1C3 candidate
+qualifies bounded persistent lit smoke under saved 13-clip overlap; it is not the accepted
+replacement for the default show or a production-finale performance claim.
 Cross-draw ordering, final smoke art, generic fluid injection, natural-star art, final environment/audio mix and
 production-finale density remain separate work. Keep these gates in the fireworks roadmap.
