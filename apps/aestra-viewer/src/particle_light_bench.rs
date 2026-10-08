@@ -173,6 +173,7 @@ struct Slot {
 struct Slots(Vec<Slot>);
 
 pub fn install(app: &mut App, settings: AestraParticleLightSettings, allocations: bool) {
+    install_frame_timing(app);
     let mailbox = Mailbox::default();
     let clusters = clusters::Mailbox::default();
     app.insert_resource(settings)
@@ -196,19 +197,29 @@ pub fn install(app: &mut App, settings: AestraParticleLightSettings, allocations
             .init_resource::<Slots>()
             .add_systems(ExtractSchedule, crate::publish_capture_render_readiness)
             .add_systems(
-                RenderGraph,
-                (
-                    begin_frame
-                        .in_set(RenderGraphSystems::Begin)
-                        .after(begin_diagnostics_frame),
-                    end_frame
-                        .after(RenderGraphSystems::Render)
-                        .after(aestra_bevy::gpu::particle_light_readback::ParticleLightReadbackSet::Copy)
-                        .before(resolve_encoder)
-                        .before(RenderGraphSystems::Submit),
-                ),
-            )
-            .add_systems(Render, (copy_counts, clusters::observe).in_set(RenderSystems::Cleanup));
+                Render,
+                (copy_counts, clusters::observe).in_set(RenderSystems::Cleanup),
+            );
+    }
+}
+/// Render-graph timestamp scope without selected-light counter readback or playback control.
+pub(crate) fn install_frame_timing(app: &mut App) {
+    if let Some(render) = app.get_sub_app_mut(RenderApp) {
+        render.add_systems(
+            RenderGraph,
+            (
+                begin_frame
+                    .in_set(RenderGraphSystems::Begin)
+                    .after(begin_diagnostics_frame),
+                end_frame
+                    .after(RenderGraphSystems::Render)
+                    .after(
+                        aestra_bevy::gpu::particle_light_readback::ParticleLightReadbackSet::Copy,
+                    )
+                    .before(resolve_encoder)
+                    .before(RenderGraphSystems::Submit),
+            ),
+        );
     }
 }
 // Bevy diagnostic spans are thread-local. Exclusive systems run on the schedule

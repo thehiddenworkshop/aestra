@@ -1,0 +1,4233 @@
+{
+  "date": "2026-10-08",
+  "milestone": "F8.1C1",
+  "base_commit": "91f6b8f1534f6b1858f0b7cf4249c896e76a7bb0",
+  "cost_collection_qualified": true,
+  "full_F8_accepted": false,
+  "migrated_show_accepted": false,
+  "final_smoke_population_zero": false,
+  "build_profile": "test (repository optimized dev settings), MSVC Rust 1.98.1",
+  "raw_directory": "target/fireworks-f8/smoke-live-final",
+  "resolution": [
+    960,
+    540
+  ],
+  "fixed_step_hz": 60,
+  "history": "playback-only",
+  "runs": [
+    {
+      "raw_file": "cohorts-1-draw-high-r1.json",
+      "raw_sha256": "80FAD93B68EF47C4AF8078C6A317E484DA1F360BFA44234B4D0ADF60D54AA15D",
+      "case": "cohorts-1-draw",
+      "tier": "high",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 8,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.96768,
+          "median_ms": 0.551936,
+          "p95_ms": 0.9216,
+          "p99_ms": 0.9472,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.446464,
+          "median_ms": 0.23552,
+          "p95_ms": 0.42496,
+          "p99_ms": 0.437248,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.093184,
+          "median_ms": 0.045056,
+          "p95_ms": 0.082944,
+          "p99_ms": 0.089088,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.029696,
+          "median_ms": 0.011264,
+          "p95_ms": 0.027648,
+          "p99_ms": 0.028672,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.106496,
+          "median_ms": 0.063488,
+          "p95_ms": 0.094208,
+          "p99_ms": 0.099328,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.442368,
+          "median_ms": 0.233472,
+          "p95_ms": 0.420864,
+          "p99_ms": 0.434176,
+          "samples": 996
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 2.1838,
+        "median_ms": 0.7682,
+        "p95_ms": 0.8945,
+        "p99_ms": 0.9986,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 3,
+      "peak_sort_owned_bytes": 28368,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-draw-high-r2.json",
+      "raw_sha256": "A0018429AE95F0B5E5BE06DF4D09E87E50DB195D94212698CB45D0C2EEA889ED",
+      "case": "cohorts-1-draw",
+      "tier": "high",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 8,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.909312,
+          "median_ms": 0.546816,
+          "p95_ms": 0.7936,
+          "p99_ms": 0.85504,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.431104,
+          "median_ms": 0.234496,
+          "p95_ms": 0.3328,
+          "p99_ms": 0.410624,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.088064,
+          "median_ms": 0.045056,
+          "p95_ms": 0.074752,
+          "p99_ms": 0.078848,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.026624,
+          "median_ms": 0.011264,
+          "p95_ms": 0.0256,
+          "p99_ms": 0.026624,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.108544,
+          "median_ms": 0.063488,
+          "p95_ms": 0.089088,
+          "p99_ms": 0.094208,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.429056,
+          "median_ms": 0.232448,
+          "p95_ms": 0.329728,
+          "p99_ms": 0.362496,
+          "samples": 994
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 2.0504,
+        "median_ms": 0.7963,
+        "p95_ms": 0.9507,
+        "p99_ms": 1.0567,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 3,
+      "peak_sort_owned_bytes": 28368,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-draw-low-r1.json",
+      "raw_sha256": "16B290FF1D936E0D4FFE10C7FB041DD9474055F5BC0FE09880042F439EDFA620",
+      "case": "cohorts-1-draw",
+      "tier": "low",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 2,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.975872,
+          "median_ms": 0.758784,
+          "p95_ms": 0.945152,
+          "p99_ms": 0.963584,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.449536,
+          "median_ms": 0.320512,
+          "p95_ms": 0.436224,
+          "p99_ms": 0.443392,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.099328,
+          "median_ms": 0.068608,
+          "p95_ms": 0.08704,
+          "p99_ms": 0.093184,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.03072,
+          "median_ms": 0.013312,
+          "p95_ms": 0.029696,
+          "p99_ms": 0.03072,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.11264,
+          "median_ms": 0.080896,
+          "p95_ms": 0.100352,
+          "p99_ms": 0.105472,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.447488,
+          "median_ms": 0.314368,
+          "p95_ms": 0.41472,
+          "p99_ms": 0.44032,
+          "samples": 977
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 1.8309000000000002,
+        "median_ms": 0.7857,
+        "p95_ms": 0.9247,
+        "p99_ms": 1.0129,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 3,
+      "peak_sort_owned_bytes": 28368,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-draw-low-r2.json",
+      "raw_sha256": "99DCA8AA5CF126EF4FF1260A0CF971A371DC9B806C81FBDF703B31E24D6F1315",
+      "case": "cohorts-1-draw",
+      "tier": "low",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 2,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 1.015808,
+          "median_ms": 0.786432,
+          "p95_ms": 0.973824,
+          "p99_ms": 1.000448,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.46592,
+          "median_ms": 0.328704,
+          "p95_ms": 0.443392,
+          "p99_ms": 0.453632,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.103424,
+          "median_ms": 0.070656,
+          "p95_ms": 0.09728,
+          "p99_ms": 0.101376,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.032768,
+          "median_ms": 0.018432,
+          "p95_ms": 0.031744,
+          "p99_ms": 0.032768,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.116736,
+          "median_ms": 0.084992,
+          "p95_ms": 0.106496,
+          "p99_ms": 0.111616,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.463872,
+          "median_ms": 0.323584,
+          "p95_ms": 0.44032,
+          "p99_ms": 0.451584,
+          "samples": 932
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 2.0711000000000004,
+        "median_ms": 0.8044,
+        "p95_ms": 1.0847,
+        "p99_ms": 1.3657000000000001,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 3,
+      "peak_sort_owned_bytes": 28368,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-draw-medium-r1.json",
+      "raw_sha256": "6AE04859119F06C6A00DA94A1AF4CE0BE4E15C2D498A177D5A94B14C957C4BAD",
+      "case": "cohorts-1-draw",
+      "tier": "medium",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 4,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.963584,
+          "median_ms": 0.553984,
+          "p95_ms": 0.920576,
+          "p99_ms": 0.940032,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.439296,
+          "median_ms": 0.234496,
+          "p95_ms": 0.422912,
+          "p99_ms": 0.429056,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.093184,
+          "median_ms": 0.045056,
+          "p95_ms": 0.082944,
+          "p99_ms": 0.088064,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.029696,
+          "median_ms": 0.011264,
+          "p95_ms": 0.027648,
+          "p99_ms": 0.028672,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.110592,
+          "median_ms": 0.062464,
+          "p95_ms": 0.095232,
+          "p99_ms": 0.101376,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.437248,
+          "median_ms": 0.232448,
+          "p95_ms": 0.420864,
+          "p99_ms": 0.427008,
+          "samples": 1012
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 2.1646,
+        "median_ms": 0.7948000000000001,
+        "p95_ms": 0.9237,
+        "p99_ms": 1.08,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 3,
+      "peak_sort_owned_bytes": 28368,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-draw-medium-r2.json",
+      "raw_sha256": "5727F64D8822AF11A9433C83E01C1D6C5E10890A58F01FDCB84663022A5C3ED6",
+      "case": "cohorts-1-draw",
+      "tier": "medium",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 4,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.974848,
+          "median_ms": 0.5632,
+          "p95_ms": 0.937984,
+          "p99_ms": 0.961536,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.446464,
+          "median_ms": 0.242688,
+          "p95_ms": 0.431104,
+          "p99_ms": 0.44032,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.101376,
+          "median_ms": 0.04608,
+          "p95_ms": 0.086016,
+          "p99_ms": 0.091136,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.03072,
+          "median_ms": 0.011264,
+          "p95_ms": 0.029696,
+          "p99_ms": 0.029696,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.114688,
+          "median_ms": 0.067584,
+          "p95_ms": 0.100352,
+          "p99_ms": 0.106496,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.444416,
+          "median_ms": 0.237568,
+          "p95_ms": 0.425984,
+          "p99_ms": 0.438272,
+          "samples": 903
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 2.2322,
+        "median_ms": 0.8373999999999999,
+        "p95_ms": 1.1968,
+        "p99_ms": 1.3522,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 3,
+      "peak_sort_owned_bytes": 28368,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-no-draw-high-r1.json",
+      "raw_sha256": "DA62B2563924B67831442D6F91FD7C7DE4EEA5D5D7BCAAB9B5822E0D6E96FFC8",
+      "case": "cohorts-1-no-draw",
+      "tier": "high",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 8,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.915456,
+          "median_ms": 0.530432,
+          "p95_ms": 0.882688,
+          "p99_ms": 0.900096,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.44032,
+          "median_ms": 0.234496,
+          "p95_ms": 0.425984,
+          "p99_ms": 0.4352,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.065536,
+          "median_ms": 0.03072,
+          "p95_ms": 0.057344,
+          "p99_ms": 0.06144,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.007168,
+          "median_ms": 0.002048,
+          "p95_ms": 0.00512,
+          "p99_ms": 0.00512,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.106496,
+          "median_ms": 0.062464,
+          "p95_ms": 0.096256,
+          "p99_ms": 0.101376,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.437248,
+          "median_ms": 0.232448,
+          "p95_ms": 0.423936,
+          "p99_ms": 0.433152,
+          "samples": 1020
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 2.1573,
+        "median_ms": 0.7734000000000001,
+        "p95_ms": 0.9141,
+        "p99_ms": 1.0318,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 2,
+      "peak_sort_owned_bytes": 18912,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-no-draw-high-r2.json",
+      "raw_sha256": "5E3019758B0A3C804A5B4C11BE6AC536B2A9B64AF1AFAE4E0E2D5E30E753AE57",
+      "case": "cohorts-1-no-draw",
+      "tier": "high",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 8,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.961536,
+          "median_ms": 0.745472,
+          "p95_ms": 0.929792,
+          "p99_ms": 0.946176,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.463872,
+          "median_ms": 0.32768,
+          "p95_ms": 0.446464,
+          "p99_ms": 0.454656,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.07168,
+          "median_ms": 0.048128,
+          "p95_ms": 0.06144,
+          "p99_ms": 0.06656,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.006144,
+          "median_ms": 0.002048,
+          "p95_ms": 0.00512,
+          "p99_ms": 0.00512,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.114688,
+          "median_ms": 0.083968,
+          "p95_ms": 0.105472,
+          "p99_ms": 0.109568,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.461824,
+          "median_ms": 0.323584,
+          "p95_ms": 0.413696,
+          "p99_ms": 0.451584,
+          "samples": 995
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 1.8764999999999998,
+        "median_ms": 0.7977000000000001,
+        "p95_ms": 0.9531000000000001,
+        "p99_ms": 1.0555,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 2,
+      "peak_sort_owned_bytes": 18912,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-no-draw-low-r1.json",
+      "raw_sha256": "86FDE5808A89870D80519089985050B2333A26D8856F4C45737831794751061F",
+      "case": "cohorts-1-no-draw",
+      "tier": "low",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 2,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.946176,
+          "median_ms": 0.541696,
+          "p95_ms": 0.899072,
+          "p99_ms": 0.918528,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.453632,
+          "median_ms": 0.24064,
+          "p95_ms": 0.436224,
+          "p99_ms": 0.442368,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.067584,
+          "median_ms": 0.033792,
+          "p95_ms": 0.059392,
+          "p99_ms": 0.063488,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.00512,
+          "median_ms": 0.002048,
+          "p95_ms": 0.004096,
+          "p99_ms": 0.004096,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.11264,
+          "median_ms": 0.067584,
+          "p95_ms": 0.103424,
+          "p99_ms": 0.10752,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.45056,
+          "median_ms": 0.318464,
+          "p95_ms": 0.432128,
+          "p99_ms": 0.439296,
+          "samples": 943
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 1.8092,
+        "median_ms": 0.7833,
+        "p95_ms": 0.9625,
+        "p99_ms": 1.0946,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 2,
+      "peak_sort_owned_bytes": 18912,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-no-draw-low-r2.json",
+      "raw_sha256": "3F45475BAC4CDFF4BFC14F261D6FFEF83F0AEEE05EF0448BBFB6F552C124A904",
+      "case": "cohorts-1-no-draw",
+      "tier": "low",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 2,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.971776,
+          "median_ms": 0.750592,
+          "p95_ms": 0.934912,
+          "p99_ms": 0.958464,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.477184,
+          "median_ms": 0.3328,
+          "p95_ms": 0.451584,
+          "p99_ms": 0.461824,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.072704,
+          "median_ms": 0.049152,
+          "p95_ms": 0.063488,
+          "p99_ms": 0.067584,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.00512,
+          "median_ms": 0.003072,
+          "p95_ms": 0.004096,
+          "p99_ms": 0.004096,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.116736,
+          "median_ms": 0.084992,
+          "p95_ms": 0.106496,
+          "p99_ms": 0.109568,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.466944,
+          "median_ms": 0.328704,
+          "p95_ms": 0.446464,
+          "p99_ms": 0.457728,
+          "samples": 954
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 2.1654999999999998,
+        "median_ms": 0.7974,
+        "p95_ms": 1.0594000000000001,
+        "p99_ms": 1.2497,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 2,
+      "peak_sort_owned_bytes": 18912,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-no-draw-medium-r1.json",
+      "raw_sha256": "B4F20706783B202CE87C8356732522D2869241D647F08E8CF315D7DAC1C517E7",
+      "case": "cohorts-1-no-draw",
+      "tier": "medium",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 4,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.910336,
+          "median_ms": 0.520192,
+          "p95_ms": 0.8704,
+          "p99_ms": 0.892928,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.443392,
+          "median_ms": 0.234496,
+          "p95_ms": 0.425984,
+          "p99_ms": 0.436224,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.063488,
+          "median_ms": 0.03072,
+          "p95_ms": 0.057344,
+          "p99_ms": 0.06144,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.00512,
+          "median_ms": 0.002048,
+          "p95_ms": 0.004096,
+          "p99_ms": 0.00512,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.106496,
+          "median_ms": 0.062464,
+          "p95_ms": 0.096256,
+          "p99_ms": 0.1024,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.441344,
+          "median_ms": 0.232448,
+          "p95_ms": 0.413696,
+          "p99_ms": 0.434176,
+          "samples": 1035
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 1.7818,
+        "median_ms": 0.7783,
+        "p95_ms": 0.9097000000000001,
+        "p99_ms": 1.0337,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 2,
+      "peak_sort_owned_bytes": 18912,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-1-no-draw-medium-r2.json",
+      "raw_sha256": "9DD66EE1367F1F71EB7AC14601036611E760BE1B9F3F9A1EB1F269A0F67380EF",
+      "case": "cohorts-1-no-draw",
+      "tier": "medium",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080
+      ],
+      "selected_cap": 4,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 2,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 0.93696,
+          "median_ms": 0.535552,
+          "p95_ms": 0.896,
+          "p99_ms": 0.914432,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 0.45056,
+          "median_ms": 0.238592,
+          "p95_ms": 0.433152,
+          "p99_ms": 0.444416,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.069632,
+          "median_ms": 0.031744,
+          "p95_ms": 0.059392,
+          "p99_ms": 0.062464,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.00512,
+          "median_ms": 0.002048,
+          "p95_ms": 0.004096,
+          "p99_ms": 0.00512,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.11264,
+          "median_ms": 0.065536,
+          "p95_ms": 0.101376,
+          "p99_ms": 0.10752,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.448512,
+          "median_ms": 0.234496,
+          "p95_ms": 0.429056,
+          "p99_ms": 0.442368,
+          "samples": 949
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 1.9718000000000002,
+        "median_ms": 0.7929999999999999,
+        "p95_ms": 1.0585,
+        "p99_ms": 1.2586,
+        "samples": 1080
+      },
+      "peak_async_alive": 128,
+      "peak_async_smoke": 64,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 2,
+      "peak_sort_owned_bytes": 18912,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-draw-high-r1.json",
+      "raw_sha256": "DC1ED80D7E4C5E13D584F51708BDF86DD52902884A2DA7C89E69FC5C719338B3",
+      "case": "cohorts-4-draw",
+      "tier": "high",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 8,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.778112,
+          "median_ms": 1.942528,
+          "p95_ms": 2.194432,
+          "p99_ms": 2.315264,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.695744,
+          "median_ms": 1.19808,
+          "p95_ms": 1.34656,
+          "p99_ms": 1.494016,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.293888,
+          "median_ms": 0.234496,
+          "p95_ms": 0.274432,
+          "p99_ms": 0.280576,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.070656,
+          "median_ms": 0.039936,
+          "p95_ms": 0.06656,
+          "p99_ms": 0.069632,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.518144,
+          "median_ms": 0.070656,
+          "p95_ms": 0.082944,
+          "p99_ms": 0.086016,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.423936,
+          "median_ms": 0.29696,
+          "p95_ms": 0.339968,
+          "p99_ms": 0.371712,
+          "samples": 4296
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 9.018999999999998,
+        "median_ms": 2.927,
+        "p95_ms": 3.508,
+        "p99_ms": 4.1845,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 12,
+      "peak_sort_owned_bytes": 113472,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-draw-high-r2.json",
+      "raw_sha256": "2037605458C768ACFFC798E97C70C5BFF0823931183B34FCCB05FDFB66AFD688",
+      "case": "cohorts-4-draw",
+      "tier": "high",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 8,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.387968,
+          "median_ms": 2.089984,
+          "p95_ms": 2.215936,
+          "p99_ms": 2.353152,
+          "samples": 1076
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.69472,
+          "median_ms": 1.288192,
+          "p95_ms": 1.360896,
+          "p99_ms": 1.512448,
+          "samples": 1076
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.29184,
+          "median_ms": 0.248832,
+          "p95_ms": 0.277504,
+          "p99_ms": 0.283648,
+          "samples": 1076
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.07168,
+          "median_ms": 0.04096,
+          "p95_ms": 0.067584,
+          "p99_ms": 0.070656,
+          "samples": 1076
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.093184,
+          "median_ms": 0.074752,
+          "p95_ms": 0.083968,
+          "p99_ms": 0.088064,
+          "samples": 1076
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.432128,
+          "median_ms": 0.318464,
+          "p95_ms": 0.345088,
+          "p99_ms": 0.380928,
+          "samples": 4292
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 9.0811,
+        "median_ms": 2.9562999999999997,
+        "p95_ms": 3.5983,
+        "p99_ms": 4.2075000000000005,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 12,
+      "peak_sort_owned_bytes": 113472,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-draw-low-r1.json",
+      "raw_sha256": "A928D7F8F916ED6C9C7F9EE1D6B910E0BC40C82ACAB76E29A014EF63195057AC",
+      "case": "cohorts-4-draw",
+      "tier": "low",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 2,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.624512,
+          "median_ms": 1.9712,
+          "p95_ms": 2.21696,
+          "p99_ms": 2.356224,
+          "samples": 1072
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.688576,
+          "median_ms": 1.210368,
+          "p95_ms": 1.363968,
+          "p99_ms": 1.51552,
+          "samples": 1072
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.29696,
+          "median_ms": 0.238592,
+          "p95_ms": 0.27648,
+          "p99_ms": 0.283648,
+          "samples": 1072
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.07168,
+          "median_ms": 0.037888,
+          "p95_ms": 0.067584,
+          "p99_ms": 0.070656,
+          "samples": 1072
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.09728,
+          "median_ms": 0.077824,
+          "p95_ms": 0.08704,
+          "p99_ms": 0.090112,
+          "samples": 1072
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.431104,
+          "median_ms": 0.305152,
+          "p95_ms": 0.346112,
+          "p99_ms": 0.381952,
+          "samples": 4276
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 9.144599999999999,
+        "median_ms": 2.963,
+        "p95_ms": 3.5804,
+        "p99_ms": 4.2279,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 12,
+      "peak_sort_owned_bytes": 113472,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-draw-low-r2.json",
+      "raw_sha256": "7915F1EB51C16AC1F8EB00BED689139950211BE4FDF1932959EE9E2AA27A8221",
+      "case": "cohorts-4-draw",
+      "tier": "low",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 2,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.427904,
+          "median_ms": 2.134016,
+          "p95_ms": 2.25792,
+          "p99_ms": 2.409472,
+          "samples": 1075
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.712128,
+          "median_ms": 1.29536,
+          "p95_ms": 1.366016,
+          "p99_ms": 1.55136,
+          "samples": 1075
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.316416,
+          "median_ms": 0.265216,
+          "p95_ms": 0.297984,
+          "p99_ms": 0.303104,
+          "samples": 1075
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.079872,
+          "median_ms": 0.04096,
+          "p95_ms": 0.075776,
+          "p99_ms": 0.078848,
+          "samples": 1075
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.100352,
+          "median_ms": 0.079872,
+          "p95_ms": 0.08704,
+          "p99_ms": 0.09216,
+          "samples": 1075
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.446464,
+          "median_ms": 0.321536,
+          "p95_ms": 0.345088,
+          "p99_ms": 0.388096,
+          "samples": 4288
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 9.5672,
+        "median_ms": 3.2148,
+        "p95_ms": 3.9063,
+        "p99_ms": 4.5118,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 12,
+      "peak_sort_owned_bytes": 113472,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-draw-medium-r1.json",
+      "raw_sha256": "4653EEF41DDD6AF47FFA9EADC99AB9F34485A8CDE414DC7B29CEF0ADE520CC8A",
+      "case": "cohorts-4-draw",
+      "tier": "medium",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 4,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.54464,
+          "median_ms": 1.949696,
+          "p95_ms": 2.198528,
+          "p99_ms": 2.311168,
+          "samples": 1075
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.691648,
+          "median_ms": 1.2032,
+          "p95_ms": 1.352704,
+          "p99_ms": 1.496064,
+          "samples": 1075
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.292864,
+          "median_ms": 0.23552,
+          "p95_ms": 0.274432,
+          "p99_ms": 0.280576,
+          "samples": 1075
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.070656,
+          "median_ms": 0.036864,
+          "p95_ms": 0.06656,
+          "p99_ms": 0.069632,
+          "samples": 1075
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.093184,
+          "median_ms": 0.073728,
+          "p95_ms": 0.084992,
+          "p99_ms": 0.088064,
+          "samples": 1075
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.690176,
+          "median_ms": 0.297984,
+          "p95_ms": 0.340992,
+          "p99_ms": 0.36864,
+          "samples": 4280
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 8.8574,
+        "median_ms": 2.931,
+        "p95_ms": 3.5964,
+        "p99_ms": 4.582400000000001,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 12,
+      "peak_sort_owned_bytes": 113472,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-draw-medium-r2.json",
+      "raw_sha256": "6ABABB16C95A438821C6D6B2E9993559811BB40C9F61AE379B64AEEDE144A52D",
+      "case": "cohorts-4-draw",
+      "tier": "medium",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 4,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.6112,
+          "median_ms": 2.035712,
+          "p95_ms": 2.302976,
+          "p99_ms": 2.390016,
+          "samples": 1077
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.703936,
+          "median_ms": 1.243136,
+          "p95_ms": 1.412096,
+          "p99_ms": 1.54624,
+          "samples": 1077
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.316416,
+          "median_ms": 0.25088,
+          "p95_ms": 0.294912,
+          "p99_ms": 0.303104,
+          "samples": 1077
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.0768,
+          "median_ms": 0.039936,
+          "p95_ms": 0.073728,
+          "p99_ms": 0.0768,
+          "samples": 1077
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.429056,
+          "median_ms": 0.078848,
+          "p95_ms": 0.088064,
+          "p99_ms": 0.09216,
+          "samples": 1077
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.429056,
+          "median_ms": 0.310272,
+          "p95_ms": 0.356352,
+          "p99_ms": 0.387072,
+          "samples": 4296
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 8.9337,
+        "median_ms": 3.222,
+        "p95_ms": 3.9642999999999997,
+        "p99_ms": 5.117,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 12,
+      "peak_sort_owned_bytes": 113472,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-no-draw-high-r1.json",
+      "raw_sha256": "1BA0EE04835C63786A37C14E8C0FC2ECFFE7E19D3D4F5E93678742D2561B6604",
+      "case": "cohorts-4-no-draw",
+      "tier": "high",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 8,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.254848,
+          "median_ms": 1.828864,
+          "p95_ms": 2.085888,
+          "p99_ms": 2.233344,
+          "samples": 1076
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.693696,
+          "median_ms": 1.205248,
+          "p95_ms": 1.37216,
+          "p99_ms": 1.512448,
+          "samples": 1076
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.181248,
+          "median_ms": 0.142336,
+          "p95_ms": 0.165888,
+          "p99_ms": 0.172032,
+          "samples": 1076
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.006144,
+          "median_ms": 0.003072,
+          "p95_ms": 0.006144,
+          "p99_ms": 0.006144,
+          "samples": 1076
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.095232,
+          "median_ms": 0.072704,
+          "p95_ms": 0.084992,
+          "p99_ms": 0.088064,
+          "samples": 1076
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.423936,
+          "median_ms": 0.299008,
+          "p95_ms": 0.34816,
+          "p99_ms": 0.380928,
+          "samples": 4284
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 8.3984,
+        "median_ms": 2.6608,
+        "p95_ms": 3.2738,
+        "p99_ms": 4.2711,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 8,
+      "peak_sort_owned_bytes": 75648,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-no-draw-high-r2.json",
+      "raw_sha256": "A1BAC91E1F16788741085784CE03B1795463E0202CBA0D3FE898A632B7C3DEC7",
+      "case": "cohorts-4-no-draw",
+      "tier": "high",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 8,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.312192,
+          "median_ms": 1.995776,
+          "p95_ms": 2.18624,
+          "p99_ms": 2.260992,
+          "samples": 1077
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.698816,
+          "median_ms": 1.318912,
+          "p95_ms": 1.431552,
+          "p99_ms": 1.532928,
+          "samples": 1077
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.201728,
+          "median_ms": 0.154624,
+          "p95_ms": 0.178176,
+          "p99_ms": 0.183296,
+          "samples": 1077
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.006144,
+          "median_ms": 0.003072,
+          "p95_ms": 0.006144,
+          "p99_ms": 0.006144,
+          "samples": 1077
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.101376,
+          "median_ms": 0.080896,
+          "p95_ms": 0.09216,
+          "p99_ms": 0.096256,
+          "samples": 1077
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.43008,
+          "median_ms": 0.324608,
+          "p95_ms": 0.362496,
+          "p99_ms": 0.385024,
+          "samples": 4284
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 7.3065,
+        "median_ms": 2.9267999999999996,
+        "p95_ms": 4.1129,
+        "p99_ms": 5.3868,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 8,
+      "peak_sort_owned_bytes": 75648,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-no-draw-low-r1.json",
+      "raw_sha256": "B0087B37579DAB0BD7D5E1D7AE96AAA22882BBF2EA053EBB29C7115746D45C10",
+      "case": "cohorts-4-no-draw",
+      "tier": "low",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 2,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.540544,
+          "median_ms": 1.83296,
+          "p95_ms": 2.082816,
+          "p99_ms": 2.243584,
+          "samples": 1074
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.700864,
+          "median_ms": 1.212416,
+          "p95_ms": 1.376256,
+          "p99_ms": 1.522688,
+          "samples": 1074
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.303104,
+          "median_ms": 0.144384,
+          "p95_ms": 0.167936,
+          "p99_ms": 0.17408,
+          "samples": 1074
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.00512,
+          "median_ms": 0.003072,
+          "p95_ms": 0.004096,
+          "p99_ms": 0.00512,
+          "samples": 1074
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.090112,
+          "median_ms": 0.073728,
+          "p95_ms": 0.082944,
+          "p99_ms": 0.088064,
+          "samples": 1074
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.684032,
+          "median_ms": 0.301056,
+          "p95_ms": 0.34816,
+          "p99_ms": 0.382976,
+          "samples": 4280
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 8.52,
+        "median_ms": 2.6915,
+        "p95_ms": 3.3484000000000003,
+        "p99_ms": 3.8999,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 8,
+      "peak_sort_owned_bytes": 75648,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-no-draw-low-r2.json",
+      "raw_sha256": "23E0D9476026525E5E99B0CB566C026F92E396549C64A23E175C876C17F4D51D",
+      "case": "cohorts-4-no-draw",
+      "tier": "low",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 2,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.407424,
+          "median_ms": 1.892352,
+          "p95_ms": 2.180096,
+          "p99_ms": 2.270208,
+          "samples": 1078
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.726464,
+          "median_ms": 1.24928,
+          "p95_ms": 1.436672,
+          "p99_ms": 1.548288,
+          "samples": 1078
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.303104,
+          "median_ms": 0.152576,
+          "p95_ms": 0.1792,
+          "p99_ms": 0.183296,
+          "samples": 1078
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.00512,
+          "median_ms": 0.003072,
+          "p95_ms": 0.004096,
+          "p99_ms": 0.00512,
+          "samples": 1078
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.096256,
+          "median_ms": 0.072704,
+          "p95_ms": 0.088064,
+          "p99_ms": 0.09216,
+          "samples": 1078
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.438272,
+          "median_ms": 0.310272,
+          "p95_ms": 0.362496,
+          "p99_ms": 0.38912,
+          "samples": 4300
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 8.7468,
+        "median_ms": 3.0011,
+        "p95_ms": 3.8197,
+        "p99_ms": 4.4535,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 8,
+      "peak_sort_owned_bytes": 75648,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-no-draw-medium-r1.json",
+      "raw_sha256": "B3E579FF7BD4B00792B21A7E9A1E6AF9A7E626330A8877AA9479ED1D9550582F",
+      "case": "cohorts-4-no-draw",
+      "tier": "medium",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 4,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.254848,
+          "median_ms": 1.824768,
+          "p95_ms": 2.086912,
+          "p99_ms": 2.229248,
+          "samples": 1074
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.69472,
+          "median_ms": 1.206272,
+          "p95_ms": 1.376256,
+          "p99_ms": 1.512448,
+          "samples": 1074
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.181248,
+          "median_ms": 0.142336,
+          "p95_ms": 0.166912,
+          "p99_ms": 0.172032,
+          "samples": 1074
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.006144,
+          "median_ms": 0.003072,
+          "p95_ms": 0.00512,
+          "p99_ms": 0.00512,
+          "samples": 1074
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.096256,
+          "median_ms": 0.07168,
+          "p95_ms": 0.086016,
+          "p99_ms": 0.088064,
+          "samples": 1074
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.65024,
+          "median_ms": 0.299008,
+          "p95_ms": 0.349184,
+          "p99_ms": 0.37888,
+          "samples": 4280
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 7.816699999999999,
+        "median_ms": 2.7168,
+        "p95_ms": 3.328,
+        "p99_ms": 3.9630000000000005,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 8,
+      "peak_sort_owned_bytes": 75648,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "cohorts-4-no-draw-medium-r2.json",
+      "raw_sha256": "3F9180A6016B7BFEFD74C670047615AC0D32C91C7F8D2218B8098BC776B13851",
+      "case": "cohorts-4-no-draw",
+      "tier": "medium",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1080,
+      "end_frames": [
+        1080,
+        1080,
+        1080,
+        1080
+      ],
+      "selected_cap": 4,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 4,
+        "binding_invalid": 0,
+        "budget_dropped": 4,
+        "invalid": 0
+      },
+      "root_scale": 0.1,
+      "transparent_order": "depth-back-to-front",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 2.644992,
+          "median_ms": 2.021376,
+          "p95_ms": 2.151424,
+          "p99_ms": 2.289664,
+          "samples": 1077
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 1.719296,
+          "median_ms": 1.33632,
+          "p95_ms": 1.417216,
+          "p99_ms": 1.55136,
+          "samples": 1077
+        },
+        "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+          "max_ms": 0.187392,
+          "median_ms": 0.157696,
+          "p95_ms": 0.175104,
+          "p99_ms": 0.181248,
+          "samples": 1077
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.006144,
+          "median_ms": 0.003072,
+          "p95_ms": 0.00512,
+          "p99_ms": 0.00512,
+          "samples": 1077
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.095232,
+          "median_ms": 0.079872,
+          "p95_ms": 0.089088,
+          "p99_ms": 0.09216,
+          "samples": 1077
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Shell-Born Smoke Cohorts": {
+          "max_ms": 0.4352,
+          "median_ms": 0.330752,
+          "p95_ms": 0.357376,
+          "p99_ms": 0.390144,
+          "samples": 4292
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 8.6698,
+        "median_ms": 2.9001,
+        "p95_ms": 3.6801,
+        "p99_ms": 4.9767,
+        "samples": 1080
+      },
+      "peak_async_alive": 512,
+      "peak_async_smoke": 256,
+      "peak_active_clips": 0,
+      "peak_sort_pairs": 8,
+      "peak_sort_owned_bytes": 75648,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        },
+        {
+          "accepted_by_link": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "source_overflow": 0
+        }
+      ],
+      "final_populations": [
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        },
+        {
+          "counts": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observed_time": 17.999897003173828,
+          "playback_time": 17.999897003173828,
+          "smoke_drained": false
+        }
+      ]
+    },
+    {
+      "raw_file": "show-unlit-baseline-high-r1.json",
+      "raw_sha256": "E267C6D0D2162A844118CCB3D608E642A161B2256E05FBC13C9B02FE8ED82151",
+      "case": "show-unlit-baseline",
+      "tier": "high",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1680,
+      "end_frames": [
+        1560
+      ],
+      "selected_cap": 0,
+      "representative_cap": 8,
+      "representative_admission": {
+        "accepted": 13,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 1,
+      "transparent_order": "fast",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 9.106432,
+          "median_ms": 1.723392,
+          "p95_ms": 5.050368,
+          "p99_ms": 6.136832,
+          "samples": 1623
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 8.066048,
+          "median_ms": 1.215488,
+          "p95_ms": 4.30592,
+          "p99_ms": 5.327872,
+          "samples": 1623
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.053248,
+          "median_ms": 0.009216,
+          "p95_ms": 0.022528,
+          "p99_ms": 0.04608,
+          "samples": 1623
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.124928,
+          "median_ms": 0.079872,
+          "p95_ms": 0.10752,
+          "p99_ms": 0.116736,
+          "samples": 1623
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Crackle": {
+          "max_ms": 1.415168,
+          "median_ms": 0.446464,
+          "p95_ms": 0.917504,
+          "p99_ms": 1.189888,
+          "samples": 1201
+        },
+        "Fireworks Crossette": {
+          "max_ms": 1.714176,
+          "median_ms": 0.56832,
+          "p95_ms": 1.158144,
+          "p99_ms": 1.56672,
+          "samples": 1204
+        },
+        "Fireworks Multi-break": {
+          "max_ms": 1.579008,
+          "median_ms": 0.395264,
+          "p95_ms": 0.800768,
+          "p99_ms": 1.154048,
+          "samples": 1937
+        },
+        "Fireworks Strobe": {
+          "max_ms": 0.841728,
+          "median_ms": 0.292864,
+          "p95_ms": 0.592896,
+          "p99_ms": 0.755712,
+          "samples": 813
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 72.5112,
+        "median_ms": 3.5239999999999996,
+        "p95_ms": 9.6576,
+        "p99_ms": 12.8467,
+        "samples": 1680
+      },
+      "peak_async_alive": 1680,
+      "peak_async_smoke": 0,
+      "peak_active_clips": 6,
+      "peak_sort_pairs": 0,
+      "peak_sort_owned_bytes": 0,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [],
+      "final_populations": []
+    },
+    {
+      "raw_file": "show-unlit-baseline-high-r2.json",
+      "raw_sha256": "D4E79076DC23D65E939C23819E68F1863DE7B013C95B267DDACA2B1CC66081B7",
+      "case": "show-unlit-baseline",
+      "tier": "high",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1680,
+      "end_frames": [
+        1560
+      ],
+      "selected_cap": 0,
+      "representative_cap": 8,
+      "representative_admission": {
+        "accepted": 13,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 1,
+      "transparent_order": "fast",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 9.42592,
+          "median_ms": 1.915904,
+          "p95_ms": 5.339136,
+          "p99_ms": 6.690816,
+          "samples": 1618
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 8.301568,
+          "median_ms": 1.298432,
+          "p95_ms": 4.62336,
+          "p99_ms": 5.8112,
+          "samples": 1618
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.175104,
+          "median_ms": 0.009216,
+          "p95_ms": 0.0256,
+          "p99_ms": 0.049152,
+          "samples": 1618
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.134144,
+          "median_ms": 0.083968,
+          "p95_ms": 0.115712,
+          "p99_ms": 0.123904,
+          "samples": 1618
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Crackle": {
+          "max_ms": 1.486848,
+          "median_ms": 0.456704,
+          "p95_ms": 0.97792,
+          "p99_ms": 1.332224,
+          "samples": 1192
+        },
+        "Fireworks Crossette": {
+          "max_ms": 1.73056,
+          "median_ms": 0.600064,
+          "p95_ms": 1.238016,
+          "p99_ms": 1.692672,
+          "samples": 1200
+        },
+        "Fireworks Multi-break": {
+          "max_ms": 1.65376,
+          "median_ms": 0.425984,
+          "p95_ms": 0.900096,
+          "p99_ms": 1.283072,
+          "samples": 1941
+        },
+        "Fireworks Strobe": {
+          "max_ms": 0.914432,
+          "median_ms": 0.293888,
+          "p95_ms": 0.613376,
+          "p99_ms": 0.826368,
+          "samples": 806
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 74.9615,
+        "median_ms": 3.9956,
+        "p95_ms": 10.8065,
+        "p99_ms": 17.3776,
+        "samples": 1680
+      },
+      "peak_async_alive": 1680,
+      "peak_async_smoke": 0,
+      "peak_active_clips": 6,
+      "peak_sort_pairs": 0,
+      "peak_sort_owned_bytes": 0,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [],
+      "final_populations": []
+    },
+    {
+      "raw_file": "show-unlit-baseline-low-r1.json",
+      "raw_sha256": "59221F6ED2402ACB869C3A00A701E8DAD76C808DCD30415CE7FEA5F93F4D5C4B",
+      "case": "show-unlit-baseline",
+      "tier": "low",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1680,
+      "end_frames": [
+        1560
+      ],
+      "selected_cap": 0,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 11,
+        "binding_invalid": 0,
+        "budget_dropped": 2,
+        "invalid": 0
+      },
+      "root_scale": 1,
+      "transparent_order": "fast",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 9.422848,
+          "median_ms": 1.73568,
+          "p95_ms": 5.269504,
+          "p99_ms": 5.735424,
+          "samples": 1614
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 8.32,
+          "median_ms": 1.190912,
+          "p95_ms": 4.431872,
+          "p99_ms": 4.928512,
+          "samples": 1614
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.0256,
+          "median_ms": 0.008192,
+          "p95_ms": 0.013312,
+          "p99_ms": 0.01536,
+          "samples": 1614
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.134144,
+          "median_ms": 0.086016,
+          "p95_ms": 0.115712,
+          "p99_ms": 0.12288,
+          "samples": 1614
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Crackle": {
+          "max_ms": 1.440768,
+          "median_ms": 0.477184,
+          "p95_ms": 0.986112,
+          "p99_ms": 1.265664,
+          "samples": 1186
+        },
+        "Fireworks Crossette": {
+          "max_ms": 1.762304,
+          "median_ms": 0.610304,
+          "p95_ms": 1.28,
+          "p99_ms": 1.683456,
+          "samples": 1186
+        },
+        "Fireworks Multi-break": {
+          "max_ms": 1.170432,
+          "median_ms": 0.400384,
+          "p95_ms": 0.81408,
+          "p99_ms": 1.022976,
+          "samples": 1917
+        },
+        "Fireworks Strobe": {
+          "max_ms": 1.230848,
+          "median_ms": 0.305152,
+          "p95_ms": 0.635904,
+          "p99_ms": 0.809984,
+          "samples": 807
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 72.4269,
+        "median_ms": 3.4569,
+        "p95_ms": 10.0953,
+        "p99_ms": 14.6327,
+        "samples": 1680
+      },
+      "peak_async_alive": 234,
+      "peak_async_smoke": 0,
+      "peak_active_clips": 6,
+      "peak_sort_pairs": 0,
+      "peak_sort_owned_bytes": 0,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [],
+      "final_populations": []
+    },
+    {
+      "raw_file": "show-unlit-baseline-low-r2.json",
+      "raw_sha256": "B6F6C9F353823B0CE20A72DA866A6012EFF455753ABBFFF9F6E527DFE958256A",
+      "case": "show-unlit-baseline",
+      "tier": "low",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1680,
+      "end_frames": [
+        1560
+      ],
+      "selected_cap": 0,
+      "representative_cap": 2,
+      "representative_admission": {
+        "accepted": 11,
+        "binding_invalid": 0,
+        "budget_dropped": 2,
+        "invalid": 0
+      },
+      "root_scale": 1,
+      "transparent_order": "fast",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 10.124288,
+          "median_ms": 1.820672,
+          "p95_ms": 5.453824,
+          "p99_ms": 6.096896,
+          "samples": 1616
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 8.788992,
+          "median_ms": 1.209344,
+          "p95_ms": 4.492288,
+          "p99_ms": 5.293056,
+          "samples": 1616
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.233472,
+          "median_ms": 0.008192,
+          "p95_ms": 0.014336,
+          "p99_ms": 0.017408,
+          "samples": 1616
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.150528,
+          "median_ms": 0.089088,
+          "p95_ms": 0.120832,
+          "p99_ms": 0.134144,
+          "samples": 1616
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Crackle": {
+          "max_ms": 1.750016,
+          "median_ms": 0.497664,
+          "p95_ms": 1.03424,
+          "p99_ms": 1.384448,
+          "samples": 1189
+        },
+        "Fireworks Crossette": {
+          "max_ms": 1.936384,
+          "median_ms": 0.637952,
+          "p95_ms": 1.324032,
+          "p99_ms": 1.760256,
+          "samples": 1189
+        },
+        "Fireworks Multi-break": {
+          "max_ms": 1.240064,
+          "median_ms": 0.411648,
+          "p95_ms": 0.846848,
+          "p99_ms": 1.050624,
+          "samples": 1908
+        },
+        "Fireworks Strobe": {
+          "max_ms": 0.935936,
+          "median_ms": 0.308224,
+          "p95_ms": 0.681984,
+          "p99_ms": 0.845824,
+          "samples": 806
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 73.20060000000001,
+        "median_ms": 3.6468999999999996,
+        "p95_ms": 10.7044,
+        "p99_ms": 16.6651,
+        "samples": 1680
+      },
+      "peak_async_alive": 234,
+      "peak_async_smoke": 0,
+      "peak_active_clips": 6,
+      "peak_sort_pairs": 0,
+      "peak_sort_owned_bytes": 0,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [],
+      "final_populations": []
+    },
+    {
+      "raw_file": "show-unlit-baseline-medium-r1.json",
+      "raw_sha256": "406283049EFC68289644B60DD0C5C819DCFCD31385CB4490EF95BCFB4CD20104",
+      "case": "show-unlit-baseline",
+      "tier": "medium",
+      "repetition": 1,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1680,
+      "end_frames": [
+        1560
+      ],
+      "selected_cap": 0,
+      "representative_cap": 4,
+      "representative_admission": {
+        "accepted": 13,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 1,
+      "transparent_order": "fast",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 9.336832,
+          "median_ms": 1.74592,
+          "p95_ms": 5.297152,
+          "p99_ms": 5.879808,
+          "samples": 1622
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 8.233984,
+          "median_ms": 1.211392,
+          "p95_ms": 4.57216,
+          "p99_ms": 5.059584,
+          "samples": 1622
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.027648,
+          "median_ms": 0.008192,
+          "p95_ms": 0.016384,
+          "p99_ms": 0.024576,
+          "samples": 1622
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.13312,
+          "median_ms": 0.082944,
+          "p95_ms": 0.114688,
+          "p99_ms": 0.123904,
+          "samples": 1622
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Crackle": {
+          "max_ms": 1.557504,
+          "median_ms": 0.47616,
+          "p95_ms": 0.973824,
+          "p99_ms": 1.302528,
+          "samples": 1209
+        },
+        "Fireworks Crossette": {
+          "max_ms": 1.765376,
+          "median_ms": 0.610304,
+          "p95_ms": 1.255424,
+          "p99_ms": 1.668096,
+          "samples": 1196
+        },
+        "Fireworks Multi-break": {
+          "max_ms": 1.261568,
+          "median_ms": 0.401408,
+          "p95_ms": 0.815104,
+          "p99_ms": 1.047552,
+          "samples": 1935
+        },
+        "Fireworks Strobe": {
+          "max_ms": 0.868352,
+          "median_ms": 0.300032,
+          "p95_ms": 0.641024,
+          "p99_ms": 0.804864,
+          "samples": 814
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 71.1647,
+        "median_ms": 3.6037,
+        "p95_ms": 10.006400000000001,
+        "p99_ms": 15.011099999999999,
+        "samples": 1680
+      },
+      "peak_async_alive": 648,
+      "peak_async_smoke": 0,
+      "peak_active_clips": 6,
+      "peak_sort_pairs": 0,
+      "peak_sort_owned_bytes": 0,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [],
+      "final_populations": []
+    },
+    {
+      "raw_file": "show-unlit-baseline-medium-r2.json",
+      "raw_sha256": "FDC8C5953E3F7516D99AD8386D260D019092C8A31BE66D0962F9E440DC6C33FF",
+      "case": "show-unlit-baseline",
+      "tier": "medium",
+      "repetition": 2,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "updates": 1680,
+      "end_frames": [
+        1560
+      ],
+      "selected_cap": 0,
+      "representative_cap": 4,
+      "representative_admission": {
+        "accepted": 13,
+        "binding_invalid": 0,
+        "budget_dropped": 0,
+        "invalid": 0
+      },
+      "root_scale": 1,
+      "transparent_order": "fast",
+      "gpu_ms": {
+        "render/aestra::bench::full_frame/elapsed_gpu": {
+          "max_ms": 9.6768,
+          "median_ms": 1.778688,
+          "p95_ms": 5.414912,
+          "p99_ms": 5.890048,
+          "samples": 1626
+        },
+        "render/aestra::gpu::simulate/elapsed_gpu": {
+          "max_ms": 8.53504,
+          "median_ms": 1.21856,
+          "p95_ms": 4.671488,
+          "p99_ms": 5.065728,
+          "samples": 1626
+        },
+        "render/main_transparent_pass_3d/elapsed_gpu": {
+          "max_ms": 0.177152,
+          "median_ms": 0.008192,
+          "p95_ms": 0.017408,
+          "p99_ms": 0.024576,
+          "samples": 1626
+        },
+        "render/clustering/elapsed_gpu": {
+          "max_ms": 0.140288,
+          "median_ms": 0.08704,
+          "p95_ms": 0.118784,
+          "p99_ms": 0.129024,
+          "samples": 1626
+        }
+      },
+      "simulation_ms_by_source": {
+        "Fireworks Crackle": {
+          "max_ms": 1.477632,
+          "median_ms": 0.48128,
+          "p95_ms": 0.985088,
+          "p99_ms": 1.333248,
+          "samples": 1202
+        },
+        "Fireworks Crossette": {
+          "max_ms": 1.839104,
+          "median_ms": 0.616448,
+          "p95_ms": 1.256448,
+          "p99_ms": 1.724416,
+          "samples": 1203
+        },
+        "Fireworks Multi-break": {
+          "max_ms": 1.313792,
+          "median_ms": 0.408576,
+          "p95_ms": 0.83456,
+          "p99_ms": 1.089536,
+          "samples": 1949
+        },
+        "Fireworks Strobe": {
+          "max_ms": 0.905216,
+          "median_ms": 0.301056,
+          "p95_ms": 0.635904,
+          "p99_ms": 0.846848,
+          "samples": 814
+        }
+      },
+      "app_update_wall_ms": {
+        "max_ms": 72.9718,
+        "median_ms": 3.8138,
+        "p95_ms": 10.665,
+        "p99_ms": 16.9412,
+        "samples": 1680
+      },
+      "peak_async_alive": 648,
+      "peak_async_smoke": 0,
+      "peak_active_clips": 6,
+      "peak_sort_pairs": 0,
+      "peak_sort_owned_bytes": 0,
+      "late_sort_allocations": 0,
+      "retired_sort_bytes": 0,
+      "max_observed_fixed_ticks_per_simulation_window": 2,
+      "observed_checkpoint_capture_bytes": 0,
+      "admission": [],
+      "final_populations": []
+    }
+  ],
+  "sources": [
+    {
+      "path": "assets/test/effects/fireworks_chrysanthemum.aestra.ron",
+      "sha256": "B4223D30FD5870D3FCF7D48AB857785D2E625C734001156EC6E024DEC9235C43"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle.aestra.ron",
+      "sha256": "4414A563BBFC7C7A02447AD044EAF7DA7189C6DE24EED4EA88E57C7610C21D63"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette.aestra.ron",
+      "sha256": "4E9A0E1BAF488865215E84016C031E7992E4530DE957FC49537225E181C68F56"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break.aestra.ron",
+      "sha256": "91CD5B6C696F37C988F59E33802EE99AD6C15C3A67D9692055D7F078D0AA7E78"
+    },
+    {
+      "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron",
+      "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_particle_smoke_overlap.aestra.ron",
+      "sha256": "60C11B199D1E37EF105EF237A5575CD390C6E07FA53B716F1D13F59DD3C3F532"
+    },
+    {
+      "path": "assets/test/effects/fireworks_peony.aestra.ron",
+      "sha256": "2D1CB90697E9227E2FD8FA03385653CCFCA60927409B9E753692F32B779B0C32"
+    },
+    {
+      "path": "assets/test/effects/fireworks_pistil.aestra.ron",
+      "sha256": "EDED6581E2E7791DABDCDEFD8FCBBD3BC17E30D55E5875AE5AE12E7185EA5D49"
+    },
+    {
+      "path": "assets/test/effects/fireworks_reference_hero.aestra.ron",
+      "sha256": "89C5FDCE6152F0BEB789C16ACF523261F5770257BAA415E8B421BE454B457092"
+    },
+    {
+      "path": "assets/test/effects/fireworks_secondary_volley.aestra.ron",
+      "sha256": "E32D3BC3293AC9B8226499822B1763135E55EDF7530B69C5C0FAAB2D06036838"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show.aestra.ron",
+      "sha256": "DD2BC77CC19AAA84CFCDCCB24A5C1554B168F5EA664541EA4C28882E09A4C011"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron",
+      "sha256": "1EC41EB51EDBF14CED1631C3DEEE50B1FC4459F1F03B2BA3262FB8D2AF6105B6"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_lighting.aestra.ron",
+      "sha256": "1AA6948E412DF8C7211DE9347449980C650254935983B5831613252EA51D790F"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron",
+      "sha256": "0A32D0AA5DDA578830A7D1359633FB1A33C6F0EADCF59FB92E9611845E0C3E40"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe.aestra.ron",
+      "sha256": "C8CA64F617ABD86EFA1273C991676D58DB732A602D42ABF8092E0EDA7D19CA00"
+    },
+    {
+      "path": "assets/test/effects/fireworks_willow.aestra.ron",
+      "sha256": "D4151B1932ABDED733F2BE7F9A2AB571CF91FBB7FA7E3C857E2FB6A0DD762914"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/smoke_live_costs.rs",
+      "sha256": "CE0E6393C1410B77DEF58EBE2ECE91949698DB7332846F1C4A14DB0597CFEF33"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "5B4AFAF39414CEBDB7EB3F4FED5A6FBAB297F7B9D6F193F3C6D167457918A39A"
+    },
+    {
+      "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+      "sha256": "AAD54811F97C408B0C76ECE6E0A3CC9875CC203D5D942C420A8BDE1BC3C76FCF"
+    },
+    {
+      "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron",
+      "sha256": "C1E37B06BB5E9DE3109FC87784122A23604A902884037DF5F9E752C432661CC4"
+    },
+    {
+      "path": "assets/test/materials/smoke_billow.aestra.material-function.ron",
+      "sha256": "6A8818220A54B6980B751601C22763B8318E73DE8C50387816E89E3BD5456C21"
+    }
+  ]
+}

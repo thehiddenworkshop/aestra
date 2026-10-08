@@ -237,11 +237,13 @@ one 96-slot pool and the F8.1A lit billow material. Smoke persists, overlaps and
 18 seconds. Only smoke contributes visible sprite pixels; the launch emitters have
 schema-required zero-opacity markers, and stars have no renderers.
 
-Representative flashes bind the **parent rocket's `OnDeath`**, while selected moving lights
-follow the child stars. This distinction matters: the current GPU event/domain spawn path
-does not append child `OnSpawn` output records. Do not bind a child-birth host cue expecting
-that path to deliver it; this remains a separate runtime-output gap, not resolved by this lab.
-The initial failed child-output attempt is retained in the evidence.
+Representative flashes now bind accepted **child-star `OnSpawn`** outputs (F8.1B2), while
+selected moving lights follow those stars. GPU event/domain/input births append a bounded,
+deterministic prefix of accepted children to the existing output capture; rejected births
+produce no cue, replay stays silent and restart permits fresh cues. The unchanged 1,024-record
+per-emitter/tick capture and bounded asynchronous host ring are not a lossless gameplay bus.
+The earlier failed child-output attempt and parent-`OnDeath` qualification remain in the
+evidence. See [`child-birth-outputs-2026-10-08.md`](../../benchmarks/fireworks/child-birth-outputs-2026-10-08.md).
 
 All tiers preserve the same smoke density; only selected-light caps change (8/4/2).
 The native gate checks exact asynchronous link admission/drop totals, no smoke before the
@@ -250,6 +252,29 @@ break with younger smoke removed. Density, independent light families, frozen re
 drain and owner cleanup have separate controls. This is a bounded correctness qualification,
 not photo-approved smoke art, cross-draw transparency or live/full-show performance.
 See [`smoke-cohorts-2026-10-08.md`](../../benchmarks/fireworks/smoke-cohorts-2026-10-08.md).
+
+## Live smoke cost qualification (F8.1C1)
+
+The viewer's explicit native test measures the same saved cohort asset during forward
+playback, not paused screenshots. It compares one pool (64 smoke particles) and four
+coincident roots (256 smoke particles) against test-only no-smoke-draw controls, keeping
+births, simulation, output routes, capacities and lighting identical. The four-root case is
+a synthetic cost stress, **not authored choreography or cross-draw sorting acceptance**.
+The saved 26-second show's existing unlit smoke is measured separately, without silently
+replacing its assets. No viewer instrumentation is imported into this public host.
+
+Measurements use playback-only history, fixed 60 Hz, a 960×540 LDR target, async GPU
+diagnostic deduplication and separate per-source simulation timings. They exclude this
+example's HDR environment/audio and are not production-finale, whole-game or frame-paired
+incremental-cost proof. The suite checks real particle populations/admission, stable sort
+allocation and owner retirement; pass percentiles must not be summed.
+
+Live sampling also exposes a cleanup gap: stateful float accumulation can stop short of
+the last fixed tick at the `Once` boundary, leaving a fully faded smoke particle alive.
+The report retains the actual final counts; no seek hides the gap. Fixing clock agreement
+and proving final-tick cleanup precede show migration. See
+[`smoke-live-costs-2026-10-08.md`](../../benchmarks/fireworks/smoke-live-costs-2026-10-08.md)
+for the reproducible native command, costs and remaining acceptance gates.
 
 ## Normal show status
 

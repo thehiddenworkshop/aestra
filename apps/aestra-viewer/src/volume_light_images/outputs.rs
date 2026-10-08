@@ -63,6 +63,16 @@ fn headless_project(
     overlap: bool,
     project: Arc<aestra_bevy::CompiledEffectProject>,
 ) -> (App, Entity, Handle<Image>) {
+    headless_project_timing(tier, particle_smoke, overlap, project, false)
+}
+
+fn headless_project_timing(
+    tier: &str,
+    particle_smoke: bool,
+    overlap: bool,
+    project: Arc<aestra_bevy::CompiledEffectProject>,
+    frame_timing: bool,
+) -> (App, Entity, Handle<Image>) {
     aestra_fluid::link();
     let mut app = App::new();
     app.add_plugins(
@@ -100,6 +110,10 @@ fn headless_project(
     .init_resource::<Captured>()
     .init_resource::<CaptureRenderReadiness>();
     policy(tier).apply(app.world_mut()).unwrap();
+    if frame_timing {
+        // Install before cleanup moves the render sub-app to its pipelined thread.
+        crate::particle_light_bench::install_frame_timing(&mut app);
+    }
     if particle_smoke && tier == "high" {
         app.add_plugins(bevy::log::LogPlugin {
             level: bevy::log::Level::ERROR,
@@ -152,6 +166,9 @@ mod persistence;
 
 #[path = "smoke_cohorts.rs"]
 mod cohorts;
+
+#[path = "smoke_live_costs.rs"]
+mod live_costs;
 
 fn advance(app: &mut App, owner: Entity, target: u64) {
     app.world_mut()
