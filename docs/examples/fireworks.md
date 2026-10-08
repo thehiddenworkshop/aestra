@@ -253,7 +253,7 @@ drain and owner cleanup have separate controls. This is a bounded correctness qu
 not photo-approved smoke art, cross-draw transparency or live/full-show performance.
 See [`smoke-cohorts-2026-10-08.md`](../../benchmarks/fireworks/smoke-cohorts-2026-10-08.md).
 
-## Live smoke cost qualification (F8.1C1)
+## Live smoke costs and exact cleanup (F8.1C1–C2)
 
 The viewer's explicit native test measures the same saved cohort asset during forward
 playback, not paused screenshots. It compares one pool (64 smoke particles) and four
@@ -269,12 +269,18 @@ example's HDR environment/audio and are not production-finale, whole-game or fra
 incremental-cost proof. The suite checks real particle populations/admission, stable sort
 allocation and owner retirement; pass percentiles must not be summed.
 
-Live sampling also exposes a cleanup gap: stateful float accumulation can stop short of
-the last fixed tick at the `Once` boundary, leaving a fully faded smoke particle alive.
-The report retains the actual final counts; no seek hides the gap. Fixing clock agreement
-and proving final-tick cleanup precede show migration. See
+The historical C1 run exposed a cleanup gap: stateful float accumulation stopped short of
+the last fixed tick at the `Once` boundary, leaving faded smoke alive. Its failed cleanup
+counts remain recorded. F8.1C2 now uses exact per-tick clock snapshots, boundary-aware GPU
+target ticks and fixed-grid CPU/GPU particle ages. The stricter 30-run native matrix
+proves zero populations in all 60 cohort-root observations at exactly 18 seconds, without
+seek, replay or forced clearing. Two final image runs match all 84 captures; timing fixes
+change 66 captures from the historical baseline. See
 [`smoke-live-costs-2026-10-08.md`](../../benchmarks/fireworks/smoke-live-costs-2026-10-08.md)
-for the reproducible native command, costs and remaining acceptance gates.
+for historical costs and
+[`smoke-final-tick-2026-10-08.md`](../../benchmarks/fireworks/smoke-final-tick-2026-10-08.md)
+for corrected costs, cleanup and reproduction. The next gate is an opt-in saved-show
+candidate with lit persistent smoke under authored overlap; the normal show remains unlit.
 
 ## Normal show status
 

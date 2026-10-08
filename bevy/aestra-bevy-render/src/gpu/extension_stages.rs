@@ -72,8 +72,8 @@ impl GpuStageProgress {
 
 fn progress_target_tick(time: f32, tick_dt: f32, coupled: bool) -> u32 {
     if coupled {
-        // Match run_coupled_stateful exactly, including its rounding at float tick boundaries.
-        (time.max(0.0) / STATEFUL_TICK_DT) as u32
+        // Match particles, binding traces and output suppression at exact clock boundaries.
+        aestra_runtime::trace_tick(time).min(u64::from(u32::MAX)) as u32
     } else {
         (time.max(0.0) / tick_dt + 1e-3).floor() as u32
     }
@@ -1537,13 +1537,12 @@ mod tests {
     }
 
     #[test]
-    fn stage_progress_matches_coupled_and_independent_float_tick_rounding() {
+    fn stage_progress_matches_coupled_clock_boundaries_and_independent_ticks() {
         let dt = TimelinePolicy::default().tick_dt;
         assert_eq!(progress_target_tick(2.0, dt, false), 120);
-        assert_eq!(
-            progress_target_tick(2.0, dt, true),
-            (2.0 / STATEFUL_TICK_DT) as u32
-        );
+        assert_eq!(progress_target_tick(2.0, dt, true), 120);
+        assert_eq!(progress_target_tick(18.0, dt, true), 1080);
+        assert_eq!(progress_target_tick(18.0_f32.next_down(), dt, true), 1079);
         assert_eq!(progress_target_tick(2.001, dt, false), 120);
         assert_eq!(progress_target_tick(2.001, dt, true), 120);
     }

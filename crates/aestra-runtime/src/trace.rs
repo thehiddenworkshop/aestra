@@ -14,8 +14,19 @@ use crate::{
 use aestra_core::BindingUpdateMode;
 
 /// The fixed tick a playback time falls in, as the stateful backends count them.
+/// A clock's rounded f32 representation of an exact tick boundary maps back to that
+/// tick. Other sub-tick times still floor; even the previous representable float is
+/// not promoted. Dividing by an f32 reciprocal loses final ticks (18s became 1079).
 pub fn trace_tick(time: f32) -> u64 {
-    (time.max(0.0) / StatefulSimulation::TICK_DT) as u64
+    let time = time.max(0.0);
+    let rate = f64::from(crate::DEFAULT_PLAYBACK_TICK_RATE);
+    let ticks = f64::from(time) * rate;
+    let nearest = ticks.round();
+    if time == (nearest / rate) as f32 {
+        nearest as u64
+    } else {
+        ticks.floor() as u64
+    }
 }
 
 /// An effect's binding frames, one per fixed tick from tick 0. Past its end the last frame holds.
@@ -239,5 +250,25 @@ impl crate::CompiledAttachment {
                 last
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clock_boundaries_round_trip_without_promoting_subtick_times() {
+        let clock = crate::PlaybackClock::default();
+        for tick in 1..=216_000 {
+            let time = clock.time_for_frame(tick, 3600.0);
+            assert_eq!(trace_tick(time), tick, "tick {tick}, time {time}");
+            assert_eq!(trace_tick(time.next_down()), tick - 1, "before tick {tick}");
+            assert_eq!(trace_tick(time.next_up()), tick, "after tick {tick}");
+            assert_eq!(trace_tick((tick as f64 / 60.0 + 0.5 / 60.0) as f32), tick);
+        }
+        assert_eq!(trace_tick(18.0), 1080);
+        assert_eq!(trace_tick(-1.0), 0);
+        assert_eq!(trace_tick(0.0), 0);
     }
 }

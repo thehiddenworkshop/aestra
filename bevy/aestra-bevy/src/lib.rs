@@ -588,7 +588,6 @@ impl EffectPlayer {
         if result.ticks == 0 {
             return result;
         }
-        let tick_seconds = 1.0 / self.driver.clock.tick_rate() as f32;
         if let Some(project) = &self.project {
             self.project_choreography_events = project.choreography_events_for_clock_advance(
                 previous_clock,
@@ -612,10 +611,15 @@ impl EffectPlayer {
                     self.driver.clock.frame().saturating_sub(previous_frame)
                 };
                 let mut events = Vec::new();
+                let mut tick_clock = previous_clock;
                 for _ in 0..ticks {
-                    self.driver
-                        .instance
-                        .advance_with_choreography_events(tick_seconds, &mut events);
+                    let previous_tick = tick_clock;
+                    tick_clock.advance_ticks(1, duration, looping);
+                    self.driver.instance.advance_clock_with_choreography_events(
+                        previous_tick,
+                        tick_clock,
+                        &mut events,
+                    );
                     self.choreography_events.append(&mut events);
                 }
             }

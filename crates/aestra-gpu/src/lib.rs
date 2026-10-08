@@ -1725,7 +1725,9 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         state[base + 3u] = collision.velocity.x;
         state[base + 4u] = collision.velocity.y;
         state[base + 5u] = collision.velocity.z;
-        var new_age = age + dt;
+        // Ages start at zero on the fixed grid. Do not accumulate f32 drift into
+        // parent deaths, child birth timing or final-tick cleanup.
+        var new_age = (round(age / dt) + 1.0) * dt;
         if (collision.killed) { new_age = lifetime; }
         state[base + 6u] = new_age;
         // A contact (host bindings HB9b): a kill, or a bounce that moved or redirected the particle.

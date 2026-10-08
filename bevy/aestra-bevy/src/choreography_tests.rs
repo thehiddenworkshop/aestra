@@ -32,9 +32,7 @@ fn compile(root: &EffectAsset, children: &[EffectAsset]) -> Arc<CompiledEffectPr
     })
 }
 
-/// The compiler currently only emits `StatelessDirect`; force `CheckpointRestore`
-/// so the scrub-cache path can be exercised (matching the editor's dormant
-/// checkpoint machinery, ready for when the compiler emits it).
+/// Force stateful seeking on a minimal effect to isolate the driver's scrub cache.
 fn checkpoint_effect(name: &str, duration: f32) -> Arc<CompiledEffect> {
     let mut compiled = EffectCompiler::default()
         .compile(&EffectAsset::new(name, duration))
@@ -90,7 +88,8 @@ fn playback_driver_seek_scrub_and_advance() {
             &ctx,
         );
     }
-    assert!(forward.frame() >= 58);
+    assert_eq!(forward.frame(), 60);
+    assert_eq!(forward.instance.time(), 1.0);
     assert!(!forward.checkpoints().unwrap().is_empty());
 }
 
@@ -337,95 +336,160 @@ fn player_fixture() -> Arc<CompiledEffectProject> {
 }
 
 #[test]
-fn analytic_clock_cues_and_history_share_exact_loop_boundaries() {
-    for mode in [
-        EffectPlaybackMode::Once,
-        EffectPlaybackMode::LoopRestart,
-        EffectPlaybackMode::LoopContinuous,
+fn clock_cues_and_history_share_exact_loop_boundaries_in_all_seek_modes() {
+    for seek_mode in [
+        SimulationSeekMode::StatelessDirect,
+        SimulationSeekMode::CheckpointRestore,
+        SimulationSeekMode::RestartReplay,
+    ] {
+        for mode in [
+            EffectPlaybackMode::Once,
+            EffectPlaybackMode::LoopRestart,
+            EffectPlaybackMode::LoopContinuous,
+        ] {
+            for policy in [
+                PlaybackHistoryPolicy::PlaybackOnly,
+                PlaybackHistoryPolicy::ReplayEnabled,
+            ] {
+                let mut source = notified("Root", 0.31, &[0.0, 0.05, 0.1, 0.31]);
+                source.playback_mode = mode;
+                let mut project = (*compile(&source, &[])).clone();
+                Arc::make_mut(&mut project.root).seek_mode = seek_mode;
+                let mut single =
+                    EffectPlayer::from_compiled(project.root.clone()).with_history_policy(policy);
+                let project = Arc::new(project);
+                let mut nested = EffectPlayer::from_project(project).with_history_policy(policy);
+                let mut fine_events = Vec::new();
+                let initial_epoch = single.instance().history_epoch();
+                for tick in 1..=114 {
+                    // Speed/batched ticks must use the same exact boundary as fine playback.
+                    single.speed = 2.0;
+                    nested.speed = 2.0;
+                    single.advance_clock(1.0 / 120.0);
+                    nested.advance_clock(1.0 / 120.0);
+                    let events: Vec<_> = single.drain_choreography_events().collect();
+                    assert_eq!(
+                        events,
+                        nested.drain_choreography_events().collect::<Vec<_>>()
+                    );
+                    fine_events.extend(events);
+                    let wraps = if mode == EffectPlaybackMode::LoopRestart {
+                        tick / 19
+                    } else {
+                        0
+                    };
+                    assert_eq!(single.instance().history_epoch(), initial_epoch + wraps);
+                    assert_eq!(nested.instance().history_epoch(), initial_epoch + wraps);
+                    assert_eq!(single.simulation_time(), nested.simulation_time());
+                }
+                let mut coarse = EffectPlayer::from_compiled(single.effect().clone())
+                    .with_history_policy(policy);
+                // f32 1.9 is below the exact 114-tick boundary; leave sub-tick headroom.
+                coarse.advance_clock(1.901);
+                assert_eq!(
+                    fine_events,
+                    coarse.drain_choreography_events().collect::<Vec<_>>()
+                );
+                assert_eq!(single.simulation_time(), coarse.simulation_time());
+                assert_eq!(
+                    coarse.instance().history_epoch(),
+                    if mode != EffectPlaybackMode::LoopRestart {
+                        0
+                    } else if seek_mode == SimulationSeekMode::StatelessDirect {
+                        1
+                    } else {
+                        6
+                    }
+                );
+
+                let before = single.instance().history_epoch();
+                single.seek_frame(0);
+                assert!(single.instance().history_epoch() > before);
+                assert_eq!(single.simulation_time(), 0.0);
+                let after_seek = single.instance().history_epoch();
+                single.speed = 0.0;
+                single.advance_clock(1.0);
+                assert_eq!(single.instance().history_epoch(), after_seek);
+                assert_eq!(single.drain_choreography_events().count(), 0);
+                single.speed = 1.0;
+                single.advance_clock(1.0 / 60.0);
+                assert_eq!(single.instance().history_epoch(), after_seek);
+                assert_eq!(
+                    single.drain_choreography_events().count(),
+                    0,
+                    "seek stays silent at time zero: {mode:?}, {seek_mode:?}, {policy:?}"
+                );
+                single.restart();
+                assert!(single.instance().history_epoch() > after_seek);
+                let after_restart = single.instance().history_epoch();
+                single.advance_clock(1.0 / 60.0);
+                assert_eq!(single.instance().history_epoch(), after_restart);
+                assert_eq!(
+                    single
+                        .drain_choreography_events()
+                        .map(|e| e.time)
+                        .collect::<Vec<_>>(),
+                    [0.0]
+                );
+
+                // A one-ULP external backward correction is still a real discontinuity;
+                // the fix must not weaken set_playback_time with a global tolerance.
+                let instance = &mut single.driver.instance;
+                let before = instance.history_epoch();
+                instance.set_playback_time(instance.time().next_down());
+                assert_eq!(instance.history_epoch(), before + 1);
+                let before = instance.history_epoch();
+                instance.set_seed(instance.seed().wrapping_add(1));
+                assert!(instance.history_epoch() > before);
+            }
+        }
+    }
+}
+
+#[test]
+fn stateful_live_and_replayed_once_clocks_land_on_the_exact_final_tick() {
+    for seek_mode in [
+        SimulationSeekMode::CheckpointRestore,
+        SimulationSeekMode::RestartReplay,
     ] {
         for policy in [
             PlaybackHistoryPolicy::PlaybackOnly,
             PlaybackHistoryPolicy::ReplayEnabled,
         ] {
-            let mut source = notified("Root", 0.31, &[0.0, 0.05, 0.1, 0.31]);
-            source.playback_mode = mode;
-            let project = compile(&source, &[]);
-            let mut single = EffectPlayer::new(&source).with_history_policy(policy);
-            let mut nested = EffectPlayer::from_project(project).with_history_policy(policy);
-            let mut fine_events = Vec::new();
-            let initial_epoch = single.instance().history_epoch();
-            for tick in 1..=114 {
-                // Speed/batched ticks must use the same exact boundary as fine playback.
-                single.speed = 2.0;
-                nested.speed = 2.0;
-                single.advance_clock(1.0 / 120.0);
-                nested.advance_clock(1.0 / 120.0);
-                let events: Vec<_> = single.drain_choreography_events().collect();
-                assert_eq!(
-                    events,
-                    nested.drain_choreography_events().collect::<Vec<_>>()
-                );
-                fine_events.extend(events);
-                let wraps = if mode == EffectPlaybackMode::LoopRestart {
-                    tick / 19
-                } else {
-                    0
-                };
-                assert_eq!(single.instance().history_epoch(), initial_epoch + wraps);
-                assert_eq!(nested.instance().history_epoch(), initial_epoch + wraps);
-                assert_eq!(single.simulation_time(), nested.simulation_time());
+            let source = notified("Final tick", 18.0, &[0.0, 2.0, 4.0, 18.0]);
+            let mut effect = EffectCompiler::default().compile(&source).unwrap();
+            effect.seek_mode = seek_mode;
+            let effect = Arc::new(effect);
+            for batch in [1, 7, 1080] {
+                let mut player =
+                    EffectPlayer::from_compiled(effect.clone()).with_history_policy(policy);
+                if policy.captures_checkpoints() {
+                    player.enable_scrub_cache(CheckpointPolicy::default());
+                }
+                let epoch = player.instance().history_epoch();
+                let mut cues = Vec::new();
+                while player.frame() < 1080 {
+                    player.advance_clock(batch as f32 / 60.0);
+                    assert_eq!(player.simulation_time(), player.driver.clock.time(18.0));
+                    assert_eq!(player.instance().history_epoch(), epoch);
+                    cues.extend(player.drain_choreography_events().map(|event| event.time));
+                }
+                assert_eq!(player.simulation_time(), 18.0);
+                assert_eq!(cues, [0.0, 2.0, 4.0, 18.0]);
+                player.advance_clock(1.0);
+                assert_eq!(player.simulation_time(), 18.0);
+                assert_eq!(player.drain_choreography_events().count(), 0);
+                player.seek_frame(121);
+                assert_eq!(player.simulation_time(), 121.0 / 60.0);
+                assert_eq!(player.drain_choreography_events().count(), 0);
+                player.seek_frame(1080);
+                assert_eq!(player.simulation_time(), 18.0);
+                assert_eq!(player.drain_choreography_events().count(), 0);
+                player.restart();
+                player.advance_clock(18.0);
+                assert_eq!(player.simulation_time(), 18.0);
+                assert_eq!(player.drain_choreography_events().count(), 4);
             }
-            let mut coarse = EffectPlayer::new(&source).with_history_policy(policy);
-            // f32 1.9 is below the exact 114-tick boundary; leave sub-tick headroom.
-            coarse.advance_clock(1.901);
-            assert_eq!(
-                fine_events,
-                coarse.drain_choreography_events().collect::<Vec<_>>()
-            );
-            assert_eq!(single.simulation_time(), coarse.simulation_time());
-            assert_eq!(
-                coarse.instance().history_epoch(),
-                u32::from(mode == EffectPlaybackMode::LoopRestart)
-            );
-
-            let before = single.instance().history_epoch();
-            single.seek_frame(0);
-            assert!(single.instance().history_epoch() > before);
-            let after_seek = single.instance().history_epoch();
-            single.speed = 0.0;
-            single.advance_clock(1.0);
-            assert_eq!(single.instance().history_epoch(), after_seek);
-            assert_eq!(single.drain_choreography_events().count(), 0);
-            single.speed = 1.0;
-            single.advance_clock(1.0 / 60.0);
-            assert_eq!(single.instance().history_epoch(), after_seek);
-            assert_eq!(
-                single.drain_choreography_events().count(),
-                0,
-                "seek stays silent at time zero"
-            );
-            single.restart();
-            assert!(single.instance().history_epoch() > after_seek);
-            let after_restart = single.instance().history_epoch();
-            single.advance_clock(1.0 / 60.0);
-            assert_eq!(single.instance().history_epoch(), after_restart);
-            assert_eq!(
-                single
-                    .drain_choreography_events()
-                    .map(|e| e.time)
-                    .collect::<Vec<_>>(),
-                [0.0]
-            );
-
-            // A one-ULP external backward correction is still a real discontinuity;
-            // the fix must not weaken set_playback_time with a global tolerance.
-            let instance = &mut single.driver.instance;
-            let before = instance.history_epoch();
-            instance.set_playback_time(instance.time().next_down());
-            assert_eq!(instance.history_epoch(), before + 1);
-            let before = instance.history_epoch();
-            instance.set_seed(instance.seed().wrapping_add(1));
-            assert!(instance.history_epoch() > before);
         }
     }
 }

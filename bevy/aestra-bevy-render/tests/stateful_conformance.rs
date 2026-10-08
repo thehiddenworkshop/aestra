@@ -240,7 +240,7 @@ fn advance(@builtin(global_invocation_id) gid: vec3<u32>) {
         state[base + 0u] = state[base + 0u] + vx * dt;
         state[base + 1u] = state[base + 1u] + vy * dt;
         state[base + 2u] = state[base + 2u] + vz * dt;
-        state[base + 6u] = age + dt;
+        state[base + 6u] = (round(age / dt) + 1.0) * dt;
     } else if (slot < to_spawn_end) {
         let direction = vec3<f32>(bitcast<f32>(params[13]), bitcast<f32>(params[14]), bitcast<f32>(params[15]));
         let velocity = spawn_launch_velocity(
@@ -321,7 +321,7 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         state[base + 3u] = collision.velocity.x;
         state[base + 4u] = collision.velocity.y;
         state[base + 5u] = collision.velocity.z;
-        var new_age = age + dt;
+        var new_age = (round(age / dt) + 1.0) * dt;
         if (collision.killed) { new_age = lifetime; }
         state[base + 6u] = new_age;
         if (new_age >= lifetime) {

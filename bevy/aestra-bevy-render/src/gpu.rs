@@ -3560,7 +3560,7 @@ fn dispatch_stateful_effect(
     simulation_time: f32,
     seek_quality: SeekQuality,
 ) {
-    let target_tick = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
+    let target_tick = aestra_runtime::trace_tick(simulation_time).min(u64::from(u32::MAX)) as u32;
     // A changed host input history (event system E2–E3) replays from where it differs; a replay is
     // not live.
     let rewind = persistent.rewind.take();
@@ -3723,7 +3723,7 @@ fn run_coupled_stateful(
         })
         .collect();
     let counter_base = event_link_counter_base(dispatches);
-    let target = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
+    let target = aestra_runtime::trace_tick(simulation_time).min(u64::from(u32::MAX)) as u32;
     let last = persistent_states.first().map_or(0, |state| state.last_tick);
     let in_step = persistent_states
         .iter()

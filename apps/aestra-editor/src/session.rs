@@ -426,6 +426,7 @@ impl EditorSession {
         }
         let duration = self.playback_duration();
         let playback_mode = self.playback_mode();
+        let previous_clock = self.driver.clock;
         let result = self.driver.clock.advance(
             delta_seconds,
             self.speed,
@@ -436,9 +437,21 @@ impl EditorSession {
         // the editor only checkpoints during scrub-replay. (Seek/scrub delegates to the
         // driver; this advance loop stays host-specific — M-CR2.)
         if self.seek_mode() != SimulationSeekMode::StatelessDirect && self.preview_valid {
-            let tick_seconds = 1.0 / self.driver.clock.tick_rate() as f32;
-            for _ in 0..result.ticks {
-                self.driver.instance.advance(tick_seconds);
+            let ticks = if playback_mode.is_looping() {
+                result.ticks
+            } else {
+                self.driver
+                    .clock
+                    .frame()
+                    .saturating_sub(previous_clock.frame())
+            };
+            let mut tick_clock = previous_clock;
+            for _ in 0..ticks {
+                let previous_tick = tick_clock;
+                tick_clock.advance_ticks(1, duration, playback_mode.is_looping());
+                self.driver
+                    .instance
+                    .advance_clock(previous_tick, tick_clock);
             }
         }
         if result.reached_end {
@@ -3667,6 +3680,35 @@ mod tests {
         assert_eq!(session.seek_status(), "DIRECT SEEK · GPU TRAIL REPLAY");
         assert_eq!(session.frame(), 45);
         assert!(!session.playing);
+    }
+
+    #[test]
+    fn stateful_live_preview_and_scrubbing_use_exact_clock_times() {
+        for mode in [
+            SimulationSeekMode::CheckpointRestore,
+            SimulationSeekMode::RestartReplay,
+        ] {
+            let mut session = test_support::session_with_timing_slack();
+            session.effect.duration = 18.0;
+            session.effect.playback_mode = EffectPlaybackMode::Once;
+            set_seek_mode(&mut session, mode);
+            session.playing = true;
+            let epoch = session.driver.instance.history_epoch();
+            for _ in 0..1080 {
+                session.advance_playback(1.0 / 60.0);
+                assert_eq!(
+                    session.driver.instance.time(),
+                    session.driver.clock.time(18.0)
+                );
+                assert_eq!(session.driver.instance.history_epoch(), epoch);
+            }
+            assert!(!session.playing);
+            assert_eq!(session.driver.instance.time(), 18.0);
+            session.seek_time(2.0);
+            assert_eq!(session.driver.instance.time(), 2.0);
+            session.seek_time(18.0);
+            assert_eq!(session.driver.instance.time(), 18.0);
+        }
     }
 
     #[test]

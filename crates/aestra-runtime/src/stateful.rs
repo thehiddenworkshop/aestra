@@ -620,7 +620,9 @@ impl StatefulSimulation {
             if killed {
                 particle.age = particle.lifetime;
             } else {
-                particle.age += dt;
+                // Ages start at zero and advance only on this fixed grid. Rebuild
+                // from the age tick instead of accumulating f32 error into deaths.
+                particle.age = ((particle.age / dt).round() + 1.0) * dt;
             }
             if particle.age >= particle.lifetime {
                 deaths.push(event);
@@ -1128,6 +1130,41 @@ mod tests {
             collider_count: 0,
             capacity: 128,
             homing: None,
+        }
+    }
+
+    #[test]
+    fn exact_lifetimes_retire_on_their_fixed_tick_without_accumulated_age_drift() {
+        for lifetime in [2.0, 14.0, 240.0] {
+            let mut simulation = StatefulSimulation::new(
+                StatefulConfig {
+                    spawn_per_tick: 0,
+                    lifetime: (lifetime, lifetime),
+                    capacity: 1,
+                    turbulence: 0.0,
+                    ..config()
+                },
+                7,
+            );
+            simulation.spawn_from_events(
+                &[ParticleEvent {
+                    ordinal: 0,
+                    position: [0.0; 3],
+                    velocity: [0.0; 3],
+                }],
+                1,
+                0.0,
+            );
+            let death_tick = crate::trace_tick(lifetime);
+            simulation.advance_to_tick(death_tick - 1);
+            assert_eq!(simulation.live_count(), 1);
+            simulation.advance_tick();
+            assert_eq!(simulation.tick(), death_tick);
+            assert_eq!(simulation.live_count(), 0, "lifetime {lifetime}");
+            assert_eq!(
+                simulation.events(aestra_core::EventTrigger::OnDeath).len(),
+                1
+            );
         }
     }
 

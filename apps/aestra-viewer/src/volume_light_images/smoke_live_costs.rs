@@ -286,10 +286,14 @@ fn run(tier: &str, case: Case) -> Json {
                 .unwrap()
                 .observation(&effect.instance)
                 .unwrap();
-            // Preserve the observed live Once tail. Float-accumulated stateful time
-            // currently stops short of the final fixed tick; do not seek to conceal
-            // that cleanup gap. Retiring the owner must still release all resources.
-            assert!(counts[1..].iter().all(|count| *count == 0));
+            // This must be natural forward-playback cleanup, not a corrective seek,
+            // owner retirement, or an image-only assertion about fully faded smoke.
+            assert_eq!(effect.instance.time(), 18.0);
+            assert_eq!(observed_time, 18.0);
+            assert!(
+                counts.iter().all(|count| *count == 0),
+                "final live populations: {counts:?}"
+            );
             final_populations.push(json!({"observed_time":observed_time,"counts":counts,
                 "smoke_drained":counts[0] == 0,"playback_time":effect.instance.time()}));
         }

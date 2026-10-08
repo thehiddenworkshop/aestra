@@ -1754,6 +1754,16 @@ impl PlaybackClock {
             return ClockAdvance::default();
         }
         self.accumulator = (self.accumulator - ticks as f64 * tick_duration).max(0.0);
+        self.advance_ticks(ticks, duration, looping)
+    }
+
+    /// Advance an exact number of playback ticks without rounding a seconds delta.
+    /// Unlike scrub stepping, this preserves the fractional accumulator and unwrapped
+    /// elapsed frame. Stateful hosts can use consecutive snapshots to advance each tick.
+    pub fn advance_ticks(&mut self, ticks: u64, duration: f32, looping: bool) -> ClockAdvance {
+        if ticks == 0 {
+            return ClockAdvance::default();
+        }
         let maximum = self.maximum_frame(duration);
         if looping {
             self.elapsed_frame = self.elapsed_frame.wrapping_add(ticks);
@@ -2078,7 +2088,36 @@ impl EffectInstance {
         self.sync_binding_trace();
     }
 
-    /// Advance analytic playback using the clock as the sole time authority, emitting
+    /// Advance playback using the clock as the sole time authority, without dispatching
+    /// cues. Stateful hosts should supply consecutive per-tick snapshots so binding
+    /// traces and restart-loop history are updated at every simulation tick.
+    pub fn advance_clock(&mut self, previous: PlaybackClock, current: PlaybackClock) {
+        if previous.tick_rate() != current.tick_rate()
+            || current.elapsed_frame <= previous.elapsed_frame
+        {
+            return;
+        }
+        let mode = self.effect.playback_mode;
+        let duration = self.effect.duration;
+        let frames = current.maximum_frame(duration);
+        if mode == EffectPlaybackMode::LoopRestart
+            && frames > 0
+            && (current.elapsed_frame / frames != previous.elapsed_frame / frames
+                || previous.frame() == frames)
+        {
+            self.mark_history_discontinuity();
+        }
+        // Integrating an f32 delta and correcting it downward would look like a
+        // backward seek to set_playback_time/trail history.
+        self.time = if mode.is_continuous() {
+            current.elapsed_time()
+        } else {
+            current.time(duration)
+        };
+        self.sync_binding_trace();
+    }
+
+    /// Advance playback using the clock as the sole time authority, emitting
     /// all crossed cues. Supply consecutive snapshots of the same forward-playing clock;
     /// repositioning/seeking must use the explicit seek APIs instead. Different tick rates
     /// or non-forward intervals are ignored. Restart loops invalidate history once per
@@ -2097,14 +2136,6 @@ impl EffectInstance {
         }
         let mode = self.effect.playback_mode;
         let duration = self.effect.duration;
-        let frames = current.maximum_frame(duration);
-        if mode == EffectPlaybackMode::LoopRestart
-            && frames > 0
-            && (current.elapsed_frame / frames != previous.elapsed_frame / frames
-                || previous.frame() == frames)
-        {
-            self.mark_history_discontinuity();
-        }
         project::for_each_clock_event_window(
             mode,
             duration,
@@ -2133,15 +2164,8 @@ impl EffectInstance {
                 );
             },
         );
-        // Do not first integrate an f32 delta and then correct it downward: that
-        // correction looks like a backward seek to set_playback_time/trail history.
-        self.time = if mode.is_continuous() {
-            current.elapsed_time()
-        } else {
-            current.time(duration)
-        };
+        self.advance_clock(previous, current);
         self.choreography_started = true;
-        self.sync_binding_trace();
     }
 
     /// Advances playback and emits every deterministic choreography event crossed by the
@@ -3038,6 +3062,24 @@ mod tests {
         assert_eq!(looping.frame(), 15);
         assert_eq!(looping.elapsed_time(), 1.25);
         assert!(!result.reached_end);
+    }
+
+    #[test]
+    fn exact_playback_ticks_preserve_fractional_time_and_loop_elapsed_frames() {
+        let mut clock = PlaybackClock::default();
+        clock.advance(1.0 / 120.0, 1.0, 0.31, true);
+        assert_eq!(clock.frame(), 0);
+        assert_eq!(clock.advance_ticks(0, 0.31, true), ClockAdvance::default());
+        clock.advance_ticks(38, 0.31, true);
+        assert_eq!(clock.frame(), 0);
+        assert_eq!(clock.elapsed_time(), 38.0 / 60.0);
+        clock.advance(1.0 / 120.0, 1.0, 0.31, true);
+        assert_eq!(clock.frame(), 1);
+        assert_eq!(clock.elapsed_time(), 39.0 / 60.0);
+        clock.restart();
+        assert!(clock.advance_ticks(2000, 18.0, false).reached_end);
+        assert_eq!(clock.frame(), 1080);
+        assert_eq!(clock.time(18.0), 18.0);
     }
 
     #[test]

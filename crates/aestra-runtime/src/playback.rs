@@ -119,20 +119,22 @@ impl PlaybackDriver {
         if !self.instance.history_policy().captures_checkpoints() {
             self.disable_checkpoints();
         }
-        let previous_frame = self.clock.frame();
+        let previous_clock = self.clock;
         let result = self.clock.advance(delta_seconds, speed, duration, looping);
         if result.ticks == 0 {
             return result;
         }
         if seek_mode != SimulationSeekMode::StatelessDirect {
-            let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
             let ticks = if looping {
                 result.ticks
             } else {
-                self.clock.frame().saturating_sub(previous_frame)
+                self.clock.frame().saturating_sub(previous_clock.frame())
             };
+            let mut tick_clock = previous_clock;
             for _ in 0..ticks {
-                self.instance.advance(tick_seconds);
+                let previous_tick = tick_clock;
+                tick_clock.advance_ticks(1, duration, looping);
+                self.instance.advance_clock(previous_tick, tick_clock);
             }
             self.record_checkpoint(seek_mode, context, self.clock.frame());
         }
@@ -167,11 +169,21 @@ impl PlaybackDriver {
             };
         }
         let current = self.clock.frame();
-        let plan = self
-            .checkpoints
-            .as_ref()
-            .map(|store| store.plan_seek(seek_mode, context, current, target))
-            .unwrap_or_else(|| cache_less_plan(current, target));
+        let plan = if self.clock.elapsed_frame != current {
+            // Frame-addressed scrubbing targets the first cycle, not the same phase
+            // of a later live cycle. Its state/checkpoints cannot be reused silently.
+            self.clear_checkpoints();
+            SeekPlan {
+                target_frame: target,
+                origin: SeekOrigin::Restart,
+                replay_ticks: target,
+            }
+        } else {
+            self.checkpoints
+                .as_ref()
+                .map(|store| store.plan_seek(seek_mode, context, current, target))
+                .unwrap_or_else(|| cache_less_plan(current, target))
+        };
         match plan.origin {
             SeekOrigin::Direct => {
                 // StatelessDirect handled above; reachable only if a cache ever
@@ -217,10 +229,10 @@ impl PlaybackDriver {
         seek_mode: SimulationSeekMode,
         context: &CheckpointContext,
     ) {
-        let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
         for _ in 0..ticks {
+            let previous = self.clock;
             self.clock.step_forward(duration);
-            self.instance.advance(tick_seconds);
+            self.instance.advance_clock(previous, self.clock);
             self.record_checkpoint(seek_mode, context, self.clock.frame());
         }
     }
