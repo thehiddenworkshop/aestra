@@ -8,7 +8,7 @@ use bevy::prelude::Resource;
 use std::{path::PathBuf, sync::Arc};
 
 pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
-pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-lighting | --particle-smoke-lighting] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-lighting plays the saved F8.3B fluid fixture; --particle-smoke-lighting plays F8.3C lit sprites (neither is the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
+pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-lighting | --particle-smoke-lighting | --smoke-persistence] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-lighting plays the saved F8.3B fluid fixture; --particle-smoke-lighting plays F8.3C lit sprites; --smoke-persistence plays the bounded F8.1A accumulating billow prototype (none is the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
 
 #[derive(Resource)]
 pub struct ShowProject(pub Arc<CompiledEffectProject>);
@@ -22,6 +22,7 @@ pub struct Options {
     pub audio_root: Option<PathBuf>,
     pub smoke_lighting: bool,
     pub particle_smoke_lighting: bool,
+    pub smoke_persistence: bool,
 }
 
 impl Options {
@@ -45,6 +46,7 @@ impl Options {
             tier: "high".into(),
             smoke_lighting: false,
             particle_smoke_lighting: false,
+            smoke_persistence: false,
             history: PlaybackHistoryPolicy::PlaybackOnly,
             project_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
             effect_path: "effects/fireworks_show.aestra.ron".into(),
@@ -57,7 +59,14 @@ impl Options {
         let mut args = args.into_iter();
         let mut explicit_effect = false;
         let mut fluid_lab = false;
+        let mut particle_lab = false;
         while let Some(arg) = args.next() {
+            if arg == "--smoke-persistence" {
+                options.smoke_lighting = true;
+                options.particle_smoke_lighting = true;
+                options.smoke_persistence = true;
+                continue;
+            }
             if arg == "--smoke-lighting" {
                 options.smoke_lighting = true;
                 fluid_lab = true;
@@ -66,6 +75,7 @@ impl Options {
             if arg == "--particle-smoke-lighting" {
                 options.smoke_lighting = true;
                 options.particle_smoke_lighting = true;
+                particle_lab = true;
                 continue;
             }
             if arg == "--no-audio" {
@@ -99,15 +109,21 @@ impl Options {
             }
         }
         if options.smoke_lighting && !explicit_effect {
-            options.effect_path = if options.particle_smoke_lighting {
+            options.effect_path = if options.smoke_persistence {
+                "effects/fireworks_smoke_persistence.aestra.ron"
+            } else if options.particle_smoke_lighting {
                 "effects/fireworks_particle_smoke_lighting.aestra.ron"
             } else {
                 "effects/fireworks_smoke_lighting.aestra.ron"
             }
             .into();
         }
-        if fluid_lab && options.particle_smoke_lighting {
-            return Err("Choose either --smoke-lighting or --particle-smoke-lighting".into());
+        if (fluid_lab && options.particle_smoke_lighting)
+            || (particle_lab && options.smoke_persistence)
+        {
+            return Err(
+                "Choose one smoke lab: fluid lighting, particle lighting or persistence".into(),
+            );
         }
         options.project_root = options
             .project_root
@@ -153,6 +169,79 @@ mod tests {
     use aestra_bevy::{EffectPlaybackMode, EffectPlayer};
 
     #[test]
+    fn smoke_persistence_keeps_births_bounded_and_tails_move_then_drain() {
+        for tier in ["high", "medium", "low"] {
+            let options =
+                Options::parse(["--smoke-persistence".into(), "--tier".into(), tier.into()])
+                    .unwrap();
+            let project = options.compile().unwrap();
+            let root = &project.root;
+            assert!(root.extension_stages.is_empty());
+            assert_eq!(root.duration, 18.0);
+            assert_eq!(root.emitters.len(), 3);
+            assert_eq!(root.emitters[0].max_particles, 96);
+            let presented = aestra_bevy::PresentedEffect::new(root.clone());
+            let binding = presented
+                .material_binding_for_emitter(
+                    root.emitters[0].renderers[0].material,
+                    root.emitters[0].source,
+                )
+                .unwrap();
+            assert!(binding.program().requires_scene_lighting());
+            let sample = |t| {
+                let mut particles = Vec::new();
+                aestra_runtime::evaluate(root, t, SHOW_SEED, &mut particles);
+                particles
+                    .into_iter()
+                    .filter(|p| p.emitter_index == 0)
+                    .collect::<Vec<_>>()
+            };
+            let early = sample(2.0);
+            let stopped = sample(4.1);
+            let tail = sample(7.0);
+            assert!(early.len() < stopped.len());
+            assert_eq!(stopped.len(), 88, "authored demand fits the 96-slot pool");
+            assert_eq!(
+                stopped.len(),
+                tail.len(),
+                "no births after emission end, no early death"
+            );
+            assert!(
+                tail.iter()
+                    .zip(&stopped)
+                    .all(|(a, b)| a.particle_index == b.particle_index)
+            );
+            for axis in [0, 1] {
+                let displacement = tail
+                    .iter()
+                    .zip(&stopped)
+                    .map(|(a, b)| a.position[axis] - b.position[axis])
+                    .sum::<f32>()
+                    / tail.len() as f32;
+                assert!(
+                    displacement > 0.25,
+                    "cloud drifts/rises despite individual turbulent oscillation: {axis} {displacement}"
+                );
+            }
+            assert!(sample(15.0).len() < tail.len());
+            assert!(sample(18.0).is_empty());
+            assert_eq!(sample(7.0), tail, "seeded analytic sample repeats");
+            assert_ne!(
+                sample(7.0),
+                {
+                    let mut particles = Vec::new();
+                    aestra_runtime::evaluate(root, 7.0, SHOW_SEED ^ 1, &mut particles);
+                    particles
+                        .into_iter()
+                        .filter(|p| p.emitter_index == 0)
+                        .collect::<Vec<_>>()
+                },
+                "another seed produces different particle origins/rotation"
+            );
+        }
+    }
+
+    #[test]
     fn defaults_use_public_playback_only_and_authored_show() {
         let options = Options::parse([]).unwrap();
         assert_eq!(options.history, PlaybackHistoryPolicy::PlaybackOnly);
@@ -167,6 +256,10 @@ mod tests {
             vec!["--tier", "ultra"],
             vec!["--history", "yes"],
             vec!["--effect"],
+            vec!["--smoke-lighting", "--smoke-persistence"],
+            vec!["--smoke-persistence", "--smoke-lighting"],
+            vec!["--particle-smoke-lighting", "--smoke-persistence"],
+            vec!["--smoke-persistence", "--particle-smoke-lighting"],
         ] {
             assert!(Options::parse(args.into_iter().map(String::from)).is_err());
         }

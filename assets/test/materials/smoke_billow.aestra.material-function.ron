@@ -1,0 +1,16 @@
+(
+    id: "a3574a00-0000-4000-8000-000000f81100", schema_version: 1,
+    name: "Seeded Smoke Billow",
+    inputs: [
+        (id: "a3574a00-0000-4000-8000-000000f81101", name: "UV", value_type: Vec2),
+        (id: "a3574a00-0000-4000-8000-000000f81102", name: "Seed", value_type: Float),
+        (id: "a3574a00-0000-4000-8000-000000f81103", name: "Normalized age", value_type: Float),
+    ],
+    outputs: [(id: "a3574a00-0000-4000-8000-000000f81104", name: "Density", value_type: Float, expression: "a3574a00-0000-4000-8000-000000f81105")],
+    expressions: [],
+    custom_wesl: Some((
+        evaluation_domain: Fragment,
+        source: "fn billow(uv: vec2<f32>, seed: f32, age: f32) -> f32 {\n    var p = uv * 4.5 + vec2<f32>(seed * 47.0, seed * 19.0) + vec2<f32>(0.25, -0.4) * age;\n    let weights = array<f32, 3>(0.57, 0.29, 0.14);\n    var n = 0.0;\n    for (var octave = 0u; octave < 3u; octave += 1u) {\n        let i = floor(p);\n        let f = fract(p);\n        let u = f * f * (vec2<f32>(3.0) - 2.0 * f);\n        var corners: array<f32, 4>;\n        for (var corner = 0u; corner < 4u; corner += 1u) {\n            let point = i + vec2<f32>(f32(corner % 2u), f32(corner / 2u));\n            var q = fract(vec3<f32>(point.x, point.y, point.x) * 0.1031);\n            q += vec3<f32>(dot(q, q.yzx + vec3<f32>(33.33)));\n            corners[corner] = fract((q.x + q.y) * q.z);\n        }\n        n += mix(mix(corners[0], corners[1], u.x), mix(corners[2], corners[3], u.x), u.y) * weights[octave];\n        p = p * 2.03 + vec2<f32>(7.1);\n    }\n    let radius = length(uv - vec2<f32>(0.5)) + (n - 0.5) * 0.075;\n    return (1.0 - smoothstep(0.30, 0.49, radius)) * smoothstep(0.16, 0.8, n);\n}\n",
+        entry_points: {"a3574a00-0000-4000-8000-000000f81104": "billow"},
+    )),
+)

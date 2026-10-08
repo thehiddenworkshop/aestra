@@ -195,6 +195,35 @@ per-stage/vertex parameter buffers. Binary-rank merges use O(N log² N) comparis
 acceptance. See
 [`alpha-smoke-ordering-2026-10-08.md`](../../benchmarks/fireworks/alpha-smoke-ordering-2026-10-08.md).
 
+## Accumulating particle-smoke prototype (F8.1A)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-persistence --no-audio
+```
+
+This opt-in mode loads `effects/fireworks_smoke_persistence.aestra.ron`, the reusable
+`fireworks_persistent_smoke.aestra.material.ron` and `smoke_billow.aestra.material-function.ron`.
+Three seeded noise octaves give each rotated puff a mottled density and irregular soft edge;
+particle normalized age evolves the pattern. There are no generated bitmap dependencies.
+Scene light gain, density and ambient are material parameters. The exposed Drift acceleration
+effect parameter drives the existing Motion module: a fixed acceleration approximation, **not
+physical wind advection**, fluid injection or a volume renderer.
+
+One 96-slot smoke pool emits eight initial puffs plus 20/s for four seconds (88 births), with
+12–14-second lives, expansion, slow rotation and fade. Smoke remains after emission ends, then
+drains by 18 seconds. Real red/blue break outputs at 8/10 seconds illuminate the accumulated
+cloud through the existing representative/selected paths. Only smoke contributes sprite pixels.
+All tiers keep this same smoke workload; selected-light caps alone are 8/4/2. Playback-only and
+per-draw depth sorting remain the defaults for this lab. Other lab options and the normal show
+keep their own saved assets unchanged.
+
+The native gate separately controls density, light families, reversible flash-intensity mute,
+fade/drain and owner cleanup. Disabling representative lights (`enabled=false`, including L)
+retires existing one-shot pulses; enabling admits future pulses, it does not resurrect past ones.
+Use `max_lumens=0` and restore its previous value for a reversible representative-light mute.
+The prototype is not a photo-approved art reference, show migration or large-pool cost gate.
+See [`smoke-persistence-2026-10-08.md`](../../benchmarks/fireworks/smoke-persistence-2026-10-08.md).
+
 This is the first showcase-host integration, **not final AAA acceptance**. Shared shells
 currently use particle smoke and representative burst lights. Continuous selected-star
 lighting is not authored/enabled here; F7's benchmark-fixture lights are not silently

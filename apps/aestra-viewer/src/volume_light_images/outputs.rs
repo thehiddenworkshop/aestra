@@ -49,6 +49,20 @@ fn policy(tier: &str) -> LightingQualityPolicy {
 }
 
 fn headless(tier: &str, particle_smoke: bool, overlap: bool) -> (App, Entity, Handle<Image>) {
+    headless_project(
+        tier,
+        particle_smoke,
+        overlap,
+        project(tier, particle_smoke, overlap),
+    )
+}
+
+fn headless_project(
+    tier: &str,
+    particle_smoke: bool,
+    overlap: bool,
+    project: Arc<aestra_bevy::CompiledEffectProject>,
+) -> (App, Entity, Handle<Image>) {
     aestra_fluid::link();
     let mut app = App::new();
     app.add_plugins(
@@ -122,7 +136,7 @@ fn headless(tier: &str, particle_smoke: bool, overlap: bool) -> (App, Entity, Ha
         bevy::camera::ShadowLodOrigin,
         Transform::from_xyz(0.0, 4.0, 16.0).looking_at(Vec3::new(0.0, 3.0, 0.0), Vec3::Y),
     ));
-    let mut player = EffectPlayer::from_project(project(tier, particle_smoke, overlap))
+    let mut player = EffectPlayer::from_project(project)
         .with_history_policy(aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly);
     player.set_seed(0xf83b_0000_0000_0001);
     player.playing = false;
@@ -132,6 +146,9 @@ fn headless(tier: &str, particle_smoke: bool, overlap: bool) -> (App, Entity, Ha
         .id();
     (app, owner, target)
 }
+
+#[path = "smoke_persistence.rs"]
+mod persistence;
 
 fn advance(app: &mut App, owner: Entity, target: u64) {
     app.world_mut()

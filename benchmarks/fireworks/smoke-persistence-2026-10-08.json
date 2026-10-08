@@ -1,0 +1,1122 @@
+{
+  "schema_version": 1,
+  "slice": "F8.1A",
+  "date": "2026-10-08",
+  "status": "bounded prototype qualified; F8 remains in progress",
+  "scope": "Reusable procedural lit sprite smoke, accumulating after emission stops and receiving later genuine representative/selected break lights. Public aestra-bevy example host; viewer is regression instrumentation only.",
+  "environment": {
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "toolchain": "1.98.1-x86_64-pc-windows-msvc",
+    "native_image_dimensions": [
+      480,
+      360
+    ],
+    "native_seed": "0xf83b000000000001",
+    "host_seed": "0xf1e0000000000001",
+    "history": "PlaybackOnly",
+    "transparent_order": "DepthBackToFront",
+    "hdr_bloom": false,
+    "host_scale": 0.1
+  },
+  "workload": {
+    "smoke_capacity": 96,
+    "reference_interpreter_births": 88,
+    "burst": 8,
+    "rate_per_second": 20,
+    "emission_seconds": 4,
+    "lifetime_seconds": [
+      12,
+      14
+    ],
+    "drained_by_seconds": 18,
+    "drift_acceleration": [
+      0.08,
+      0.16,
+      0
+    ],
+    "later_break_seconds": [
+      8,
+      10
+    ],
+    "selected_light_caps": {
+      "high": 8,
+      "medium": 4,
+      "low": 2
+    },
+    "representative_light_cap": 2,
+    "same_smoke_workload_all_tiers": true
+  },
+  "gates": {
+    "delta_pair": [
+      "positive RGB pixel gain > 3/255 count",
+      "maximum absolute RGB channel difference in 8-bit levels"
+    ],
+    "tail_and_each_independent_light_family_minimum_gain_pixels": 100,
+    "frozen_density_restore_drain_retire_maximum_channel_difference": 1,
+    "retired_alpha_sort_pairs": 0,
+    "retired_alpha_sort_owned_buffer_bytes": 0,
+    "cpu_selected_light_active_allocated_copied_bytes_submitted_readbacks_staging_bytes": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "repeat_run_corresponding_images": 60,
+    "repeat_run_mismatches": 0
+  },
+  "rejected_attempts": [
+    {
+      "reason": "A first custom-WESL version used private helper functions forbidden by the v1 custom-function contract. Compilation rejected it; the final single entry-point function inlines three fixed noise octaves. No runtime contract was weakened.",
+      "artifact_report": null
+    },
+    {
+      "reason": "A reference test incorrectly required every turbulent particle to move monotonically on +X/+Y. The final gate tests cloud-centroid displacement, alongside exact persistent birth identity and bounded emission. No runtime motion was altered to satisfy the test.",
+      "artifact_report": null
+    },
+    {
+      "reason": "The first native restoration gate used representative enabled=false, which intentionally retires one-shot pulse ownership. Re-enabling admits future pulses, not resurrection of old flashes. The raw failed high-tier report remains rejected. The corrected reversible intensity mute uses max_lumens=0 and restores its previous value, with unchanged image thresholds.",
+      "sha256": "56ea6120cb369c2e449bbba0fe11fabdcc1084d6432749877c5d918129e1759d",
+      "report": {
+        "accepted": false,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "both": [
+              3901,
+              181
+            ],
+            "phase": "late-red",
+            "representative": [
+              2559,
+              106
+            ],
+            "restored": [
+              0,
+              9
+            ],
+            "selected": [
+              3892,
+              179
+            ]
+          },
+          {
+            "both": [
+              4405,
+              170
+            ],
+            "phase": "late-blue",
+            "representative": [
+              2896,
+              88
+            ],
+            "restored": [
+              0,
+              10
+            ],
+            "selected": [
+              4389,
+              170
+            ]
+          }
+        ],
+        "limitations": "bounded 88-birth procedural sprite prototype; same smoke density at all tiers; fixed acceleration approximation, not physical wind/fluid; no cross-draw/full-show/finale/art acceptance",
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1A",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          3415,
+          77
+        ],
+        "tier": "high"
+      },
+      "path": "target/fireworks-f8/persistence-first/high/report.json"
+    }
+  ],
+  "accepted_native_reports": [
+    {
+      "sha256": "95150f9a7847f2ff7e61f408a7bf91811385b386cf4fea7b537a7c146b64eb83",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "both": [
+              3901,
+              181
+            ],
+            "phase": "late-red",
+            "representative": [
+              2559,
+              106
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              3892,
+              179
+            ]
+          },
+          {
+            "both": [
+              4405,
+              170
+            ],
+            "phase": "late-blue",
+            "representative": [
+              2896,
+              88
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              4389,
+              170
+            ]
+          }
+        ],
+        "limitations": "bounded 88-birth procedural sprite prototype; same smoke density at all tiers; fixed acceleration approximation, not physical wind/fluid; no cross-draw/full-show/finale/art acceptance",
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1A",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          3415,
+          77
+        ],
+        "tier": "high"
+      },
+      "path": "target/fireworks-f8/persistence-muted/high/report.json"
+    },
+    {
+      "sha256": "49da1842a1c0480817a238006c0cc40d9b561220ac297312386c8a7345a3025f",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "both": [
+              3780,
+              168
+            ],
+            "phase": "late-red",
+            "representative": [
+              2559,
+              106
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              3752,
+              166
+            ]
+          },
+          {
+            "both": [
+              4277,
+              168
+            ],
+            "phase": "late-blue",
+            "representative": [
+              2896,
+              88
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              4255,
+              167
+            ]
+          }
+        ],
+        "limitations": "bounded 88-birth procedural sprite prototype; same smoke density at all tiers; fixed acceleration approximation, not physical wind/fluid; no cross-draw/full-show/finale/art acceptance",
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1A",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          3415,
+          77
+        ],
+        "tier": "medium"
+      },
+      "path": "target/fireworks-f8/persistence-muted/medium/report.json"
+    },
+    {
+      "sha256": "52080d371c906443d2b3c493ae376fb44fefe2404eece49c246f5854cd198128",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "both": [
+              3603,
+              153
+            ],
+            "phase": "late-red",
+            "representative": [
+              2559,
+              106
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              3527,
+              149
+            ]
+          },
+          {
+            "both": [
+              4093,
+              155
+            ],
+            "phase": "late-blue",
+            "representative": [
+              2896,
+              88
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              3960,
+              148
+            ]
+          }
+        ],
+        "limitations": "bounded 88-birth procedural sprite prototype; same smoke density at all tiers; fixed acceleration approximation, not physical wind/fluid; no cross-draw/full-show/finale/art acceptance",
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1A",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          3415,
+          77
+        ],
+        "tier": "low"
+      },
+      "path": "target/fireworks-f8/persistence-muted/low/report.json"
+    },
+    {
+      "sha256": "95150f9a7847f2ff7e61f408a7bf91811385b386cf4fea7b537a7c146b64eb83",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "both": [
+              3901,
+              181
+            ],
+            "phase": "late-red",
+            "representative": [
+              2559,
+              106
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              3892,
+              179
+            ]
+          },
+          {
+            "both": [
+              4405,
+              170
+            ],
+            "phase": "late-blue",
+            "representative": [
+              2896,
+              88
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              4389,
+              170
+            ]
+          }
+        ],
+        "limitations": "bounded 88-birth procedural sprite prototype; same smoke density at all tiers; fixed acceleration approximation, not physical wind/fluid; no cross-draw/full-show/finale/art acceptance",
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1A",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          3415,
+          77
+        ],
+        "tier": "high"
+      },
+      "path": "target/fireworks-f8/persistence-repeat/high/report.json"
+    },
+    {
+      "sha256": "49da1842a1c0480817a238006c0cc40d9b561220ac297312386c8a7345a3025f",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "both": [
+              3780,
+              168
+            ],
+            "phase": "late-red",
+            "representative": [
+              2559,
+              106
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              3752,
+              166
+            ]
+          },
+          {
+            "both": [
+              4277,
+              168
+            ],
+            "phase": "late-blue",
+            "representative": [
+              2896,
+              88
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              4255,
+              167
+            ]
+          }
+        ],
+        "limitations": "bounded 88-birth procedural sprite prototype; same smoke density at all tiers; fixed acceleration approximation, not physical wind/fluid; no cross-draw/full-show/finale/art acceptance",
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1A",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          3415,
+          77
+        ],
+        "tier": "medium"
+      },
+      "path": "target/fireworks-f8/persistence-repeat/medium/report.json"
+    },
+    {
+      "sha256": "52080d371c906443d2b3c493ae376fb44fefe2404eece49c246f5854cd198128",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "both": [
+              3603,
+              153
+            ],
+            "phase": "late-red",
+            "representative": [
+              2559,
+              106
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              3527,
+              149
+            ]
+          },
+          {
+            "both": [
+              4093,
+              155
+            ],
+            "phase": "late-blue",
+            "representative": [
+              2896,
+              88
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              3960,
+              148
+            ]
+          }
+        ],
+        "limitations": "bounded 88-birth procedural sprite prototype; same smoke density at all tiers; fixed acceleration approximation, not physical wind/fluid; no cross-draw/full-show/finale/art acceptance",
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1A",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          3415,
+          77
+        ],
+        "tier": "low"
+      },
+      "path": "target/fireworks-f8/persistence-repeat/low/report.json"
+    }
+  ],
+  "image_hashes": [
+    {
+      "repeat_sha256": "1a145bd1dab8df5dbab7764cf04fb19cfd58f6b7f98c045be0785d70fd1dda94",
+      "sha256": "1a145bd1dab8df5dbab7764cf04fb19cfd58f6b7f98c045be0785d70fd1dda94",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/accumulating.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/accumulating.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/density-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/density-off.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/density-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/density-restored.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/drained.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/drained.png"
+    },
+    {
+      "repeat_sha256": "2f452d62e42f41163240228ffcbf6a1d4c840cb475cb42ae41d0d64e16030ddb",
+      "sha256": "2f452d62e42f41163240228ffcbf6a1d4c840cb475cb42ae41d0d64e16030ddb",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/emission-ended.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/emission-ended.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/empty.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/empty.png"
+    },
+    {
+      "repeat_sha256": "7c10acecfc4d40f13b3ea87b87cc70902bcd8587202209c18624387e88877192",
+      "sha256": "7c10acecfc4d40f13b3ea87b87cc70902bcd8587202209c18624387e88877192",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/fading.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/fading.png"
+    },
+    {
+      "repeat_sha256": "ed3573e123104f1dd59126714dfc9f1982c2a423883409528e1b0997d1de5efc",
+      "sha256": "ed3573e123104f1dd59126714dfc9f1982c2a423883409528e1b0997d1de5efc",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-blue-both.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-blue-both.png"
+    },
+    {
+      "repeat_sha256": "38372c1876e3ec4c647932e7ff85acba4f2c7a974006d2ecf8f0f04d0fb1786c",
+      "sha256": "38372c1876e3ec4c647932e7ff85acba4f2c7a974006d2ecf8f0f04d0fb1786c",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-blue-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-blue-off.png"
+    },
+    {
+      "repeat_sha256": "73b394b6cda118cfd4de41f234a760ed7e0cc120b21d6ef68c2f6dd528d2728e",
+      "sha256": "73b394b6cda118cfd4de41f234a760ed7e0cc120b21d6ef68c2f6dd528d2728e",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-blue-representative.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-blue-representative.png"
+    },
+    {
+      "repeat_sha256": "ed3573e123104f1dd59126714dfc9f1982c2a423883409528e1b0997d1de5efc",
+      "sha256": "ed3573e123104f1dd59126714dfc9f1982c2a423883409528e1b0997d1de5efc",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-blue-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-blue-restored.png"
+    },
+    {
+      "repeat_sha256": "72e78ee236fb6f90c754043c24c69bcf9da1e8e42a91218294d5cdfeee80f382",
+      "sha256": "72e78ee236fb6f90c754043c24c69bcf9da1e8e42a91218294d5cdfeee80f382",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-blue-selected.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-blue-selected.png"
+    },
+    {
+      "repeat_sha256": "a406404bf836e3a679371dda61ef65fb3b33b816f61ce19906199ebff66dca24",
+      "sha256": "a406404bf836e3a679371dda61ef65fb3b33b816f61ce19906199ebff66dca24",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-red-both.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-red-both.png"
+    },
+    {
+      "repeat_sha256": "b529f58bae76560eddc90914c1292fdd7f6c92d944157b6ba4321026165d13a4",
+      "sha256": "b529f58bae76560eddc90914c1292fdd7f6c92d944157b6ba4321026165d13a4",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-red-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-red-off.png"
+    },
+    {
+      "repeat_sha256": "fe78e7c7961a2aba1cf1fc384d109d755a5aa6725ae53dfead698853465611a7",
+      "sha256": "fe78e7c7961a2aba1cf1fc384d109d755a5aa6725ae53dfead698853465611a7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-red-representative.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-red-representative.png"
+    },
+    {
+      "repeat_sha256": "a406404bf836e3a679371dda61ef65fb3b33b816f61ce19906199ebff66dca24",
+      "sha256": "a406404bf836e3a679371dda61ef65fb3b33b816f61ce19906199ebff66dca24",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-red-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-red-restored.png"
+    },
+    {
+      "repeat_sha256": "c78d291e5525b06c5ca49696b3a49a8d08b01df8e96268924d5790dbcf45e15d",
+      "sha256": "c78d291e5525b06c5ca49696b3a49a8d08b01df8e96268924d5790dbcf45e15d",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/late-red-selected.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/late-red-selected.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/persistent-tail.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/persistent-tail.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/retired.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/retired.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/high/tail-repeat.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/high/tail-repeat.png"
+    },
+    {
+      "repeat_sha256": "1a145bd1dab8df5dbab7764cf04fb19cfd58f6b7f98c045be0785d70fd1dda94",
+      "sha256": "1a145bd1dab8df5dbab7764cf04fb19cfd58f6b7f98c045be0785d70fd1dda94",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/accumulating.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/accumulating.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/density-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/density-off.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/density-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/density-restored.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/drained.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/drained.png"
+    },
+    {
+      "repeat_sha256": "2f452d62e42f41163240228ffcbf6a1d4c840cb475cb42ae41d0d64e16030ddb",
+      "sha256": "2f452d62e42f41163240228ffcbf6a1d4c840cb475cb42ae41d0d64e16030ddb",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/emission-ended.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/emission-ended.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/empty.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/empty.png"
+    },
+    {
+      "repeat_sha256": "7c10acecfc4d40f13b3ea87b87cc70902bcd8587202209c18624387e88877192",
+      "sha256": "7c10acecfc4d40f13b3ea87b87cc70902bcd8587202209c18624387e88877192",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/fading.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/fading.png"
+    },
+    {
+      "repeat_sha256": "d0e1ddee47f113fe130fde6d33ca233bfe73f50ad0e366f566216feca7aa2c23",
+      "sha256": "d0e1ddee47f113fe130fde6d33ca233bfe73f50ad0e366f566216feca7aa2c23",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-blue-both.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-blue-both.png"
+    },
+    {
+      "repeat_sha256": "38372c1876e3ec4c647932e7ff85acba4f2c7a974006d2ecf8f0f04d0fb1786c",
+      "sha256": "38372c1876e3ec4c647932e7ff85acba4f2c7a974006d2ecf8f0f04d0fb1786c",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-blue-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-blue-off.png"
+    },
+    {
+      "repeat_sha256": "73b394b6cda118cfd4de41f234a760ed7e0cc120b21d6ef68c2f6dd528d2728e",
+      "sha256": "73b394b6cda118cfd4de41f234a760ed7e0cc120b21d6ef68c2f6dd528d2728e",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-blue-representative.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-blue-representative.png"
+    },
+    {
+      "repeat_sha256": "d0e1ddee47f113fe130fde6d33ca233bfe73f50ad0e366f566216feca7aa2c23",
+      "sha256": "d0e1ddee47f113fe130fde6d33ca233bfe73f50ad0e366f566216feca7aa2c23",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-blue-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-blue-restored.png"
+    },
+    {
+      "repeat_sha256": "16ebeef13586fa854fbc88aa808d947b496af232d70d1326216f4865036d1ead",
+      "sha256": "16ebeef13586fa854fbc88aa808d947b496af232d70d1326216f4865036d1ead",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-blue-selected.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-blue-selected.png"
+    },
+    {
+      "repeat_sha256": "c1360a2c4ef4bd6f91e1cd86061085e1cea3c9d7b5159e97befdc687eeb3c714",
+      "sha256": "c1360a2c4ef4bd6f91e1cd86061085e1cea3c9d7b5159e97befdc687eeb3c714",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-red-both.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-red-both.png"
+    },
+    {
+      "repeat_sha256": "b529f58bae76560eddc90914c1292fdd7f6c92d944157b6ba4321026165d13a4",
+      "sha256": "b529f58bae76560eddc90914c1292fdd7f6c92d944157b6ba4321026165d13a4",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-red-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-red-off.png"
+    },
+    {
+      "repeat_sha256": "fe78e7c7961a2aba1cf1fc384d109d755a5aa6725ae53dfead698853465611a7",
+      "sha256": "fe78e7c7961a2aba1cf1fc384d109d755a5aa6725ae53dfead698853465611a7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-red-representative.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-red-representative.png"
+    },
+    {
+      "repeat_sha256": "c1360a2c4ef4bd6f91e1cd86061085e1cea3c9d7b5159e97befdc687eeb3c714",
+      "sha256": "c1360a2c4ef4bd6f91e1cd86061085e1cea3c9d7b5159e97befdc687eeb3c714",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-red-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-red-restored.png"
+    },
+    {
+      "repeat_sha256": "804f8eabc45658d7e8617c03ecbecd672c7231161c4f4a59617c31623b2cd908",
+      "sha256": "804f8eabc45658d7e8617c03ecbecd672c7231161c4f4a59617c31623b2cd908",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/late-red-selected.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/late-red-selected.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/persistent-tail.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/persistent-tail.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/retired.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/retired.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/medium/tail-repeat.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/medium/tail-repeat.png"
+    },
+    {
+      "repeat_sha256": "1a145bd1dab8df5dbab7764cf04fb19cfd58f6b7f98c045be0785d70fd1dda94",
+      "sha256": "1a145bd1dab8df5dbab7764cf04fb19cfd58f6b7f98c045be0785d70fd1dda94",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/accumulating.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/accumulating.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/density-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/density-off.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/density-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/density-restored.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/drained.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/drained.png"
+    },
+    {
+      "repeat_sha256": "2f452d62e42f41163240228ffcbf6a1d4c840cb475cb42ae41d0d64e16030ddb",
+      "sha256": "2f452d62e42f41163240228ffcbf6a1d4c840cb475cb42ae41d0d64e16030ddb",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/emission-ended.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/emission-ended.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/empty.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/empty.png"
+    },
+    {
+      "repeat_sha256": "7c10acecfc4d40f13b3ea87b87cc70902bcd8587202209c18624387e88877192",
+      "sha256": "7c10acecfc4d40f13b3ea87b87cc70902bcd8587202209c18624387e88877192",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/fading.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/fading.png"
+    },
+    {
+      "repeat_sha256": "e8a97605364c95e3c2e990db249257e1f90a27dffa50ae09a77031549af75a8c",
+      "sha256": "e8a97605364c95e3c2e990db249257e1f90a27dffa50ae09a77031549af75a8c",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-blue-both.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-blue-both.png"
+    },
+    {
+      "repeat_sha256": "38372c1876e3ec4c647932e7ff85acba4f2c7a974006d2ecf8f0f04d0fb1786c",
+      "sha256": "38372c1876e3ec4c647932e7ff85acba4f2c7a974006d2ecf8f0f04d0fb1786c",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-blue-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-blue-off.png"
+    },
+    {
+      "repeat_sha256": "73b394b6cda118cfd4de41f234a760ed7e0cc120b21d6ef68c2f6dd528d2728e",
+      "sha256": "73b394b6cda118cfd4de41f234a760ed7e0cc120b21d6ef68c2f6dd528d2728e",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-blue-representative.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-blue-representative.png"
+    },
+    {
+      "repeat_sha256": "e8a97605364c95e3c2e990db249257e1f90a27dffa50ae09a77031549af75a8c",
+      "sha256": "e8a97605364c95e3c2e990db249257e1f90a27dffa50ae09a77031549af75a8c",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-blue-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-blue-restored.png"
+    },
+    {
+      "repeat_sha256": "1d219e315d3c2c8432766fb7a4b7fad702154fc0222b193d64d7a717d674aba0",
+      "sha256": "1d219e315d3c2c8432766fb7a4b7fad702154fc0222b193d64d7a717d674aba0",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-blue-selected.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-blue-selected.png"
+    },
+    {
+      "repeat_sha256": "1098c9a191e9f485d288816d8ec67bdfa970d2e3f4fd5bd3f0dc305a64cb3ee9",
+      "sha256": "1098c9a191e9f485d288816d8ec67bdfa970d2e3f4fd5bd3f0dc305a64cb3ee9",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-red-both.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-red-both.png"
+    },
+    {
+      "repeat_sha256": "b529f58bae76560eddc90914c1292fdd7f6c92d944157b6ba4321026165d13a4",
+      "sha256": "b529f58bae76560eddc90914c1292fdd7f6c92d944157b6ba4321026165d13a4",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-red-off.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-red-off.png"
+    },
+    {
+      "repeat_sha256": "fe78e7c7961a2aba1cf1fc384d109d755a5aa6725ae53dfead698853465611a7",
+      "sha256": "fe78e7c7961a2aba1cf1fc384d109d755a5aa6725ae53dfead698853465611a7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-red-representative.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-red-representative.png"
+    },
+    {
+      "repeat_sha256": "1098c9a191e9f485d288816d8ec67bdfa970d2e3f4fd5bd3f0dc305a64cb3ee9",
+      "sha256": "1098c9a191e9f485d288816d8ec67bdfa970d2e3f4fd5bd3f0dc305a64cb3ee9",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-red-restored.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-red-restored.png"
+    },
+    {
+      "repeat_sha256": "33f811925295fca6576a1ec6b0b379d77b85a034add2673d530240018090dcd4",
+      "sha256": "33f811925295fca6576a1ec6b0b379d77b85a034add2673d530240018090dcd4",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/late-red-selected.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/late-red-selected.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/persistent-tail.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/persistent-tail.png"
+    },
+    {
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/retired.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/retired.png"
+    },
+    {
+      "repeat_sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "sha256": "57494c9c6ac4ec8c3bec265afe38d38f77b98e1f1e13fabc6a630ae1185ea225",
+      "repeat_path": "target/fireworks-f8/persistence-repeat/low/tail-repeat.png",
+      "exact_match": true,
+      "path": "target/fireworks-f8/persistence-muted/low/tail-repeat.png"
+    }
+  ],
+  "public_host_capture_hashes": [
+    {
+      "sha256": "2acae1f270a08847bda5646969698e99f6da0eaec727ee0e6828407780dae670",
+      "path": "target/fireworks-f8/bevy-persistence-tail.png"
+    },
+    {
+      "sha256": "c246d3a029bbc83314d03757dca33a6a8588c683c5807f3d909ab706b30a2cf4",
+      "path": "target/fireworks-f8/bevy-persistence-lit.png"
+    }
+  ],
+  "source_hashes": [
+    {
+      "sha256": "0a32d0aa5dda578830a7d1359633fb1a33c6f0eadcf59fb92e9611845e0c3e40",
+      "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron"
+    },
+    {
+      "sha256": "c1e37b06bb5e9de3109fc87784122a23604a902884037df5f9e752c432661cc4",
+      "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron"
+    },
+    {
+      "sha256": "6a8818220a54b6980b751601c22763b8318e73de8c50387816e89e3bd5456c21",
+      "path": "assets/test/materials/smoke_billow.aestra.material-function.ron"
+    },
+    {
+      "sha256": "c99cd8e3e3be1cdf1d9101a02bcb98d8a2ad379b3c7220cc789ea06eeda3154a",
+      "path": "bevy/aestra-bevy/examples/fireworks.rs"
+    },
+    {
+      "sha256": "abfae73e7ca25669415e8cc9f63d95867dc5e7c27c3104281aa59b11cc8cbdd8",
+      "path": "bevy/aestra-bevy/examples/fireworks/project.rs"
+    },
+    {
+      "sha256": "a3fcab8eb35351fb9b5a1e727bb99a9bb745b10df5973be3a692c0f75397d4ac",
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs"
+    },
+    {
+      "sha256": "0b63a4295c5095cd994b4c94eae8496edfc6de0611399690924a8cee9cac3b36",
+      "path": "apps/aestra-viewer/src/volume_light_images/smoke_persistence.rs"
+    }
+  ],
+  "validation": [
+    {
+      "command": "cargo +1.98.1-x86_64-pc-windows-msvc test --locked -p aestra-bevy --example fireworks --features fireworks-audio",
+      "result": "11 passed, including all-tier saved smoke reference-interpreter lifecycle and normal-show resolution"
+    },
+    {
+      "command": "cargo +1.98.1-x86_64-pc-windows-msvc test --locked -p aestra-viewer",
+      "result": "96 passed, 22 ignored"
+    },
+    {
+      "command": "cargo +1.98.1-x86_64-pc-windows-msvc test --locked -p aestra-viewer saved_smoke_persists_drifts_receives_later_breaks_and_drains -- --ignored --nocapture --test-threads=1",
+      "result": "Two fresh complete all-tier passes; reports in persistence-muted and persistence-repeat; 60 corresponding PNGs match byte-for-byte. Set AESTRA_SMOKE_PERSISTENCE_REPORTS to an absolute output directory."
+    },
+    {
+      "command": "cargo +1.98.1-x86_64-pc-windows-msvc run --locked -p aestra-bevy --example fireworks -- --smoke-persistence --no-audio",
+      "result": "Public host captures at 7 and 10.2 seconds, 1280x720; exit 0. Shutdown logs included closed readback-channel warnings after capture."
+    },
+    {
+      "command": "cargo +1.98.1-x86_64-pc-windows-msvc clippy --locked -p aestra-bevy -p aestra-viewer --tests --example fireworks -- -D warnings",
+      "result": "passed"
+    },
+    {
+      "command": "cargo +1.98.1-x86_64-pc-windows-msvc check --workspace --locked",
+      "result": "passed"
+    },
+    {
+      "command": "cargo +1.98.1-x86_64-pc-windows-msvc fmt --all -- --check",
+      "result": "passed"
+    }
+  ],
+  "limitations": [
+    "88 births/identity/centroid/seed variation are reference-interpreter assertions, not a native GPU alive-population readback.",
+    "Native images prove visible persistence, independent actual light-family response, reversible density/intensity controls and draining/removal. Screenshots use test-only readback; production selected-light admission remains native without particle-position readback.",
+    "Fixed acceleration and turbulence approximate drift. No physical wind/advection, particle-to-fluid injection, volume self-shadowing or anisotropic scattering.",
+    "One smoke draw only; no cross-draw ordering claim. Depth sorting work/scratch scales with capacity per view/draw.",
+    "Three procedural noise octaves per fragment have not received a live large-pool or full-show cost gate. No GPU performance or tier-scaled smoke-density claim.",
+    "Not photo-approved AAA art, full-show smoke migration, production finale acceptance or complete F8."
+  ],
+  "next": "F8.1B: real shell-born smoke and overlapping cohorts, followed by authored live overlap/full-show costs before migration."
+}
