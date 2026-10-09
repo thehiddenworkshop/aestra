@@ -241,6 +241,7 @@ struct StatefulDispatch {
     /// The particle events this emitter reports for event links (host bindings HB9b): a mask of
     /// `aestra_runtime::event_trigger_bit`s; zero reports none.
     event_mask: u32,
+    distance_emission: Option<(f32, u32)>,
     /// A hash of every event link into or out of this emitter: a change is a different simulation.
     event_signature: u64,
     /// The `counters` word this emitter's event overflow count is copied to each frame, when it
@@ -386,6 +387,10 @@ fn event_signature(effect: &aestra_runtime::CompiledEffect, index: usize) -> u64
                 aestra_runtime::event_trigger_bit(link.trigger),
                 link.count,
                 link.inherit.to_bits(),
+                link.trigger
+                    .distance_settings()
+                    .map_or(0, |(spacing, _)| spacing.to_bits()),
+                link.trigger.samples_per_tick(),
             ]
             .into_iter()
             .fold(hash, |hash, bits| {
@@ -465,6 +470,10 @@ impl StatefulDispatch {
         // So do its event links (host bindings HB9b).
         hash = (hash ^ u64::from(self.event_mask)).wrapping_mul(0x0000_0100_0000_01b3);
         hash = (hash ^ self.event_signature).wrapping_mul(0x0000_0100_0000_01b3);
+        if let Some((spacing, limit)) = self.distance_emission {
+            hash = (hash ^ u64::from(spacing.to_bits())).wrapping_mul(0x0000_0100_0000_01b3);
+            hash = (hash ^ u64::from(limit)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
         // So does homing (host bindings HB7) — its steering, not where the target is.
         if let Some(homing) = &self.homing {
             let config = &homing.config;
@@ -1137,6 +1146,7 @@ pub(crate) fn prepare_gpu_effects(
                                 arrival_word: None,
                                 homing_world_target: None,
                                 event_mask: player.effect().event_mask(index),
+                                distance_emission: player.effect().distance_emission(index),
                                 event_signature: event_signature(player.effect(), index),
                                 overflow_word: None,
                                 schedule: None,
@@ -2309,7 +2319,8 @@ pub struct GpuEventLinkStatistics {
     /// Replay/reset activity can be counted again; use uninterrupted live runs
     /// when comparing admission against authored work.
     pub links: Vec<GpuEventLinkCounts>,
-    /// Events omitted by source capture before any link could expand them.
+    /// Events omitted by source capture or distance-sampling work bounds before
+    /// any link could expand them.
     /// This is in source events, whereas link counts are in child particles.
     pub source_overflow: u64,
     /// Completed asynchronous counter readbacks (not simulation ticks).
@@ -2464,7 +2475,7 @@ fn receive_homing_arrivals(
                     .find(|dispatch| dispatch.emitter_index as usize == link.source)
                     .map(|dispatch| {
                         crate::execution::EventGatherPipeline::list_capacity(
-                            dispatch.capacity,
+                            aestra_runtime::event_capture_capacity(dispatch.capacity, link.trigger),
                             link.count,
                         )
                     })
@@ -3321,6 +3332,10 @@ fn stateful_params_bytes(
         .unwrap_or(dispatch.placement);
     let mut words = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
     words[aestra_gpu::STATEFUL_VELOCITY_MODE_INDEX] = dispatch.velocity_distribution;
+    if let Some((spacing, limit)) = dispatch.distance_emission {
+        words[aestra_gpu::STATEFUL_DISTANCE_BASE] = spacing.to_bits();
+        words[aestra_gpu::STATEFUL_DISTANCE_BASE + 1] = limit;
+    }
     words[..26].copy_from_slice(&[
         dispatch.capacity,
         spawn_per_tick,
@@ -3805,7 +3820,10 @@ fn run_coupled_stateful(
             .iter()
             .map(|(_, source, _, link)| {
                 let capacity = crate::execution::EventGatherPipeline::list_capacity(
-                    dispatches[*source].capacity,
+                    aestra_runtime::event_capture_capacity(
+                        dispatches[*source].capacity,
+                        link.trigger,
+                    ),
                     link.count,
                 );
                 device.create_buffer_with_data(&BufferInitDescriptor {
@@ -3903,7 +3921,7 @@ fn run_coupled_stateful(
         // become its target's particles, in link order.
         for ((index, source, target, link), list) in link_ends.iter().zip(&lists) {
             let list_capacity = crate::execution::EventGatherPipeline::list_capacity(
-                dispatches[*source].capacity,
+                aestra_runtime::event_capture_capacity(dispatches[*source].capacity, link.trigger),
                 link.count,
             );
             coupling.gatherer.encode_with_overflow(
@@ -5184,6 +5202,7 @@ mod tests {
             arrival_word: None,
             homing_world_target: None,
             event_mask: 0,
+            distance_emission: None,
             event_signature: 0,
             overflow_word: None,
             schedule: None,
@@ -5921,7 +5940,7 @@ mod coupled_tests {
     use bevy::render::renderer::WgpuWrapper;
 
     const CAPACITY: u32 = 256;
-    const STRIDE: u32 = 9;
+    const STRIDE: u32 = aestra_gpu::STATEFUL_STATE_STRIDE;
     const TICKS_PER_SUBMISSION: u32 = 8;
 
     include!("gpu/stateful_trails_tests.rs");
@@ -6078,6 +6097,7 @@ mod coupled_tests {
             arrival_word: None,
             homing_world_target: None,
             event_mask: 0,
+            distance_emission: None,
             event_signature: 0,
             overflow_word: None,
             schedule: None,
@@ -6333,7 +6353,7 @@ mod coupled_tests {
 
     #[derive(Debug, PartialEq, Eq)]
     struct ChainedEventSnapshot {
-        particles: Vec<Vec<[u32; 9]>>,
+        particles: Vec<Vec<[u32; 10]>>,
         events: Vec<Vec<[u32; 8]>>,
         spawn_counts: Vec<u32>,
         draw_ordinals: Vec<Vec<u32>>,
@@ -6354,7 +6374,7 @@ mod coupled_tests {
             .map(|emitter| {
                 let state = words(&emitter.state);
                 let mut live: Vec<_> = state
-                    .as_chunks::<9>()
+                    .as_chunks::<10>()
                     .0
                     .iter()
                     .filter(|record| {
@@ -6826,6 +6846,47 @@ mod coupled_tests {
         }
     }
 
+    #[test]
+    fn distance_smoke_checkpoint_restores_path_remainders_and_children() {
+        let Some((mut scene, mut links)) = chained_event_scene() else {
+            assert!(std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none());
+            return;
+        };
+        let trigger = aestra_core::EventTrigger::OnDistance {
+            spacing: 0.3,
+            max_per_tick: 8,
+        };
+        scene.dispatches[0].event_mask = aestra_runtime::event_trigger_bit(trigger);
+        scene.dispatches[0].distance_emission = trigger.distance_settings();
+        scene.dispatches[1].speed = (0.0, 0.0);
+        scene.dispatches[1].gravity = [0.0; 3];
+        scene.dispatches[1].colliders.clear();
+        scene.dispatches[1].event_mask = 0;
+        links[0].trigger = trigger;
+        links[0].count = 1;
+        links[0].inherit = 0.0;
+        let links = &links[..1];
+        let mut reference = Vec::new();
+        for tick in 1..=240 {
+            advance_chained_event_scene(&mut scene, links, tick);
+            if [120, 180].contains(&tick) {
+                reference.push((tick, chained_event_snapshot(&scene)));
+            }
+        }
+        assert!(reference[1].1.spawn_counts[1] > 100);
+        advance_chained_event_scene(&mut scene, links, 90);
+        for tick in 91..=180 {
+            advance_chained_event_scene(&mut scene, links, tick);
+            if let Some((_, expected)) = reference.iter().find(|(frame, _)| *frame == tick) {
+                assert_eq!(
+                    &chained_event_snapshot(&scene),
+                    expected,
+                    "distance checkpoint diverged at tick {tick}"
+                );
+            }
+        }
+    }
+
     /// Host bindings HB8: with a binding trace, every tick steers toward its own recorded target, so
     /// scrubbing back and replaying reproduces the uninterrupted run bit for bit; with live input,
     /// the replay uses the present target and the past changes.
@@ -6871,7 +6932,7 @@ mod coupled_tests {
             ..template.clone()
         };
         // Live particles by spawn ordinal, bit for bit (slot assignment follows thread timing).
-        let mut run = |dispatch: StatefulDispatch, scrub: bool| -> Vec<[u32; 9]> {
+        let mut run = |dispatch: StatefulDispatch, scrub: bool| -> Vec<[u32; 10]> {
             scene.dispatches = vec![dispatch];
             scene.states = vec![StatefulPersistentState::allocate(
                 &scene.device,
@@ -6957,8 +7018,8 @@ mod coupled_tests {
                 .iter()
                 .map(|bytes| u32::from_le_bytes(*bytes))
                 .collect();
-            let mut live: Vec<[u32; 9]> = words
-                .as_chunks::<9>()
+            let mut live: Vec<[u32; 10]> = words
+                .as_chunks::<10>()
                 .0
                 .iter()
                 .filter(|record| {

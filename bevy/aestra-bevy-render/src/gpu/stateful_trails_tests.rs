@@ -58,6 +58,7 @@ fn event_trail_scene_with_pool(
             shape_kind: 0,
             field_follow: None,
             event_mask: 2,
+            distance_emission: None,
             overflow_word: Some(2 + 6 * emitter_count),
             cutoffs: aestra_runtime::EmissionCutoffs {
                 stop_tick: Some(1),
@@ -77,6 +78,7 @@ fn event_trail_scene_with_pool(
             shape_kind: 0,
             field_follow: None,
             event_mask: 0,
+            distance_emission: None,
             ..template
         },
     ];

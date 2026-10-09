@@ -300,6 +300,7 @@ fn trigger_index(trigger: aestra_core::EventTrigger) -> usize {
         aestra_core::EventTrigger::OnSpawn => 0,
         aestra_core::EventTrigger::OnDeath => 1,
         aestra_core::EventTrigger::OnCollision => 2,
+        aestra_core::EventTrigger::OnDistance { .. } => 3,
     }
 }
 
@@ -312,6 +313,7 @@ struct StateParticle {
     velocity: [f32; 3],
     age: f32,
     lifetime: f32,
+    distance_remainder: f32,
 }
 
 /// A minimal fixed-tick stateful simulation. Deterministic from `(config, seed)`; `Clone` is a
@@ -331,8 +333,10 @@ pub struct StatefulSimulation {
     cutoffs: crate::EmissionCutoffs,
     /// Particles that reached their homing target so far (the `impact` event, host bindings HB9).
     arrivals: u64,
-    /// The spawn, death and collision events of the last tick (host bindings HB9b).
-    events: [Vec<ParticleEvent>; 3],
+    /// The spawn, death, collision and distance events of the last tick.
+    events: [Vec<ParticleEvent>; 4],
+    distance_emission: Option<(f32, u32)>,
+    distance_overflow: u64,
     /// Accepted external births for host output routes only, never same-tick links.
     output_births: Vec<ParticleEvent>,
     /// The world `World` colliders collide with (host bindings HB10); none collides without one.
@@ -357,6 +361,8 @@ impl StatefulSimulation {
             cutoffs: crate::EmissionCutoffs::NONE,
             arrivals: 0,
             events: Default::default(),
+            distance_emission: None,
+            distance_overflow: 0,
             output_births: Vec::new(),
             world: None,
             physics: None,
@@ -390,6 +396,35 @@ impl StatefulSimulation {
     /// Particles already in flight keep their motion, so a moving placement leaves a wake.
     pub fn set_placement(&mut self, placement: SpawnPlacement) {
         self.config.placement = placement;
+    }
+
+    /// Configure a source before playback. Changing settings resets residuals;
+    /// cloning a checkpoint preserves both residuals and the cumulative drop count.
+    pub fn set_distance_emission(
+        &mut self,
+        settings: Option<(f32, u32)>,
+    ) -> Result<(), &'static str> {
+        if settings.is_some_and(|(spacing, max_per_tick)| {
+            !(aestra_core::EventTrigger::OnDistance {
+                spacing,
+                max_per_tick,
+            })
+            .is_valid()
+        }) {
+            return Err("invalid distance emission settings");
+        }
+        if self.distance_emission != settings {
+            for particle in &mut self.particles {
+                particle.distance_remainder = 0.0;
+            }
+        }
+        self.distance_emission = settings;
+        Ok(())
+    }
+
+    /// Distance crossings dropped by the per-particle work bound, cumulatively.
+    pub fn distance_overflow(&self) -> u64 {
+        self.distance_overflow
     }
 
     /// The events of `trigger` the last tick raised (host bindings HB9b): every spawn (not those made
@@ -445,6 +480,7 @@ impl StatefulSimulation {
                 velocity,
                 age: 0.0,
                 lifetime,
+                distance_remainder: 0.0,
             });
             self.output_births.push(ParticleEvent {
                 ordinal,
@@ -551,12 +587,13 @@ impl StatefulSimulation {
             self.tick += 1;
             return;
         }
-        let [spawned_events, deaths, collisions] = &mut self.events;
+        let [spawned_events, deaths, collisions, distances] = &mut self.events;
         let homing = self.config.homing.map(|homing| {
             let target = self.homing_tracker.resolve(homing.lost, self.homing_input);
             (homing, target)
         });
         for particle in &mut self.particles {
+            let previous_position = particle.position;
             // Homing (HB7) steers the velocity before the forces act on it.
             if let Some((homing, target)) = &homing
                 && let Some(retire) = steer_homing(
@@ -613,6 +650,30 @@ impl StatefulSimulation {
                 position: particle.position,
                 velocity: particle.velocity,
             };
+            if let Some((spacing, limit)) = self.distance_emission {
+                let delta: [f32; 3] =
+                    std::array::from_fn(|axis| particle.position[axis] - previous_position[axis]);
+                let length = dot(delta, delta).sqrt();
+                if length > 0.0 {
+                    let total = particle.distance_remainder + length;
+                    let crossings = (total / spacing).floor().min(4_294_967_040.0) as u32;
+                    let kept = crossings.min(limit);
+                    for sample in 0..kept {
+                        let t =
+                            ((sample + 1) as f32 * spacing - particle.distance_remainder) / length;
+                        distances.push(ParticleEvent {
+                            position: std::array::from_fn(|axis| {
+                                previous_position[axis] + delta[axis] * t
+                            }),
+                            ..event
+                        });
+                    }
+                    self.distance_overflow = self
+                        .distance_overflow
+                        .saturating_add(u64::from(crossings - kept));
+                    particle.distance_remainder = total % spacing;
+                }
+            }
             // A contact: a kill, or a bounce that moved or redirected the particle.
             if killed || before != (particle.position, particle.velocity) {
                 collisions.push(event);
@@ -658,6 +719,7 @@ impl StatefulSimulation {
                 velocity,
                 age: 0.0,
                 lifetime,
+                distance_remainder: 0.0,
             });
             spawned_events.push(ParticleEvent {
                 ordinal,
@@ -1054,6 +1116,127 @@ fn unit_signed(hash: u64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn distance_emission_deposits_path_samples_and_checkpoint_carries_remainders() {
+        let trigger = aestra_core::EventTrigger::OnDistance {
+            spacing: 0.3,
+            max_per_tick: 8,
+        };
+        let mut simulation = StatefulSimulation::new(
+            StatefulConfig {
+                gravity: [0.0; 3],
+                drag: 0.0,
+                turbulence: 0.0,
+                spawn_per_tick: 0,
+                speed: (30.0, 30.0),
+                direction: [0.0, 1.0, 0.0],
+                spread: 0.0,
+                lifetime: (2.0, 2.0),
+                capacity: 1,
+                ..config()
+            },
+            7,
+        );
+        simulation
+            .set_distance_emission(trigger.distance_settings())
+            .unwrap();
+        simulation.spawn_from_events(
+            &[ParticleEvent {
+                ordinal: 99,
+                position: [3.0, 4.0, 5.0],
+                velocity: [0.0; 3],
+            }],
+            1,
+            0.0,
+        );
+        let mut positions = Vec::new();
+        for _ in 0..37 {
+            simulation.advance_tick();
+            positions.extend(
+                simulation
+                    .events(trigger)
+                    .iter()
+                    .map(|event| event.position),
+            );
+        }
+        for (index, position) in positions.iter().enumerate() {
+            assert_eq!((position[0], position[2]), (3.0, 5.0));
+            assert!((position[1] - (4.0 + (index + 1) as f32 * 0.3)).abs() < 1e-4);
+        }
+        assert_eq!(simulation.distance_overflow(), 0);
+        let mut restored = simulation.clone();
+        simulation.advance_to_tick(70);
+        restored.advance_to_tick(70);
+        assert_eq!(simulation, restored);
+        simulation.set_cutoffs(crate::EmissionCutoffs {
+            kill_tick: Some(70),
+            ..crate::EmissionCutoffs::NONE
+        });
+        simulation.advance_tick();
+        assert!(simulation.events(trigger).is_empty());
+        assert_eq!(simulation.live_count(), 0);
+    }
+
+    #[test]
+    fn distance_emission_bounds_work_consumes_skipped_crossings_and_rejects_invalid_settings() {
+        let trigger = aestra_core::EventTrigger::OnDistance {
+            spacing: 0.25,
+            max_per_tick: 2,
+        };
+        let mut simulation = StatefulSimulation::new(
+            StatefulConfig {
+                gravity: [0.0; 3],
+                drag: 0.0,
+                turbulence: 0.0,
+                spawn_per_tick: 0,
+                speed: (120.0, 120.0),
+                direction: [0.0, 1.0, 0.0],
+                spread: 0.0,
+                lifetime: (2.0, 2.0),
+                capacity: 1,
+                ..config()
+            },
+            7,
+        );
+        for invalid in [(0.0, 2), (f32::NAN, 2), (0.25, 0), (0.25, 65)] {
+            assert!(simulation.set_distance_emission(Some(invalid)).is_err());
+        }
+        simulation
+            .set_distance_emission(trigger.distance_settings())
+            .unwrap();
+        simulation.spawn_from_events(
+            &[ParticleEvent {
+                ordinal: 0,
+                position: [0.0; 3],
+                velocity: [0.0; 3],
+            }],
+            1,
+            0.0,
+        );
+        simulation.advance_tick();
+        assert_eq!(
+            simulation
+                .events(trigger)
+                .iter()
+                .map(|event| event.position[1])
+                .collect::<Vec<_>>(),
+            [0.25, 0.5]
+        );
+        simulation.advance_tick();
+        assert_eq!(
+            simulation
+                .events(trigger)
+                .iter()
+                .map(|event| event.position[1])
+                .collect::<Vec<_>>(),
+            [2.25, 2.5]
+        );
+        assert_eq!(simulation.distance_overflow(), 12);
+        simulation.particles[0].velocity = [0.0; 3];
+        simulation.advance_tick();
+        assert!(simulation.events(trigger).is_empty());
+    }
 
     #[test]
     fn external_birth_outputs_include_only_accepted_children_and_never_link_back() {

@@ -33,7 +33,7 @@ use wgpu::util::DeviceExt;
 
 const TICK_DT: f32 = 1.0 / 60.0;
 const WORKGROUP: u32 = 64;
-const STATE_STRIDE: u32 = 9;
+const STATE_STRIDE: u32 = aestra_gpu::STATEFUL_STATE_STRIDE;
 /// Capacities and occupancies swept. Kept modest so a full run finishes in seconds.
 const CAPACITIES: [u32; 3] = [4_096, 32_768, 131_072];
 const OCCUPANCIES: [f64; 3] = [0.05, 0.25, 1.0];

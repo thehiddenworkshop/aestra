@@ -8,7 +8,7 @@ use bevy::prelude::Resource;
 use std::{path::PathBuf, sync::Arc};
 
 pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
-pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--persistent-smoke-show | --smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--persistent-smoke-show plays the opt-in F8.1C3 authored show candidate, not final art approval. --smoke-lighting plays F8.3B fluid; --particle-smoke-lighting plays F8.3C sprites; --smoke-persistence plays F8.1A billows; --smoke-cohorts plays F8.1B death-linked shell smoke (these labs are not the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
+pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-art-show | --persistent-smoke-show | --smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-art-show plays the separate F8.1C4 smaller distributed wisp draft; --persistent-smoke-show plays the opt-in F8.1C3 authored show candidate, not final art approval. --smoke-lighting plays F8.3B fluid; --particle-smoke-lighting plays F8.3C sprites; --smoke-persistence plays F8.1A billows; --smoke-cohorts plays F8.1B death-linked shell smoke (these labs are not the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
 
 #[derive(Resource)]
 pub struct ShowProject(pub Arc<CompiledEffectProject>);
@@ -25,6 +25,7 @@ pub struct Options {
     pub smoke_persistence: bool,
     pub smoke_cohorts: bool,
     pub persistent_smoke_show: bool,
+    pub smoke_art_show: bool,
 }
 
 impl Options {
@@ -51,6 +52,7 @@ impl Options {
             smoke_persistence: false,
             smoke_cohorts: false,
             persistent_smoke_show: false,
+            smoke_art_show: false,
             history: PlaybackHistoryPolicy::PlaybackOnly,
             project_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
             effect_path: "effects/fireworks_show.aestra.ron".into(),
@@ -65,6 +67,10 @@ impl Options {
         let mut fluid_lab = false;
         let mut particle_lab = false;
         while let Some(arg) = args.next() {
+            if arg == "--smoke-art-show" {
+                options.smoke_art_show = true;
+                continue;
+            }
             if arg == "--persistent-smoke-show" {
                 options.persistent_smoke_show = true;
                 continue;
@@ -122,7 +128,9 @@ impl Options {
                 _ => return Err(format!("Unknown option or invalid value: {arg} {value}")),
             }
         }
-        if options.persistent_smoke_show && !explicit_effect {
+        if options.smoke_art_show && !explicit_effect {
+            options.effect_path = "effects/fireworks_show_wispy_smoke.aestra.ron".into();
+        } else if options.persistent_smoke_show && !explicit_effect {
             options.effect_path = "effects/fireworks_show_persistent_smoke.aestra.ron".into();
         } else if options.smoke_lighting && !explicit_effect {
             options.effect_path = if options.smoke_cohorts {
@@ -145,8 +153,10 @@ impl Options {
                     .into(),
             );
         }
-        if options.persistent_smoke_show && options.smoke_lighting {
-            return Err("The persistent smoke show cannot be combined with a smoke lab".into());
+        if (options.persistent_smoke_show && options.smoke_art_show)
+            || ((options.persistent_smoke_show || options.smoke_art_show) && options.smoke_lighting)
+        {
+            return Err("Choose one show candidate or smoke lab".into());
         }
         options.project_root = options
             .project_root

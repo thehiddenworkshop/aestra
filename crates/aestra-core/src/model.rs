@@ -511,6 +511,33 @@ impl EffectAsset {
         }
         crate::event_routes::validate_input_spawns(self, &mut report, &mut semantic_ids);
         crate::event_routes::validate_particle_outputs(self, &mut report, &mut semantic_ids);
+        let mut distance_sources = BTreeMap::new();
+        for (source, trigger) in self
+            .events
+            .iter()
+            .map(|route| (route.source, route.trigger))
+            .chain(
+                self.particle_outputs
+                    .iter()
+                    .map(|route| (route.source, route.trigger)),
+            )
+        {
+            if !trigger.is_valid() {
+                report.push(Diagnostic::error(DiagnosticCode::InvalidValue,
+                    "effect.events.trigger", "distance spacing must be finite and at least 0.001; max_per_tick must be 1..=64"));
+            }
+            if let Some(settings) = trigger.distance_settings()
+                && distance_sources
+                    .insert(source, settings)
+                    .is_some_and(|previous| previous != settings)
+            {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    "effect.events.trigger",
+                    "distance routes sharing a source must use identical spacing and max_per_tick",
+                ));
+            }
+        }
         crate::scene_outputs::validate_bindings(self, &mut report, &mut semantic_ids);
         crate::particle_lights::validate_particle_outputs(self, &mut report, &mut semantic_ids);
         for (index, clip) in self.effect_clips.iter().enumerate() {
@@ -3579,8 +3606,8 @@ pub enum FlipbookPlaybackMode {
     PingPong,
 }
 
-/// A particle event link (host bindings HB9b): each time a particle of `source` spawns, dies or
-/// collides, `target` spawns `count` particles where it happened, starting with `inherit_velocity` ×
+/// A particle event link: each time a particle of `source` spawns, dies, collides or crosses
+/// an authored path-distance interval, `target` spawns `count` particles there, with `inherit_velocity` ×
 /// its velocity plus the target's own launch velocity. An emitter any link targets is a
 /// *sub-emitter*: it spawns only from its links. Both emitters run stateful.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -3618,11 +3645,40 @@ impl EventLink {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum EventTrigger {
     OnSpawn,
     OnDeath,
     OnCollision,
+    /// Effect-local path samples; excess crossings are reported and dropped, not
+    /// delayed. Distance routes sharing a source must use identical settings.
+    OnDistance {
+        spacing: f32,
+        max_per_tick: u32,
+    },
+}
+
+impl EventTrigger {
+    pub fn distance_settings(self) -> Option<(f32, u32)> {
+        match self {
+            Self::OnDistance {
+                spacing,
+                max_per_tick,
+            } => Some((spacing, max_per_tick)),
+            _ => None,
+        }
+    }
+
+    pub fn is_valid(self) -> bool {
+        self.distance_settings().is_none_or(|(spacing, limit)| {
+            spacing.is_finite() && spacing >= 0.001 && (1..=64).contains(&limit)
+        })
+    }
+
+    /// Maximum records of this kind per source particle per tick.
+    pub fn samples_per_tick(self) -> u32 {
+        self.distance_settings().map_or(1, |(_, limit)| limit)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]

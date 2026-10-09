@@ -1,0 +1,1067 @@
+// F8.1C4 smoke-art draft; C3 baseline remains unchanged. Original shell/emitter/parameter identities remain asset-scoped.
+// Launch smoke is deposited by rocket path crossings, then drifts independently; burst art remains a draft.
+(
+    format_version: 4,
+    id: "a3574a00-0000-4000-8000-000000f81804",
+    name: "Fireworks Strobe — Wispy Smoke Art Candidate",
+    duration: 18.0,
+    playback_mode: Once,
+    material_instances: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f7384",
+            program: Project("a3574a00-0000-4000-8000-0000000f73e8"),
+            values: {
+                "a3574a00-0000-4000-8000-0000000f7442": EffectParameter("a3574a00-0000-4000-8000-0000000fb032"),
+            },
+            render_state: (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f7385",
+            program: Project("a3574a00-0000-4000-8000-0000000f744c"),
+            values: {
+                "a3574a00-0000-4000-8000-0000000f74a6": EffectParameter("a3574a00-0000-4000-8000-0000000fb033"),
+            },
+            render_state: (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f7386",
+            program: Project("a3574a00-0000-4000-8000-000000f81700"),
+            values: {},
+            render_state: (
+                blend: Alpha,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb3ac",
+            program: Project("a3574a00-0000-4000-8000-0000000fb3e8"),
+            values: {
+                "a3574a00-0000-4000-8000-0000000fb442": EffectParameter("a3574a00-0000-4000-8000-0000000fb032"),
+                "a3574a00-0000-4000-8000-0000000fb4a7": EffectParameter("a3574a00-0000-4000-8000-0000000fb046"),
+                "a3574a00-0000-4000-8000-0000000fb4a8": EffectParameter("a3574a00-0000-4000-8000-0000000fb047"),
+            },
+            render_state: (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ),
+    ],
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb032",
+            name: "Star radiance",
+            default: Scalar(12.0),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb033",
+            name: "Trail radiance",
+            default: Scalar(6.0),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb034",
+            name: "Launch shell color",
+            default: Gradient((
+                id: "a3574a00-0000-4000-8000-0000000fb322",
+                keys: [
+                    (
+                        time: 0.0,
+                        color: (1.0, 0.95, 0.7, 1.0),
+                    ),
+                    (
+                        time: 0.3,
+                        color: (1.0, 0.6, 0.15, 1.0),
+                    ),
+                    (
+                        time: 1.0,
+                        color: (0.55, 0.08, 0.01, 1.0),
+                    ),
+                ],
+            )),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb035",
+            name: "Main stars color",
+            default: Gradient((
+                id: "a3574a00-0000-4000-8000-0000000fb323",
+                keys: [
+                    (
+                        time: 0.0,
+                        color: (1.0, 0.97, 0.85, 1.0),
+                    ),
+                    (
+                        time: 0.7,
+                        color: (1.0, 0.6, 0.15, 1.0),
+                    ),
+                    (
+                        time: 1.0,
+                        color: (0.12, 0.03, 0.002, 1.0),
+                    ),
+                ],
+            )),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb036",
+            name: "Burst flash color",
+            default: Gradient((
+                id: "a3574a00-0000-4000-8000-0000000fb324",
+                keys: [
+                    (
+                        time: 0.0,
+                        color: (1.0, 0.95, 0.7, 1.0),
+                    ),
+                    (
+                        time: 0.35,
+                        color: (1.0, 0.55, 0.12, 1.0),
+                    ),
+                    (
+                        time: 0.8,
+                        color: (0.45, 0.08, 0.005, 1.0),
+                    ),
+                    (
+                        time: 1.0,
+                        color: (0.08, 0.01, 0.001, 1.0),
+                    ),
+                ],
+            )),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb037",
+            name: "Launch smoke color",
+            default: Gradient((
+                id: "a3574a00-0000-4000-8000-0000000fb325",
+                keys: [
+                    (
+                        time: 0.0,
+                        color: (0.3, 0.22, 0.27, 1.0),
+                    ),
+                    (
+                        time: 0.25,
+                        color: (0.16, 0.13, 0.15, 1.0),
+                    ),
+                    (
+                        time: 1.0,
+                        color: (0.055, 0.06, 0.07, 1.0),
+                    ),
+                ],
+            )),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb038",
+            name: "Burst smoke color",
+            default: Gradient((
+                id: "a3574a00-0000-4000-8000-0000000fb326",
+                keys: [
+                    (
+                        time: 0.0,
+                        color: (0.3, 0.22, 0.27, 1.0),
+                    ),
+                    (
+                        time: 0.25,
+                        color: (0.16, 0.13, 0.15, 1.0),
+                    ),
+                    (
+                        time: 1.0,
+                        color: (0.055, 0.06, 0.07, 1.0),
+                    ),
+                ],
+            )),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb046",
+            name: "Strobe cycles per life",
+            default: Scalar(18.0),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb047",
+            name: "Strobe duty",
+            default: Scalar(0.18),
+            exposed: true,
+        ),
+    ],
+    event_outputs: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb384",
+            name: "launch",
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb385",
+            name: "main_break",
+        ),
+    ],
+    emitters: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb064",
+            name: "Launch shell",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 7.0,
+            max_particles: 1,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb06e",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 0.0,
+                                burst_count: 1,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb06f",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Point,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb070",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 1.3,
+                                    max: 1.3,
+                                ),
+                                speed: (
+                                    min: 42.0,
+                                    max: 42.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 0.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                velocity_distribution: Constant,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb071",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.0, -9.81, 0.0),
+                                drag: 0.08,
+                                turbulence: 0.0,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb072",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb08c",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.5,
+                                        ),
+                                        (
+                                            time: 0.85,
+                                            value: 0.35,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.05,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb08d",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 1.0,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.7,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb08e",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (1.0, 0.95, 0.7, 1.0),
+                                        ),
+                                        (
+                                            time: 0.3,
+                                            color: (1.0, 0.6, 0.15, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.55, 0.08, 0.01, 1.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            bindings: {
+                                "color": "a3574a00-0000-4000-8000-0000000fb034",
+                            },
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-0000000fb0a0",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-0000000f7384",
+                    properties: Sprite,
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-0000000fb0a1",
+                    renderer_type: "aestra.renderer.trail",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-0000000f7385",
+                    properties: Trail(
+                        width: 0.8,
+                        sample_interval: 0.016666668,
+                        lifetime: 0.35,
+                        max_points: 64,
+                        max_trails: 1,
+                        sampling: Distance,
+                        sample_distance: 0.3,
+                        curve_tolerance: 0.01,
+                        uv_mode: Stretch,
+                        tile_length: 1.0,
+                        end_cap: Flat,
+                    ),
+                    label: Some("Cooling spark history"),
+                ),
+            ],
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb0c8",
+            name: "Main stars",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 7.0,
+            max_particles: 192,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb0d2",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 0.0,
+                                burst_count: 0,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb0d3",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Point,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb0d4",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 3.0,
+                                    max: 3.0,
+                                ),
+                                speed: (
+                                    min: 18.0,
+                                    max: 22.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 0.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                velocity_distribution: Sphere,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb0d5",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.0, -9.81, 0.0),
+                                drag: 0.45,
+                                turbulence: 0.0,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb0d6",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb0f0",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.65,
+                                        ),
+                                        (
+                                            time: 0.65,
+                                            value: 0.4,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.08,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb0f1",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 1.0,
+                                        ),
+                                        (
+                                            time: 0.65,
+                                            value: 0.9,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb0f2",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (1.0, 0.78, 0.48, 1.0),
+                                        ),
+                                        (
+                                            time: 0.16,
+                                            color: (1.0, 0.09, 0.28, 1.0),
+                                        ),
+                                        (
+                                            time: 0.7,
+                                            color: (0.6, 0.015, 0.06, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.12, 0.004, 0.008, 1.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            bindings: {
+                                "color": "a3574a00-0000-4000-8000-0000000fb035",
+                            },
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-0000000fb104",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-0000000fb3ac",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb12c",
+            name: "Burst flash",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 7.0,
+            max_particles: 1,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb136",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 0.0,
+                                burst_count: 0,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb137",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Point,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb138",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 0.09,
+                                    max: 0.09,
+                                ),
+                                speed: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 0.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                velocity_distribution: Constant,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb139",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.0, -9.81, 0.0),
+                                drag: 0.0,
+                                turbulence: 0.0,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb13a",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb154",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 2.5,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.05,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb155",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 1.0,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb156",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (1.0, 0.95, 0.7, 1.0),
+                                        ),
+                                        (
+                                            time: 0.35,
+                                            color: (1.0, 0.55, 0.12, 1.0),
+                                        ),
+                                        (
+                                            time: 0.8,
+                                            color: (0.45, 0.08, 0.005, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.08, 0.01, 0.001, 1.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            bindings: {
+                                "color": "a3574a00-0000-4000-8000-0000000fb036",
+                            },
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-0000000fb168",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-0000000f7384",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb190",
+            name: "Launch smoke",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 18.0,
+            max_particles: 64,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb19a",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 0.0,
+                                burst_count: 0,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb19b",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Point,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb19c",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 8.0,
+                                    max: 10.0,
+                                ),
+                                speed: (
+                                    min: 0.05,
+                                    max: 0.15,
+                                ),
+                                direction: (1.0, 0.15, 0.1),
+                                spread_degrees: 40.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                velocity_distribution: Cone,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb19d",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.18, 0.035, 0.02),
+                                drag: 0.3,
+                                turbulence: 0.1,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb19e",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb1b8",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.7,
+                                        ),
+                                        (
+                                            time: 0.4,
+                                            value: 2.5,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 5.0,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb1b9",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.0,
+                                        ),
+                                        (
+                                            time: 0.2,
+                                            value: 0.24,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb1ba",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (0.3, 0.22, 0.27, 1.0),
+                                        ),
+                                        (
+                                            time: 0.25,
+                                            color: (0.16, 0.13, 0.15, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.055, 0.06, 0.07, 1.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            bindings: {
+                                "color": "a3574a00-0000-4000-8000-0000000fb037",
+                            },
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-0000000fb1cc",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-0000000f7386",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb1f4",
+            name: "Burst smoke",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 18.0,
+            max_particles: 48,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb1fe",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 0.0,
+                                burst_count: 0,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb1ff",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Sphere(radius: 9.0),
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb200",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 12.0,
+                                    max: 14.0,
+                                ),
+                                speed: (
+                                    min: 2.5,
+                                    max: 5.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 0.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                velocity_distribution: Sphere,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb201",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.35, 0.12, 0.08),
+                                drag: 0.35,
+                                turbulence: 0.8,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-0000000fb202",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb21c",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 2.0,
+                                        ),
+                                        (
+                                            time: 0.35,
+                                            value: 7.5,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 12.0,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb21d",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.0,
+                                        ),
+                                        (
+                                            time: 0.12,
+                                            value: 0.2,
+                                        ),
+                                        (
+                                            time: 0.7,
+                                            value: 0.18,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "a3574a00-0000-4000-8000-0000000fb21e",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (0.3, 0.22, 0.27, 1.0),
+                                        ),
+                                        (
+                                            time: 0.25,
+                                            color: (0.16, 0.13, 0.15, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.055, 0.06, 0.07, 1.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            bindings: {
+                                "color": "a3574a00-0000-4000-8000-0000000fb038",
+                            },
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-0000000fb230",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-0000000f7386",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+    events: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f81904",
+            source: "a3574a00-0000-4000-8000-0000000fb064",
+            trigger: OnDistance(spacing: 1.0, max_per_tick: 8),
+            target: "a3574a00-0000-4000-8000-0000000fb190",
+            count: 1,
+            inherit_velocity: 0.0,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb352",
+            source: "a3574a00-0000-4000-8000-0000000fb064",
+            trigger: OnDeath,
+            target: "a3574a00-0000-4000-8000-0000000fb0c8",
+            count: 192,
+            inherit_velocity: 0.02,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb353",
+            source: "a3574a00-0000-4000-8000-0000000fb064",
+            trigger: OnDeath,
+            target: "a3574a00-0000-4000-8000-0000000fb12c",
+            count: 1,
+            inherit_velocity: 0.02,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb354",
+            source: "a3574a00-0000-4000-8000-0000000fb064",
+            trigger: OnDeath,
+            target: "a3574a00-0000-4000-8000-0000000fb1f4",
+            count: 48,
+            inherit_velocity: 0.02,
+        ),
+    ],
+    particle_budgets: {
+        "low": (
+            emitter_capacity: {
+                "a3574a00-0000-4000-8000-0000000fb0c8": 48,
+                "a3574a00-0000-4000-8000-0000000fb1f4": 12,
+            },
+            event_count: {
+                "a3574a00-0000-4000-8000-0000000fb352": 48,
+                "a3574a00-0000-4000-8000-0000000fb354": 12,
+            },
+        ),
+        "medium": (
+            emitter_capacity: {
+                "a3574a00-0000-4000-8000-0000000fb0c8": 96,
+                "a3574a00-0000-4000-8000-0000000fb1f4": 24,
+            },
+            event_count: {
+                "a3574a00-0000-4000-8000-0000000fb352": 96,
+                "a3574a00-0000-4000-8000-0000000fb354": 24,
+            },
+        ),
+    },
+    particle_outputs: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb38e",
+            source: "a3574a00-0000-4000-8000-0000000fb064",
+            trigger: OnSpawn,
+            output: "a3574a00-0000-4000-8000-0000000fb384",
+            aggregation: FirstPerTick,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb38f",
+            source: "a3574a00-0000-4000-8000-0000000fb064",
+            trigger: OnDeath,
+            output: "a3574a00-0000-4000-8000-0000000fb385",
+            aggregation: FirstPerTick,
+        ),
+    ],
+    point_lights: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb3a2",
+            route: "a3574a00-0000-4000-8000-0000000fb38f",
+            pulse: (
+                linear_color: (1.0, 1.0, 1.0),
+                intensity_lumens: (
+                    id: "a3574a00-0000-4000-8000-0000000fb3c0",
+                    keys: [(time: 0.0, value: 500000.0), (time: 0.2, value: 125000.0), (time: 1.0, value: 0.0)],
+                ),
+                range: (
+                    id: "a3574a00-0000-4000-8000-0000000fb3c1",
+                    keys: [(time: 0.0, value: 80.0), (time: 1.0, value: 80.0)],
+                ),
+                radius: 0.1,
+                duration_seconds: 0.6,
+            ),
+            color_parameter: Some((parameter: "a3574a00-0000-4000-8000-0000000fb035", normalized_age: 0.5)),
+        ),
+    ],
+    metadata: {
+        "notes": "F8.1C3 opt-in saved variant of fireworks_strobe: unchanged links, capacities, non-smoke emitters, sound/representative-light routes and parameter IDs. Burst smoke uses the shared lit seeded-billow program with 12-14 second lifetimes in an 18-second owner window. No selected-star outputs; cross-draw transparency, natural smoke art and finale cost acceptance pending.",
+        "preview_seed": "17428930557923819521",
+        "status": "F5E bounded per-particle strobe prototype; artistic and finale-scale acceptance pending",
+    },
+)

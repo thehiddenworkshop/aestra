@@ -467,6 +467,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "properties-event-on-spawn",
     "properties-event-on-death",
     "properties-event-on-collision",
+    "properties-event-on-distance",
     "properties-status-selected-compiled",
     "properties-status-selected",
     "properties-status-module-registry-unavailable",

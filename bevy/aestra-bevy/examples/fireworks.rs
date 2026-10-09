@@ -63,7 +63,10 @@ fn main() -> AppExit {
         })
         .insert_resource(AestraSettings {
             presentation: PresentationMode::Gpu,
-            transparent_order: if options.particle_smoke_lighting || options.persistent_smoke_show {
+            transparent_order: if options.particle_smoke_lighting
+                || options.persistent_smoke_show
+                || options.smoke_art_show
+            {
                 aestra_bevy::TransparentOrderMode::DepthBackToFront
             } else {
                 aestra_bevy::TransparentOrderMode::Fast
@@ -293,7 +296,9 @@ fn status(
         return;
     };
     *frame_ms += (time.delta_secs() * 1000.0 - *frame_ms) * 0.05;
-    let title = if options.persistent_smoke_show {
+    let title = if options.smoke_art_show {
+        "AESTRA / WISPY SMOKE ART CANDIDATE"
+    } else if options.persistent_smoke_show {
         "AESTRA / PERSISTENT SMOKE SHOW CANDIDATE"
     } else if options.smoke_cohorts {
         "AESTRA / SHELL-BORN SMOKE COHORTS"

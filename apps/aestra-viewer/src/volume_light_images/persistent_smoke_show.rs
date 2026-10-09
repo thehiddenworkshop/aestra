@@ -8,7 +8,12 @@ fn density(app: &mut App, restore: bool) {
     for mut presented in query.iter_mut(app.world_mut()) {
         let effect = presented.instance.effect().clone();
         for material in &effect.material_instances {
-            if material.program.id().to_string() != "a3574a00-0000-4000-8000-000000f81200" {
+            if ![
+                "a3574a00-0000-4000-8000-000000f81200",
+                "a3574a00-0000-4000-8000-000000f81700",
+            ]
+            .contains(&material.program.id().to_string().as_str())
+            {
                 continue;
             }
             if restore {
@@ -43,15 +48,42 @@ fn density(app: &mut App, restore: bool) {
 #[test]
 #[ignore = "native F8.1C3 authored persistent-smoke show controls; run alone"]
 fn authored_persistent_smoke_show_lights_overlaps_and_drains() {
-    let root = PathBuf::from(
-        std::env::var_os("AESTRA_PERSISTENT_SHOW_IMAGES").expect("fresh absolute output directory"),
-    );
+    qualify_show("AESTRA_PERSISTENT_SHOW_IMAGES", false);
+}
+
+#[test]
+#[ignore = "native wispy art draft lifecycle/light/density controls; run alone"]
+fn authored_wispy_smoke_show_lights_overlaps_and_drains() {
+    qualify_show("AESTRA_WISPY_SHOW_IMAGES", true);
+}
+
+fn qualify_show(output_env: &str, wispy: bool) {
+    let root =
+        PathBuf::from(std::env::var_os(output_env).expect("fresh absolute output directory"));
     assert!(root.is_absolute());
     for tier in ["high", "medium", "low"] {
         let directory = root.join(tier);
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("report.json"), b"{\"accepted\":false}").unwrap();
-        let compiled = live_costs::fixture(tier, live_costs::Case::PersistentShow { draw: true });
+        let compiled = if wispy {
+            let assets = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
+            let effect = EffectAsset::from_ron(
+                &fs::read_to_string(assets.join("effects/fireworks_show_wispy_smoke.aestra.ron"))
+                    .unwrap(),
+            )
+            .unwrap();
+            let resolved = aestra_project::ProjectAssetIndex::scan(assets)
+                .resolve_effect_project(&effect)
+                .unwrap();
+            Arc::new(
+                EffectCompiler::default()
+                    .with_tier(aestra_bevy::QualityTier::preset(tier).unwrap())
+                    .compile_resolved_project(&resolved)
+                    .unwrap(),
+            )
+        } else {
+            live_costs::fixture(tier, live_costs::Case::PersistentShow { draw: true })
+        };
         let (mut app, owner, target) = headless_project(tier, true, true, compiled);
         *app.world_mut().get_mut::<Transform>(owner).unwrap() = Transform::IDENTITY;
         let mut cameras = app
@@ -66,6 +98,7 @@ fn authored_persistent_smoke_show_lights_overlaps_and_drains() {
         policy.apply(app.world_mut()).unwrap();
         let empty = capture(&mut app, &target);
         let mut lights = Vec::new();
+        let mut path_admission = Vec::new();
         // At 9.3s three simultaneous authored launches have broken while older smoke persists.
         // Sample inside each authored pulse, not at its async birth/delivery boundary.
         for (phase, frame) in [("overlap-break", 558), ("late-break", 1104)] {
@@ -89,6 +122,39 @@ fn authored_persistent_smoke_show_lights_overlaps_and_drains() {
                     .unwrap();
             }
             lights.push(json!({"phase":phase,"light_difference":difference,"restored":repeat,"active":active}));
+            if wispy {
+                let mut query = app
+                    .world_mut()
+                    .query::<(&PresentedEffect, &aestra_bevy::gpu::GpuEventLinkStatistics)>();
+                let mut admitted = 0;
+                for (presented, stats) in query.iter(app.world()) {
+                    let Some((index, _)) = presented
+                        .instance
+                        .effect()
+                        .event_links
+                        .iter()
+                        .enumerate()
+                        .find(|(_, link)| link.trigger.distance_settings().is_some())
+                    else {
+                        continue;
+                    };
+                    assert!(stats.readback_samples > 0);
+                    assert_eq!(stats.source_overflow, 0);
+                    let link = &stats.links[index];
+                    assert_eq!(
+                        link.accepted, 43,
+                        "one deposited puff for each full unit of rocket travel"
+                    );
+                    assert_eq!(link.captured_demand, link.accepted);
+                    assert_eq!((link.expansion_omitted, link.destination_rejected), (0, 0));
+                    path_admission.push(json!({"phase":phase,"effect":presented.instance.effect().name,"accepted":link.accepted,"source_overflow":stats.source_overflow}));
+                    admitted += 1;
+                }
+                assert!(
+                    admitted >= 7,
+                    "observe overlapping authored rocket wakes, not an empty query"
+                );
+            }
         }
         advance(&mut app, owner, 1800); // 30s: normal show already ended at 26s.
         let tail = capture(&mut app, &target);
@@ -153,12 +219,19 @@ fn authored_persistent_smoke_show_lights_overlaps_and_drains() {
                 r["light_difference"][0].as_u64().unwrap() >= 100
                     && r["restored"][1].as_u64().unwrap() <= 1
             });
-        let report = json!({"slice":"F8.1C3","tier":tier,"accepted":accepted,"light_sample_root_times":[9.3,18.4],"tail_visibility":visibility,"frozen_repeat":repeat,"density_off":density_off,"density_restored":density_restore,"natural_drained_pixels":natural,"natural_zero":zero,"tail_populations":tail_counts,"final_populations":final_counts,"retired_sort":retired,"illumination":lights,"scope":"saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval"});
+        let report = json!({"slice":if wispy {"F8.1C4B distance smoke"} else {"F8.1C3"},"tier":tier,"accepted":accepted,"light_sample_root_times":[9.3,18.4],"tail_visibility":visibility,"frozen_repeat":repeat,"density_off":density_off,"density_restored":density_restore,"natural_drained_pixels":natural,"natural_zero":zero,"tail_populations":tail_counts,"final_populations":final_counts,"retired_sort":retired,"illumination":lights,"scope":"saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval"});
         fs::write(
             directory.join("report.json"),
             serde_json::to_vec_pretty(&report).unwrap(),
         )
         .unwrap();
+        if wispy {
+            fs::write(
+                directory.join("distance-admission.json"),
+                serde_json::to_vec_pretty(&path_admission).unwrap(),
+            )
+            .unwrap();
+        }
         println!("{report}");
         assert!(accepted, "authored smoke show gate failed: {report}");
     }

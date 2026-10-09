@@ -532,8 +532,8 @@ fn aestra_free_push(slot: u32) {
 /// the stateful path feeds the same alive/compaction/render pipeline the analytic path uses. This is
 /// the GPU counterpart of `aestra_runtime::StatefulSimulation::present`.
 ///
-/// The persistent state slot is `AESTRA_STATE_STRIDE` (9) `f32`s — position xyz, velocity xyz, age,
-/// lifetime, and the spawn ordinal stored as bits (the stable particle identity). The presentation
+/// The persistent state slot is `AESTRA_STATE_STRIDE` (10) `f32`s — position xyz, velocity xyz, age,
+/// lifetime, the spawn ordinal stored as bits (stable identity), and a distance residual. The presentation
 /// record is 12 words matching `GpuParticle`: `color.rgba`, `position.xyz`, `size`, `rotation`,
 /// `normalized_age`, `packed_emitter_alive` (`emitter << 16 | alive`), `particle_index`. The spawn
 /// ordinal is written verbatim into `particle_index`, the analytic path's stable per-particle index
@@ -553,12 +553,14 @@ fn aestra_free_push(slot: u32) {
 /// time analytic emitters evaluate at. Pass `0` for the raw tick state.
 /// Floats in one GPU persistent-state record of a stateful particle: the logical state
 /// (`aestra_runtime::SimulationStateLayout`: position, velocity, age, lifetime — 8 floats) plus the
-/// particle's spawn ordinal, which keys its deterministic randomness and its identity. The kernels'
+/// particle's spawn ordinal, which keys its deterministic randomness and its identity, and its
+/// distance-emission residual. The residual is private persistent state, not a presentation input.
+/// The kernels'
 /// `AESTRA_STATE_STRIDE`; the render backend sizes the state buffer from it.
-pub const STATEFUL_STATE_STRIDE: u32 = 9;
+pub const STATEFUL_STATE_STRIDE: u32 = 10;
 
 pub const STATEFUL_PRESENT_WGSL: &str = r#"
-const AESTRA_STATE_STRIDE: u32 = 9u;
+const AESTRA_STATE_STRIDE: u32 = 10u;
 const AESTRA_PRESENT_STRIDE: u32 = 12u;
 // The appearance block of `params` (see `pack_stateful_appearance`).
 const AESTRA_APPEARANCE_SIZE: u32 = 78u;
@@ -841,7 +843,9 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// explicit modes `spread` is the full cone angle in degrees; mode 0 retains
 /// the legacy spread-factor convention. No storage binding is added.
 pub const STATEFUL_VELOCITY_MODE_INDEX: usize = STATEFUL_WORLD_BASE + STATEFUL_WORLD_WORDS;
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_VELOCITY_MODE_INDEX + 1;
+/// Distance emission spacing (f32 bits) and per-particle work limit. Zero disables it.
+pub const STATEFUL_DISTANCE_BASE: usize = STATEFUL_VELOCITY_MODE_INDEX + 1;
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_DISTANCE_BASE + 2;
 const _: () = assert!(STATEFUL_VELOCITY_MODE_INDEX == 188);
 
 /// Packs an emitter's colliders into the stateful params' collider block (hybrid roadmap M10): the
@@ -1661,6 +1665,28 @@ fn aestra_emit_event(kind: u32, ordinal: u32, position: vec3<f32>, velocity: vec
     atomicStore(&events[r + 7u], bitcast<u32>(velocity.z));
 }
 
+// Sample the resolved motion chord. The remainder belongs to the source slot
+// (and its checkpoints), never to a frame or link. Overspeed consumes crossings
+// rather than accumulating a later burst of smoke.
+fn aestra_emit_distance(base: u32, ordinal: u32, previous: vec3<f32>, position: vec3<f32>, velocity: vec3<f32>) {
+    if ((params[AESTRA_EVENTS_BASE] & 16u) == 0u) { return; }
+    let spacing = bitcast<f32>(params[189u]);
+    if (spacing < 0.001) { return; }
+    let delta = position - previous;
+    let distance = length(delta);
+    if (distance <= 0.0) { return; }
+    let remainder = state[base + 9u];
+    let total = remainder + distance;
+    let crossings = u32(min(floor(total / spacing), 4294967040.0));
+    let kept = min(crossings, min(params[190u], 64u));
+    for (var sample = 0u; sample < kept; sample += 1u) {
+        let t = (f32(sample + 1u) * spacing - remainder) / distance;
+        aestra_emit_event(16u, ordinal, previous + delta * t, velocity);
+    }
+    atomicAdd(&events[1], crossings - kept);
+    state[base + 9u] = total % spacing;
+}
+
 @compute @workgroup_size(64)
 fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
@@ -1680,6 +1706,7 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         let drag = bitcast<f32>(params[16]);
         let seed = vec2<u32>(params[2], params[3]);
         let ordinal = bitcast<u32>(state[base + 8u]);
+        let previous = vec3<f32>(state[base], state[base + 1u], state[base + 2u]);
         // Homing (host bindings HB7) steers the velocity before the forces act on it; an arrived
         // particle retires.
         let homing = aestra_homing_steer(
@@ -1719,6 +1746,7 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         // Collision: resolve the authored colliders against the freshly integrated state (M10). A kill
         // forces the death condition below; a bounce rewrites position/velocity.
         let collision = aestra_resolve_colliders(vec3<f32>(px, py, pz), vec3<f32>(vx, vy, vz));
+        aestra_emit_distance(base, ordinal, previous, collision.position, collision.velocity);
         state[base + 0u] = collision.position.x;
         state[base + 1u] = collision.position.y;
         state[base + 2u] = collision.position.z;
@@ -1780,6 +1808,7 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     state[base + 6u] = 0.0;
     state[base + 7u] = lifetime;
     state[base + 8u] = bitcast<f32>(ordinal);
+    state[base + 9u] = 0.0;
     aestra_emit_event(1u, ordinal, position, launch);
 }
 
@@ -1960,7 +1989,7 @@ fn {name}(cell: vec3<u32>, dims: vec3<u32>, edge: u32, table_word: u32) -> u32 {
 pub const FIELD_FOLLOW_PARAM_WORDS: usize = 14;
 
 /// Follow Field for stateful particles (fluid F2b): each live slot of the persistent state
-/// (`AESTRA_STATE_STRIDE` = 9 floats: position, velocity, age, lifetime, ordinal) samples a vector
+/// (`AESTRA_STATE_STRIDE` = 10 floats: position, velocity, age, lifetime, ordinal, distance residual) samples a vector
 /// grid field — a domain's [`aestra_runtime::FieldLayout`] — trilinearly at its position (cell-centred,
 /// clamped to the grid) and moves its velocity toward the sampled `xyz` by `min(strength × dt, 1)`.
 /// A gather over particles: no atomics, so reruns reproduce the same bits. The stateful backend runs it
@@ -1980,7 +2009,7 @@ const FIELD_FOLLOW_WGSL: &str = r#"
 @group(0) @binding(2) var<storage, read> params: array<u32>;
 @group(0) @binding(3) var<storage, read> follow_table: array<u32>;
 
-const FOLLOW_STATE_STRIDE: u32 = 9u;
+const FOLLOW_STATE_STRIDE: u32 = 10u;
 
 fn follow_field_value(cell: vec3<i32>) -> vec3<f32> {
     let dims = vec3<i32>(i32(params[1]), i32(params[2]), i32(params[3]));
@@ -2152,7 +2181,7 @@ fn domain_spawn_plan() {
 "#;
 
 /// Spawn From Domain (fluid F10, G8): one thread per planned record (an indirect dispatch of the
-/// plan), writing a particle into the persistent state (`AESTRA_STATE_STRIDE` = 9 floats) at the
+/// plan), writing a particle into the persistent state (`AESTRA_STATE_STRIDE` = 10 floats) at the
 /// record's position, with `inherit` × the record's velocity plus the emitter's launch velocity, and
 /// a lifetime in the emitter's range — both sampled from `(seed, ordinal)` exactly as `spawn` does.
 /// `params` is the emitter's stateful params for the tick ([`STATEFUL_SIMULATION_PARAM_WORDS`]); the
@@ -2188,7 +2217,7 @@ fn domain_spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let r = 4u + i * 8u;
     let inherit = bitcast<f32>(spawn_params[1]);
-    let base = slot * 9u;
+    let base = slot * 10u;
     for (var axis = 0u; axis < 3u; axis = axis + 1u) {
         state[base + axis] = bitcast<f32>(emission[r + axis]);
         state[base + 3u + axis] = inherit * bitcast<f32>(emission[r + 4u + axis]) + launch[axis];
@@ -2196,6 +2225,7 @@ fn domain_spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     state[base + 6u] = 0.0;
     state[base + 7u] = lifetime;
     state[base + 8u] = bitcast<f32>(ordinal);
+    state[base + 9u] = 0.0;
     if (i < plan[7]) {
         let record = 4u + (plan[6] + i) * 8u;
         atomicStore(&events[record], 8u); // output-only OnSpawn, not a link trigger

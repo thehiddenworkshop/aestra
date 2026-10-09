@@ -1,0 +1,16 @@
+(
+    id: "a3574a00-0000-4000-8000-000000f81600", schema_version: 1,
+    name: "Seeded Wispy Smoke Art Candidate",
+    inputs: [
+        (id: "a3574a00-0000-4000-8000-000000f81601", name: "UV", value_type: Vec2),
+        (id: "a3574a00-0000-4000-8000-000000f81602", name: "Seed", value_type: Float),
+        (id: "a3574a00-0000-4000-8000-000000f81603", name: "Normalized age", value_type: Float),
+    ],
+    outputs: [(id: "a3574a00-0000-4000-8000-000000f81604", name: "Density", value_type: Float, expression: "a3574a00-0000-4000-8000-000000f81605")],
+    expressions: [],
+    custom_wesl: Some((
+        evaluation_domain: Fragment,
+        source: "fn billow(uv: vec2<f32>, seed: f32, age: f32) -> f32 {\n    var p = uv * 6.2 + vec2<f32>(seed * 47.0, seed * 19.0) + vec2<f32>(0.25, -0.4) * age;\n    let weights = array<f32, 3>(0.57, 0.29, 0.14);\n    var n = 0.0;\n    for (var octave = 0u; octave < 3u; octave += 1u) {\n        let i = floor(p);\n        let f = fract(p);\n        let u = f * f * (vec2<f32>(3.0) - 2.0 * f);\n        var corners: array<f32, 4>;\n        for (var corner = 0u; corner < 4u; corner += 1u) {\n            let point = i + vec2<f32>(f32(corner % 2u), f32(corner / 2u));\n            var q = fract(vec3<f32>(point.x, point.y, point.x) * 0.1031);\n            q += vec3<f32>(dot(q, q.yzx + vec3<f32>(33.33)));\n            corners[corner] = fract((q.x + q.y) * q.z);\n        }\n        n += mix(mix(corners[0], corners[1], u.x), mix(corners[2], corners[3], u.x), u.y) * weights[octave];\n        p = p * 2.03 + vec2<f32>(7.1);\n    }\n    let angle = seed * 6.2831853;\n    let centered = uv - vec2<f32>(0.5);\n    let rotated = vec2<f32>(cos(angle) * centered.x - sin(angle) * centered.y, sin(angle) * centered.x + cos(angle) * centered.y);\n    let warped = rotated * vec2<f32>(0.75, 1.45) + vec2<f32>(n - 0.5, 0.5 - n) * 0.18;\n    let radius = length(warped) + (n - 0.5) * 0.17;\n    return (1.0 - smoothstep(0.18, 0.52, radius)) * smoothstep(0.30, 0.72, n);\n}\n",
+        entry_points: {"a3574a00-0000-4000-8000-000000f81604": "billow"},
+    )),
+)

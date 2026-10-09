@@ -196,7 +196,7 @@ fn overflowing_external_birth_capture_keeps_a_deterministic_prefix_without_losin
     assert_eq!(
         first
             .0
-            .as_chunks::<9>()
+            .as_chunks::<10>()
             .0
             .iter()
             .filter(|state| f32::from_bits(state[7]) > 0.0)

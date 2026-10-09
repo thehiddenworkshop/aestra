@@ -279,7 +279,7 @@ fn allocate(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// The full stateful loop with death and slot reuse. Two per-tick phases sharing five bindings:
 /// `death_integrate` integrates each live slot by one dt and frees it (pushes to the free list) if it
 /// died; `spawn` claims a free slot and a fresh ordinal for each of this tick's new particles. The
-/// state stride is 9 floats: position, velocity, age, lifetime, and the spawn ordinal (identity).
+/// state stride is 10 floats: position, velocity, age, lifetime, and the spawn ordinal (identity).
 /// `params` uses the production 19-word layout (`aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS`).
 const DEATH_LOOP_WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read_write> state: array<f32>;
@@ -292,7 +292,7 @@ const DEATH_LOOP_WGSL: &str = r#"
 fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
     if (slot >= params[0]) { return; }
-    let base = slot * 9u;
+    let base = slot * 10u;
     let lifetime = state[base + 7u];
     let age = state[base + 6u];
     if (lifetime > 0.0 && age < lifetime) {
@@ -357,7 +357,7 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
         position = aestra_place_point(position);
         launch = aestra_place_vector(velocity);
     }
-    let base = slot * 9u;
+    let base = slot * 10u;
     state[base + 0u] = position.x;
     state[base + 1u] = position.y;
     state[base + 2u] = position.z;
@@ -370,7 +370,7 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// Presentation extraction: map each stride-9 persistent state slot to a 12-word GpuParticle record,
+/// Presentation extraction: map each stride-10 persistent state slot to a 12-word GpuParticle record,
 /// exercising the production `aestra_gpu::STATEFUL_PRESENT_WGSL`. Four bindings: state (read), the
 /// presentation output (read-write), the sub-tick interpolation time (read), and the params whose
 /// appearance block `present` draws with (read; a plain one here).
@@ -394,7 +394,7 @@ type CompactionOutputs = (Vec<u32>, Vec<u32>, Vec<u32>);
 /// Words per presentation record — the 48-byte `GpuParticle` ABI.
 const PRESENT_STRIDE: usize = 12;
 /// Persistent state slot stride for the death loop and presentation extraction (adds the ordinal).
-const DEATH_STRIDE: usize = 9;
+const DEATH_STRIDE: usize = aestra_gpu::STATEFUL_STATE_STRIDE as usize;
 
 struct Harness {
     device: wgpu::Device,
@@ -1043,7 +1043,7 @@ impl Harness {
     /// identity — for `ticks` fixed ticks, then reads back every live slot as `(spawn ordinal,
     /// position)`. Each tick runs two dispatches in one pass: `death_integrate` over all `capacity`
     /// slots (advance the live ones, free the ones that died this tick) then `spawn` over
-    /// `spawn_per_tick` threads (each claims a freed slot and a fresh ordinal). State stride is 9
+    /// `spawn_per_tick` threads (each claims a freed slot and a fresh ordinal). State stride is 10
     /// floats (position, velocity, age, lifetime, ordinal-as-bits). Slots are matched to the CPU
     /// reference by ordinal, so the arbitrary parallel slot assignment need not agree.
     fn advance_stateful_with_death(
@@ -1054,7 +1054,7 @@ impl Harness {
     ) -> Result<Vec<(u64, [f32; 3])>, String> {
         let capacity = config.capacity;
         let spawn_per_tick = config.spawn_per_tick;
-        let state_bytes = encode(&vec![0.0_f32; capacity as usize * 9])?;
+        let state_bytes = encode(&vec![0.0_f32; capacity as usize * 10])?;
         let state = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1148,7 +1148,7 @@ impl Harness {
         let raw = self.read_back_u32(encoder, &staging)?;
         let mut alive = Vec::new();
         for slot in 0..capacity as usize {
-            let base = slot * 9;
+            let base = slot * 10;
             let lifetime = f32::from_bits(raw[base + 7]);
             let age = f32::from_bits(raw[base + 6]);
             if lifetime > 0.0 && age < lifetime {
@@ -1289,7 +1289,7 @@ impl Harness {
         Ok(alive)
     }
 
-    /// Runs presentation extraction over an uploaded stride-9 state buffer with a `subtick`
+    /// Runs presentation extraction over an uploaded stride-10 state buffer with a `subtick`
     /// interpolation time, returning the raw `capacity * 12` presentation words (the `GpuParticle`
     /// ABI). Floats come back as bits so `packed_emitter_alive` and `particle_index` are recovered
     /// exactly.
@@ -1383,7 +1383,7 @@ impl Harness {
         self.read_back_u32(encoder, &staging)
     }
 
-    /// Runs the production unified module's `present` entry over an uploaded stride-9 state buffer and
+    /// Runs the production unified module's `present` entry over an uploaded stride-10 state buffer and
     /// reads back the compaction outputs it produces alongside presentation: `(alive_indices, indirect,
     /// counters)`. `alive_indices` has `slot_offset + capacity` words, `indirect` has `(emitter+1)*4`
     /// words (the per-emitter draw commands), and `counters` has two. Proves the stateful path compacts
@@ -1669,7 +1669,7 @@ fn assert_positions_match(cpu: &[f32], gpu: &[f32]) {
     }
 }
 
-/// One stride-9 persistent state slot: position, velocity, age, lifetime, and the spawn ordinal
+/// One stride-10 persistent state slot: position, velocity, age, lifetime, and the spawn ordinal
 /// stored as bits (subnormal for small ordinals, which is what production stores).
 fn state_slot(
     position: [f32; 3],
@@ -1688,6 +1688,7 @@ fn state_slot(
         age,
         lifetime,
         f32::from_bits(ordinal),
+        0.0,
     ]
 }
 
@@ -2650,7 +2651,7 @@ fn advance_production_in_scene(
             usage: wgpu::BufferUsages::STORAGE | usage,
         })
     };
-    let state_bytes = encode(&vec![0.0_f32; capacity as usize * 9])?;
+    let state_bytes = encode(&vec![0.0_f32; capacity as usize * 10])?;
     let state = buffer("state", state_bytes.clone(), wgpu::BufferUsages::COPY_SRC);
     let free_list = buffer(
         "free list",
@@ -2721,10 +2722,10 @@ fn advance_production_in_scene(
     encoder.copy_buffer_to_buffer(&state, 0, &staging, 0, state_bytes.len() as u64);
     encoder.copy_buffer_to_buffer(&counters, 0, &staging, state_bytes.len() as u64, 16);
     let raw = harness.read_back_u32(encoder, &staging)?;
-    let counted = raw[capacity as usize * 9..].to_vec();
+    let counted = raw[capacity as usize * 10..].to_vec();
     let mut live = Vec::new();
     for slot in 0..capacity as usize {
-        let base = slot * 9;
+        let base = slot * 10;
         let (age, lifetime) = (f32::from_bits(raw[base + 6]), f32::from_bits(raw[base + 7]));
         if lifetime > 0.0 && age < lifetime {
             live.push((
@@ -3123,6 +3124,25 @@ fn advance_production_linked(
     seed: u64,
     ticks: u32,
 ) -> Result<(Vec<LiveParticles>, Vec<aestra_runtime::EffectOutputEvent>), String> {
+    advance_production_linked_with_overflow(harness, configs, links, bursts, outputs, seed, ticks)
+        .map(|(particles, events, _)| (particles, events))
+}
+
+type LinkedWithOverflow = (
+    Vec<LiveParticles>,
+    Vec<aestra_runtime::EffectOutputEvent>,
+    Vec<u32>,
+);
+
+fn advance_production_linked_with_overflow(
+    harness: &Harness,
+    configs: &[StatefulConfig],
+    links: &[aestra_runtime::CompiledEventLink],
+    bursts: &[aestra_runtime::InputSpawnBurst],
+    outputs: &[aestra_runtime::CompiledParticleOutput],
+    seed: u64,
+    ticks: u32,
+) -> Result<LinkedWithOverflow, String> {
     use aestra_bevy_render::execution::{
         DomainSpawnPipeline, EventEmissionList, EventGatherPipeline, ParticleOutputSlot, SpawnState,
     };
@@ -3191,7 +3211,7 @@ fn advance_production_linked(
             Ok(Emitter {
                 state: buffer(
                     "state",
-                    encode(&vec![0.0_f32; capacity as usize * 9])?,
+                    encode(&vec![0.0_f32; capacity as usize * 10])?,
                     wgpu::BufferUsages::COPY_SRC,
                 ),
                 free_list: buffer(
@@ -3218,7 +3238,7 @@ fn advance_production_linked(
                 events: buffer(
                     "events",
                     vec![0u8; event_bytes],
-                    wgpu::BufferUsages::COPY_DST,
+                    wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
                 ),
             })
         })
@@ -3226,8 +3246,10 @@ fn advance_production_linked(
     let lists: Vec<wgpu::Buffer> = links
         .iter()
         .map(|link| {
-            let list_capacity =
-                EventGatherPipeline::list_capacity(configs[link.source].capacity, link.count);
+            let list_capacity = EventGatherPipeline::list_capacity(
+                aestra_runtime::event_capture_capacity(configs[link.source].capacity, link.trigger),
+                link.count,
+            );
             buffer(
                 "event list",
                 vec![0u8; EventGatherPipeline::list_bytes(list_capacity) as usize],
@@ -3259,6 +3281,21 @@ fn advance_production_linked(
                 aestra_runtime::PARTICLE_EVENT_CAPACITY,
                 &mut words,
             );
+            if let Some((spacing, limit)) = links
+                .iter()
+                .filter(|link| link.source == index)
+                .map(|link| link.trigger)
+                .chain(
+                    outputs
+                        .iter()
+                        .filter(|route| route.source == index)
+                        .map(|route| route.trigger),
+                )
+                .find_map(aestra_core::EventTrigger::distance_settings)
+            {
+                words[aestra_gpu::STATEFUL_DISTANCE_BASE] = spacing.to_bits();
+                words[aestra_gpu::STATEFUL_DISTANCE_BASE + 1] = limit;
+            }
             let tick_params = buffer("params", encode(&words)?, wgpu::BufferUsages::empty());
             encoder.clear_buffer(&emitter.events, 0, Some(4));
             let entries: Vec<wgpu::BindGroupEntry> = [
@@ -3298,8 +3335,10 @@ fn advance_production_linked(
             params.push(tick_params);
         }
         for (link, list) in links.iter().zip(&lists) {
-            let list_capacity =
-                EventGatherPipeline::list_capacity(configs[link.source].capacity, link.count);
+            let list_capacity = EventGatherPipeline::list_capacity(
+                aestra_runtime::event_capture_capacity(configs[link.source].capacity, link.trigger),
+                link.count,
+            );
             gather.encode(
                 device,
                 &mut encoder,
@@ -3394,11 +3433,11 @@ fn advance_production_linked(
     }
     let sizes: Vec<u64> = configs
         .iter()
-        .map(|config| config.capacity as u64 * 36)
+        .map(|config| config.capacity as u64 * u64::from(aestra_gpu::STATEFUL_STATE_STRIDE) * 4)
         .collect();
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("linked readback"),
-        size: sizes.iter().sum(),
+        size: sizes.iter().sum::<u64>() + emitters.len() as u64 * 4,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -3407,13 +3446,17 @@ fn advance_production_linked(
         encoder.copy_buffer_to_buffer(&emitter.state, 0, &staging, offset, *size);
         offset += size;
     }
+    for emitter in &emitters {
+        encoder.copy_buffer_to_buffer(&emitter.events, 4, &staging, offset, 4);
+        offset += 4;
+    }
     let raw = harness.read_back_u32(encoder, &staging)?;
     let mut live = Vec::new();
     let mut at = 0;
     for config in configs {
         let mut particles = Vec::new();
         for slot in 0..config.capacity as usize {
-            let base = at + slot * 9;
+            let base = at + slot * 10;
             let (age, lifetime) = (f32::from_bits(raw[base + 6]), f32::from_bits(raw[base + 7]));
             if lifetime > 0.0 && age < lifetime {
                 particles.push((
@@ -3426,10 +3469,141 @@ fn advance_production_linked(
                 ));
             }
         }
-        at += config.capacity as usize * 9;
+        at += config.capacity as usize * 10;
         live.push(particles);
     }
-    Ok((live, raised))
+    Ok((live, raised, raw[at..].to_vec()))
+}
+
+#[test]
+fn gpu_distance_emission_deposits_stationary_smoke_bounds_work_and_drains() {
+    use aestra_core::{EventTrigger, VelocityDistribution};
+    use aestra_runtime::{CompiledEventLink, InputSpawnBurst, ParticleEvent};
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    for (speed, spacing, limit, expected_drops) in [(30.0, 0.3, 8, 0), (120.0, 0.25, 2, 180)] {
+        let rocket = StatefulConfig {
+            spawn_per_tick: 0,
+            gravity: [0.0; 3],
+            speed: (speed, speed),
+            lifetime: (1.0, 1.0),
+            direction: [0.0, 1.0, 0.0],
+            spread: 0.0,
+            velocity_distribution: VelocityDistribution::Constant,
+            drag: 0.0,
+            shape: SpawnShape::Point,
+            placement: SpawnPlacement::IDENTITY,
+            turbulence: 0.0,
+            colliders: [Collider::NONE; MAX_COLLIDERS],
+            collider_count: 0,
+            capacity: 1,
+            homing: None,
+        };
+        let configs = [
+            rocket,
+            StatefulConfig {
+                speed: (0.0, 0.0),
+                lifetime: (2.0, 2.0),
+                capacity: 256,
+                ..rocket
+            },
+        ];
+        let trigger = EventTrigger::OnDistance {
+            spacing,
+            max_per_tick: limit,
+        };
+        let links = [CompiledEventLink {
+            source: 0,
+            trigger,
+            target: 1,
+            count: 1,
+            inherit: 0.0,
+        }];
+        let outputs = [aestra_runtime::CompiledParticleOutput {
+            output: "Distance".into(),
+            source: 0,
+            trigger,
+            aggregation: aestra_core::EventAggregation::FirstPerTick,
+        }];
+        let bursts = [InputSpawnBurst {
+            tick: 0,
+            route: 0,
+            target: 0,
+            count: 1,
+            events: vec![ParticleEvent {
+                ordinal: 0,
+                position: [3.0, 4.0, 5.0],
+                velocity: [0.0; 3],
+            }],
+        }];
+        let mut sims: Vec<_> = configs
+            .iter()
+            .enumerate()
+            .map(|(index, config)| {
+                StatefulSimulation::new(*config, 7 ^ (index as u64).wrapping_mul(0x9E37_79B9))
+            })
+            .collect();
+        sims[0]
+            .set_distance_emission(Some((spacing, limit)))
+            .unwrap();
+        let mut expected_outputs = Vec::new();
+        // The input birth is after tick 0; the first movement is tick 1.
+        for tick in 0..31 {
+            for sim in &mut sims {
+                sim.advance_tick();
+            }
+            let events = sims[0].events(trigger).to_vec();
+            expected_outputs.extend(outputs[0].raise(
+                events.len() as u32,
+                &aestra_runtime::first_particle_events(&events, 1),
+                sims[0].tick(),
+            ));
+            sims[1].spawn_from_events(&events, 1, 0.0);
+            if tick == 0 {
+                sims[0].spawn_from_events(&bursts[0].events, 1, 0.0);
+            }
+        }
+        let (gpu, raised, overflow) = advance_production_linked_with_overflow(
+            &harness, &configs, &links, &bursts, &outputs, 7, 31,
+        )
+        .unwrap();
+        assert_eq!(raised.len(), expected_outputs.len());
+        for (actual, expected) in raised.iter().zip(&expected_outputs) {
+            assert_eq!(actual.value.len(), expected.value.len());
+            assert_eq!(
+                (&actual.kind, actual.tick, actual.magnitude),
+                (&expected.kind, expected.tick, expected.magnitude)
+            );
+            for (a, b) in actual.value.iter().zip(&expected.value) {
+                assert!((a - b).abs() < 1e-4);
+            }
+        }
+        assert_eq!(overflow, [expected_drops, 0]);
+        assert_eq!(sims[0].distance_overflow(), u64::from(expected_drops));
+        for (sim, actual) in sims.iter().zip(&gpu) {
+            assert_same_particles(&sim.alive_particles(), actual);
+        }
+        assert!(
+            gpu[1].len() >= 49,
+            "small source capacity must not truncate multi-sample lists"
+        );
+        assert!(
+            gpu[1]
+                .iter()
+                .all(|(_, p)| p[0] == 3.0 && p[2] == 5.0 && p[1] > 4.0)
+        );
+        let repeat = advance_production_linked(&harness, &configs, &links, &bursts, &[], 7, 31)
+            .unwrap()
+            .0;
+        for (a, b) in gpu.iter().zip(&repeat) {
+            assert_same_particles(a, b);
+        }
+        let drained = advance_production_linked(&harness, &configs, &links, &bursts, &[], 7, 181)
+            .unwrap()
+            .0;
+        assert!(drained.iter().all(Vec::is_empty));
+    }
 }
 
 #[test]

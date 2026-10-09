@@ -6834,6 +6834,7 @@ fn localized_event_trigger(localizer: &Localizer, trigger: EventTrigger) -> Stri
         EventTrigger::OnSpawn => "properties-event-on-spawn",
         EventTrigger::OnDeath => "properties-event-on-death",
         EventTrigger::OnCollision => "properties-event-on-collision",
+        EventTrigger::OnDistance { .. } => "properties-event-on-distance",
     })
 }
 

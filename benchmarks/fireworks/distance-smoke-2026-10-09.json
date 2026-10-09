@@ -1,0 +1,2260 @@
+{
+  "milestone": "F8.1C4B",
+  "date": "2026-10-09",
+  "scope": "Bounded generic distance emission, public opt-in rocket smoke deposition; not AAA smoke-art, global compositing or production performance approval.",
+  "environment": {
+    "os": "Windows",
+    "toolchain": "1.98.1-x86_64-pc-windows-msvc",
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "native_images": "480x360 LDR audience camera",
+    "public_capture": "1280x720 HDR development build, asynchronous window capture"
+  },
+  "behavior": {
+    "spacing": 1,
+    "max_per_particle_tick": 8,
+    "puffs_per_observed_rocket": 43,
+    "inherited_velocity": 0,
+    "smoke_lifetime_seconds": [
+      8,
+      10
+    ],
+    "persistent_state_bytes_before": 36,
+    "persistent_state_bytes_after": 40,
+    "presentation_bytes": 48,
+    "capture_ceiling": 1024
+  },
+  "repeated_native_images": {
+    "fresh_runs": 2,
+    "tiers": [
+      "high",
+      "medium",
+      "low"
+    ],
+    "pairs": 39,
+    "all_byte_identical": true
+  },
+  "reports": [
+    {
+      "run": 1,
+      "tier": "high",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              6082,
+              37
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              2436,
+              17
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              48,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              35,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          4759,
+          27
+        ],
+        "tier": "high"
+      },
+      "admission": [
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        }
+      ]
+    },
+    {
+      "run": 1,
+      "tier": "medium",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              4413,
+              32
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              1330,
+              13
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              24,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              18,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              13,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          2743,
+          24
+        ],
+        "tier": "medium"
+      },
+      "admission": [
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        }
+      ]
+    },
+    {
+      "run": 1,
+      "tier": "low",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 2,
+            "light_difference": [
+              1911,
+              17
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              677,
+              12
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              6
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              7,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          1328,
+          17
+        ],
+        "tier": "low"
+      },
+      "admission": [
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "tier": "high",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              6082,
+              37
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              2436,
+              17
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4B distance smoke",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              48,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              35,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          4759,
+          27
+        ],
+        "tier": "high"
+      },
+      "admission": [
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "tier": "medium",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              4413,
+              32
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              1330,
+              13
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4B distance smoke",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              24,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              18,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              13,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          2743,
+          24
+        ],
+        "tier": "medium"
+      },
+      "admission": [
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "tier": "low",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 2,
+            "light_difference": [
+              1911,
+              17
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              677,
+              12
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4B distance smoke",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              6
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              7,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          1328,
+          17
+        ],
+        "tier": "low"
+      },
+      "admission": [
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "overlap-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        },
+        {
+          "accepted": 43,
+          "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+          "phase": "late-break",
+          "source_overflow": 0
+        }
+      ]
+    }
+  ],
+  "regression": {
+    "cpu_distance_tests": 2,
+    "native_distance_test": "passed, including output route samples, stationary children, repeated births, natural drain; 0 and 180 expected overflow controls",
+    "production_checkpoint_test": "passed: seek/replay preserves distance remainder and children",
+    "artifact_contract_tests": 12,
+    "full_stateful_conformance_tests": 31,
+    "domain_spawn_tests": 4
+  },
+  "limitations": [
+    "Star-path smoke not authored yet",
+    "Global interleaved transparency remains unresolved",
+    "Smoke cloud depth and reference-based art tuning unfinished",
+    "No matched incremental GPU performance measurement for this revision",
+    "Dedicated editor distance settings controls deferred; RON/API supported",
+    "Older artifact readers reject the new trigger variant",
+    "CPU reference simulation support is not a complete Bevy CPU event-playback implementation"
+  ],
+  "hashes": [
+    {
+      "path": "crates/aestra-core/src/model.rs",
+      "sha256": "d43393e546e3ff3f513a57c387971c5c983b06e3bfac20395ffb8dc7ca6fbec9"
+    },
+    {
+      "path": "crates/aestra-runtime/src/lib.rs",
+      "sha256": "60180db52e4bf27dc2a3a0c9eb517b869dd4b1e6115efba09e6875b751df1c48"
+    },
+    {
+      "path": "crates/aestra-runtime/src/stateful.rs",
+      "sha256": "f862f669c8cb26223b0dc2d7a2fca1298699ab2e317abe60fcadb7c814c6aaf3"
+    },
+    {
+      "path": "crates/aestra-compiler/src/lib.rs",
+      "sha256": "9ad6223d757d1aa451a04ef16c9dd3a09ba63641701eeebc5f973b8bc17a0fc4"
+    },
+    {
+      "path": "crates/aestra-artifact/src/lib.rs",
+      "sha256": "979ccc8862f67b41e86535611d889121e68df5c6759021575368ca764df17bfb"
+    },
+    {
+      "path": "crates/aestra-artifact/tests/binding_artifact_contract.rs",
+      "sha256": "047282d0e69de4a8e84f072765c5adac9bec4e052daf255ef6a9b9c6eb3203b3"
+    },
+    {
+      "path": "crates/aestra-gpu/src/lib.rs",
+      "sha256": "e996b38d14d8145fe9a9bdeba116381196ebd01ce30a723676ed4af89d6e0afa"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu.rs",
+      "sha256": "5b1a6efde0bd6a860ed150ffc542a5393ed60b56d70cb17cc716c79be7c02ad8"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/tests/stateful_conformance.rs",
+      "sha256": "6e0c205c33a33d4f48df57972f1274641210f43d7ce42f7db55251371ee6f123"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/persistent_smoke_show.rs",
+      "sha256": "55b1f6c104450b99d1a07aa5bd0ce4a5fb7113c76303b9745588fe4f9cd0dd78"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks.rs",
+      "sha256": "fe9bf1fd3c3e9121ea69e07879087546f62b04ffed1157b1cc6c39f39a5b356a"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/project.rs",
+      "sha256": "c8a2a8acfff1161f3d688ba18cd991118655183f5eb5f4517f2eaadee8307b4d"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/persistent_smoke_show_tests.rs",
+      "sha256": "21646096bb93aba28d4bab80e524b1dafc8756dbef9a366318d0c2c17883b239"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+      "sha256": "fc22eb440f76fc4030a6c67c5b9a71ab45ce5aac08aa1538976c0f31f9e4979c"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron",
+      "sha256": "1ca9de6b0d3ffa093d6479b07952113aa7f5b42a58d993d0141cdaad2cb5b8ab"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron",
+      "sha256": "5aecb28110a3295ad9e010ee001d4b1cf0b38900fbdb9473383ece0f0cc6d12e"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron",
+      "sha256": "5ed106ecfed6a58f3ac59acb7b4f991b5890929f2bcea00aa64efdc36adafd70"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron",
+      "sha256": "5ab53a9c477b2987da245f73a1a448496b08777b3a61932168efbd78049f1a32"
+    },
+    {
+      "path": "assets/test/materials/fireworks_wispy_smoke.aestra.material.ron",
+      "sha256": "642e3704ebc4f37110e00a1146a1641b6cb53c3e37eb451c4cbb0c4ef99e1395"
+    },
+    {
+      "path": "assets/test/materials/smoke_wisp.aestra.material-function.ron",
+      "sha256": "827dce626644d242be4dcf74bbb7c27fa4a2d80b65ca750c344198e98d9112c9"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/public-2.6s.png",
+      "sha256": "f4e0dc39bb32d1c3aa02dc7ab2770255d3a783e757c12f4babb250bb87b12a73"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/density-restored.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/distance-admission.json",
+      "sha256": "2e36dd38d4511b56ec5bf3327e46a9061755f8e3f790e84fe863828c76a9eac5"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/frozen.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/late-break-lit.png",
+      "sha256": "d55ff8b7ae6075761e834568cb057f76bec70a0f3458a88e8386d59e202b69fe"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/late-break-off.png",
+      "sha256": "d12e619e484bd1a7600800879cbab1b55a6e0e92d5c2ffcd95fc1834954c841d"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/late-break-restored.png",
+      "sha256": "d55ff8b7ae6075761e834568cb057f76bec70a0f3458a88e8386d59e202b69fe"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/overlap-break-lit.png",
+      "sha256": "637db85123e8c6a81edb1e716b3acec5b108bfd8be51924ea5c172135a79c66e"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/overlap-break-off.png",
+      "sha256": "1da3159d64e1dae7cbbedce1b9ee29f67de2687045a4153efd082c49c7098efa"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/overlap-break-restored.png",
+      "sha256": "637db85123e8c6a81edb1e716b3acec5b108bfd8be51924ea5c172135a79c66e"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/report.json",
+      "sha256": "6b98a8b7a279a71a4653312e5a8db35f7286dd1af96b1448facf5836887b50e7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/high/tail.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/density-restored.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/distance-admission.json",
+      "sha256": "2e36dd38d4511b56ec5bf3327e46a9061755f8e3f790e84fe863828c76a9eac5"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/frozen.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/late-break-lit.png",
+      "sha256": "3fade8f9dd71e7d952f9cdb3164e945b26d651828b688b6d84b4e4a10fb63206"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/late-break-off.png",
+      "sha256": "0623ab1c3e8b10f43a7bed251bc64d741454ff71bb3215919f6f5433c5d8ea1b"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/late-break-restored.png",
+      "sha256": "3fade8f9dd71e7d952f9cdb3164e945b26d651828b688b6d84b4e4a10fb63206"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/overlap-break-lit.png",
+      "sha256": "86cad8b338ece8289bf087c3a2608a5995f735bbb056ba2efe3b661957069db1"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/overlap-break-off.png",
+      "sha256": "297859de7abbfb2a48a3c98d3cf73921cb1d9088ac90d201832db5c26e1fbc9a"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/overlap-break-restored.png",
+      "sha256": "86cad8b338ece8289bf087c3a2608a5995f735bbb056ba2efe3b661957069db1"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/report.json",
+      "sha256": "e6d1c15230bca0dfa4c4dbbc40a031d07f4156290ca35dde89ae5a1088d32415"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/low/tail.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/density-restored.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/distance-admission.json",
+      "sha256": "2e36dd38d4511b56ec5bf3327e46a9061755f8e3f790e84fe863828c76a9eac5"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/frozen.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/late-break-lit.png",
+      "sha256": "7041cd9c03bfe1fe21dc7120a39dfff9aff87cb04810dc7c1823da8d4f718d05"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/late-break-off.png",
+      "sha256": "74360db36f69797a9df556281184740b49995d4dd02d140ec528bf9c53a9dcb4"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/late-break-restored.png",
+      "sha256": "7041cd9c03bfe1fe21dc7120a39dfff9aff87cb04810dc7c1823da8d4f718d05"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/overlap-break-lit.png",
+      "sha256": "a926f50e0da9886216c97b57e0a459326e873532b6dfa6ae4cce86128ca40162"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/overlap-break-off.png",
+      "sha256": "2a6544637b34d3ecdbd20a5e6fe8b9f9efc055b26867ccad143c61824044b2be"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/overlap-break-restored.png",
+      "sha256": "a926f50e0da9886216c97b57e0a459326e873532b6dfa6ae4cce86128ca40162"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/report.json",
+      "sha256": "5dcd7392fbf4346087cfdd083baf54021833b2b28f2cf5f39746c935e50633c6"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-1/medium/tail.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/density-restored.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/distance-admission.json",
+      "sha256": "2e36dd38d4511b56ec5bf3327e46a9061755f8e3f790e84fe863828c76a9eac5"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/frozen.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/late-break-lit.png",
+      "sha256": "d55ff8b7ae6075761e834568cb057f76bec70a0f3458a88e8386d59e202b69fe"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/late-break-off.png",
+      "sha256": "d12e619e484bd1a7600800879cbab1b55a6e0e92d5c2ffcd95fc1834954c841d"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/late-break-restored.png",
+      "sha256": "d55ff8b7ae6075761e834568cb057f76bec70a0f3458a88e8386d59e202b69fe"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/overlap-break-lit.png",
+      "sha256": "637db85123e8c6a81edb1e716b3acec5b108bfd8be51924ea5c172135a79c66e"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/overlap-break-off.png",
+      "sha256": "1da3159d64e1dae7cbbedce1b9ee29f67de2687045a4153efd082c49c7098efa"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/overlap-break-restored.png",
+      "sha256": "637db85123e8c6a81edb1e716b3acec5b108bfd8be51924ea5c172135a79c66e"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/report.json",
+      "sha256": "341dfb02734741ce229e6a7cf7d96c184284df2a8ee838e116632a849d7ac257"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/high/tail.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/density-restored.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/distance-admission.json",
+      "sha256": "2e36dd38d4511b56ec5bf3327e46a9061755f8e3f790e84fe863828c76a9eac5"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/frozen.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/late-break-lit.png",
+      "sha256": "3fade8f9dd71e7d952f9cdb3164e945b26d651828b688b6d84b4e4a10fb63206"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/late-break-off.png",
+      "sha256": "0623ab1c3e8b10f43a7bed251bc64d741454ff71bb3215919f6f5433c5d8ea1b"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/late-break-restored.png",
+      "sha256": "3fade8f9dd71e7d952f9cdb3164e945b26d651828b688b6d84b4e4a10fb63206"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/overlap-break-lit.png",
+      "sha256": "86cad8b338ece8289bf087c3a2608a5995f735bbb056ba2efe3b661957069db1"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/overlap-break-off.png",
+      "sha256": "297859de7abbfb2a48a3c98d3cf73921cb1d9088ac90d201832db5c26e1fbc9a"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/overlap-break-restored.png",
+      "sha256": "86cad8b338ece8289bf087c3a2608a5995f735bbb056ba2efe3b661957069db1"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/report.json",
+      "sha256": "9f0828f0b93c6d389b20a63a2aa073ebbceafcf92d4bdb88b3f3091bba905894"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/low/tail.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/density-restored.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/distance-admission.json",
+      "sha256": "2e36dd38d4511b56ec5bf3327e46a9061755f8e3f790e84fe863828c76a9eac5"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/frozen.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/late-break-lit.png",
+      "sha256": "7041cd9c03bfe1fe21dc7120a39dfff9aff87cb04810dc7c1823da8d4f718d05"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/late-break-off.png",
+      "sha256": "74360db36f69797a9df556281184740b49995d4dd02d140ec528bf9c53a9dcb4"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/late-break-restored.png",
+      "sha256": "7041cd9c03bfe1fe21dc7120a39dfff9aff87cb04810dc7c1823da8d4f718d05"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/overlap-break-lit.png",
+      "sha256": "a926f50e0da9886216c97b57e0a459326e873532b6dfa6ae4cce86128ca40162"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/overlap-break-off.png",
+      "sha256": "2a6544637b34d3ecdbd20a5e6fe8b9f9efc055b26867ccad143c61824044b2be"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/overlap-break-restored.png",
+      "sha256": "a926f50e0da9886216c97b57e0a459326e873532b6dfa6ae4cce86128ca40162"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/report.json",
+      "sha256": "50abedeca1271aea841f53aeb37e57f1a96750376c17e6bde5f983469729a145"
+    },
+    {
+      "path": "target/fireworks-f8/distance-smoke-2026-10-09/native-run-2/medium/tail.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    }
+  ]
+}

@@ -3117,11 +3117,10 @@ fn compile_event_links(
         };
         match (find(link.source, "source"), find(link.target, "target")) {
             (Ok(Some(source)), Ok(Some(target))) => {
-                let captured = u64::from(
-                    emitters[source]
-                        .max_particles
-                        .min(aestra_runtime::PARTICLE_EVENT_CAPACITY),
-                );
+                let captured = u64::from(aestra_runtime::event_capture_capacity(
+                    emitters[source].max_particles,
+                    link.trigger,
+                ));
                 let list_bytes = captured
                     .checked_mul(u64::from(link.count))
                     .and_then(|records| records.checked_mul(32))

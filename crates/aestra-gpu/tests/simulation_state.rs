@@ -60,9 +60,9 @@ fn stateful_emitters_reserve_persistent_state_sized_by_capacity() {
         aestra_gpu::STATEFUL_STATE_STRIDE,
         "the GPU record: position + velocity + age + lifetime, plus the spawn ordinal"
     );
-    assert_eq!(aestra_gpu::STATEFUL_STATE_STRIDE, 9);
+    assert_eq!(aestra_gpu::STATEFUL_STATE_STRIDE, 10);
     assert!(
-        aestra_gpu::STATEFUL_PRESENT_WGSL.contains("const AESTRA_STATE_STRIDE: u32 = 9u;"),
+        aestra_gpu::STATEFUL_PRESENT_WGSL.contains("const AESTRA_STATE_STRIDE: u32 = 10u;"),
         "the kernels index the state with the same stride the buffer is sized with"
     );
     assert_eq!(

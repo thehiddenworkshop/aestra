@@ -56,6 +56,63 @@ production-finale density, continuous selected-star lighting or complete F8 acce
 See [`persistent-smoke-show-2026-10-08.md`](../../benchmarks/fireworks/persistent-smoke-show-2026-10-08.md)
 for reproducible controls, matched live costs and the retained failed cue-boundary sample.
 
+## Wispy smoke art draft, transparency probe and rocket deposition (F8.1C4A/B)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show
+```
+
+This is a separate saved 37-second draft, not a replacement for the default show or
+the C3 control. Its four shell variants keep all sound/light cue routes, capacities,
+tier policies and seeds. Burst smoke is distributed over a nine-unit sphere, with
+smaller particles, more drift/turbulence and a seeded, anisotropic, noise-warped wisp
+mask instead of overlapping round billows. Ambient brightness is reduced; later growth
+keeps the quiet tail visible. All changes live in editable saved effects/materials, not
+host-side particle manipulation. Open `effects/fireworks_show_wispy_smoke.aestra.ron`
+in the editor to tune it. The flag excludes C3 and smoke labs; explicit `--effect` still wins.
+
+Rocket exhaust now uses an authored `OnDistance(spacing: 1.0, max_per_tick: 8)` link
+from **Launch shell** to **Launch smoke**, one child per effect-local unit with zero
+inherited velocity. Smoke lives 8–10 seconds, expands, and drifts gently in a shared
+wind instead of being fired upward from the launch origin. Its old fixed-origin
+emission is disabled. C3 and the default show remain unchanged comparison controls.
+
+The generic trigger works in event links and particle output routes. Spacing must be
+finite and at least 0.001; the per-particle tick limit is 1–64. Routes sharing a source
+must agree on both settings. The runtime samples each resolved fixed-tick motion
+chord, carrying residual distance per particle; there is no initial sample at birth.
+Stationary particles emit nothing. Overspeed drops excess crossings without backlog;
+the existing GPU source-overflow counter reports these drops as well as capture-buffer
+overflow. The shared capture ceiling stays 1,024 records/tick; count expansion/list
+budgets and destination admission still apply. Size spacing and work limits accordingly.
+
+CPU reference users configure `StatefulSimulation::set_distance_emission` with
+`CompiledEffect::distance_emission(source_index)` before playback. The Bevy GPU
+backend configures it automatically. Checkpoints retain residuals, and changing the
+settings invalidates GPU simulation history. GPU persistent state grows from 36 to
+40 bytes/slot (four additional bytes); presented particles stay 48 bytes. No new
+particle readback, host timer or playback-only history allocation is introduced.
+Authored RON/API support is available; dedicated distance-setting editor controls are
+not added by this runtime slice. The earlier dated C4A evidence describes the art
+snapshot **before** this exhaust change, not the current source hashes.
+See [`distance-smoke-2026-10-09.md`](../../benchmarks/fireworks/distance-smoke-2026-10-09.md)
+for the repeated native admission, checkpoint and lifecycle evidence.
+
+The public HDR images show less spherical smoke and colored illumination from later
+bursts. These are development-build, asynchronous window captures, not exact-frame
+references or a production performance measurement. Continuous smoke along star paths,
+convincing illuminated cloud depth and photographic art approval remain open.
+
+The new native transparency oracle uses pure-red/blue half-alpha sheets in separate
+players, opposite cameras and reversed spawn orders. It checks linear source-over
+against a deliberately wrong-order control, rather than using repeatability as proof.
+This qualifies separated sheets only. Whole-draw sorting **cannot** interleave two red
+particles around a blue particle from another pool; an ordinary algebraic regression
+records that limitation. Moving local-depth bounds, intersecting pools and general
+cross-draw smoke are not certified, and no global sort/OIT is introduced here.
+See [`smoke-transparency-art-2026-10-09.md`](../../benchmarks/fireworks/smoke-transparency-art-2026-10-09.md)
+for controls, retained failed art iteration and remaining gates.
+
 ## Editor to host
 
 1. In the editor, use File → Open Project and select `assets/test`.

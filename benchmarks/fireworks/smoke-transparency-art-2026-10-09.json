@@ -1,0 +1,2494 @@
+{
+  "milestone": "F8.1C4A",
+  "date": "2026-10-09",
+  "parent_commit": "57fa0410",
+  "status": "bounded separated-sheet transparency and wispy-art lifecycle controls pass; full smoke transparency/AAA art/F8 acceptance remain open",
+  "full_F8_accepted": false,
+  "toolchain": "1.98.1-x86_64-pc-windows-msvc",
+  "hardware": "Windows / RTX 4070 SUPER / Vulkan",
+  "native_profile": "repository optimized test",
+  "public_profile": "repository optimized dev, HDR/bloom, 1280x720 real-time vsync, no audio",
+  "public_capture_scope": "asynchronous window images at approximately 9.3/10.9s, not fixed-frame references or production timing",
+  "public_host": "bevy/aestra-bevy/examples/fireworks.rs",
+  "art_candidate": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+  "baseline_unchanged": true,
+  "history": "playback-only",
+  "transparency": {
+    "scope": "nonintersecting single-particle red/blue half-alpha sheets in separate players",
+    "views": 2,
+    "spawn_orders": 2,
+    "linear_reference_threshold": 0.01,
+    "wrong_order_min_error": 0.2,
+    "restoration_max_byte_error": 1,
+    "full_interleaved_pool_ordering_qualified": false,
+    "algebraic_counterexample": {
+      "particle_order": "far red, middle blue, near red, each alpha .5",
+      "source_over_RB": [
+        0.625,
+        0.25
+      ],
+      "whole_draw_RB_options": [
+        [
+          0.75,
+          0.125
+        ],
+        [
+          0.375,
+          0.5
+        ]
+      ],
+      "native_interleaved_measurement": false
+    }
+  },
+  "art_contract": {
+    "clips": 13,
+    "root_seconds": 37,
+    "child_seconds": 18,
+    "smoke_life_seconds": [
+      12,
+      14
+    ],
+    "burst_origin": "Sphere radius 9",
+    "speed": [
+      2.5,
+      5
+    ],
+    "size": [
+      2,
+      7.5,
+      12
+    ],
+    "opacity_keys": [
+      [
+        0,
+        0
+      ],
+      [
+        0.12,
+        0.2
+      ],
+      [
+        0.7,
+        0.18
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "ambient": [
+      0.055,
+      0.06,
+      0.07
+    ],
+    "selected_star_lighting": false,
+    "representative_caps": [
+      8,
+      4,
+      2
+    ],
+    "no_budget_increase": true
+  },
+  "rejected_iterations": [
+    {
+      "directory": "target/fireworks-f8/wispy-show-controls-2026-10-09",
+      "reason": "high late visibility 41 <100; smaller/darker initial draft",
+      "all_tiers_accepted": false
+    },
+    {
+      "directory": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09",
+      "reason": "medium late visibility 75 <100; high 379 passed; low not run",
+      "all_tiers_accepted": false
+    }
+  ],
+  "validation": {
+    "example_audio_tests_passed": 18,
+    "viewer_tests_passed": 100,
+    "viewer_ignored": 28,
+    "strict_scoped_clippy": true,
+    "formatting": true,
+    "native_repeated_images": 55
+  },
+  "repetition": [
+    {
+      "baseline": "target/fireworks-f8/cross-draw-initial-2026-10-09",
+      "repeat": "target/fireworks-f8/cross-draw-repeat-2026-10-09",
+      "images": 16,
+      "mismatches": []
+    },
+    {
+      "baseline": "target/fireworks-f8/wispy-show-controls-final-2026-10-09",
+      "repeat": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09",
+      "images": 39,
+      "mismatches": []
+    }
+  ],
+  "remaining": [
+    "native intersecting/moving-local-depth pool probes",
+    "measured global transparency decision",
+    "continuous smoke deposition along star paths and coherent wind drift",
+    "public HDR photographic art approval",
+    "paced full-show/production-finale costs",
+    "generic particle/event fluid injection",
+    "continuous selected-star lighting"
+  ],
+  "raw_reports": [
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/report.json",
+      "sha256": "4f5286939bd59740aac8f64aae02b31815e820cfd8b511284b9c5ad21e7b1d1c",
+      "report": {
+        "accepted": true,
+        "cases": [
+          {
+            "case": "spawn-0-view-0",
+            "restoration": [
+              0,
+              0
+            ],
+            "source_over_max_linear_error": 0.00016777217388153076,
+            "wrong_order_max_linear_error": 0.2469424456357956
+          },
+          {
+            "case": "spawn-0-view-1",
+            "restoration": [
+              0,
+              0
+            ],
+            "source_over_max_linear_error": 0.00016777217388153076,
+            "wrong_order_max_linear_error": 0.2469424456357956
+          },
+          {
+            "case": "spawn-1-view-0",
+            "restoration": [
+              0,
+              0
+            ],
+            "source_over_max_linear_error": 0.00016777217388153076,
+            "wrong_order_max_linear_error": 0.2469424456357956
+          },
+          {
+            "case": "spawn-1-view-1",
+            "restoration": [
+              0,
+              0
+            ],
+            "source_over_max_linear_error": 0.00016777217388153076,
+            "wrong_order_max_linear_error": 0.2469424456357956
+          }
+        ],
+        "scope": "separate nonintersecting single-particle sheets; analytic linear source-over oracle; does not certify interleaved smoke pools or moving particle depth bounds"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/report.json",
+      "sha256": "4f5286939bd59740aac8f64aae02b31815e820cfd8b511284b9c5ad21e7b1d1c",
+      "report": {
+        "accepted": true,
+        "cases": [
+          {
+            "case": "spawn-0-view-0",
+            "restoration": [
+              0,
+              0
+            ],
+            "source_over_max_linear_error": 0.00016777217388153076,
+            "wrong_order_max_linear_error": 0.2469424456357956
+          },
+          {
+            "case": "spawn-0-view-1",
+            "restoration": [
+              0,
+              0
+            ],
+            "source_over_max_linear_error": 0.00016777217388153076,
+            "wrong_order_max_linear_error": 0.2469424456357956
+          },
+          {
+            "case": "spawn-1-view-0",
+            "restoration": [
+              0,
+              0
+            ],
+            "source_over_max_linear_error": 0.00016777217388153076,
+            "wrong_order_max_linear_error": 0.2469424456357956
+          },
+          {
+            "case": "spawn-1-view-1",
+            "restoration": [
+              0,
+              0
+            ],
+            "source_over_max_linear_error": 0.00016777217388153076,
+            "wrong_order_max_linear_error": 0.2469424456357956
+          }
+        ],
+        "scope": "separate nonintersecting single-particle sheets; analytic linear source-over oracle; does not certify interleaved smoke pools or moving particle depth bounds"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/report.json",
+      "sha256": "47ff7d77706f59c3b42ee2b1dfe6ef0461f80e34a4f5e912f78fa0451226a86d",
+      "report": {
+        "accepted": false,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              4155,
+              35
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              1439,
+              18
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              48,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              35,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          41,
+          6
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/report.json",
+      "sha256": "77538957beccf265ee98e04e8326bc15870f264013637dd724a9f290560625c5",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              5121,
+              33
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              1250,
+              15
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              48,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              35,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          379,
+          8
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/report.json",
+      "sha256": "c32d43998cd0232219a904d1255f738dfc8cf9dad8e1e418534490b76db599cc",
+      "report": {
+        "accepted": false,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              3355,
+              28
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              541,
+              12
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              24,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              18,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              13,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          75,
+          6
+        ],
+        "tier": "medium"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/report.json",
+      "sha256": "0001d4f303cffb2e0c13b7a7e2511402e129e3ba2220c93fc91d9bbca2fd9584",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              5717,
+              37
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              2436,
+              17
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              48,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              35,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          4759,
+          27
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/report.json",
+      "sha256": "449f38a7829a22d2ca043cb61b363770291a7d6c5b8f267c2e7721bd8f3c9bbf",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 2,
+            "light_difference": [
+              1710,
+              17
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              677,
+              12
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              6
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              7,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          1328,
+          17
+        ],
+        "tier": "low"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/report.json",
+      "sha256": "b3f2fa14ce5f96a2a3c64256fb67106a701411e75f5a51775ef62dd3703acda3",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              4001,
+              32
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              1330,
+              13
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              24,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              18,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              13,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          2743,
+          24
+        ],
+        "tier": "medium"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/report.json",
+      "sha256": "0001d4f303cffb2e0c13b7a7e2511402e129e3ba2220c93fc91d9bbca2fd9584",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              5717,
+              37
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              2436,
+              17
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              48,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              35,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              27,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          4759,
+          27
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/report.json",
+      "sha256": "449f38a7829a22d2ca043cb61b363770291a7d6c5b8f267c2e7721bd8f3c9bbf",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 2,
+            "light_difference": [
+              1710,
+              17
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              677,
+              12
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              6
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              7,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          1328,
+          17
+        ],
+        "tier": "low"
+      }
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/report.json",
+      "sha256": "b3f2fa14ce5f96a2a3c64256fb67106a701411e75f5a51775ef62dd3703acda3",
+      "report": {
+        "accepted": true,
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "final_populations": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "frozen_repeat": [
+          0,
+          0
+        ],
+        "illumination": [
+          {
+            "active": 3,
+            "light_difference": [
+              4001,
+              32
+            ],
+            "phase": "overlap-break",
+            "restored": [
+              0,
+              0
+            ]
+          },
+          {
+            "active": 1,
+            "light_difference": [
+              1330,
+              13
+            ],
+            "phase": "late-break",
+            "restored": [
+              0,
+              0
+            ]
+          }
+        ],
+        "light_sample_root_times": [
+          9.3,
+          18.4
+        ],
+        "natural_drained_pixels": [
+          0,
+          0
+        ],
+        "natural_zero": true,
+        "retired_sort": [
+          0,
+          0
+        ],
+        "scope": "saved 13-clip representative-only show candidate, LDR public audience camera; no selected-star output invention, cross-draw/AAA art or whole-game cost approval",
+        "slice": "F8.1C4A art draft",
+        "tail_populations": [
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              24,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 12.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              12
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              18,
+              0,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              13,
+              0
+            ],
+            "time": 13.983333587646484
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          },
+          {
+            "counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "time": 18
+          }
+        ],
+        "tail_visibility": [
+          2743,
+          24
+        ],
+        "tier": "medium"
+      }
+    }
+  ],
+  "source_hashes": [
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_draw_smoke.rs",
+      "sha256": "5378fc4030b93c0216278feb82469602d3f39864632bd95991e6d1e851a2f109"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/persistent_smoke_show.rs",
+      "sha256": "11ef7cfc76d056c1606de1d191e32869b96a477df5a506820f306bf8fe08415e"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "e91cd3659f2904e90edc457e6afb5d5547d12671da02de28aaa8eff050c6cfb8"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks.rs",
+      "sha256": "fe9bf1fd3c3e9121ea69e07879087546f62b04ffed1157b1cc6c39f39a5b356a"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/project.rs",
+      "sha256": "c8a2a8acfff1161f3d688ba18cd991118655183f5eb5f4517f2eaadee8307b4d"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/persistent_smoke_show_tests.rs",
+      "sha256": "f7f7e56297405d45592e21cffe75d427883d7dac3e1a85aa09c0ed19a8a28ff0"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+      "sha256": "fc22eb440f76fc4030a6c67c5b9a71ab45ce5aac08aa1538976c0f31f9e4979c"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron",
+      "sha256": "8d4bdfdf3eeea86a777be970345941781dae97cb6061ca46928ca2a9f8b349bc"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron",
+      "sha256": "fdbd6a8e8ee7d73a5ee9d1649c653f40a7b5b122f5647ef812d44211944e51ae"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron",
+      "sha256": "5abaa9738b710ca7f75119262072f09fb57b3cc91a99f74c13522d3faac0381b"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron",
+      "sha256": "2fb358740861edf104e676e87b793155cb4a8b5d5d82e59c3f9a462d1a8d0544"
+    },
+    {
+      "path": "assets/test/materials/fireworks_wispy_smoke.aestra.material.ron",
+      "sha256": "642e3704ebc4f37110e00a1146a1641b6cb53c3e37eb451c4cbb0c4ef99e1395"
+    },
+    {
+      "path": "assets/test/materials/smoke_wisp.aestra.material-function.ron",
+      "sha256": "827dce626644d242be4dcf74bbb7c27fa4a2d80b65ca750c344198e98d9112c9"
+    }
+  ],
+  "image_hashes": [
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-0-view-0-blue.png",
+      "sha256": "1b3a6eca91c620fbded1d7edc97141a7660c2aa7766344dc71d119b0b0f9a8c0"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-0-view-0-both.png",
+      "sha256": "09018402645d86853120d1c646ce462969c59f85390ae5cf412beb9f817c30bc"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-0-view-0-red.png",
+      "sha256": "510751b1148762adc30680dd2374de0b89ad6b72a5693f84ad763372d9b85425"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-0-view-0-restored.png",
+      "sha256": "09018402645d86853120d1c646ce462969c59f85390ae5cf412beb9f817c30bc"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-0-view-1-blue.png",
+      "sha256": "70506040269a5ec8ebe5331ff6aca98565a81256685ff9c542ef2c46340b3f16"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-0-view-1-both.png",
+      "sha256": "93e8abce39d272df6d8adaec78b42772933e3a170a70eadc89775061b96f4df8"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-0-view-1-red.png",
+      "sha256": "00f9fa8a7a839a4e461434d72addf2f4b39a3216058b3fab9dd24c1f5059826b"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-0-view-1-restored.png",
+      "sha256": "93e8abce39d272df6d8adaec78b42772933e3a170a70eadc89775061b96f4df8"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-1-view-0-blue.png",
+      "sha256": "1b3a6eca91c620fbded1d7edc97141a7660c2aa7766344dc71d119b0b0f9a8c0"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-1-view-0-both.png",
+      "sha256": "09018402645d86853120d1c646ce462969c59f85390ae5cf412beb9f817c30bc"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-1-view-0-red.png",
+      "sha256": "510751b1148762adc30680dd2374de0b89ad6b72a5693f84ad763372d9b85425"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-1-view-0-restored.png",
+      "sha256": "09018402645d86853120d1c646ce462969c59f85390ae5cf412beb9f817c30bc"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-1-view-1-blue.png",
+      "sha256": "70506040269a5ec8ebe5331ff6aca98565a81256685ff9c542ef2c46340b3f16"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-1-view-1-both.png",
+      "sha256": "93e8abce39d272df6d8adaec78b42772933e3a170a70eadc89775061b96f4df8"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-1-view-1-red.png",
+      "sha256": "00f9fa8a7a839a4e461434d72addf2f4b39a3216058b3fab9dd24c1f5059826b"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-initial-2026-10-09/spawn-1-view-1-restored.png",
+      "sha256": "93e8abce39d272df6d8adaec78b42772933e3a170a70eadc89775061b96f4df8"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-0-view-0-blue.png",
+      "sha256": "1b3a6eca91c620fbded1d7edc97141a7660c2aa7766344dc71d119b0b0f9a8c0"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-0-view-0-both.png",
+      "sha256": "09018402645d86853120d1c646ce462969c59f85390ae5cf412beb9f817c30bc"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-0-view-0-red.png",
+      "sha256": "510751b1148762adc30680dd2374de0b89ad6b72a5693f84ad763372d9b85425"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-0-view-0-restored.png",
+      "sha256": "09018402645d86853120d1c646ce462969c59f85390ae5cf412beb9f817c30bc"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-0-view-1-blue.png",
+      "sha256": "70506040269a5ec8ebe5331ff6aca98565a81256685ff9c542ef2c46340b3f16"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-0-view-1-both.png",
+      "sha256": "93e8abce39d272df6d8adaec78b42772933e3a170a70eadc89775061b96f4df8"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-0-view-1-red.png",
+      "sha256": "00f9fa8a7a839a4e461434d72addf2f4b39a3216058b3fab9dd24c1f5059826b"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-0-view-1-restored.png",
+      "sha256": "93e8abce39d272df6d8adaec78b42772933e3a170a70eadc89775061b96f4df8"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-1-view-0-blue.png",
+      "sha256": "1b3a6eca91c620fbded1d7edc97141a7660c2aa7766344dc71d119b0b0f9a8c0"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-1-view-0-both.png",
+      "sha256": "09018402645d86853120d1c646ce462969c59f85390ae5cf412beb9f817c30bc"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-1-view-0-red.png",
+      "sha256": "510751b1148762adc30680dd2374de0b89ad6b72a5693f84ad763372d9b85425"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-1-view-0-restored.png",
+      "sha256": "09018402645d86853120d1c646ce462969c59f85390ae5cf412beb9f817c30bc"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-1-view-1-blue.png",
+      "sha256": "70506040269a5ec8ebe5331ff6aca98565a81256685ff9c542ef2c46340b3f16"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-1-view-1-both.png",
+      "sha256": "93e8abce39d272df6d8adaec78b42772933e3a170a70eadc89775061b96f4df8"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-1-view-1-red.png",
+      "sha256": "00f9fa8a7a839a4e461434d72addf2f4b39a3216058b3fab9dd24c1f5059826b"
+    },
+    {
+      "path": "target/fireworks-f8/cross-draw-repeat-2026-10-09/spawn-1-view-1-restored.png",
+      "sha256": "93e8abce39d272df6d8adaec78b42772933e3a170a70eadc89775061b96f4df8"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/density-restored.png",
+      "sha256": "7229dc9c0f259f61691d010f2a6539230e883fbc4dbacc456e47ae435b43ba72"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/frozen.png",
+      "sha256": "7229dc9c0f259f61691d010f2a6539230e883fbc4dbacc456e47ae435b43ba72"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/late-break-lit.png",
+      "sha256": "273fbf7d7d008a7ab768f297c9e0ba26f0ee8bb94efdbc0d64aede21a58f31de"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/late-break-off.png",
+      "sha256": "2a733c5da0a3c68dd9183d3a80b3a79845b9f88962f20eb4ca3de5a416d65a97"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/late-break-restored.png",
+      "sha256": "273fbf7d7d008a7ab768f297c9e0ba26f0ee8bb94efdbc0d64aede21a58f31de"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/overlap-break-lit.png",
+      "sha256": "def3415ef77646b789fc07db9ed04312380a0774a9937699a1e7bc8900c0a7d8"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/overlap-break-off.png",
+      "sha256": "f0e9afba8e95000bef6fc9887e32bba42778a8852fd622e51ec0b1afbfa1088e"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/overlap-break-restored.png",
+      "sha256": "def3415ef77646b789fc07db9ed04312380a0774a9937699a1e7bc8900c0a7d8"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-2026-10-09/high/tail.png",
+      "sha256": "7229dc9c0f259f61691d010f2a6539230e883fbc4dbacc456e47ae435b43ba72"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/density-restored.png",
+      "sha256": "31eb9f72db56585d9cf0b47679c7e89cc8ec8da0c7c2570318d4b5c57a85b20e"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/frozen.png",
+      "sha256": "31eb9f72db56585d9cf0b47679c7e89cc8ec8da0c7c2570318d4b5c57a85b20e"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/late-break-lit.png",
+      "sha256": "ba0da6a652471117bd92e18a31cef090e433966b032ed41dd30a14559cff9a73"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/late-break-off.png",
+      "sha256": "1d0b4670d3923849c17ac28b2f3aa07762726e71fab86c65eb96a61b5dbd4f46"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/late-break-restored.png",
+      "sha256": "ba0da6a652471117bd92e18a31cef090e433966b032ed41dd30a14559cff9a73"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/overlap-break-lit.png",
+      "sha256": "ceba0c52c5cf3a37aac3c705a66ddcd551c0d5feed7e6e4c2056d3c22cd70533"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/overlap-break-off.png",
+      "sha256": "e0446b500bb3856a5337e15b6926fa71e079effd8cf10778e837f2155e506a83"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/overlap-break-restored.png",
+      "sha256": "ceba0c52c5cf3a37aac3c705a66ddcd551c0d5feed7e6e4c2056d3c22cd70533"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/high/tail.png",
+      "sha256": "31eb9f72db56585d9cf0b47679c7e89cc8ec8da0c7c2570318d4b5c57a85b20e"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/density-restored.png",
+      "sha256": "2eada26688c7f86b575f4a3a510c7f54bdf3e235e8a974a0bcb47f06d8c3ca5d"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/frozen.png",
+      "sha256": "2eada26688c7f86b575f4a3a510c7f54bdf3e235e8a974a0bcb47f06d8c3ca5d"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/late-break-lit.png",
+      "sha256": "796d039b32a41bc64299d2ea4ed178bd2fd9cff02c2c013ed7ba0e00562b7d45"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/late-break-off.png",
+      "sha256": "df9ee7980f8a641aace943556b2d29f21c68d10791e2e3ae418eec212f3fe38f"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/late-break-restored.png",
+      "sha256": "796d039b32a41bc64299d2ea4ed178bd2fd9cff02c2c013ed7ba0e00562b7d45"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/overlap-break-lit.png",
+      "sha256": "7e5914bb680448ed075ce9ca51218a1b8b88e5094b7e3dc7f57e68afedd74918"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/overlap-break-off.png",
+      "sha256": "caa00d7588c813c220c4a7bd99f48c56c0e038c8b1dc53f934b6142a854fc459"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/overlap-break-restored.png",
+      "sha256": "7e5914bb680448ed075ce9ca51218a1b8b88e5094b7e3dc7f57e68afedd74918"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-refined-2026-10-09/medium/tail.png",
+      "sha256": "2eada26688c7f86b575f4a3a510c7f54bdf3e235e8a974a0bcb47f06d8c3ca5d"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/density-restored.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/frozen.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/late-break-lit.png",
+      "sha256": "813d5b02b611833580a3f852e04fe155328db2fd291c8bacae491b332901e27b"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/late-break-off.png",
+      "sha256": "5ed8149b48e990ca4f043c2ea905af75189c7e33d927fcc788adbb6ae60d6cc6"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/late-break-restored.png",
+      "sha256": "813d5b02b611833580a3f852e04fe155328db2fd291c8bacae491b332901e27b"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/overlap-break-lit.png",
+      "sha256": "22e9e6750c618f799d5d180498d0f54d9f18bc9c54a6c2fd54e54d5755a44ca7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/overlap-break-off.png",
+      "sha256": "d225d596cb77030e7537a9f59f157529fa0f5c7aa46e2c19a844e836f0f3d733"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/overlap-break-restored.png",
+      "sha256": "22e9e6750c618f799d5d180498d0f54d9f18bc9c54a6c2fd54e54d5755a44ca7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/high/tail.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/density-restored.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/frozen.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/late-break-lit.png",
+      "sha256": "4c4e4c69ba81819239eea9b5212ebf91d53b964fc05d90d14eccff80e465435e"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/late-break-off.png",
+      "sha256": "730646e5660be05d8cc9fc701ebe7e8160dcba378bcded506705f4b941b17ff5"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/late-break-restored.png",
+      "sha256": "4c4e4c69ba81819239eea9b5212ebf91d53b964fc05d90d14eccff80e465435e"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/overlap-break-lit.png",
+      "sha256": "8d6f2ccf34c37bca4ecc7a680d3dd99b342bb6c6c411339ba00d518deae0dd83"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/overlap-break-off.png",
+      "sha256": "da27ac014d73e91b0b2c028c1fff8d20e36c370a88cdfea4fb9842efc78f96a3"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/overlap-break-restored.png",
+      "sha256": "8d6f2ccf34c37bca4ecc7a680d3dd99b342bb6c6c411339ba00d518deae0dd83"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/low/tail.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/density-restored.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/frozen.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/late-break-lit.png",
+      "sha256": "2dc70e8eb7e9373b0bed0c273da611d18a30a703fccd0bb698ccd94cb64d7405"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/late-break-off.png",
+      "sha256": "f4c9496103acf281e80442b462bbdcf9b4e4a3d0385cdaf6c9a68c75cb6a6fbf"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/late-break-restored.png",
+      "sha256": "2dc70e8eb7e9373b0bed0c273da611d18a30a703fccd0bb698ccd94cb64d7405"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/overlap-break-lit.png",
+      "sha256": "f8a56d3c33f8f4d6fe1d035ba6f99ef8e60aa2f2473f61fe4a7a0e2f028998dd"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/overlap-break-off.png",
+      "sha256": "287404f3f261cc7d8eca78773426db905fd8eaee1f12fb79b98aa3fad43baa2d"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/overlap-break-restored.png",
+      "sha256": "f8a56d3c33f8f4d6fe1d035ba6f99ef8e60aa2f2473f61fe4a7a0e2f028998dd"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-final-2026-10-09/medium/tail.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/density-restored.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/frozen.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/late-break-lit.png",
+      "sha256": "813d5b02b611833580a3f852e04fe155328db2fd291c8bacae491b332901e27b"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/late-break-off.png",
+      "sha256": "5ed8149b48e990ca4f043c2ea905af75189c7e33d927fcc788adbb6ae60d6cc6"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/late-break-restored.png",
+      "sha256": "813d5b02b611833580a3f852e04fe155328db2fd291c8bacae491b332901e27b"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/overlap-break-lit.png",
+      "sha256": "22e9e6750c618f799d5d180498d0f54d9f18bc9c54a6c2fd54e54d5755a44ca7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/overlap-break-off.png",
+      "sha256": "d225d596cb77030e7537a9f59f157529fa0f5c7aa46e2c19a844e836f0f3d733"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/overlap-break-restored.png",
+      "sha256": "22e9e6750c618f799d5d180498d0f54d9f18bc9c54a6c2fd54e54d5755a44ca7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/high/tail.png",
+      "sha256": "a09afbd632112ceaf10298a6d8fce2cca65a185ce92cd2a315e209b22f80d0f0"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/density-restored.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/frozen.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/late-break-lit.png",
+      "sha256": "4c4e4c69ba81819239eea9b5212ebf91d53b964fc05d90d14eccff80e465435e"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/late-break-off.png",
+      "sha256": "730646e5660be05d8cc9fc701ebe7e8160dcba378bcded506705f4b941b17ff5"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/late-break-restored.png",
+      "sha256": "4c4e4c69ba81819239eea9b5212ebf91d53b964fc05d90d14eccff80e465435e"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/overlap-break-lit.png",
+      "sha256": "8d6f2ccf34c37bca4ecc7a680d3dd99b342bb6c6c411339ba00d518deae0dd83"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/overlap-break-off.png",
+      "sha256": "da27ac014d73e91b0b2c028c1fff8d20e36c370a88cdfea4fb9842efc78f96a3"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/overlap-break-restored.png",
+      "sha256": "8d6f2ccf34c37bca4ecc7a680d3dd99b342bb6c6c411339ba00d518deae0dd83"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/low/tail.png",
+      "sha256": "a041f908e56a71071c5ebe6a6f33a4ebedfad8a69e16d0a1b93bd34ab60f2175"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/density-restored.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/ended.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/frozen.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/late-break-lit.png",
+      "sha256": "2dc70e8eb7e9373b0bed0c273da611d18a30a703fccd0bb698ccd94cb64d7405"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/late-break-off.png",
+      "sha256": "f4c9496103acf281e80442b462bbdcf9b4e4a3d0385cdaf6c9a68c75cb6a6fbf"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/late-break-restored.png",
+      "sha256": "2dc70e8eb7e9373b0bed0c273da611d18a30a703fccd0bb698ccd94cb64d7405"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/natural-drain.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/overlap-break-lit.png",
+      "sha256": "f8a56d3c33f8f4d6fe1d035ba6f99ef8e60aa2f2473f61fe4a7a0e2f028998dd"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/overlap-break-off.png",
+      "sha256": "287404f3f261cc7d8eca78773426db905fd8eaee1f12fb79b98aa3fad43baa2d"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/overlap-break-restored.png",
+      "sha256": "f8a56d3c33f8f4d6fe1d035ba6f99ef8e60aa2f2473f61fe4a7a0e2f028998dd"
+    },
+    {
+      "path": "target/fireworks-f8/wispy-show-controls-repeat-2026-10-09/medium/tail.png",
+      "sha256": "8fd4d40edf5af0ac186e992511ae1fea0de81eaa38bccaa247e15da3ca751856"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-art-hdr-2026-10-09/baseline-10_9.png",
+      "sha256": "75270027a220df7ce32c332497c9402e2fc5fe9429f25599b9ea4add47655ff8"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-art-hdr-2026-10-09/wispy-10_9.png",
+      "sha256": "dedf280d506ec5cd6df9381eb4dd5feb4eab8f7583bd6e3a7f419297d22cb545"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-art-hdr-2026-10-09/wispy-9_3.png",
+      "sha256": "4acd35321b2f8fcc7c493da76a4ba144b300c4a7c68f2f1cb98491b14db9ebe7"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-art-hdr-2026-10-09/wispy-final-10_9.png",
+      "sha256": "503a8e991eb12a32928a2ad9c638f95a3126e521a9492dd7169df184a885c91e"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-art-hdr-2026-10-09/wispy-final-9_3.png",
+      "sha256": "ed24d0ebc544d61662bdf66cf06d582b3b6606a142ded6b617ab619db431697a"
+    }
+  ]
+}

@@ -173,6 +173,9 @@ mod live_costs;
 #[path = "persistent_smoke_show.rs"]
 mod persistent_show;
 
+#[path = "cross_draw_smoke.rs"]
+mod cross_draw;
+
 fn advance(app: &mut App, owner: Entity, target: u64) {
     app.world_mut()
         .get_mut::<EffectPlayer>(owner)

@@ -10,7 +10,7 @@ use aestra_core::{
 };
 
 /// A declared-event edit a button or menu carries.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub(super) enum EventDeclarationAction {
     Add(EventDirection),
     Remove(EventDefinitionId),

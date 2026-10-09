@@ -273,6 +273,7 @@ impl EventLinkV4 {
         if self.count == 0
             || self.count > aestra_core::MAX_EVENT_LINK_COUNT
             || !self.inherit.is_finite()
+            || !self.trigger.is_valid()
         {
             return invalid(
                 path,
@@ -355,6 +356,7 @@ impl EventRouteV4 {
                 }
                 let limit = aggregation.limit();
                 if source as usize >= emitters
+                    || !trigger.is_valid()
                     || limit == 0
                     || limit > aestra_core::MAX_OUTPUTS_PER_TICK
                 {
@@ -1342,6 +1344,34 @@ impl TryFrom<EffectV1> for CompiledEffect {
             .enumerate()
             .map(|(index, light)| light.decode(index, &event_routes, &parameters))
             .collect::<Result<_, _>>()?;
+        let event_links: Vec<_> = effect
+            .event_links
+            .into_iter()
+            .enumerate()
+            .map(|(index, link)| link.decode(index, emitters.len()))
+            .collect::<Result<_, _>>()?;
+        let mut distance_sources = BTreeMap::new();
+        for (source, trigger) in event_links
+            .iter()
+            .map(|link| (link.source, link.trigger))
+            .chain(event_routes.iter().filter_map(|route| match route {
+                aestra_runtime::CompiledEventRoute::ParticleOutput(output) => {
+                    Some((output.source, output.trigger))
+                }
+                _ => None,
+            }))
+        {
+            if let Some(settings) = trigger.distance_settings()
+                && distance_sources
+                    .insert(source, settings)
+                    .is_some_and(|previous| previous != settings)
+            {
+                return invalid(
+                    "effect.event_links",
+                    "distance routes sharing a source disagree",
+                );
+            }
+        }
         let mut light_ids = BTreeSet::new();
         let mut light_routes = BTreeSet::new();
         for (index, light) in point_lights.iter().enumerate() {
@@ -1385,15 +1415,7 @@ impl TryFrom<EffectV1> for CompiledEffect {
             binding_slots,
             host_fields,
             particle_layout: effect.particle_layout.into(),
-            event_links: {
-                let count = emitters.len();
-                effect
-                    .event_links
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, link)| link.decode(index, count))
-                    .collect::<Result<Vec<_>, _>>()?
-            },
+            event_links,
             event_routes,
             point_lights,
             emitters,

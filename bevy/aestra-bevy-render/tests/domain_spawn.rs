@@ -12,7 +12,7 @@ use wgpu::util::DeviceExt;
 
 const REQUIRED_GPU_ENV: &str = "AESTRA_REQUIRE_GPU_CONFORMANCE";
 const CAPACITY: u32 = 128;
-const STRIDE: usize = 9;
+const STRIDE: usize = aestra_gpu::STATEFUL_STATE_STRIDE as usize;
 
 struct Gpu {
     device: wgpu::Device,

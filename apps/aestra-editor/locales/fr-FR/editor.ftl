@@ -710,6 +710,7 @@ properties-event-link = {$trigger} → {$target}
 properties-event-on-spawn = À la création
 properties-event-on-death = À la mort
 properties-event-on-collision = À la collision
+properties-event-on-distance = Selon la distance
 
 properties-status-selected-compiled = Cible compilée {$target} sélectionnée
 properties-status-selected = {$target} sélectionné

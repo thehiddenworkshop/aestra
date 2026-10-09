@@ -258,6 +258,58 @@ fn particle_event_links_round_trip() {
 }
 
 #[test]
+fn distance_emission_round_trips_and_rejects_invalid_or_conflicting_routes() {
+    use aestra_core::{EventDefinition, EventLink, EventTrigger, ParticleOutputRoute};
+    let mut asset = effect("Distance smoke", Vec::new());
+    let smoke = Emitter::basic_sprite("Smoke", 1.0);
+    let trigger = EventTrigger::OnDistance {
+        spacing: 0.5,
+        max_per_tick: 8,
+    };
+    asset
+        .events
+        .push(EventLink::new(asset.emitters[0].id, trigger, smoke.id));
+    asset.emitters.push(smoke);
+    let output = EventDefinition::new("Distance");
+    asset.particle_outputs.push(ParticleOutputRoute::new(
+        asset.emitters[0].id,
+        trigger,
+        output.id,
+    ));
+    asset.event_outputs.push(output);
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    assert_eq!(compiled.distance_emission(0), Some((0.5, 8)));
+    assert_eq!(aestra_runtime::event_capture_capacity(1, trigger), 8);
+    let reloaded = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(reloaded.event_links, compiled.event_links);
+    assert_eq!(reloaded.event_routes, compiled.event_routes);
+    for invalid in [
+        EventTrigger::OnDistance {
+            spacing: 0.0,
+            max_per_tick: 8,
+        },
+        EventTrigger::OnDistance {
+            spacing: 0.5,
+            max_per_tick: 65,
+        },
+    ] {
+        asset.events[0].trigger = invalid;
+        assert!(EffectCompiler::default().compile(&asset).is_err());
+        let mut corrupt = compiled.clone();
+        corrupt.event_links[0].trigger = invalid;
+        assert!(decode_effect(&encode_effect(&corrupt).unwrap()).is_err());
+    }
+    asset.events[0].trigger = EventTrigger::OnDistance {
+        spacing: 0.75,
+        max_per_tick: 8,
+    };
+    assert!(EffectCompiler::default().compile(&asset).is_err());
+    let mut corrupt = compiled.clone();
+    corrupt.event_links[0].trigger = asset.events[0].trigger;
+    assert!(decode_effect(&encode_effect(&corrupt).unwrap()).is_err());
+}
+
+#[test]
 fn declared_events_round_trip_through_the_artifact() {
     use aestra_core::{EventDefinition, EventField, EventFieldType};
     let mut asset = effect("Fireball", Vec::new());

@@ -1397,14 +1397,37 @@ impl CompiledEffect {
             .chain(outputs)
             .fold(0, |mask, trigger| mask | event_trigger_bit(trigger))
     }
+
+    /// Shared, validated distance sampling settings for this source emitter.
+    pub fn distance_emission(&self, index: usize) -> Option<(f32, u32)> {
+        self.event_links
+            .iter()
+            .filter(|link| link.source == index)
+            .map(|link| link.trigger)
+            .chain(
+                self.particle_outputs()
+                    .filter(|(_, route)| route.source == index)
+                    .map(|(_, route)| route.trigger),
+            )
+            .find_map(aestra_core::EventTrigger::distance_settings)
+    }
 }
 
-/// The bit of `trigger` in an emitter's event mask: spawn 1, death 2, collision 4.
+/// Bounded records of one event kind available to a link's emission list.
+pub fn event_capture_capacity(source_capacity: u32, trigger: aestra_core::EventTrigger) -> u32 {
+    source_capacity
+        .saturating_mul(trigger.samples_per_tick())
+        .min(PARTICLE_EVENT_CAPACITY)
+}
+
+/// The bit of `trigger` in an emitter's event mask: spawn 1, death 2, collision 4, distance 16.
+/// Bit 8 is reserved for accepted external births delivered only to host outputs.
 pub fn event_trigger_bit(trigger: aestra_core::EventTrigger) -> u32 {
     match trigger {
         aestra_core::EventTrigger::OnSpawn => 1,
         aestra_core::EventTrigger::OnDeath => 2,
         aestra_core::EventTrigger::OnCollision => 4,
+        aestra_core::EventTrigger::OnDistance { .. } => 16,
     }
 }
 
