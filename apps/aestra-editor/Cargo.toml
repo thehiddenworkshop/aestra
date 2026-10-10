@@ -19,7 +19,8 @@ aestra-gpu = { path = "../../crates/aestra-gpu" }
 aestra-project = { path = "../../crates/aestra-project" }
 aestra-runtime = { path = "../../crates/aestra-runtime" }
 bevy = { workspace = true, features = ["system_clipboard"] }
-bevy_resvg.workspace = true
+resvg.workspace = true
+tiny-skia.workspace = true
 bevy_winit = "0.19.1"
 fluent-bundle.workspace = true
 base64 = "0.22.1"

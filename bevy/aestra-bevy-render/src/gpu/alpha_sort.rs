@@ -8,8 +8,7 @@ use bevy::render::render_resource::{
 };
 use bevy::render::{diagnostic::RecordDiagnostics, renderer::RenderQueue, view::ExtractedView};
 
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub(super) struct Prepare;
+pub(super) use super::draw_resources::PrepareAlphaSort as Prepare;
 #[derive(Resource)]
 struct Pipeline {
     layout: BindGroupLayoutDescriptor,
@@ -20,19 +19,8 @@ struct Params {
     view_from_world: Mat4,
     range: UVec4,
 }
-struct Entry {
-    count: u32,
-    runs: [Buffer; 2],
-    pub indices: Buffer,
-    pub render_params: Buffer,
-    uniforms: Vec<Buffer>,
-    bindings: Vec<BindGroup>,
-}
-#[derive(Resource, Default)]
-pub(super) struct AlphaSort {
-    entries: BTreeMap<(Entity, Entity), Entry>,
-    pub dispatched: bool,
-}
+pub(super) use super::draw_resources::AlphaSort;
+use super::draw_resources::AlphaSortEntry as Entry;
 /// CPU ownership/work metadata only; no GPU particle or sorted-index readback.
 #[derive(Resource, Clone, Default)]
 pub struct GpuAlphaSortStatistics(Arc<std::sync::Mutex<AlphaSortSnapshot>>);
@@ -47,16 +35,6 @@ pub struct AlphaSortSnapshot {
 impl GpuAlphaSortStatistics {
     pub fn snapshot(&self) -> AlphaSortSnapshot {
         *self.0.lock().unwrap()
-    }
-}
-impl AlphaSort {
-    pub fn buffers(&self, view: Entity, draw: Entity) -> Option<(&Buffer, &Buffer)> {
-        self.entries
-            .get(&(view, draw))
-            .map(|e| (&e.indices, &e.render_params))
-    }
-    pub fn prepared(&self, view: Entity, draw: Entity) -> bool {
-        self.entries.contains_key(&(view, draw))
     }
 }
 pub(super) fn install(app: &mut SubApp) {

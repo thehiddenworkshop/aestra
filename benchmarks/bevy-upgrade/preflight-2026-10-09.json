@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "milestone": "B20-0",
+  "date": "2026-10-09",
+  "baseline_revision": "e8191982ef0fa71ee69f583a92f1f5b365a5a079",
+  "engine_upgrade_ready": false,
+  "shipping_dependencies_changed": false,
+  "resolution": {
+    "workspace_members": 17,
+    "all_workspace_features": true,
+    "platform_filter": "x86_64-pc-windows-msvc",
+    "succeeded": true,
+    "compatible_single_engine_graph": false,
+    "aestra_020_source_compatibility_tested": false,
+    "bevy_versions": ["0.19.1", "0.20.0"],
+    "wgpu_versions": ["29.0.4", "30.0.1"],
+    "naga_versions": ["29.0.4", "30.0.1"],
+    "wesl_version": "0.6.0",
+    "shared_glam_version": "0.33.12",
+    "encase_version": "0.12.1",
+    "winit_version": "0.30.13",
+    "published_plugin_blockers": [
+      { "name": "bevy_resvg", "version": "2.5.0", "bevy_requirement": "0.19" },
+      { "name": "avian3d", "version": "0.7.0", "bevy_requirement": "0.19.0" },
+      { "name": "bevy_rapier3d", "version": "0.36.0", "bevy_requirement": "0.19.0" }
+    ]
+  },
+  "upstream_keyboard_020": {
+    "rust_toolchain": "1.98.1-x86_64-pc-windows-msvc",
+    "passed": 1,
+    "failed": 1,
+    "exit_code": 101,
+    "held_control": "pass",
+    "same_frame_control_a": "failed: event-time Control expected true, observed false",
+    "qualification_passed": false,
+    "full_text_widget_or_os_clipboard_test": false
+  },
+  "upstream_cluster_020": {
+    "inspection": "Published source only",
+    "native_020_tested": false,
+    "per_view_containers_recreated": true,
+    "completed_pending_staging_owner_not_removed": true,
+    "equivalent_eight_slot_pool_bound": false
+  },
+  "current_019_baseline": {
+    "portable_contract_tests_passed": 11,
+    "editor_input_and_precision_tests_passed": 8,
+    "cluster_unit_tests_passed": 4,
+    "native_cluster_tests_passed": 2,
+    "native_cluster_runner_accepted": true,
+    "native_staging_peak_per_view": 2,
+    "native_staging_ceiling_per_view": 8,
+    "native_final_named_private_allocations": 0,
+    "format_check_passed": true,
+    "full_visual_and_performance_refresh": false,
+    "full_workspace_clippy_run": false
+  },
+  "raw_artifact_directory": "target/bevy-0.20-preflight/60c327b76ce141bd9b7523b4469e6644",
+  "sha256": {
+    "source_Cargo_toml": "0b4b47d5b24111d2cd017b1c73a94dc0ec748379519042513840c2301d1d4f1a",
+    "source_Cargo_lock": "58ba265c196a1318c65f8398d1b802319c5409058885cecabf9e2491ddd6f11c",
+    "probe_metadata": "6b963bfc29658096b34db9850fbb8150fcb91b91fc860981c52ff6c6fa9a7f66",
+    "probe_lockfile": "544874d67e826afe23d793d1f0e1a64bb96ab61e75159a6680ac0076a18d3032",
+    "keyboard_fixture": "7e6b53dc3b9c2cf4f27deafb766ea404bdd68061e9075182b6b592ae96e91282",
+    "prepare_script": "ceb04e8a950c8e467f02e0d49442877077f0c3c7810f600343aebaa3d471707d",
+    "keyboard_audit_log": "b4d90de658a5f2074d1a0287f44b82317954b6c54b7ec0348049a794f8a91e25",
+    "native_lifetime_manifest": "828e23edc3fde9bf31608a573d422389326545f9474fc75ec8d4a42b208561c5"
+  },
+  "next_decision": "Wait for compatible published plugins or approve pinned temporary SVG/physics ports; preserve both Bevy fixes and rerun the graph gate."
+}

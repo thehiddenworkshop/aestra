@@ -1,5 +1,6 @@
 use super::bookmarks::BrowserCollection;
 use super::{actions::BrowserAction, state::*};
+use crate::feathers::icon::{SvgColor, UiSvg};
 use crate::{
     feathers::{
         breadcrumb::{BreadcrumbItem, BreadcrumbProps, spawn_breadcrumb},
@@ -10,7 +11,6 @@ use crate::{
 };
 use aestra_project::{ProjectContent, ProjectSourceId};
 use bevy::{feathers::controls::FeathersTextInput, ui::Selected, ui_widgets::ActiveDescendant};
-use bevy_resvg::prelude::{SvgColor, UiSvg};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Component)]

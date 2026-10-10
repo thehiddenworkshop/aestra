@@ -1,42 +1,10 @@
 //! Opt-in clustered point irradiance for semantic materials. No new light pool/readback.
 
 pub(super) fn compose(wgsl: &str, enabled: bool) -> String {
-    if !enabled {
-        return wgsl.to_owned();
-    }
-    // The portable compiler owns this callback ABI. Fail loudly if its definition changes;
-    // silently leaving a neutral shader would make a newly authored lit material look broken.
-    let start = wgsl
-        .find("fn aestra_scene_point_irradiance(")
-        .expect("scene-light callback missing");
-    let body = start
-        + wgsl[start..]
-            .find('{')
-            .expect("scene-light callback body missing");
-    let end = body
-        + wgsl[body..]
-            .find('}')
-            .expect("scene-light callback end missing")
-        + 1;
-    let mut source = String::with_capacity(wgsl.len() + 3000);
-    source.push_str("#ifdef AESTRA_SCENE_POINT_LIGHTING\n#import bevy_pbr::mesh_view_bindings::view\n#import bevy_pbr::mesh_view_bindings as aestra_sprite_scene\n#import bevy_pbr::clustered_forward as aestra_sprite_clusters\n#endif\n");
-    source.push_str(&wgsl[..body]);
-    source.push_str("{\n#ifdef AESTRA_SCENE_POINT_LIGHTING\n    return aestra_bevy_point_irradiance(world, pixel);\n#else\n    return vec3<f32>(0.0);\n#endif\n}");
-    source.push_str(&wgsl[end..]);
-    source.push_str("\n#ifdef AESTRA_SCENE_POINT_LIGHTING\n");
-    source.push_str(include_str!("material_lighting.wgsl"));
-    source.push_str("\n#endif\n");
-    // Cluster helpers also read the native view. Keep one binding-0 declaration in 3D;
-    // two independently declared view globals are invalid even with compatible layouts.
-    let declaration = "@group(0) @binding(0)\nvar<uniform> view: View;";
-    assert_eq!(
-        source.matches(declaration).count(),
-        1,
-        "portable view binding changed"
-    );
-    source.replace(
-        declaration,
-        &format!("#ifndef AESTRA_SCENE_POINT_LIGHTING\n{declaration}\n#endif"),
+    super::shader_composition::compose_material(
+        wgsl,
+        enabled,
+        super::shader_composition::Dialect::Bevy019,
     )
 }
 

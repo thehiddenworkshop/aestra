@@ -1284,7 +1284,7 @@ mod tests {
             bevy::scene::ScenePlugin,
             bevy::text::TextPlugin,
         ))
-        .init_asset::<bevy_resvg::prelude::SvgFile>()
+        .init_asset::<crate::feathers::icon::SvgFile>()
         .insert_resource(session)
         .insert_resource(catalog)
         .insert_resource(Localizer::new("en-US").unwrap())

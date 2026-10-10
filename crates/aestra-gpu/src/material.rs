@@ -1436,6 +1436,7 @@ fn fingerprint_program(
     let mut fingerprint = FingerprintBuilder::new(b"aestra.material.program");
     fingerprint.u32(MATERIAL_ABI_VERSION);
     fingerprint.u32(MATERIAL_SHADER_GENERATOR_VERSION);
+    fingerprint.bytes(crate::shader::SHADER_COMPILER_ID.as_bytes());
     fingerprint.u32(varyings.slots.len() as u32);
     for slot in &varyings.slots {
         fingerprint.u32(slot.location);

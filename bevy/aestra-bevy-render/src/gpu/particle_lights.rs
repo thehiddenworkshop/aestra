@@ -1,104 +1,23 @@
 //! Opt-in forward-presentation particle light selection. No CPU particle readback,
 //! replay dependency, host event queue, light entity pool or synchronous GPU wait.
+pub use super::particle_light_inputs::{
+    AestraParticleLightSettings, ParticleLightArtifact, ParticleLightMode, ParticleLightSource,
+};
+use super::particle_light_inputs::{Input, Inputs};
 use super::*;
-use aestra_core::{EffectClipId, EffectId, EmitterId, EmitterRegionId, SceneOutputId};
 use aestra_gpu::particle_lights::*;
 use bevy::render::{
-    extract_resource::{ExtractResource, ExtractResourcePlugin},
     render_resource::{
         BufferDescriptor, ShaderType, binding_types::uniform_buffer, encase::StorageBuffer,
     },
     renderer::RenderQueue,
 };
 
-/// Global selected-light cap across every GPU presentation in this render app,
-/// independent from each output's authored quality cap. Zero disables all light
-/// jobs and releases their scratch. A separate host memory budget rejects an
-/// over-budget frame explicitly; no hard-coded emitter/output count limit.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, ExtractResource)]
-pub struct AestraParticleLightSettings {
-    pub max_lights: u32,
-    pub max_scratch_bytes: u64,
-}
-
 /// Render-graph scheduling point after selected GPU records are written and
 /// before camera rendering. GPU consumers must run after this set, retaining
 /// this frame's matching manifest; never use a buffer from an earlier frame.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParticleLightSelectionSet;
-
-/// Explicit host realization choice. Unsupported same-frame configurations
-/// fail closed; never silently fall back to delayed positional readback.
-#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq, ExtractResource)]
-pub enum ParticleLightMode {
-    #[default]
-    PortableAsync,
-    SameFrameGpu,
-}
-impl Default for AestraParticleLightSettings {
-    fn default() -> Self {
-        Self {
-            max_lights: 0,
-            max_scratch_bytes: 64 * 1024 * 1024,
-        }
-    }
-}
-
-/// Canonical occurrence identity. Tokens are frame-local manifest indices, not
-/// persistent light identities. Consumers must retain the matching frame manifest
-/// with any async selected-set copy and validate owner/root epochs before use.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ParticleLightSource {
-    pub root: Entity,
-    pub root_epoch: u32,
-    pub clip_path: Vec<EffectClipId>,
-    pub owner: Entity,
-    pub owner_epoch: u32,
-    pub revision: u64,
-    pub effect: EffectId,
-    pub seed: u64,
-    pub emitter: EmitterId,
-    pub region: EmitterRegionId,
-    pub output: SceneOutputId,
-    /// Keep the originating compiled artifact alive through async consumption.
-    /// An in-place replacement with the same authored IDs/seed/epoch is not the
-    /// same presentation. Pointer reuse cannot occur while this handle is held.
-    pub artifact: ParticleLightArtifact,
-}
-
-#[derive(Clone)]
-pub struct ParticleLightArtifact(pub Arc<aestra_runtime::CompiledEffect>);
-impl ParticleLightArtifact {
-    pub fn matches(&self, effect: &Arc<aestra_runtime::CompiledEffect>) -> bool {
-        Arc::ptr_eq(&self.0, effect)
-    }
-    fn address(&self) -> usize {
-        Arc::as_ptr(&self.0) as usize
-    }
-}
-impl std::fmt::Debug for ParticleLightArtifact {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("ParticleLightArtifact")
-            .field(&self.address())
-            .finish()
-    }
-}
-impl PartialEq for ParticleLightArtifact {
-    fn eq(&self, other: &Self) -> bool {
-        self.matches(&other.0)
-    }
-}
-impl Eq for ParticleLightArtifact {}
-impl PartialOrd for ParticleLightArtifact {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for ParticleLightArtifact {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.address().cmp(&other.address())
-    }
-}
 
 /// Render-world selected buffers only, suitable for F7E's bounded async copy.
 /// `records` starts with a sorted valid prefix followed by zero-lumen padding;
@@ -136,17 +55,6 @@ impl GpuSelectedParticleLights {
 
 #[derive(Component, Clone)]
 pub(super) struct Pools(pub Vec<(u32, u32)>);
-#[derive(Clone)]
-struct Input {
-    source: ParticleLightSource,
-    emitter_index: u32,
-    offset: u32,
-    count: u32,
-    plan: aestra_runtime::ParticlePointLightPlan,
-    parameters: Arc<[aestra_runtime::RuntimeValue]>,
-}
-#[derive(Component, Clone, ExtractComponent, Default)]
-struct Inputs(Vec<Input>);
 #[derive(Resource)]
 struct Pipelines {
     local_layout: BindGroupLayoutDescriptor,
@@ -193,6 +101,7 @@ impl GlobalEntry {
 }
 
 pub(super) fn install(app: &mut App) {
+    super::extraction::install_particle_lights(app);
     let registry = app.world().resource::<EmbeddedAssetRegistry>();
     for (name, source) in [
         ("particle_lights", PARTICLE_LIGHT_WESL),
@@ -206,11 +115,6 @@ pub(super) fn install(app: &mut App) {
     }
     app.init_resource::<AestraParticleLightSettings>()
         .init_resource::<ParticleLightMode>()
-        .add_plugins((
-            ExtractResourcePlugin::<AestraParticleLightSettings>::default(),
-            ExtractResourcePlugin::<ParticleLightMode>::default(),
-            ExtractComponentPlugin::<Inputs>::default(),
-        ))
         .add_systems(PostUpdate, collect.after(super::sync_gpu_render_transforms));
     if let Some(render) = app.get_sub_app_mut(RenderApp) {
         render

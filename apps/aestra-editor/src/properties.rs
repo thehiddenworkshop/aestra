@@ -2,6 +2,7 @@
 //! navigation focus, and contextual help.
 
 use crate::feathers::icon::load_svg_icon;
+use crate::feathers::icon::{SvgColor, UiSvg};
 use crate::feathers::panel_card::{
     PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
 };
@@ -32,7 +33,6 @@ use bevy::{
     ui::{BackgroundGradient, ColorStop, InteractionDisabled, LinearGradient, Selected},
     ui_widgets::{Activate, SliderValue},
 };
-use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 
 mod asset_drop;
@@ -1204,7 +1204,7 @@ mod tests {
         sim.stage = StageKind::Simulation("Fluid".to_string());
         sim.parameters = aestra_core::ModuleParameters::Custom(Default::default());
         session.effect.emitters[layer].modules.push(sim);
-        app.init_asset::<bevy_resvg::prelude::SvgFile>();
+        app.init_asset::<crate::feathers::icon::SvgFile>();
         let assets = app.world().resource::<AssetServer>().clone();
         let localizer = test_localizer();
         app.world_mut()
@@ -1250,7 +1250,7 @@ mod tests {
                 bevy::scene::ScenePlugin,
                 bevy::text::TextPlugin,
             ));
-            app.init_asset::<bevy_resvg::prelude::SvgFile>();
+            app.init_asset::<crate::feathers::icon::SvgFile>();
             let assets = app.world().resource::<AssetServer>().clone();
             let effect =
                 aestra_core::EffectAsset::load_ron(root.join(format!("{name}.aestra.ron")))

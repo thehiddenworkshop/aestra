@@ -26,6 +26,9 @@
 //! quad, a child of the effect. Scalar fields render as white with alpha = value × gain; vector fields
 //! as |xyz| × gain. The grid is placed in the effect's space (the domain-space decision is fluid F2).
 
+pub(crate) use super::stage_inputs::ExtractedStages;
+use super::stage_inputs::FieldViewTarget;
+pub use super::world_sdf::AestraWorldSdf;
 use super::*;
 use crate::execution::{
     DomainSpawnPipeline, FieldFollowPipeline, PassTimestamps, ProgramCache, StageExecutor,
@@ -253,57 +256,6 @@ pub struct AestraDebugViews {
     pub field_slices: bool,
 }
 
-/// The host's world geometry that simulations collide with (fluid F11, host bindings HB10): a signed
-/// distance volume in world space — level geometry baked offline (`aestra_runtime::SdfVolume`'s
-/// `.aestra-sdf` files) or from the scene's meshes. Every effect whose stages declare a World
-/// Collider collides with it; changing it uploads it once to each of them.
-#[derive(Resource, Debug, Clone, Default)]
-pub struct AestraWorldSdf {
-    world: Option<GpuWorldSdf>,
-    revision: u64,
-}
-
-impl AestraWorldSdf {
-    /// A world made of `volume`.
-    pub fn new(volume: &aestra_runtime::SdfVolume) -> Self {
-        let mut world = Self::default();
-        world.set(volume);
-        world
-    }
-
-    /// Replaces the world with `volume`.
-    pub fn set(&mut self, volume: &aestra_runtime::SdfVolume) {
-        self.revision += 1;
-        self.world = Some(GpuWorldSdf::new(volume, self.revision));
-    }
-
-    /// Removes the world: nothing collides with it any more.
-    pub fn clear(&mut self) {
-        self.revision += 1;
-        let mut absent = GpuWorldSdf::absent();
-        absent.revision = self.revision;
-        self.world = Some(absent);
-    }
-
-    fn packed(&self) -> Option<&GpuWorldSdf> {
-        self.world.as_ref()
-    }
-
-    /// Changes whenever the world is set or cleared: stateful particles colliding with it restart
-    /// their history then (host bindings HB10).
-    pub(crate) fn revision(&self) -> u64 {
-        self.revision
-    }
-}
-
-impl bevy::render::extract_resource::ExtractResource for AestraWorldSdf {
-    type Source = Self;
-
-    fn extract_resource(source: &Self) -> Self {
-        source.clone()
-    }
-}
-
 /// The host's world SDF on the device for stateful particles' `World` colliders (host bindings
 /// HB10): uploaded again only on a new revision; a header saying "no world" until the host sets one.
 #[derive(Resource)]
@@ -376,30 +328,6 @@ impl GpuStageTiming {
     }
 }
 
-/// What the render world needs to run an effect's extension stages this frame.
-#[derive(Component, Clone)]
-pub(crate) struct ExtractedStages {
-    effect: Arc<CompiledEffect>,
-    time: f32,
-    quality: SeekQuality,
-    history_policy: PlaybackHistoryPolicy,
-    host: GpuHostBindings,
-    seed: u32,
-    history_epoch: u32,
-    history_revision: u64,
-    host_epoch: u64,
-    /// The effect's placement: world space into its space (fluid F2).
-    world_to_effect: [[f32; 4]; 3],
-    /// Stateful emitters follow a domain field (fluid F2b): the stateful path advances the domains in
-    /// lockstep with them, so this system must not advance them on its own.
-    coupled: bool,
-    view: Option<FieldViewTarget>,
-    /// Fields copied into volume textures after the stages advance (fluid F3).
-    volumes: Vec<super::volume::VolumeFieldTarget>,
-    /// The host's world SDF (fluid F11), when it supplies one.
-    world: Option<GpuWorldSdf>,
-}
-
 impl ExtractedStages {
     /// The host inputs the domains tick with.
     fn inputs(&self) -> StageInputs<'_> {
@@ -462,32 +390,6 @@ pub(super) fn coupling<'a>(
     })
 }
 
-impl SyncComponent for ExtractedStages {
-    type Target = Self;
-}
-
-impl ExtractComponent for ExtractedStages {
-    type QueryData = &'static Self;
-    type QueryFilter = ();
-    type Out = Self;
-
-    fn extract_component(
-        stages: bevy::ecs::query::QueryItem<'_, '_, Self::QueryData>,
-    ) -> Option<Self::Out> {
-        Some(stages.clone())
-    }
-}
-
-/// A field slice the render world copies into a view image.
-#[derive(Clone)]
-struct FieldViewTarget {
-    image: AssetId<Image>,
-    stage: usize,
-    layout: FieldLayout,
-    slice: u32,
-    gain: f32,
-}
-
 /// Main-world state of an effect's field view: its quad (whose material keeps the image alive) and
 /// what the render world copies into the image.
 #[derive(Component)]
@@ -518,12 +420,8 @@ pub(super) fn install(app: &mut App) {
         .insert_resource(progress.clone())
         .insert_resource(outputs.clone())
         .add_message::<AestraOutputEvent>()
-        .add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
-            AestraWorldSdf,
-        >::default())
         .add_systems(PreUpdate, receive_stage_outputs)
         .add_systems(PostUpdate, raise_finished_events)
-        .add_plugins(ExtractComponentPlugin::<ExtractedStages>::default())
         .add_systems(PreUpdate, receive_stage_timings)
         .add_systems(PreUpdate, receive_stage_progress)
         .add_systems(
@@ -540,8 +438,6 @@ pub(super) fn install(app: &mut App) {
         .insert_resource(progress)
         .insert_resource(outputs)
         .init_resource::<StageRuntimes>()
-        .init_resource::<super::CatchupPacer>()
-        .add_systems(ExtractSchedule, extract_catchup_pacing)
         .add_systems(
             RenderStartup,
             (init_field_slice_pipeline, init_field_follow),
@@ -559,14 +455,6 @@ pub(super) fn install(app: &mut App) {
                 .after(super::run_simulation)
                 .before(RenderGraphSystems::Render),
         );
-}
-
-/// The main world's pacing choice, for this frame's catch-up.
-fn extract_catchup_pacing(
-    pacing: bevy::render::Extract<Option<Res<super::AestraCatchupPacing>>>,
-    mut pacer: ResMut<super::CatchupPacer>,
-) {
-    pacer.set_paced(pacing.as_ref().is_none_or(|pacing| pacing.paced));
 }
 
 /// A presented effect, its field view, and which stage components it already carries.

@@ -1,5 +1,8 @@
 //! Opt-in bounded asynchronous selected-light transport. No particle-buffer map,
 //! blocking device poll, event routing or scene-light entities in this layer.
+pub use super::particle_light_transport::{
+    ParticleLightReadbackFrame, ParticleLightReadbackSettings,
+};
 use super::particle_lights::{
     AestraParticleLightSettings, GpuSelectedParticleLights, ParticleLightMode, ParticleLightSource,
 };
@@ -9,7 +12,6 @@ use bevy::{
     render::{
         RenderApp,
         diagnostic::{RecordDiagnostics, resolve_encoder},
-        extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_resource::{Buffer, BufferDescriptor, BufferUsages, MapMode},
         renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems},
     },
@@ -22,32 +24,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Host-controlled transport budgets, independent of authored/per-output selection.
-/// All storage is bounded by these budgets, not by the number of source particles.
-#[derive(Resource, Clone, Debug, PartialEq, Eq, ExtractResource)]
-pub struct ParticleLightReadbackSettings {
-    pub max_lights: u32,
-    pub max_in_flight: usize,
-    pub max_staging_bytes: u64,
-    /// Maximum manifest bytes per in-flight snapshot (including clip-path data).
-    pub max_manifest_bytes: usize,
-    pub max_age: Duration,
-    pub max_frame_lag: u64,
-}
-impl Default for ParticleLightReadbackSettings {
-    fn default() -> Self {
-        Self {
-            max_lights: 96,
-            max_in_flight: 3,
-            max_staging_bytes: 1024 * 1024,
-            max_manifest_bytes: 1024 * 1024,
-            max_age: Duration::from_millis(100),
-            max_frame_lag: 8,
-        }
-    }
-}
-#[derive(Resource, Clone, Copy, Default, ExtractResource)]
-pub struct ParticleLightReadbackFrame(pub u64);
 #[derive(Clone, Debug)]
 pub struct SelectedParticleLight {
     pub position: Vec3,
@@ -158,14 +134,11 @@ pub enum ParticleLightReadbackSet {
 }
 impl Plugin for AestraParticleLightReadbackPlugin {
     fn build(&self, app: &mut App) {
+        super::extraction::install_light_readback(app);
         let mailbox = ParticleLightReadback::default();
         app.insert_resource(mailbox.clone())
             .init_resource::<ParticleLightReadbackSettings>()
             .init_resource::<ParticleLightReadbackFrame>()
-            .add_plugins((
-                ExtractResourcePlugin::<ParticleLightReadbackSettings>::default(),
-                ExtractResourcePlugin::<ParticleLightReadbackFrame>::default(),
-            ))
             .add_systems(First, |mut frame: ResMut<ParticleLightReadbackFrame>| {
                 frame.0 = frame.0.wrapping_add(1)
             });

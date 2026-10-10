@@ -1,0 +1,2 @@
+# Preserve published crate bytes and UPSTREAM_SHA256 across Windows checkouts.
+* -text

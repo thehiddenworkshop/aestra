@@ -9,13 +9,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug)]
-pub(super) struct WireframeGeometry {
-    pub vertices: Vec<[f32; 14]>,
-    pub inputs: super::mesh_inputs::MeshInputs,
-    pub deformation_ready: bool,
-    pub indices: Vec<u32>,
-}
+pub(super) use super::draw_instance::WireframeGeometry;
 
 type GeometryCache = HashMap<AssetId<Mesh>, Option<Arc<WireframeGeometry>>>;
 

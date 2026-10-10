@@ -9,7 +9,7 @@ pub(super) struct History {
     pub epoch: Option<u32>,
     pub checkpoints: trail_checkpoints::TrailCheckpoints,
     key: Vec<u64>,
-    context: Option<Arc<trail_checkpoints::TrailContext>>,
+    context: Option<Arc<trail_context::TrailContext>>,
 }
 
 impl History {

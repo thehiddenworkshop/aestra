@@ -1,0 +1,20 @@
+{
+  "crate": "bevy_input_focus",
+  "version": "0.20.0",
+  "registry_package_checksum": "83c81d369d0ab3ec17ba14bab1e07da7cacf3751a3104a93b1a3cd99d887887b",
+  "files": {
+    ".cargo_vcs_info.json": "8a43df53197a3208face0dbc4a55a3181803ffcbd289bfa470c5c92c8c4c9402",
+    "Cargo.toml": "968e5cf431a2cf4fde86ef7e6de531e1977aee57a532e8244bee8fa4146415c6",
+    "Cargo.toml.orig": "c472fef5a54b2517dcb92ea5cf0d8f8a6dc0ec9937cc3422b319ba6155199499",
+    "LICENSE-APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+    "LICENSE-MIT": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+    "README.md": "b889f71d6c3ac51ada1d06253bdc796c2b67f5e7e7f2e9bdaa75ed106f7a62e1",
+    "src/autofocus.rs": "5adbbf4266f8e87ea47ede40f84dbb9aa001ae2851e148da49d0f67d6ebb6de1",
+    "src/directional_navigation.rs": "871c155088fc8a4889ad027ba1c6f982f448f7c5742de1b260e8c4dc680a049d",
+    "src/gained_and_lost.rs": "b593608bce1e99631c67a0d63c0a6201e700d07408ab191fbcf8db5af41ab1a8",
+    "src/lib.rs": "fcf4494b0b5f5109935abbda51e487fdb1b363a07f99c6494b6299e2dbf5eaef",
+    "src/navigator.rs": "9ddf896af913123cc39b1b9bed164fcc4f706261fc838159c992b3ee1dd228da",
+    "src/pointer_focus.rs": "54762f49cafa530dfc8c7c8ccefc557160f7c84a961a1ca1da1df2f598fafe54",
+    "src/tab_navigation.rs": "3a15a2579af1497f10c51e0ceeebadacdce60a9c8ee423580ea6de053c990e7e"
+  }
+}

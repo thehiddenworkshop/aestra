@@ -11,7 +11,7 @@ use bevy::{
         camera::TemporalJitter,
         render_asset::RenderAssets,
         render_resource::{
-            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries, Buffer,
+            BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
             BufferInitDescriptor, BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
             ComputePipelineDescriptor, PipelineCache, ShaderStages,
             binding_types::{storage_buffer, storage_buffer_read_only, uniform_buffer},
@@ -30,28 +30,8 @@ struct TrailCullPipeline {
     pipeline: CachedComputePipelineId,
 }
 
-struct Entry {
-    owner: Entity,
-    params: Buffer,
-    indirect: Buffer,
-    bindings: BindGroup,
-    compact_bindings: BindGroup,
-}
-
-#[derive(Resource, Default)]
-pub(super) struct TrailCulling {
-    entries: BTreeMap<(Entity, Entity), Entry>,
-    dispatched: bool,
-}
-
-impl TrailCulling {
-    pub(super) fn indirect(&self, view: Entity, draw: Entity) -> Option<&Buffer> {
-        self.dispatched
-            .then(|| self.entries.get(&(view, draw)))
-            .flatten()
-            .map(|entry| &entry.indirect)
-    }
-}
+use super::draw_resources::TrailCullEntry as Entry;
+pub(super) use super::draw_resources::TrailCulling;
 
 pub(super) fn install(app: &mut SubApp) {
     app.init_resource::<TrailCulling>()

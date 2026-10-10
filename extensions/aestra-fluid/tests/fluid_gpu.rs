@@ -31,6 +31,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 const REQUIRED_GPU_ENV: &str = "AESTRA_REQUIRE_GPU_CONFORMANCE";
 const DT: f32 = 1.0 / 60.0;
 const SEED: u32 = 7;
+const STATE_STRIDE: usize = aestra_gpu::STATEFUL_STATE_STRIDE as usize;
 /// A 16³ grid of 0.2 m cells: the default 3.2 m box, small enough to read back every tick.
 const RESOLUTION: u32 = 16;
 const CELL_SIZE: f32 = 0.2;
@@ -974,22 +975,14 @@ fn the_domain_lives_in_effect_space_and_host_inputs_are_converted_into_it() {
     );
 }
 
-/// Persistent-state slots (9 floats: position, velocity, age, lifetime, ordinal) — the stateful ABI.
+/// Persistent-state slots use the runtime ABI, including the distance-emission residual.
 fn particle_slots(positions: &[[f32; 3]], dead: usize) -> Vec<f32> {
-    let mut state = Vec::new();
+    let mut state = Vec::with_capacity(positions.len() * STATE_STRIDE);
     for (index, position) in positions.iter().enumerate() {
-        let lifetime = if index == dead { 0.0 } else { 10.0 };
-        state.extend([
-            position[0],
-            position[1],
-            position[2],
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            lifetime,
-            0.0,
-        ]);
+        let mut slot = [0.0; STATE_STRIDE];
+        slot[..3].copy_from_slice(position);
+        slot[7] = if index == dead { 0.0 } else { 10.0 };
+        state.extend(slot);
     }
     state
 }
@@ -1044,9 +1037,9 @@ fn particles_following_the_field_take_the_plumes_velocity() {
     );
     let velocity = |slot: usize| {
         [
-            followed[slot * 9 + 3],
-            followed[slot * 9 + 4],
-            followed[slot * 9 + 5],
+            followed[slot * STATE_STRIDE + 3],
+            followed[slot * STATE_STRIDE + 4],
+            followed[slot * STATE_STRIDE + 5],
         ]
     };
     assert_eq!(velocity(1), [0.0; 3], "a dead slot is not touched");
@@ -1411,13 +1404,13 @@ fn a_staggered_field_is_sampled_at_its_faces() {
     let centred = sample(false);
     for (slot, local) in points.iter().enumerate() {
         for axis in 0..3 {
-            let value = staggered[slot * 9 + 3 + axis];
+            let value = staggered[slot * STATE_STRIDE + 3 + axis];
             assert!(
                 (value - local[axis]).abs() < 1e-5,
                 "staggered: slot {slot} axis {axis}: {value} vs {}",
                 local[axis]
             );
-            let off = centred[slot * 9 + 3 + axis];
+            let off = centred[slot * STATE_STRIDE + 3 + axis];
             assert!(
                 (off - (local[axis] - 0.5 * H)).abs() < 1e-5,
                 "cell-centred reading is half a cell off: {off}"
@@ -2973,7 +2966,7 @@ fn sparks_a_fire_asks_for_become_particles_where_it_asked() {
     params[6] = 1.0f32.to_bits();
     params[7] = 1.0f32.to_bits();
     params[13] = 1.0f32.to_bits();
-    let state = storage(&vec![0; CAPACITY as usize * 9]);
+    let state = storage(&vec![0; CAPACITY as usize * STATE_STRIDE]);
     let free_list = storage(&(0..CAPACITY).collect::<Vec<_>>());
     let free_count = storage(&[CAPACITY]);
     let spawn_counter = storage(&[0]);
@@ -3009,7 +3002,7 @@ fn sparks_a_fire_asks_for_become_particles_where_it_asked() {
     let state = read_floats(&gpu, &state);
     assert_eq!(read_floats(&gpu, &spawn_counter)[0].to_bits(), count);
     for (i, (position, velocity)) in records.iter().enumerate() {
-        let slot = (CAPACITY as usize - 1 - i) * 9;
+        let slot = (CAPACITY as usize - 1 - i) * STATE_STRIDE;
         assert_eq!(state[slot..slot + 3], position[..], "{i}");
         // The record's velocity, and no launch speed of the emitter's own.
         assert_eq!(state[slot + 3..slot + 6], velocity[..], "{i}");

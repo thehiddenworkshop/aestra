@@ -49,6 +49,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check suspended physics adapter formatting
+        # Integration builds are explicitly parked; see bevy/PHYSICS_ADAPTERS.md.
+        run: |
+          cargo fmt --manifest-path bevy/aestra-bevy-avian/Cargo.toml -- --check
+          cargo fmt --manifest-path bevy/aestra-bevy-rapier/Cargo.toml -- --check
+
       - name: Check workspace
         run: cargo check --workspace --all-targets --features aestra-bench/gpu --locked
 

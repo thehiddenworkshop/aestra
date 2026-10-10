@@ -1,5 +1,6 @@
 //! Preview viewport ownership: rendering, navigation, grid, display modes, and gizmos.
 
+use crate::feathers::icon::{SvgColor, UiSvg};
 use crate::{
     EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
     ProjectEffectCatalog,
@@ -46,7 +47,6 @@ use bevy::{
     ui_widgets::Activate,
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
-use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 use std::{sync::Arc, time::Instant};
 

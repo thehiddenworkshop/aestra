@@ -2,13 +2,7 @@
 //! Main-world visibility remains permissive so expanded edge footprints reach this check.
 use bevy::{camera::MainPassResolutionOverride, prelude::*, render::view::ExtractedView};
 
-#[derive(Clone, Copy, Debug)]
-pub(super) struct Bounds {
-    pub half_extents: Vec3,
-    pub maximum_size: f32,
-    pub world_from_effect: Mat4,
-    pub minimum_pixels: f32,
-}
+pub(super) use super::draw_instance::SpriteCullBounds as Bounds;
 
 pub(super) struct View {
     clip_from_world: Mat4,
@@ -195,6 +189,7 @@ fn rigid_camera(matrix: Mat4) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::camera::CameraProjection;
     use bevy::render::{render_resource::TextureFormat, view::RetainedViewEntity};
 
     fn extracted(projection: Mat4) -> ExtractedView {
@@ -220,9 +215,21 @@ mod tests {
     }
 
     fn projections() -> [Mat4; 2] {
+        let perspective = PerspectiveProjection {
+            fov: 1.0,
+            aspect_ratio: 960.0 / 540.0,
+            near: 0.1,
+            ..default()
+        };
+        let orthographic = OrthographicProjection {
+            near: 0.1,
+            far: 100.0,
+            area: Rect::new(-16.0, -9.0, 16.0, 9.0),
+            ..OrthographicProjection::default_3d()
+        };
         [
-            Mat4::perspective_infinite_reverse_rh(1.0, 960.0 / 540.0, 0.1),
-            Mat4::orthographic_rh(-16.0, 16.0, -9.0, 9.0, 0.1, 100.0),
+            perspective.get_clip_from_view(),
+            orthographic.get_clip_from_view(),
         ]
     }
 

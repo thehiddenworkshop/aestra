@@ -129,7 +129,7 @@ pub(super) fn spawn_named(
             preview
                 .commands()
                 .entity(icon)
-                .insert(bevy_resvg::prelude::SvgColor(panel::kind_color(kind)));
+                .insert(crate::feathers::icon::SvgColor(panel::kind_color(kind)));
         }
         preview
             .spawn((
@@ -281,10 +281,14 @@ mod tests {
                     assert!(app.world().get::<OverrideClip>(preview).is_some());
                     let visual = app.world().get::<Children>(preview).unwrap()[0];
                     if escape {
-                        assert!(app.world().get::<ImageNode>(visual).is_none());
+                        // SVGs reserve their native image node while loading, but
+                        // must not copy the hidden/loading thumbnail into it.
+                        let pending = app.world().get::<ImageNode>(visual).unwrap();
+                        assert_eq!(pending.image, Handle::default());
+                        assert_eq!(pending.color, Color::NONE);
                         assert!(
                             app.world()
-                                .get::<bevy_resvg::prelude::UiSvg>(visual)
+                                .get::<crate::feathers::icon::UiSvg>(visual)
                                 .is_some()
                         );
                     } else {

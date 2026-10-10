@@ -1,6 +1,7 @@
 //! Hover-only numeric steppers. Reserve their space so hovering never shifts the value.
 
 use super::{ScrubbableNumber, decimal_places, formatted, replace_number_text, scrub_multiplier};
+use crate::feathers::icon::UiSvg;
 use bevy::{
     feathers::{
         controls::{FeathersNumberInput, FeathersTextInput, NumberFormat},
@@ -14,7 +15,6 @@ use bevy::{
     ui_widgets::{Activate, Button, ValueChange},
     window::SystemCursorIcon,
 };
-use bevy_resvg::prelude::UiSvg;
 
 pub(crate) struct NumberArrowsPlugin;
 
@@ -247,11 +247,11 @@ fn step_number(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feathers::icon::SvgFile;
     use bevy::{
         asset::AssetPlugin,
         picking::{backend::HitData, pointer::PointerId},
     };
-    use bevy_resvg::prelude::SvgFile;
 
     #[derive(Resource, Default)]
     struct Changes(Vec<(Entity, f32, bool)>);

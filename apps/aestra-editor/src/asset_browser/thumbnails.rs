@@ -313,7 +313,7 @@ pub(super) fn spawn(
                 height: Val::Percent(100.0),
                 ..default()
             },
-            bevy_resvg::prelude::SvgColor(panel::kind_color(kind)),
+            crate::feathers::icon::SvgColor(panel::kind_color(kind)),
         ));
         thumbnail.image = root
             .spawn((

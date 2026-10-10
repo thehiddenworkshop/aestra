@@ -1326,7 +1326,7 @@ fn match_trail_page(e: Emitter, emitter_index: u32, start: u32, thread: u32) {
         let strand = identity % strands;
         var low = 0u;
         var high = count;
-        while (low < high) {
+        while low < high {
             let middle = (low + high) / 2u;
             let slot = alive_indices[e.slot_offset + middle];
             let key = paged_key_cache(e) + 2u * (slot - e.slot_offset);
@@ -1495,7 +1495,7 @@ fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     if kind == 2u {
         high = min(high, retained);
     }
-    while (low < high) {
+    while low < high {
         let middle = (low + high) / 2u;
         let candidate = aux[source + other + middle];
         let candidate_key = paged_cached_key(e, candidate);
@@ -1651,7 +1651,7 @@ fn scan_trail_birth_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(loca
     }
     for (var n = first; recording && carry != 0u && total >= carry && n < end && rank < carry; n += 1u) {
         var flags = aux[paged_base(e) + 2u * paged_heads(e) + n];
-        while (flags != 0u && rank < carry) {
+        while flags != 0u && rank < carry {
             let owner = n * 4u + firstTrailingBit(flags);
             aux[paged_base(e) + 2u * paged_heads(e) + paged_owners(e) + rank] = owner;
             rank += 1u;

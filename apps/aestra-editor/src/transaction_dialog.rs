@@ -332,7 +332,7 @@ mod tests {
             bevy::scene::ScenePlugin,
             bevy::text::TextPlugin,
         ))
-        .init_asset::<bevy_resvg::prelude::SvgFile>()
+        .init_asset::<crate::feathers::icon::SvgFile>()
         .insert_resource(crate::test_support::session_with_timing_slack())
         .insert_resource(Localizer::new("en-US").unwrap())
         .init_resource::<DiagnosticsPanelState>()

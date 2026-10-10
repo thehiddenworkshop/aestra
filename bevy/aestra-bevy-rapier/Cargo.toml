@@ -1,13 +1,22 @@
 [package]
 name = "aestra-bevy-rapier"
 description = "Rapier physics for Aestra effects: particles collide with the Rapier colliders around them"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-authors.workspace = true
-repository.workspace = true
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["The Hidden Workshop"]
+repository = "https://github.com/TheHiddenWorkshop/aestra"
+publish = false
+
+# Suspended during the Bevy upgrade. Not part of the shipping workspace.
+# Keep this integration's dependency resolution independent (PHYSICS_ADAPTERS.md).
+[workspace]
 
 [dependencies]
 aestra-bevy = { path = "../aestra-bevy" }
-bevy.workspace = true
+bevy = "=0.19.1"
 bevy_rapier3d = { version = "0.36.0", default-features = false, features = ["dim3"] }
+
+[patch.crates-io]
+bevy_input_focus = { path = "../../vendor/bevy_input_focus" }
+bevy_pbr = { path = "../../vendor/bevy_pbr" }

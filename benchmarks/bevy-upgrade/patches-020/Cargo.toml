@@ -1,0 +1,52 @@
+[package]
+name = "aestra-bevy-020-patch-qualification"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98.1"
+publish = false
+
+# Real source qualification, independent of the shipping Bevy 0.19 workspace.
+[workspace]
+
+[dependencies]
+bevy_app = "=0.20.0"
+bevy_ecs = "=0.20.0"
+bevy_input = "=0.20.0"
+bevy_input_focus = "=0.20.0"
+bevy_window = "=0.20.0"
+
+[dev-dependencies]
+bevy = { version = "=0.20.0", default-features = false, features = ["3d_bevy_render", "bevy_sprite_render", "bevy_log", "bevy_ui_widgets", "bevy_picking"] }
+bevy_ui_render = { version = "=0.20.0", default-features = false }
+aestra-core = { path = "../../../crates/aestra-core" }
+aestra-compiler = { path = "../../../crates/aestra-compiler" }
+aestra-gpu = { path = "../../../crates/aestra-gpu" }
+aestra-runtime = { path = "../../../crates/aestra-runtime" }
+naga = { version = "=30.0.1", features = ["wgsl-in"] }
+serde_json = "1"
+pollster = "0.4"
+wgpu = { version = "=30.0.1", default-features = false, features = ["vulkan", "wgsl"] }
+
+[patch.crates-io]
+bevy_input_focus = { path = "../../../vendor/bevy_input_focus_020" }
+bevy_pbr = { path = "../../../vendor/bevy_pbr_020" }
+
+[[test]]
+name = "keyboard"
+path = "keyboard.rs"
+
+[[test]]
+name = "cluster_buffer_reuse"
+path = "cluster_buffer_reuse.rs"
+
+[[test]]
+name = "shader_composition"
+path = "shader_composition.rs"
+
+[[test]]
+name = "storage_buffers"
+path = "storage_buffers.rs"
+
+[[test]]
+name = "extraction"
+path = "extraction.rs"

@@ -1,6 +1,7 @@
 //! Preview transport controls, shortcuts, playback advancement, and icon synchronization.
 
 use crate::feathers::icon::load_svg_icon;
+use crate::feathers::icon::{SvgColor, UiSvg};
 use crate::*;
 use bevy::ecs::query::QueryFilter;
 use bevy::ui_widgets::Activate;
@@ -10,7 +11,6 @@ use bevy::{
     input_focus::InputFocus,
     ui::Selected,
 };
-use bevy_resvg::prelude::{SvgColor, UiSvg};
 
 pub(crate) struct EditorTransportPlugin;
 

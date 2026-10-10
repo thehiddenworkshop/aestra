@@ -775,7 +775,8 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "b99a5324bffda7d8d22bba8fca2f9df7bb1daf657e975eb062ff71231f1b8827"
+        // Includes the backend compiler identity, not just authored material content.
+        "eda1f81d609a7bf8e533bb6a47ef1ddfd1b4f54e7056049d3132b3aedfd5a7a6"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

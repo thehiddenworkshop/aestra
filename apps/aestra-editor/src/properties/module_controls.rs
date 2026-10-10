@@ -566,11 +566,11 @@ fn spawn_module_drag_handle(parent: &mut ChildSpawnerCommands, asset_server: &As
             Pickable::IGNORE,
         ))
         .with_child((
-            bevy_resvg::prelude::UiSvg(crate::feathers::icon::load_svg_icon(
+            crate::feathers::icon::UiSvg(crate::feathers::icon::load_svg_icon(
                 asset_server,
                 "icons/drag-vertical.svg",
             )),
-            bevy_resvg::prelude::SvgColor(theme::TEXT_MUTED),
+            crate::feathers::icon::SvgColor(theme::TEXT_MUTED),
             Node {
                 width: Val::Px(14.0),
                 height: Val::Px(20.0),

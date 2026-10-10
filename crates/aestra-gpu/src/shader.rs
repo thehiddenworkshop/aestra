@@ -2,9 +2,14 @@
 
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use thiserror::Error;
-use wesl::{ModulePath, VirtualResolver, Wesl};
+use wesl::{Compiler, resolver::VirtualResolver, syntax::ModulePath};
 
 use crate::GpuEffectArtifact;
+
+/// Backend compiler identity for generated shader/pipeline and rendered-image caches.
+/// Keep this in sync with the workspace compiler dependencies and composition options;
+/// it is deliberately separate from the authored schema and GPU buffer ABI versions.
+pub const SHADER_COMPILER_ID: &str = "wesl-0.6.0/naga-30.0.1/composition-1";
 
 pub const SIMULATION_MODULE: &str = "package::aestra_simulation";
 pub const SPRITE_RENDER_MODULE: &str = "package::aestra_sprite_render";
@@ -301,9 +306,12 @@ pub fn compile_wesl_with_imports(
             resolver.add_module(path, (*source).into());
         }
     }
-    let wgsl = Wesl::new("")
-        .set_custom_resolver(resolver)
-        .compile(&module)
+    let mut compiler = Compiler::default().with_resolver(resolver);
+    // Authored helper modules predate WESL visibility keywords. Keep their existing
+    // public-by-default contract; adopting private/public is a separate format decision.
+    compiler.options.visibility = false;
+    let wgsl = compiler
+        .compile_module(&module)
         .map_err(|error| GpuShaderError::Wesl {
             module: module_name.to_owned(),
             message: error.to_string(),

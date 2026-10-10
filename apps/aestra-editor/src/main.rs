@@ -44,6 +44,7 @@ mod wesl_document;
 mod wesl_editor;
 mod wesl_syntax;
 
+use crate::feathers::icon::SvgPlugin;
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy_render::AestraRenderPlugin;
 use aestra_compiler::ModuleMetadata;
@@ -84,7 +85,6 @@ use bevy::{
         WindowMoved, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
     },
 };
-use bevy_resvg::prelude::SvgPlugin;
 use bevy_winit::WINIT_WINDOWS;
 pub(crate) use compiler_inspector::spawn_compiler_inspector_workspace;
 use compiler_inspector::{CompilerInspectorSet, EditorCompilerInspectorPlugin};

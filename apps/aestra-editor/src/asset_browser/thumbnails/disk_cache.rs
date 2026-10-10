@@ -125,7 +125,13 @@ pub(super) fn preset_fingerprint(descriptor: &MaterialPresetDescriptor) -> Optio
 /// invalidates every entry.
 pub(super) fn cache_key(content_fingerprint: u64) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    (CACHE_FORMAT_VERSION, RENDERER_VERSION, content_fingerprint).hash(&mut hasher);
+    (
+        CACHE_FORMAT_VERSION,
+        RENDERER_VERSION,
+        aestra_gpu::shader::SHADER_COMPILER_ID,
+        content_fingerprint,
+    )
+        .hash(&mut hasher);
     format!("{:016x}", hasher.finish())
 }
 
@@ -410,6 +416,14 @@ mod tests {
     fn version_bump_is_folded_into_the_key() {
         // Different content fingerprints must not collide through the key.
         assert_ne!(cache_key(1), cache_key(2));
+    }
+
+    #[test]
+    fn compiler_upgrade_invalidates_pre_upgrade_thumbnails() {
+        let mut old_hasher = std::collections::hash_map::DefaultHasher::new();
+        (CACHE_FORMAT_VERSION, RENDERER_VERSION, 42_u64).hash(&mut old_hasher);
+        let old_key = format!("{:016x}", old_hasher.finish());
+        assert_ne!(cache_key(42), old_key);
     }
 
     #[test]

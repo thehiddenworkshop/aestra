@@ -253,7 +253,7 @@ pub(crate) fn browser_app(root: &Path) -> App {
         bevy::ui_widgets::ButtonPlugin,
     ))
     .init_asset::<Image>()
-    .init_asset::<bevy_resvg::prelude::SvgFile>()
+    .init_asset::<crate::feathers::icon::SvgFile>()
     .insert_resource(ProjectEffectCatalog::scan(root))
     .insert_resource(test_support::session_with_timing_slack())
     .init_resource::<crate::document::DocumentManager>()
@@ -324,12 +324,15 @@ fn trash_toolbar_uses_white_bin_svg_with_accessible_label_and_tooltip() {
     let children = world.get::<Children>(trash).unwrap();
     let icon = children
         .iter()
-        .find(|child| world.get::<bevy_resvg::prelude::UiSvg>(*child).is_some())
+        .find(|child| world.get::<crate::feathers::icon::UiSvg>(*child).is_some())
         .expect("Trash must be an SVG icon button");
-    let svg = world.get::<bevy_resvg::prelude::UiSvg>(icon).unwrap();
+    let svg = world.get::<crate::feathers::icon::UiSvg>(icon).unwrap();
     assert_eq!(svg.0.path().unwrap().path().to_str(), Some("icons/bin.svg"));
     assert_eq!(
-        world.get::<bevy_resvg::prelude::SvgColor>(icon).unwrap().0,
+        world
+            .get::<crate::feathers::icon::SvgColor>(icon)
+            .unwrap()
+            .0,
         Color::WHITE
     );
     assert_eq!(world.get::<Node>(trash).unwrap().width, Val::Px(26.0));
@@ -1019,15 +1022,18 @@ fn context_menu_explicitly_inspects_without_opening_or_following_selection() {
         let icon = info
             .1
             .iter()
-            .find(|child| world.get::<bevy_resvg::prelude::UiSvg>(*child).is_some())
+            .find(|child| world.get::<crate::feathers::icon::UiSvg>(*child).is_some())
             .expect("info is an SVG, not a font-dependent glyph");
-        let svg = world.get::<bevy_resvg::prelude::UiSvg>(icon).unwrap();
+        let svg = world.get::<crate::feathers::icon::UiSvg>(icon).unwrap();
         assert_eq!(
             svg.0.path().unwrap().path().to_str(),
             Some("icons/info.svg")
         );
         assert_eq!(
-            world.get::<bevy_resvg::prelude::SvgColor>(icon).unwrap().0,
+            world
+                .get::<crate::feathers::icon::SvgColor>(icon)
+                .unwrap()
+                .0,
             theme::TEXT
         );
         assert_eq!(world.get::<Node>(icon).unwrap().width, Val::Px(16.0));

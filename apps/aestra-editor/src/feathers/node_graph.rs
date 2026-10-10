@@ -9,6 +9,7 @@ use super::{
     scenes,
     tooltip::{EditorTooltip, EditorTooltipSide},
 };
+use crate::feathers::icon::{SvgColor, SvgFile, UiSvg};
 use crate::theme;
 use bevy::{
     asset::embedded_asset,
@@ -29,7 +30,6 @@ use bevy::{
     ui_widgets::Activate,
     window::{CursorMoved, PrimaryWindow, SystemCursorIcon, Window},
 };
-use bevy_resvg::prelude::{SvgColor, SvgFile, UiSvg};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 mod drag_assist;

@@ -304,7 +304,7 @@ pub(crate) fn layout_app(scale: f32) -> (App, Entity) {
         HierarchyPropagatePlugin::<ComputedUiRenderTargetInfo>::new(PostUpdate),
     ))
     .init_asset::<Image>()
-    .init_asset::<bevy_resvg::prelude::SvgFile>()
+    .init_asset::<crate::feathers::icon::SvgFile>()
     .init_resource::<UiScale>()
     .init_resource::<UiSurface>()
     .init_resource::<GraphViewportMemory>()

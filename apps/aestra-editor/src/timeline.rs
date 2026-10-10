@@ -7,7 +7,10 @@ use crate::feathers::context_menu::{
     spawn_pointer_context_menu, spawn_pointer_context_menu_custom_item,
     spawn_pointer_context_menu_item,
 };
+#[cfg(test)]
+use crate::feathers::icon::SvgFile;
 use crate::feathers::icon::load_svg_icon;
+use crate::feathers::icon::{SvgColor, UiSvg};
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
 use crate::material_graph::MaterialGraphViewport;
 use crate::project_content::EditorProjectContent as ProjectEffectCatalog;
@@ -48,9 +51,6 @@ use bevy::{
     },
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
-#[cfg(test)]
-use bevy_resvg::prelude::SvgFile;
-use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 use std::collections::{BTreeMap, BTreeSet};
 

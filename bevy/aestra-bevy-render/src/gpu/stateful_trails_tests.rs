@@ -257,7 +257,7 @@ fn event_trail_scene_with_pool(
     ];
     let paged_pipelines = aestra_gpu::PAGED_TRAIL_ENTRY_POINTS.map(pipeline);
     let render_globals = buffer(&vec![0; 256]);
-    let mut context = trail_checkpoints::TrailContext::default();
+    let mut context = trail_context::TrailContext::default();
     for (index, value) in Mat4::IDENTITY.to_cols_array().iter().enumerate() {
         context.key[6 + index] = value.to_bits();
     }

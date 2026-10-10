@@ -1,13 +1,13 @@
 //! Data-driven editor combo boxes and compact action menus.
 
 use super::{button::FeathersActionButton, icon::load_svg_icon, scenes, tooltip::EditorTooltip};
+use crate::feathers::icon::{SvgColor, UiSvg};
 use crate::{EditorAction, theme};
 use bevy::{
     feathers::{constants::icons, display::icon, theme::ThemedText},
     prelude::*,
     ui_widgets::popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
 };
-use bevy_resvg::prelude::{SvgColor, UiSvg};
 
 pub(crate) struct ComboOption<A = EditorAction> {
     pub(crate) label: String,
@@ -274,7 +274,7 @@ mod searchable_tests {
             crate::input::EditorKeyboardPlugin,
         ))
         .add_message::<bevy::input_focus::KeyboardInputSnapshot>()
-        .init_asset::<bevy_resvg::prelude::SvgFile>();
+        .init_asset::<crate::feathers::icon::SvgFile>();
         let root = app.world_mut().spawn(Node::default()).id();
         let assets = app.world().resource::<AssetServer>().clone();
         app.world_mut()

@@ -485,11 +485,11 @@ pub(super) fn sync(
                             height: Val::Px(16.0),
                             ..default()
                         },
-                        bevy_resvg::prelude::UiSvg(crate::feathers::icon::load_svg_icon(
+                        crate::feathers::icon::UiSvg(crate::feathers::icon::load_svg_icon(
                             assets,
                             "icons/info.svg",
                         )),
-                        bevy_resvg::prelude::SvgColor(theme::TEXT),
+                        crate::feathers::icon::SvgColor(theme::TEXT),
                         Pickable::IGNORE,
                     ));
                 });

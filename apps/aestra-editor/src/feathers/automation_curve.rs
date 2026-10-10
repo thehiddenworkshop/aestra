@@ -10,13 +10,11 @@ use bevy::{
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
-use bevy_resvg::resvg::tiny_skia::{
-    self, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform,
-};
 use std::{
     collections::{HashMap, VecDeque},
     hash::{Hash, Hasher},
 };
+use tiny_skia::{self, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
 pub(crate) const DEFAULT_HEIGHT: f32 = 72.0;
 pub(crate) const MIN_HEIGHT: f32 = 52.0;

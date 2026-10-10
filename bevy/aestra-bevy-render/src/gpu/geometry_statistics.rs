@@ -1,14 +1,13 @@
 //! Actual render-pass submissions, including per-view repetition and culling.
 //! Only indirect command headers and their simulation context are copied.
 use super::*;
-use bevy::render::{render_resource::Buffer, renderer::WgpuWrapper, sync_world::MainEntity};
+use bevy::render::{renderer::WgpuWrapper, sync_world::MainEntity};
 use std::sync::{
     Mutex,
     atomic::{AtomicBool, Ordering},
 };
 
 const MAX_OWNERS: usize = 256;
-const MAX_DRAWS: usize = 2048;
 const MAX_IN_FLIGHT: usize = 3;
 const BUFFER_SIZE: u64 = (MAX_OWNERS * 16 + MAX_DRAWS * 8) as u64;
 
@@ -21,13 +20,6 @@ pub(super) struct Sample {
     pub vertices: u64,
     pub primitives: u64,
     pub draws: u32,
-}
-
-#[derive(Clone, Copy)]
-pub(super) enum Topology {
-    Strip,
-    Triangles,
-    Lines,
 }
 
 impl Sample {
@@ -48,43 +40,8 @@ impl Sample {
     }
 }
 
-struct Draw {
-    owner: Entity,
-    command: Option<(Buffer, u64)>,
-    direct: [u32; 2],
-    topology: Topology,
-}
-
-#[derive(Default)]
-struct Frame {
-    draws: Vec<Draw>,
-    overflow: bool,
-}
-
-#[derive(Resource, Default)]
-pub(super) struct Submissions(Mutex<Frame>);
-
-impl Submissions {
-    pub(super) fn record(
-        &self,
-        owner: Entity,
-        command: Option<(&Buffer, u64)>,
-        direct: [u32; 2],
-        topology: Topology,
-    ) {
-        let mut frame = self.0.lock().unwrap();
-        if frame.draws.len() == MAX_DRAWS {
-            frame.overflow = true;
-            return;
-        }
-        frame.draws.push(Draw {
-            owner,
-            command: command.map(|(b, o)| (b.clone(), o)),
-            direct,
-            topology,
-        });
-    }
-}
+use super::draw_resources::{Frame, MAX_DRAWS};
+pub(super) use super::draw_resources::{Submissions, Topology};
 
 #[derive(Default)]
 struct Mailbox {

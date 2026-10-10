@@ -2,40 +2,71 @@
 
 mod alpha_sort;
 mod bounds;
+mod capability_publication;
+mod catchup_pacing;
+mod clone_extraction;
+mod draw_commands;
+mod draw_instance;
+mod draw_preparation;
+mod draw_resources;
+mod effect_inputs;
 mod extension_stages;
+mod extraction;
+mod extraction_cleanup;
+mod extraction_systems;
 mod geometry_statistics;
 mod material_lighting;
 mod mesh_inputs;
 mod output_context;
 mod paged_trails;
+mod particle_light_inputs;
 pub mod particle_light_readback;
+mod particle_light_transport;
 pub mod particle_lights;
 mod particle_outputs;
 mod particle_statistics;
 mod physics;
+mod pipeline;
 mod preparation_timing;
 mod render;
 mod ribbon_bounds;
+#[path = "gpu/scene_depth_019.rs"]
+mod scene_depth;
+mod shader_composition;
 mod simulation_timing;
 mod sprite_culling;
+mod stage_inputs;
 mod stateful_trails;
+mod storage_buffers;
+mod storage_encoding;
 mod trail_checkpoints;
 mod trail_compaction;
+mod trail_context;
 mod trail_culling;
 mod trail_replay;
+mod view_phases;
 mod volume;
 mod wireframe;
+mod world_sdf;
+
+pub use catchup_pacing::AestraCatchupPacing;
+use catchup_pacing::{CatchupPacer, stateful_catchup_budget};
+#[cfg(test)]
+use draw_instance::gpu_draw_mesh_center;
+use draw_instance::{GpuDrawInstance, GpuRenderMode, GpuSemanticMaterialBinding};
+pub(crate) use effect_inputs::{GpuEffectBuffers, HostEventHistory};
+use effect_inputs::{StatefulAppearance, StatefulDispatch, TickSchedule};
 
 use crate::{
-    ActiveBackend, AestraRenderSettings, AestraRuntimeStatus, CompatibilityIssue,
-    CompatibilityIssueCode, CompatibilityReport, EffectRenderMode, EffectRuntimeStatus,
-    GpuCapabilities, GpuPresentationPrepared, PresentedEffect, ProjectAssetCache,
-    TransparentOrderMode,
+    ActiveBackend, AestraRenderSettings, CompatibilityIssue, CompatibilityIssueCode,
+    CompatibilityReport, EffectRenderMode, EffectRuntimeStatus, GpuCapabilities,
+    GpuPresentationPrepared, PresentedEffect, ProjectAssetCache, TransparentOrderMode,
     capabilities::select_backend,
     material::{MaterialBindingError, MaterialRuntimeBinding},
 };
+#[cfg(test)]
 use aestra_core::MaterialId;
-use aestra_gpu::material::{CompiledMaterialProgram, MaterialProgramFingerprint};
+use aestra_gpu::material::MaterialProgramFingerprint;
 pub use aestra_gpu::particle_attributes::{
     GpuParticleAttributeSummary, estimate_particle_attributes,
 };
@@ -47,22 +78,21 @@ pub use aestra_gpu::{
     MAX_FLIPBOOK_FRAMES,
 };
 use aestra_gpu::{
-    GpuBlend, GpuSimulationState, WORKGROUP_SIZE, fold_seed,
-    indirect_draw_commands_with_statistics, indirect_draw_offset,
+    GpuBlend, WORKGROUP_SIZE, fold_seed, indirect_draw_commands_with_statistics,
+    indirect_draw_offset,
 };
 use aestra_runtime::{PlaybackHistoryPolicy, RendererPlanKind, SeekQuality, SimulationClass};
 use bevy::{
     asset::{RenderAssetUsages, io::embedded::EmbeddedAssetRegistry},
     camera::{
         primitives::Aabb,
-        visibility::{self, RenderLayers, VisibilityClass},
+        visibility::{self, RenderLayers},
     },
     ecs::schedule::IntoScheduleConfigs,
     prelude::*,
     render::{
-        ExtractSchedule, MainWorld, Render, RenderApp, RenderStartup, RenderSystems,
+        Render, RenderApp, RenderStartup, RenderSystems,
         diagnostic::RecordDiagnostics,
-        extract_component::{ExtractComponent, ExtractComponentPlugin},
         gpu_readback::{Readback, ReadbackComplete},
         render_asset::RenderAssets,
         render_resource::{
@@ -73,12 +103,8 @@ use bevy::{
             TextureDimension, TextureFormat,
             binding_types::{storage_buffer, storage_buffer_read_only},
         },
-        renderer::{
-            RenderAdapter, RenderAdapterInfo, RenderContext, RenderDevice, RenderGraph,
-            RenderGraphSystems,
-        },
+        renderer::{RenderAdapter, RenderContext, RenderDevice, RenderGraph, RenderGraphSystems},
         storage::{GpuShaderBuffer, ShaderBuffer},
-        sync_component::SyncComponent,
     },
 };
 pub use extension_stages::{
@@ -86,7 +112,7 @@ pub use extension_stages::{
     GpuStageProgress, GpuStageTiming,
 };
 pub use physics::{AestraPhysicsColliders, AestraPhysicsQuery, PhysicsPose};
-// AestraCatchupPacing is defined below, beside the pacer it configures.
+
 pub use alpha_sort::{AlphaSortSnapshot, GpuAlphaSortStatistics};
 pub use output_context::{EffectOutputContext, ParticleOutputContext};
 pub use particle_statistics::GpuParticleStatistics;
@@ -99,183 +125,11 @@ use std::{
 };
 
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy_render/shaders/aestra_simulation.wesl";
-pub const WESL_RENDER_SHADER_PATH: &str =
-    "embedded://aestra_bevy_render/shaders/aestra_sprite_render.wesl";
-pub const WESL_MESH_WIREFRAME_SHADER_PATH: &str =
-    "embedded://aestra_bevy_render/shaders/aestra_mesh_wireframe.wesl";
+pub use render::{WESL_MESH_WIREFRAME_SHADER_PATH, WESL_RENDER_SHADER_PATH};
 /// The unified stateful simulation module (hybrid roadmap M6): the death_integrate / spawn / present
 /// compute pipelines are built from this. Composed from the proven `aestra_gpu` WGSL primitives.
 pub const STATEFUL_SIMULATION_SHADER_PATH: &str =
     "embedded://aestra_bevy_render/shaders/aestra_stateful_simulation.wgsl";
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-enum GpuRenderMode {
-    #[default]
-    Rendered,
-    Wireframe,
-}
-
-#[derive(Component, Clone, ExtractComponent)]
-pub(crate) struct GpuEffectBuffers {
-    emitters: Handle<ShaderBuffer>,
-    renderers: Handle<ShaderBuffer>,
-    particles: Handle<ShaderBuffer>,
-    alive: Handle<ShaderBuffer>,
-    dead: Handle<ShaderBuffer>,
-    counters: Handle<ShaderBuffer>,
-    indirect: Handle<ShaderBuffer>,
-    globals: Handle<ShaderBuffer>,
-    /// Shared per-slot scratch (3 words/slot) for ribbon link state, kept off the
-    /// particle ABI. A 1-word dummy when the effect has no ribbon renderer.
-    aux: Handle<ShaderBuffer>,
-    render_globals: Handle<ShaderBuffer>,
-    workgroups: u32,
-    has_ribbons: bool,
-    has_trails: bool,
-    ribbon_workgroups: u32,
-    trail_workgroups: u32,
-    trail_plan: aestra_gpu::TrailScratchPlan,
-    total_slots: u32,
-    simulation_time: f32,
-    /// The requested fidelity of stateful seeking this frame (hybrid roadmap M12): `Preview` bounds the
-    /// per-frame reconstruction while the user scrubs; `Exact` (the default) reconstructs the
-    /// authoritative state. Sourced from the player each frame.
-    seek_quality: SeekQuality,
-    history_policy: PlaybackHistoryPolicy,
-    history_epoch: u32,
-    statistics_token: u32,
-    checkpoint_context: Arc<trail_checkpoints::TrailContext>,
-    trail_roots: Vec<(u32, u32)>,
-    /// Persistent simulation-state sizing for stateful emitters (hybrid roadmap M6); `records == 0`
-    /// for a fully analytic effect. The render world allocates its persistent state buffers from
-    /// this (see [`StatefulStates`]).
-    simulation_state: GpuSimulationState,
-    /// One stateful dispatch descriptor per enabled stateful emitter (hybrid roadmap M6), in compiled
-    /// emitter order. Empty for a fully analytic effect.
-    stateful_dispatch: Vec<StatefulDispatch>,
-    /// The effect's particle event links (host bindings HB9b).
-    event_links: Vec<aestra_runtime::CompiledEventLink>,
-    /// Whether the effect has event routes (event system E3): its stateful emitters then advance in
-    /// lockstep, bursts spawning and particle outputs aggregating after each tick's links.
-    routed: bool,
-    /// Its particle output routes, each with the `counters` word its ring of tick records starts at.
-    particle_outputs: Vec<(aestra_runtime::CompiledParticleOutput, u32)>,
-    output_suppress_through: u64,
-    /// The host's recorded input events, updated each frame (event system E2–E3).
-    host_events: Arc<HostEventHistory>,
-    /// The host's physics colliders around the effect this frame, packed (host bindings HB10).
-    physics: Arc<[u32]>,
-    /// True when *every* enabled emitter is stateful, so the effect skips the analytic reset+simulate
-    /// entirely. False for a mixed analytic+stateful effect, where the analytic path runs first (its
-    /// `simulate` skips the stateful emitters' slots) and the stateful dispatches fill them after,
-    /// reusing the shared counter/telemetry the analytic reset already wrote.
-    stateful_only: bool,
-}
-
-/// The parameters the GPU stateful path needs for one emitter (hybrid roadmap M6), sourced from the
-/// compiled emitter at prepare time so the render graph does not need the CPU effect. The stateful
-/// integrator is the minimal reference model (deterministic launch direction, constant gravity, fixed
-/// lifetime), so it reads scalar midpoints of the authored ranges rather than the full analytic
-/// feature set.
-#[derive(Clone)]
-struct StatefulDispatch {
-    /// Live-particle capacity — the emitter's `max_particles`, and the persistent state slot count.
-    capacity: u32,
-    /// This emitter's base index into the alive-indices / indirect draw buffers.
-    slot_offset: u32,
-    /// This emitter's index for the packed emitter/alive word and its indirect draw command.
-    emitter_index: u32,
-    /// The effect's enabled-emitter count, locating the statistics telemetry trailer in the indirect
-    /// buffer (at `emitter_count * 4`).
-    emitter_count: u32,
-    /// Mean particles emitted per second; fractional per-tick spawns accumulate across ticks.
-    spawn_rate: f32,
-    /// Authored one-shot births, emitted once on the first tick crossing start_time.
-    burst_count: u32,
-    burst_tick: u32,
-    /// Per-particle launch speed range `(min, max)`.
-    speed: (f32, f32),
-    /// Per-particle lifetime range `(min, max)` in seconds.
-    lifetime: (f32, f32),
-    /// Local launch axis. Mode 0 retains `normalize(direction + spread * random)`.
-    direction: [f32; 3],
-    velocity_distribution: u32,
-    /// Legacy cone factor (mode 0), otherwise the full cone angle in degrees.
-    spread: f32,
-    /// Linear velocity damping per second (`v -= drag * v * dt`).
-    drag: f32,
-    /// Value-noise turbulence strength.
-    turbulence: f32,
-    /// Spawn shape: 0 = point, 1 = sphere (radius), 2 = box (half extents).
-    shape_kind: u32,
-    /// Sphere radius (when `shape_kind == 1`).
-    shape_radius: f32,
-    /// Box half extents (when `shape_kind == 2`).
-    shape_half_extents: [f32; 3],
-    /// Constant acceleration applied to velocity each tick.
-    gravity: [f32; 3],
-    /// The effect's 64-bit spawn seed.
-    seed: u64,
-    /// Collision primitives resolved after each tick (hybrid roadmap M10), capped at `MAX_COLLIDERS`
-    /// when packed into the params buffer. Empty for emitters without a collision module.
-    colliders: Vec<aestra_core::Collider>,
-    /// The domain field these particles follow (fluid F2b); they then advance in lockstep with it.
-    field_follow: Option<aestra_runtime::CompiledFieldFollow>,
-    /// The domain emission list these particles are also born from (fluid F10); lockstep likewise.
-    domain_spawn: Option<aestra_runtime::CompiledDomainSpawn>,
-    /// Homing steering (host bindings HB7), and the target it steers toward this frame — resolved
-    /// from the effect's bindings each frame, into effect space, the tracker remembering the last one
-    /// seen for [`aestra_runtime::HomingLostPolicy::KeepLastPosition`].
-    homing: Option<aestra_runtime::CompiledHoming>,
-    homing_target: Option<aestra_runtime::HomingTarget>,
-    homing_tracker: aestra_runtime::HomingTracker,
-    /// The host binding the emitter follows (host bindings HB7b): `placement` is then resolved from
-    /// it each frame, and kept while the binding supplies no pose.
-    attachment: Option<aestra_runtime::CompiledAttachment>,
-    /// The `counters` word this emitter's homing arrivals are counted into (the `impact` event, host
-    /// bindings HB9), when it homes. The next word holds the tick they were counted up to (event system
-    /// E2b), so a late read-back still dates the `impact`.
-    arrival_word: Option<u32>,
-    /// Where the homing target is this frame, in world space, for the events it raises.
-    homing_world_target: Option<[f32; 3]>,
-    /// The particle events this emitter reports for event links (host bindings HB9b): a mask of
-    /// `aestra_runtime::event_trigger_bit`s; zero reports none.
-    event_mask: u32,
-    distance_emission: Option<(f32, u32)>,
-    /// A hash of every event link into or out of this emitter: a change is a different simulation.
-    event_signature: u64,
-    /// The `counters` word this emitter's event overflow count is copied to each frame, when it
-    /// reports events: the events beyond the buffer's capacity, dropped (host bindings HB9b).
-    overflow_word: Option<u32>,
-    /// Under a binding trace (host bindings HB8): the homing target and the spawn placement of every
-    /// tick, so each tick — live or replayed after a seek — uses its own recorded input. `None`
-    /// without a trace: the frame's input then serves every tick of the frame.
-    schedule: Option<Arc<TickSchedule>>,
-    /// Where the effect sits in the host's world, for `World` colliders (host bindings HB10): the
-    /// effect-to-world affine, 3×4 rows, updated each frame.
-    world_from_effect: [[f32; 4]; 3],
-    /// The host world's revision, for an emitter with `World` colliders (0 otherwise): a new world
-    /// is a different simulation.
-    world_revision: u64,
-    /// Where a host's `stop_emitting` / `kill` cut emission (event system E2b), updated each frame.
-    cutoffs: aestra_runtime::EmissionCutoffs,
-    /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
-    /// an emitter changes only future spawns, so the live state survives (see
-    /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
-    placement: aestra_runtime::SpawnPlacement,
-    /// How `present` draws the particles: the emitter's appearance, as the analytic path samples it.
-    /// Kept out of the fingerprint too: a look edit changes no particle's motion.
-    appearance: StatefulAppearance,
-}
-
-/// An emitter's size and opacity over life, colour gradient and largest scale, for stateful `present`.
-#[derive(Clone, Copy)]
-struct StatefulAppearance {
-    size: aestra_gpu::GpuCurve,
-    opacity: aestra_gpu::GpuCurve,
-    color: aestra_gpu::GpuGradient,
-    max_scale: f32,
-}
 
 impl StatefulAppearance {
     fn of(emitter: &aestra_gpu::GpuEmitter) -> Self {
@@ -304,15 +158,6 @@ impl StatefulAppearance {
             max_scale: 1.0,
         }
     }
-}
-
-/// The input events a host sent an effect (event system E2–E3), as the stateful path needs them: the
-/// bursts its input routes spawn, and each event's tick and identity. The events are part of the
-/// simulated history: when they change, every checkpoint past the first tick they differ at is stale.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct HostEventHistory {
-    bursts: Vec<aestra_runtime::InputSpawnBurst>,
-    events: Vec<(u64, u64)>,
 }
 
 impl HostEventHistory {
@@ -352,17 +197,6 @@ pub(super) struct RouteWiring<'a> {
     pub outputs: &'a [(aestra_runtime::CompiledParticleOutput, u32)],
     pub output_epoch: u32,
     pub output_suppress_through: u64,
-}
-
-/// A stateful emitter's host input per tick under a binding trace (host bindings HB8).
-#[derive(Debug, Clone, PartialEq)]
-struct TickSchedule {
-    /// What it was computed from: the trace's identity and the effect's world placement.
-    key: u64,
-    /// The homing target each tick steers toward (empty without homing).
-    homing: Vec<Option<aestra_runtime::HomingTarget>>,
-    /// The spawn placement of each tick (empty for an emitter not attached to a binding).
-    placement: Vec<aestra_runtime::SpawnPlacement>,
 }
 
 impl TickSchedule {
@@ -508,48 +342,6 @@ impl StatefulDispatch {
     }
 }
 
-#[derive(Component, Clone)]
-#[require(Transform, Visibility, VisibilityClass)]
-#[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
-struct GpuDrawInstance {
-    sort_range: UVec2,
-    renderer_kind: u32,
-    owner: Entity,
-    mesh: Option<Handle<Mesh>>,
-    wireframe_geometry: Option<Arc<wireframe::WireframeGeometry>>,
-    renderers: Handle<ShaderBuffer>,
-    particles: Handle<ShaderBuffer>,
-    alive: Handle<ShaderBuffer>,
-    aux: Handle<ShaderBuffer>,
-    indirect: Handle<ShaderBuffer>,
-    render_globals: Handle<ShaderBuffer>,
-    render_params: Handle<ShaderBuffer>,
-    texture: Handle<Image>,
-    fallback_texture: Handle<Image>,
-    renderer_order: u32,
-    emitter_index: u32,
-    indirect_offset: u64,
-    trail_instances: Option<u32>,
-    trail_owners: u32,
-    blend: GpuBlend,
-    material: MaterialId,
-    semantic_material: Option<GpuSemanticMaterialBinding>,
-    render_mode: GpuRenderMode,
-    mesh_center: Vec3,
-    sampled_sprite_cull: Option<sprite_culling::Bounds>,
-}
-
-#[derive(Clone)]
-struct GpuSemanticMaterialBinding {
-    program: Arc<CompiledMaterialProgram>,
-    render_state: aestra_core::material::MaterialRenderState,
-    shader: Handle<Shader>,
-    multisampled_shader: Handle<Shader>,
-    uniforms: Arc<[u8]>,
-    textures: Vec<Handle<Image>>,
-    fallback_texture: Handle<Image>,
-}
-
 #[derive(Clone)]
 struct MaterialShaderVariants {
     single_sampled: Handle<Shader>,
@@ -558,42 +350,6 @@ struct MaterialShaderVariants {
 
 #[derive(Resource, Default)]
 pub(crate) struct MaterialShaderCache(BTreeMap<MaterialProgramFingerprint, MaterialShaderVariants>);
-
-impl SyncComponent for GpuDrawInstance {
-    type Target = Self;
-}
-
-impl ExtractComponent for GpuDrawInstance {
-    type QueryData = (
-        &'static Self,
-        &'static ViewVisibility,
-        &'static GlobalTransform,
-        &'static Aabb,
-    );
-    type QueryFilter = ();
-    type Out = Self;
-
-    fn extract_component(
-        (instance, visibility, transform, bounds): bevy::ecs::query::QueryItem<
-            '_,
-            '_,
-            Self::QueryData,
-        >,
-    ) -> Option<Self::Out> {
-        visibility.get().then(|| {
-            let mut extracted = instance.clone();
-            extracted.mesh_center = gpu_draw_mesh_center(transform, bounds);
-            if let Some(culling) = &mut extracted.sampled_sprite_cull {
-                culling.world_from_effect = Mat4::from(transform.affine());
-            }
-            extracted
-        })
-    }
-}
-
-fn gpu_draw_mesh_center(transform: &GlobalTransform, bounds: &Aabb) -> Vec3 {
-    transform.transform_point(Vec3::from(bounds.center))
-}
 
 #[derive(Component)]
 pub(crate) struct GpuReadbackOwner(Entity);
@@ -704,14 +460,11 @@ pub(crate) fn install(app: &mut App) {
         .add_systems(PreUpdate, geometry_statistics::receive);
     app.insert_resource(timing_mailbox.clone())
         .add_systems(PreUpdate, simulation_timing::receive_timings);
-    app.add_plugins((
-        ExtractComponentPlugin::<GpuEffectBuffers>::default(),
-        ExtractComponentPlugin::<GpuDrawInstance>::default(),
-        bevy::render::extract_resource::ExtractResourcePlugin::<AestraRenderSettings>::default(),
-    ))
-    .init_resource::<MaterialShaderCache>()
-    .add_systems(Startup, init_fallback_textures)
-    .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects));
+    app.init_resource::<MaterialShaderCache>()
+        .add_systems(Startup, init_fallback_textures)
+        .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects));
+    extraction::install(app);
+    extraction::install_device_publication(app);
     install_visibility_updates(app);
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
         let capabilities = GpuCapabilities::unavailable("Bevy has no render sub-application");
@@ -737,7 +490,6 @@ pub(crate) fn install(app: &mut App) {
             ),
         )
         .insert_resource(timing_mailbox)
-        .add_systems(ExtractSchedule, publish_gpu_capabilities)
         .add_systems(RenderStartup, (init_pipeline, init_stateful_pipeline))
         .init_resource::<StatefulStates>()
         .add_systems(
@@ -1185,7 +937,7 @@ pub(crate) fn prepare_gpu_effects(
                 .collect(),
         );
         let sort_capacities: Vec<_> = artifact.emitters.iter().map(|e| e.max_particles).collect();
-        let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
+        let emitters = buffers.add(storage_buffers::new(artifact.emitters));
         let ribbon_renderers = artifact
             .renderers
             .iter()
@@ -1219,21 +971,21 @@ pub(crate) fn prepare_gpu_effects(
             .apply(&mut artifact.renderers);
         let renderer_kinds: Vec<_> = artifact.renderers.iter().map(|r| r.renderer_kind).collect();
         let renderer_owners: Vec<_> = artifact.renderers.iter().map(|r| r.playback_mode).collect();
-        let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
+        let renderers = buffers.add(storage_buffers::new(artifact.renderers));
         // Full record count, including the trail-history storage region past
         // total_slots, so aux (indexed by slot) covers trail head/record slots.
-        let particles = buffers.add(ShaderBuffer::from(artifact.particles));
-        let alive = buffers.add(ShaderBuffer::from(vec![
+        let particles = buffers.add(storage_buffers::new(artifact.particles));
+        let alive = buffers.add(storage_buffers::new(vec![
             0_u32;
             artifact.total_slots as usize
         ]));
-        let dead = buffers.add(ShaderBuffer::from(vec![
+        let dead = buffers.add(storage_buffers::new(vec![
             0_u32;
             artifact.total_slots as usize
         ]));
         // Shared per-slot aux scratch (3 words/slot) for ribbon link + trail ring
         // state; a 1-word dummy when the effect draws no ribbons/trails.
-        let aux = buffers.add(ShaderBuffer::from(vec![
+        let aux = buffers.add(storage_buffers::new(vec![
             0_u32;
             if has_ribbons || has_trails {
                 trail_plan.aux_words as usize
@@ -1277,15 +1029,13 @@ pub(crate) fn prepare_gpu_effects(
                 (route.clone(), ring)
             })
             .collect();
-        let counters = buffers.add(ShaderBuffer::from(vec![
+        let counters = buffers.add(storage_buffers::new(vec![
             0_u32;
             (arrivals_base + arrival_words)
                 as usize
         ]));
-        let mut indirect_buffer = ShaderBuffer::from(indirect_draw_commands);
-        indirect_buffer.buffer_description.usage |= BufferUsages::INDIRECT;
-        let indirect = buffers.add(indirect_buffer);
-        let globals = buffers.add(ShaderBuffer::from(GpuGlobals {
+        let indirect = buffers.add(storage_buffers::indirect(indirect_draw_commands));
+        let globals = buffers.add(storage_buffers::new(GpuGlobals {
             time: player.simulation_time(),
             total_slots: artifact.total_slots,
             seed: fold_seed(player.instance.seed()),
@@ -1298,7 +1048,7 @@ pub(crate) fn prepare_gpu_effects(
             _cutoff_padding: Vec2::ZERO,
             world_from_effect: Mat4::IDENTITY,
         }));
-        let render_globals = buffers.add(ShaderBuffer::from(GpuRenderGlobals {
+        let render_globals = buffers.add(storage_buffers::new(GpuRenderGlobals {
             world_from_effect: Mat4::IDENTITY,
             time: player.simulation_time(),
             seed: fold_seed(player.instance.seed()),
@@ -1406,7 +1156,7 @@ pub(crate) fn prepare_gpu_effects(
                         mesh,
                     ) in renderer_draws
                     {
-                        let render_params = buffers.add(ShaderBuffer::from(GpuRenderParams {
+                        let render_params = buffers.add(storage_buffers::new(GpuRenderParams {
                             renderer_index,
                             alive_offset,
                             _padding: UVec2::ZERO,
@@ -1516,130 +1266,6 @@ fn apply_semantic_sprite_compatibility_to_renderers(
         if let Some(binding) = player.material_binding_for_emitter(plan.material, emitter.source) {
             apply_semantic_sprite_compatibility(renderer, binding);
         }
-    }
-}
-
-fn publish_gpu_capabilities(
-    render_device: Res<RenderDevice>,
-    adapter: Res<RenderAdapter>,
-    adapter_info: Res<RenderAdapterInfo>,
-    mut main_world: ResMut<MainWorld>,
-) {
-    let capabilities = detect_gpu_capabilities(&render_device, &adapter, &adapter_info);
-    let requested = main_world.resource::<AestraRenderSettings>().presentation;
-    let status = select_backend(requested, &capabilities);
-    let changed = main_world.resource::<AestraRuntimeStatus>() != &status
-        || main_world.resource::<GpuCapabilities>() != &capabilities;
-    if changed {
-        info!(
-            "Aestra backend: {} on {} ({}); {}",
-            status.active, capabilities.adapter_name, capabilities.backend, status.reason
-        );
-        main_world.insert_resource(capabilities);
-        main_world.insert_resource(status);
-    }
-}
-
-fn detect_gpu_capabilities(
-    render_device: &RenderDevice,
-    adapter: &RenderAdapter,
-    adapter_info: &RenderAdapterInfo,
-) -> GpuCapabilities {
-    let limits = render_device.limits();
-    let flags = adapter.get_downlevel_capabilities().flags;
-    let compute_shaders = flags.contains(DownlevelFlags::COMPUTE_SHADERS);
-    let indirect_execution = flags.contains(DownlevelFlags::INDIRECT_EXECUTION);
-    let vertex_storage = flags.contains(DownlevelFlags::VERTEX_STORAGE);
-    let binding_capacity = limits
-        .max_storage_buffer_binding_size
-        .min(limits.max_buffer_size)
-        / std::mem::size_of::<GpuParticle>() as u64;
-    let dispatch_capacity =
-        u64::from(limits.max_compute_workgroups_per_dimension) * u64::from(WORKGROUP_SIZE);
-    let max_particles = binding_capacity
-        .min(dispatch_capacity)
-        .min(u64::from(u32::MAX)) as u32;
-
-    let mut limitations = Vec::new();
-    if !compute_shaders {
-        limitations.push("compute shaders are unavailable".into());
-    }
-    if limits.max_compute_invocations_per_workgroup < WORKGROUP_SIZE
-        || limits.max_compute_workgroup_size_x < WORKGROUP_SIZE
-    {
-        limitations.push(format!(
-            "compute workgroups cannot run {WORKGROUP_SIZE} invocations"
-        ));
-    }
-    if limits.max_storage_buffers_per_shader_stage < aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT {
-        limitations.push(format!(
-            "{} storage buffers per shader stage are available; {} are required",
-            limits.max_storage_buffers_per_shader_stage,
-            aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
-        ));
-    }
-    if limits.max_bindings_per_bind_group < aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT {
-        limitations.push(format!(
-            "{} bindings per group are available; {} are required",
-            limits.max_bindings_per_bind_group,
-            aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
-        ));
-    }
-    if max_particles == 0 {
-        limitations.push("storage or dispatch limits allow no particles".into());
-    }
-    let compute_pipeline_supported = compute_shaders
-        && limits.max_compute_invocations_per_workgroup >= WORKGROUP_SIZE
-        && limits.max_compute_workgroup_size_x >= WORKGROUP_SIZE
-        && limits.max_storage_buffers_per_shader_stage
-            >= aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
-        && limits.max_bindings_per_bind_group >= aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
-        && max_particles > 0;
-    if !indirect_execution {
-        limitations.push("indirect execution is unavailable".into());
-    }
-    if !vertex_storage {
-        limitations.push("vertex-stage storage buffers are unavailable".into());
-    }
-    if limits.max_bind_groups < 2 {
-        limitations.push(format!(
-            "{} bind group is available; native rendering requires 2",
-            limits.max_bind_groups
-        ));
-    }
-    let native_render_supported = compute_pipeline_supported
-        && indirect_execution
-        && vertex_storage
-        && limits.max_bind_groups >= 2;
-
-    GpuCapabilities {
-        detected: true,
-        adapter_name: adapter_info.name.clone(),
-        backend: format!("{:?}", adapter_info.backend),
-        device_type: format!("{:?}", adapter_info.device_type),
-        driver: if adapter_info.driver.is_empty() {
-            "unknown".into()
-        } else {
-            adapter_info.driver.clone()
-        },
-        compute_shaders,
-        indirect_execution,
-        vertex_storage,
-        compute_pipeline_supported,
-        native_render_supported,
-        max_bind_groups: limits.max_bind_groups,
-        max_bindings_per_bind_group: limits.max_bindings_per_bind_group,
-        max_storage_buffers_per_shader_stage: limits.max_storage_buffers_per_shader_stage,
-        max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
-        max_sampled_textures_per_shader_stage: limits.max_sampled_textures_per_shader_stage,
-        max_samplers_per_shader_stage: limits.max_samplers_per_shader_stage,
-        max_uniform_buffer_binding_size: limits.max_uniform_buffer_binding_size,
-        max_buffer_size: limits.max_buffer_size,
-        max_compute_workgroups_per_dimension: limits.max_compute_workgroups_per_dimension,
-        max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
-        max_compute_workgroup_size_x: limits.max_compute_workgroup_size_x,
-        max_particles,
-        limitations,
     }
 }
 
@@ -1842,10 +1468,10 @@ fn update_gpu_inputs(
                 .unwrap_or_default()
                 .apply(&mut dynamics.renderers);
             if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
-                buffer.set_data(dynamics.emitters);
+                storage_buffers::update(&mut buffer, dynamics.emitters);
             }
             if let Some(mut buffer) = buffers.get_mut(&gpu.renderers) {
-                buffer.set_data(dynamics.renderers);
+                storage_buffers::update(&mut buffer, dynamics.renderers);
             }
         }
     }
@@ -2175,40 +1801,46 @@ fn sync_gpu_render_transforms(
                     .to_cols_array()
                     .map(f32::to_bits),
             );
-            if let Some(data) = buffers.get(&gpu.emitters).and_then(|b| b.data.as_ref())
+            if let Some(data) = buffers.get(&gpu.emitters).and_then(storage_buffers::bytes)
                 && (gpu.checkpoint_context.key != key
-                    || gpu.checkpoint_context.emitters != *data
+                    || gpu.checkpoint_context.emitters != data
                     || gpu.checkpoint_context.motion != motion)
             {
-                gpu.checkpoint_context = Arc::new(trail_checkpoints::TrailContext {
-                    emitters: data.clone(),
+                gpu.checkpoint_context = Arc::new(trail_context::TrailContext {
+                    emitters: data.to_vec(),
                     key,
                     motion,
                 });
             }
         }
         if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
-            buffer.set_data(GpuGlobals {
-                time: player.simulation_time(),
-                total_slots: gpu.total_slots,
-                seed: fold_seed(player.instance.seed()),
-                emitter_count: player.effect().emitters.len() as u32,
-                duration: player.effect().duration,
-                continuous: u32::from(player.effect().playback_mode.is_continuous()),
-                _padding: UVec2::new(player.instance.history_epoch(), statistics_token),
-                emission_end: player.instance.emission_cutoffs().emission_end(),
-                kill_time: player.instance.emission_cutoffs().kill_time(),
-                _cutoff_padding: Vec2::ZERO,
-                world_from_effect: world,
-            });
+            storage_buffers::update(
+                &mut buffer,
+                GpuGlobals {
+                    time: player.simulation_time(),
+                    total_slots: gpu.total_slots,
+                    seed: fold_seed(player.instance.seed()),
+                    emitter_count: player.effect().emitters.len() as u32,
+                    duration: player.effect().duration,
+                    continuous: u32::from(player.effect().playback_mode.is_continuous()),
+                    _padding: UVec2::new(player.instance.history_epoch(), statistics_token),
+                    emission_end: player.instance.emission_cutoffs().emission_end(),
+                    kill_time: player.instance.emission_cutoffs().kill_time(),
+                    _cutoff_padding: Vec2::ZERO,
+                    world_from_effect: world,
+                },
+            );
         }
         if let Some(mut buffer) = buffers.get_mut(&gpu.render_globals) {
-            buffer.set_data(GpuRenderGlobals {
-                world_from_effect: world,
-                time: player.simulation_time(),
-                seed: fold_seed(player.instance.seed()),
-                _padding: Vec2::ZERO,
-            });
+            storage_buffers::update(
+                &mut buffer,
+                GpuRenderGlobals {
+                    world_from_effect: world,
+                    time: player.simulation_time(),
+                    seed: fold_seed(player.instance.seed()),
+                    _padding: Vec2::ZERO,
+                },
+            );
         }
     }
 }
@@ -2804,7 +2436,7 @@ type TrailHistories = BTreeMap<
     Entity,
     (
         AssetId<ShaderBuffer>,
-        Arc<trail_checkpoints::TrailContext>,
+        Arc<trail_context::TrailContext>,
         trail_checkpoints::TrailHistory,
     ),
 >;
@@ -3195,118 +2827,6 @@ fn prepare_stateful_states(
 
 /// The canonical fixed simulation tick, matching `aestra_runtime::StatefulSimulation::TICK_DT`.
 const STATEFUL_TICK_DT: f32 = 1.0 / 60.0;
-/// Cap on fixed ticks advanced in a single frame, so a large seek or a first frame far into the
-/// timeline cannot stall the GPU; the simulation catches up over subsequent frames.
-/// Per-frame fixed-tick catch-up budget for an *exact* stateful seek: large, so a settled cursor
-/// converges to the authoritative state in a few frames, but still bounded so one frame cannot stall
-/// the GPU on a huge jump (the remainder continues on later frames).
-const STATEFUL_MAX_CATCHUP_TICKS: u32 = 300;
-
-/// Per-frame catch-up budget for a *preview* seek (hybrid roadmap M12): tight, so rapid scrubbing stays
-/// responsive. The reconstruction is temporally bounded — the presented state is an *exact* earlier
-/// tick when the budget cannot reach the target, never a values-approximate one — and a preview is
-/// never authoritative, so an exact pass on cursor-release replays the remainder to the target.
-const STATEFUL_PREVIEW_CATCHUP_TICKS: u32 = 24;
-
-/// Paces how many fixed ticks one frame may simulate while a staged simulation catches up — a domain
-/// rebuilt by an edit replaying from tick 0 to the playhead, a seek — from how long frames actually
-/// take. A fluid tick costs milliseconds (and more at high resolution or with flow maps), so a fixed
-/// tick budget either stalls the UI for a whole replay or crawls on cheap effects. The pace halves
-/// after a frame that spent its budget and ran long, and grows while frames stay fast; it grows only
-/// while catching up, starts over at a few ticks whenever a domain is rebuilt, and never drops below
-/// what keeps playback in real time. Shared by the stages that advance alone and those coupled to
-/// particles.
-#[derive(Resource, Debug)]
-pub(crate) struct CatchupPacer {
-    ticks: f32,
-    last_frame: Option<std::time::Instant>,
-    saturated: bool,
-    /// Off (see [`AestraCatchupPacing`]): every frame may spend the full budget.
-    paced: bool,
-}
-
-/// Whether catch-up — a staged simulation replaying to the playhead after a rebuild or a seek — is
-/// paced by frame time, so the UI stays responsive while it runs (the default, for editors), or may
-/// spend the full per-quality budget every frame, so each frame shows exactly the tick it asks for
-/// (captures, visual references, benchmarks). Main-world setting, read by the render world each frame.
-#[derive(Resource, Clone, Copy, Debug)]
-pub struct AestraCatchupPacing {
-    pub paced: bool,
-}
-
-impl Default for AestraCatchupPacing {
-    fn default() -> Self {
-        Self { paced: true }
-    }
-}
-
-/// A frame slower than this, having spent its catch-up budget, halves the pace.
-const CATCHUP_FRAME_TARGET: std::time::Duration = std::time::Duration::from_millis(20);
-/// Ticks a frame always may simulate: real-time playback at down to 30 frames per second.
-const CATCHUP_MIN_TICKS: f32 = 2.0;
-/// Where the pace starts, and starts over after a rebuild.
-const CATCHUP_START_TICKS: f32 = 4.0;
-
-impl Default for CatchupPacer {
-    fn default() -> Self {
-        Self {
-            ticks: CATCHUP_START_TICKS,
-            last_frame: None,
-            saturated: false,
-            paced: true,
-        }
-    }
-}
-
-impl CatchupPacer {
-    /// Called once a frame, before any simulation: adapts the pace to the previous frame.
-    pub(crate) fn frame(&mut self, now: std::time::Instant) {
-        if let Some(last) = self.last_frame
-            && self.saturated
-        {
-            self.ticks = if now.duration_since(last) > CATCHUP_FRAME_TARGET {
-                (self.ticks * 0.5).max(CATCHUP_MIN_TICKS)
-            } else {
-                (self.ticks * 1.25 + 1.0).min(STATEFUL_MAX_CATCHUP_TICKS as f32)
-            };
-        }
-        self.saturated = false;
-        self.last_frame = Some(now);
-    }
-
-    /// A domain was rebuilt: its ticks may cost anything now.
-    pub(crate) fn restart(&mut self) {
-        self.ticks = CATCHUP_START_TICKS;
-    }
-
-    /// The ticks this frame may simulate for one effect at `quality`.
-    pub(crate) fn budget(&self, quality: SeekQuality) -> u32 {
-        if !self.paced {
-            return stateful_catchup_budget(quality);
-        }
-        (self.ticks as u32).clamp(CATCHUP_MIN_TICKS as u32, stateful_catchup_budget(quality))
-    }
-
-    /// Takes the main world's [`AestraCatchupPacing`].
-    pub(crate) fn set_paced(&mut self, paced: bool) {
-        self.paced = paced;
-    }
-
-    /// Reports ticks simulated against the budget: spending it all means still catching up.
-    pub(crate) fn spent(&mut self, ticks: u32, budget: u32) {
-        if ticks >= budget {
-            self.saturated = true;
-        }
-    }
-}
-
-/// The per-frame catch-up budget for a stateful seek at the requested quality (hybrid roadmap M12).
-fn stateful_catchup_budget(quality: SeekQuality) -> u32 {
-    match quality {
-        SeekQuality::Preview => STATEFUL_PREVIEW_CATCHUP_TICKS,
-        SeekQuality::Exact => STATEFUL_MAX_CATCHUP_TICKS,
-    }
-}
 
 /// The stateful params words for one dispatch (`aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS`):
 /// `spawn_per_tick` varies across advance ticks and `subtick` is the presentation-interpolation time
@@ -5060,58 +4580,6 @@ mod tests {
         assert_eq!(statistics.dropped, [200]);
     }
 
-    /// A replay's catch-up is paced by frame time: it grows while frames stay fast, halves after a
-    /// slow frame that spent its budget, does not grow when nothing is catching up, keeps real-time
-    /// playback, stays within the quality's cap, and starts over after a rebuild.
-    #[test]
-    fn catch_up_is_paced_by_frame_time() {
-        use std::time::{Duration, Instant};
-        let exact = SeekQuality::Exact;
-        let mut pacer = CatchupPacer::default();
-        let mut now = Instant::now();
-        pacer.frame(now);
-        assert_eq!(pacer.budget(exact), 4, "a rebuilt domain starts slow");
-
-        let mut frame = |pacer: &mut CatchupPacer, spend: bool, length: u64| {
-            if spend {
-                let budget = pacer.budget(exact);
-                pacer.spent(budget, budget);
-            }
-            now += Duration::from_millis(length);
-            pacer.frame(now);
-            pacer.budget(exact)
-        };
-        let mut budget = 4;
-        for _ in 0..10 {
-            budget = frame(&mut pacer, true, 10);
-        }
-        assert!(budget > 40, "fast frames catch up faster ({budget})");
-        for _ in 0..10 {
-            assert_eq!(
-                frame(&mut pacer, false, 10),
-                budget,
-                "idle frames do not grow it"
-            );
-        }
-        let halved = frame(&mut pacer, true, 60);
-        assert_eq!(halved, budget / 2, "a slow frame halves it");
-        for _ in 0..20 {
-            frame(&mut pacer, true, 200);
-        }
-        assert_eq!(pacer.budget(exact), 2, "never below real-time playback");
-        for _ in 0..40 {
-            frame(&mut pacer, true, 5);
-        }
-        assert_eq!(pacer.budget(exact), STATEFUL_MAX_CATCHUP_TICKS);
-        assert_eq!(
-            pacer.budget(SeekQuality::Preview),
-            STATEFUL_PREVIEW_CATCHUP_TICKS,
-            "a preview seek keeps its tighter cap"
-        );
-        pacer.restart();
-        assert_eq!(pacer.budget(exact), 4);
-    }
-
     #[test]
     fn preview_seek_is_bounded_per_frame_and_exact_converges_to_the_target() {
         // Hybrid roadmap M12: preview bounds per-frame reconstruction more tightly than exact, so
@@ -5403,7 +4871,7 @@ mod tests {
             app.update();
             let expected = app.world().get::<GlobalTransform>(player).unwrap().affine();
             let buffers = app.world().resource::<Assets<ShaderBuffer>>();
-            let bytes = buffers.get(&handle).unwrap().data.as_ref().unwrap();
+            let bytes = storage_buffers::bytes(buffers.get(&handle).unwrap()).unwrap();
             let actual: [f32; 16] = std::array::from_fn(|i| {
                 f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
             });
@@ -5489,14 +4957,12 @@ mod tests {
                 * crate::host_transform::matrix(pose);
             let actual = Mat4::from(app.world().get::<GlobalTransform>(draw).unwrap().affine());
             assert!(actual.abs_diff_eq(expected, 1e-5));
-            let bytes = app
+            let buffer = app
                 .world()
                 .resource::<Assets<ShaderBuffer>>()
                 .get(&handle)
-                .unwrap()
-                .data
-                .as_ref()
                 .unwrap();
+            let bytes = storage_buffers::bytes(buffer).unwrap();
             let uploaded = Mat4::from_cols_array(&std::array::from_fn(|i| {
                 f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
             }));

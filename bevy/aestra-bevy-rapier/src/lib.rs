@@ -1,6 +1,9 @@
 //! Rapier physics for Aestra effects (host bindings HB10, the `EnginePhysicsQuery` collision
 //! provider).
 //!
+//! Temporarily suspended during Aestra's Bevy upgrade, outside workspace CI.
+//! This adapter targets Bevy 0.19 only; see `bevy/PHYSICS_ADAPTERS.md` for restoration.
+//!
 //! Add [`AestraRapierPlugin`] next to `bevy_rapier3d`'s `RapierPhysicsPlugin` and Aestra's
 //! `AestraPlugin`, and give an effect entity an [`AestraPhysicsQuery`]: every frame the plugin asks
 //! Rapier's query pipeline for the colliders within the query's radius of the effect and stores them,

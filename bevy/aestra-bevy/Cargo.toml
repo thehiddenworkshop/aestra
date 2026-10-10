@@ -28,4 +28,4 @@ aestra-artifact = { path = "../../crates/aestra-artifact" }
 aestra-project = { path = "../../crates/aestra-project" }
 # The `fluid_world` example's smoke and water (fluid F11).
 aestra-fluid = { path = "../../extensions/aestra-fluid" }
-wesl = "0.3.2"
+wesl.workspace = true

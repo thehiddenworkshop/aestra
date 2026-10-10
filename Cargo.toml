@@ -1,13 +1,20 @@
 [workspace]
 resolver = "2"
-exclude = ["vendor/bevy_input_focus", "vendor/bevy_pbr"]
+exclude = [
+    "vendor/bevy_input_focus",
+    "vendor/bevy_pbr",
+    "vendor/bevy_input_focus_020",
+    "vendor/bevy_pbr_020",
+    "benchmarks/bevy-upgrade/patches-020",
+    # Temporarily suspended, independently resolved integrations; see bevy/PHYSICS_ADAPTERS.md.
+    "bevy/aestra-bevy-avian",
+    "bevy/aestra-bevy-rapier",
+]
 members = [
     "apps/aestra-bench",
     "apps/aestra-editor",
     "apps/aestra-viewer",
     "bevy/aestra-bevy",
-    "bevy/aestra-bevy-avian",
-    "bevy/aestra-bevy-rapier",
     "bevy/aestra-bevy-render",
     "crates/aestra-artifact",
     "crates/aestra-core",
@@ -30,13 +37,15 @@ repository = "https://github.com/TheHiddenWorkshop/aestra"
 
 [workspace.dependencies]
 bevy = { version = "0.19.1", features = ["bevy_feathers", "shader_format_wesl"] }
-bevy_resvg = "2.5"
+resvg = { version = "0.47", default-features = false }
+tiny-skia = "0.12"
 fluent-bundle = "0.16"
 encase = "0.12.1"
 glam = { version = "0.32.1", features = ["encase"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 elkrs = "=0.1.1"
-naga = { version = "29.0.4", features = ["wgsl-in", "spv-out", "hlsl-out"] }
+# Keep compiler pins aligned with aestra_gpu::shader::SHADER_COMPILER_ID.
+naga = { version = "=30.0.1", features = ["wgsl-in", "spv-out", "hlsl-out"] }
 pollster = "0.4"
 ron = "0.12"
 serde = { version = "1", features = ["derive"] }
@@ -46,7 +55,7 @@ tracing = "0.1"
 tempfile = "3.27"
 unic-langid = "0.9"
 uuid = { version = "1", features = ["serde", "v4"] }
-wesl = "0.3.2"
+wesl = "=0.6.0"
 wgpu = "29.0.4"
 
 [profile.dev]

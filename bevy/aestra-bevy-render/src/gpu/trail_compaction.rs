@@ -1,13 +1,9 @@
 //! Stable per-renderer compaction, shared by every view and rebuilt after simulation/replay.
 use super::*;
 use bevy::render::diagnostic::RecordDiagnostics;
-use bevy::render::render_resource::{Buffer, encase::UniformBuffer};
+use bevy::render::render_resource::encase::UniformBuffer;
 
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub(super) enum TrailCompactionSystems {
-    Prepare,
-    Compact,
-}
+pub(super) use super::draw_resources::TrailCompactionSystems;
 
 #[derive(Resource)]
 struct Pipeline {
@@ -15,33 +11,8 @@ struct Pipeline {
     passes: [CachedComputePipelineId; 4],
 }
 
-pub(super) struct Entry {
-    owner: Entity,
-    pub output: Buffer,
-    pub fallback: Buffer,
-    pub render_params: Buffer,
-    scratch: Buffer,
-    params: Buffer,
-    bindings: BindGroup,
-    count: u32,
-    owners: u32,
-    renderer: u32,
-}
-
-#[derive(Resource, Default)]
-pub(super) struct TrailCompaction {
-    pub entries: BTreeMap<Entity, Entry>,
-    pub dispatched: bool,
-}
-
-impl TrailCompaction {
-    pub fn output(&self, draw: Entity) -> Option<&Buffer> {
-        self.dispatched
-            .then(|| self.entries.get(&draw))
-            .flatten()
-            .map(|e| &e.output)
-    }
-}
+use super::draw_resources::TrailCompactEntry as Entry;
+pub(super) use super::draw_resources::TrailCompaction;
 
 pub(super) fn install(app: &mut SubApp) {
     app.init_resource::<TrailCompaction>()

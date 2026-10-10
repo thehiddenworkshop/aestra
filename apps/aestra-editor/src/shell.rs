@@ -1,12 +1,12 @@
 //! Root editor chrome, global shortcuts, and UI rebuild lifecycle.
 
+use crate::feathers::icon::{SvgColor, UiSvg};
 use crate::feathers::{
     breadcrumb::{BreadcrumbItem, BreadcrumbProps, spawn_breadcrumb},
     icon::load_svg_icon,
 };
 use crate::timeline::{EffectClipChildSelection, TimelineState, resolve_effect_clip_path};
 use crate::*;
-use bevy_resvg::prelude::{SvgColor, UiSvg};
 use std::collections::HashMap;
 
 pub(crate) struct EditorShellPlugin;
@@ -99,7 +99,7 @@ struct EditorContentHost;
 /// A replacement workspace built in an invisible overlay for one frame before it becomes active.
 ///
 /// Editor panels contain text whose final font is applied by [`apply_editor_fonts`] and SVGs that
-/// are rasterized by `bevy_resvg` after they are spawned. Replacing the visible workspace in the
+/// are rasterized by the editor icon loader after they are spawned. Replacing the visible workspace in the
 /// same frame therefore exposes those transient, incomplete controls and makes unrelated labels
 /// and icons blink. Keeping the previous workspace visible while this tree initializes makes a
 /// rebuild an atomic visual swap.

@@ -99,6 +99,97 @@ fn wesl_modules_resolve_package_qualified_imports() {
 }
 
 #[test]
+fn authored_imports_remain_public_and_support_aliases_and_transitive_modules() {
+    let root = "import package::helpers::evaluate as sample;\n\
+                @fragment fn probe() -> @location(0) vec4<f32> { return vec4<f32>(sample()); }";
+    let helper = "import package::constants::level;\nfn evaluate() -> f32 { return level; }";
+    let compiled = aestra_gpu::shader::compile_wesl_with_imports(
+        "package::main",
+        root,
+        &["probe"],
+        &[
+            ("package::helpers", helper),
+            ("package::constants", "const level: f32 = 0.5;"),
+            // A project library may also include the root asset. It must not shadow it.
+            ("package::main", "this is not a shader"),
+        ],
+    )
+    .unwrap();
+    assert_translates_to_spirv(&compiled.wgsl);
+    assert_translates_to_hlsl(&compiled.wgsl);
+    assert!(compiled.wgsl.contains("fn probe"));
+}
+
+#[test]
+fn invalid_authored_sources_keep_actionable_diagnostics() {
+    use aestra_gpu::shader::{GpuShaderError, compile_wesl};
+
+    for source in [
+        "@fragment fn probe( {",
+        "import package::missing::sample; @fragment fn probe() -> @location(0) vec4<f32> { return sample(); }",
+    ] {
+        let error = compile_wesl("package::broken", source, &["probe"]).unwrap_err();
+        let GpuShaderError::Wesl {
+            module,
+            message,
+            wesl,
+        } = error
+        else {
+            panic!("expected an authored WESL diagnostic, got {error:?}");
+        };
+        assert_eq!(module, "package::broken");
+        assert_eq!(wesl, source);
+        assert!(!message.is_empty());
+    }
+}
+
+#[test]
+fn missing_entry_points_are_rejected_after_composition() {
+    use aestra_gpu::shader::{GpuShaderError, compile_wesl};
+
+    let error = compile_wesl(
+        "package::missing_entry",
+        "@compute @workgroup_size(1) fn present() {}",
+        &["absent"],
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        GpuShaderError::MissingEntryPoint {
+            module: "package::missing_entry".to_owned(),
+            entry_point: "absent".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn naga_rejects_invalid_shader_types_and_preserves_both_sources() {
+    use aestra_gpu::shader::{GpuShaderError, compile_wesl};
+
+    let source = "@fragment fn probe() -> @location(0) vec4<f32> { return vec3<f32>(1.0); }";
+    let error = compile_wesl("package::invalid_type", source, &["probe"]).unwrap_err();
+    let (module, message, wesl, wgsl) = match error {
+        GpuShaderError::Wgsl {
+            module,
+            message,
+            wesl,
+            wgsl,
+        }
+        | GpuShaderError::Validation {
+            module,
+            message,
+            wesl,
+            wgsl,
+        } => (module, message, wesl, wgsl),
+        other => panic!("expected a Naga diagnostic, got {other:?}"),
+    };
+    assert_eq!(module, "package::invalid_type");
+    assert_eq!(wesl, source);
+    assert!(!message.is_empty());
+    assert!(wgsl.contains("fn probe"));
+}
+
+#[test]
 fn mesh_wireframe_uses_shared_geometry_and_portable_line_shader() {
     let shader = aestra_gpu::shader::compile_wesl(
         "package::aestra_mesh_wireframe",

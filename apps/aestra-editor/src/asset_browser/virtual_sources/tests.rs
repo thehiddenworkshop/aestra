@@ -1,5 +1,5 @@
 use super::*;
-use bevy_resvg::prelude::UiSvg;
+use crate::feathers::icon::UiSvg;
 
 #[test]
 fn builtins_tree_uses_svg_disclosure_icons_and_nonshrinking_folder_icons() {
@@ -518,10 +518,12 @@ fn virtual_drag_has_a_nonblocking_copy_and_cancel_restores_the_row() {
             if let Some(image) = image {
                 assert_eq!(app.world().get::<ImageNode>(visual).unwrap().image, image);
             } else {
-                assert!(app.world().get::<ImageNode>(visual).is_none());
+                let pending = app.world().get::<ImageNode>(visual).unwrap();
+                assert_eq!(pending.image, Handle::default());
+                assert_eq!(pending.color, Color::NONE);
                 assert!(
                     app.world()
-                        .get::<bevy_resvg::prelude::UiSvg>(visual)
+                        .get::<crate::feathers::icon::UiSvg>(visual)
                         .is_some()
                 );
             }

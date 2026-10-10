@@ -515,8 +515,8 @@ fn key_time(session: &EditorSession, selection: Selection) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feathers::icon::SvgFile;
     use aestra_core::{EmitterTransform, HostTransformKey};
-    use bevy_resvg::prelude::SvgFile;
 
     fn track() -> HostTransformTrack {
         HostTransformTrack::from_pose_keys(

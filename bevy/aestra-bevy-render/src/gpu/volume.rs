@@ -19,10 +19,10 @@
 //!
 //! Volumes need a 3-D camera and Bevy's PBR plugin; without them the debug field slices remain.
 
+pub(super) use super::stage_inputs::VolumeFieldTarget;
 use super::*;
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::{ComputeProgramId, ResourceTypeId};
-use aestra_gpu::volume::volume_interface_wgsl_with_scene_lighting;
 use aestra_runtime::{
     CompiledEffect, FieldLayout, MAX_VOLUME_CONSTANTS, StagePresentation, VolumePresentation,
 };
@@ -145,74 +145,10 @@ impl Material for VolumeMaterial {
 /// The full shader of a march function: Bevy's view and mesh prelude, the portable interface, the
 /// plugin's WGSL, and the vertex and fragment entry points that set up the ray.
 pub(crate) fn compose_volume_shader(program_wgsl: &str, entry_point: &str) -> String {
-    format!(
-        r#"#import bevy_pbr::mesh_functions
-#import bevy_pbr::mesh_view_bindings::view
-#import bevy_pbr::mesh_view_bindings as volume_scene
-#import bevy_pbr::clustered_forward as volume_clusters
-#import bevy_pbr::view_transformations::{{position_world_to_clip, position_ndc_to_world, frag_coord_to_ndc}}
-#ifdef DEPTH_PREPASS
-#import bevy_pbr::prepass_utils
-#endif
-{interface}
-{program_wgsl}
-
-struct AestraVolumeVertex {{
-    @builtin(instance_index) instance_index: u32,
-    @location(0) position: vec3<f32>,
-}}
-
-struct AestraVolumeVarying {{
-    @builtin(position) clip: vec4<f32>,
-    @location(0) local: vec3<f32>,
-    @location(1) @interpolate(flat) instance: u32,
-}}
-
-@vertex
-fn vertex(vertex: AestraVolumeVertex) -> AestraVolumeVarying {{
-    let world_from_local = mesh_functions::get_world_from_local(vertex.instance_index);
-    let world = world_from_local * vec4<f32>(vertex.position, 1.0);
-    var out: AestraVolumeVarying;
-    out.clip = position_world_to_clip(world.xyz);
-    out.local = vertex.position;
-    out.instance = vertex.instance_index;
-    return out;
-}}
-
-@fragment
-fn fragment(in: AestraVolumeVarying) -> @location(0) vec4<f32> {{
-    // The box is a unit cube centred on its origin, scaled to the grid: local + 0.5 is uvw.
-    aestra_volume_world_from_grid = mesh_functions::get_world_from_local(in.instance);
-    let local_from_world = mesh_functions::get_local_from_world(in.instance);
-    let camera = (local_from_world * vec4<f32>(view.world_position, 1.0)).xyz;
-    let size = aestra_volume.size.xyz;
-    let travel = (in.local - camera) * size;
-    let distance = length(travel);
-    if (distance <= 0.0) {{
-        discard;
-    }}
-    let origin = camera + vec3<f32>(0.5);
-    let direction = (in.local - camera) / distance;
-    var span = aestra_volume_box(origin, direction);
-    span.x = max(span.x, 0.0);
-#ifdef DEPTH_PREPASS
-    let depth = prepass_utils::prepass_depth(in.clip, 0u);
-    if (depth > 0.0) {{
-        let scene = position_ndc_to_world(frag_coord_to_ndc(vec4<f32>(in.clip.xy, depth, 1.0)));
-        let scene_local = (local_from_world * vec4<f32>(scene, 1.0)).xyz;
-        span.y = min(span.y, length((scene_local - camera) * size));
-    }}
-#endif
-    if (span.y <= span.x) {{
-        discard;
-    }}
-    return {entry_point}(AestraVolumeRay(origin, direction, span.x, span.y, size, in.clip.xy));
-}}
-"#,
-        interface = volume_interface_wgsl_with_scene_lighting(
-            "#{MATERIAL_BIND_GROUP}",
-            SCENE_LIGHTING_WGSL,
-        ),
+    super::shader_composition::compose_volume(
+        program_wgsl,
+        entry_point,
+        super::shader_composition::Dialect::Bevy019,
     )
 }
 
@@ -220,17 +156,8 @@ fn fragment(in: AestraVolumeVarying) -> @location(0) vec4<f32> {{
 // nested rotation/nonuniform scale. No light positions or particle selection are read back.
 // Point lights only, unshadowed isotropic single scattering. Each sample visits at most 32 cluster
 // entries (including inactive entries); this is a cost bound, not strongest-light selection.
+#[cfg(test)]
 const SCENE_LIGHTING_WGSL: &str = include_str!("volume_lighting.wgsl");
-
-/// A field the render world copies into a volume texture each frame.
-#[derive(Clone)]
-pub(super) struct VolumeFieldTarget {
-    pub stage: usize,
-    pub layout: FieldLayout,
-    pub image: AssetId<Image>,
-    /// A bricked field's table image (fluid F7).
-    pub table: Option<AssetId<Image>>,
-}
 
 /// What one presented volume was built for; a change rebuilds its entity and textures.
 #[derive(Clone, PartialEq)]
