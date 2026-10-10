@@ -485,8 +485,272 @@ selected only at the coherent engine switch; the shipping engine remains 0.19.1.
   formatting, runner syntax and source/executable immutability gates.
 - Validation and evidence: [analytic simulation report](../../benchmarks/bevy-upgrade/analytic-simulation-2026-10-10.md).
 
-Remaining B20-1: trail/stateful simulation and host scheduler integration, async
-readiness and pipelined rendering,
+### B20-1 fourteenth slice — Actual trail-history simulation to installed queues
+
+- Share the production history-recording block with the candidate, preserving
+  update/paged/ribbon order, diagnostics, timestamps and missing-buffer handling.
+  Import the actual paged dispatcher with explicit dependencies; no parallel
+  implementation of history or page/merge scheduling is introduced.
+- Start from compiler-lowered authored records and zeroed GPU history/aux storage.
+  Actual analytic simulation and history dispatch feed installed compaction,
+  per-view culling, bindings and transparent draw commands in the same frame.
+- Exercise inline 70-owner and paged 1,025-owner pools, same-capacity source
+  replacement and output growth. Check exact samples/owner identities/counters,
+  repeated-time idempotence, world-space samples across emitter movement,
+  retained tails after head death, partial/complete expiry and epoch resets.
+  Verify compacted segment membership, near/far camera counts, exact consumed
+  indirect buffers and effect/draw teardown under `PlaybackOnly`.
+- The test controller supplies observation times and poses: this is shared
+  dispatch integration, not qualification of the complete host scheduler,
+  stateful/routed simulation, replay, async shader readiness or pipelined rendering.
+  No shader changes, production readbacks/waits or public API changes are added.
+- **133** candidate checks (14 explicit serial native tests), **151** shipping
+  renderer lib regressions and **5** hardware-required shipping GPU/CPU/trail
+  conformance checks pass. Workspace/candidate strict Clippy, formatting,
+  runner syntax and source/executable immutability gates pass.
+- Validation and evidence: [trail simulation report](../../benchmarks/bevy-upgrade/trail-simulation-2026-10-10.md).
+
+### B20-1 fifteenth slice — Independent stateful simulation to installed queues
+
+- Share persistent-state allocation/invalidation, pipeline setup, tick parameter
+  packing, independent fixed-tick scheduling and presentation/compaction between
+  shipping and candidate. Keep the public shader path and playback APIs unchanged.
+- Start with compiler-authored records and empty persistent storage. Compare GPU
+  particles with the CPU stateful reference, then verify installed alpha ordering
+  and actual draw bindings for opposite cameras.
+- Cover death/free-slot reuse, stop-emission within a batch, burst-once semantics,
+  repeated-time idempotence, bounded preview catch-up, same-capacity reseeding,
+  capacity growth, persistent allocation reuse and removal. `PlaybackOnly` retains
+  no checkpoints. GPU waits/readbacks remain test-only.
+- Fix the discovered independent batching bug: each encoded dispatch now receives
+  its own tick, so bursts, cutoffs and recorded trace inputs do not reuse the
+  segment's first tick. Correct the device gate to the actual twelve bindings.
+- This is independent scheduler integration, not the complete host/coupled/routed
+  scheduler, replay, asynchronous readiness, pipelined, visual or performance parity.
+- **134** candidate checks (15 explicit serial native tests), **151** shipping
+  renderer lib regressions and **36** hardware-required shipping conformance
+  checks pass. Workspace/candidate strict Clippy, formatting, runner syntax and
+  source/executable immutability gates pass.
+- Validation and evidence: [stateful simulation report](../../benchmarks/bevy-upgrade/stateful-simulation-2026-10-10.md).
+
+### B20-1 sixteenth slice — Coupled particle events/routes to installed queues
+
+- Share the actual lockstep scheduler and stateful dispatcher: counter reset,
+  event-link gathering/spawning, host-input bursts, output aggregation, pacing
+  budget selection and statistics stamping. Keep the shipping trail observer
+  behind a small history coordination interface, without changing its storage.
+- Compile the actual stage executor under wgpu 30 using the existing mapped-view
+  version boundary; keep shipping Bevy 0.19.1 and all public host APIs unchanged.
+- Start with three compiler-authored persistent emitters and empty GPU state.
+  Verify successive death-linked generations, supplied host-event positions,
+  requested/dropped/accepted counts, output ticks/epochs and same-tick aggregation.
+  Check exact opposite-camera permutations, ordinal ties and installed commands.
+- Cover repeated-time idempotence, bounded preview catch-up, live/free counts,
+  `PlaybackOnly` without snapshots and teardown. Readbacks/waits remain test-only.
+- This qualifies coupled particle playback and lowered route records, not fluid
+  stepping, joint trail history, full host scheduling/asynchronous output delivery,
+  replay, async readiness, pipelined rendering, pixels or performance.
+- **135** candidate checks (16 explicit serial native tests), **151** shipping
+  renderer lib regressions and **36** hardware-required shipping conformance
+  checks pass. Workspace/candidate strict Clippy, formatting, runner syntax and
+  source/executable immutability gates pass.
+- Validation and evidence: [coupled simulation report](../../benchmarks/bevy-upgrade/coupled-simulation-2026-10-10.md).
+
+### B20-1 seventeenth slice — Fluid coupling and joint stateful trail history
+
+- Path-import the actual stateful trail observer, GPU checkpoints, trail replay
+  controller and historical pose uploads. Replace the observer's wildcard import
+  with explicit dependencies; its algorithms and shipping behavior are unchanged.
+- Compile the real fluid extension in the isolated candidate graph. A compiler-authored
+  dense smoke domain drives persistent trail heads through Follow Field, using the
+  shared production fixed-tick scheduler and stage executor.
+- Verify fluid density/velocity and field-driven head motion, lockstep clocks,
+  bounded skipped-frame catch-up, pause idempotence, dead-head tail retention and
+  expiry, inline/paged history at 70/1,025 owners, source replacement and teardown.
+  Installed per-view queues consume the actual GPU-written culling buffers.
+- `PlaybackOnly` keeps particle/domain/trail checkpoint storage empty. Optional
+  replay captures a common tick-60 checkpoint and restores bit-identical persistent
+  history and fluid fields after an epoch change. Compare persistent aux metadata,
+  not paged sort/scan scratch that is intentionally rebuilt on paused frames.
+- Add a seventeenth explicit serial native gate and hash the full fluid extension,
+  historical pose code and replay controller in immutable qualification evidence.
+- **142** candidate checks (17 explicit serial native tests), **151** shipping
+  renderer lib regressions and **36** hardware-required shipping conformance
+  checks pass. Workspace/candidate strict Clippy, formatting, runner syntax and
+  source/executable immutability gates pass.
+- Validation and limitations: [fluid/joint-history report](../../benchmarks/bevy-upgrade/coupled-trails-2026-10-10.md).
+
+### B20-1 eighteenth slice — Real domain births, trail queues and output rings
+
+- Extend the shared headless renderer fixture with a compiler-authored dense smoke
+  domain, Secondary Emission and Spawn From Domain. All particle and emission
+  storage starts empty; the actual solver supplies every birth record.
+- Exercise the production lockstep scheduler, domain spawner, persistent particle
+  state, joint trail observer, compaction/culling and installed draw queues. Check
+  the exact accepted emission prefix, inherited velocity and slot reuse.
+- Saturate a 16-record emission list against ten destination slots. OnSpawn output
+  aggregation reports only the ten accepted births and their lowest ordinals;
+  rejected births and paused frames export nothing new. Test-only reads inspect
+  the actual GPU ring, not a replacement host-delivery implementation.
+- Playback-only has no checkpoints. Optional replay captures a common tick-60
+  checkpoint and restores identical domain fields and persistent particle/trail
+  history without duplicate output records. Add an eighteenth explicit serial gate.
+- **143** candidate checks, **151** shipping renderer lib regressions and **40**
+  hardware-required conformance checks pass. Workspace/candidate strict Clippy,
+  formatting, runner syntax and immutable source/executable evidence pass.
+- Validation and boundaries: [domain-birth report](../../benchmarks/bevy-upgrade/domain-spawn-2026-10-10.md).
+
+### B20-1 nineteenth slice — Actual asynchronous particle-output delivery
+
+- Move the existing presentation payload/material binding implementation and
+  asynchronous counter/output observer into shared modules. Keep the public
+  renderer exports and observer behavior; path-import these actual modules in
+  the candidate instead of substituting host components or a delivery algorithm.
+- Feed real dense-smoke domain births through Bevy's `Readback::buffer`, actual
+  `ReadbackComplete` observer and `AestraOutputEvent` message stream. Delay the
+  first read across ring wrap; verify retained ticks arrive once in tick order,
+  with exact local payload/count and routed root/clip/epoch identity.
+- Check source-tick inherited motion/root time, world placement, pause deduplication,
+  stale epochs, a fresh restart cohort, seek-reconstruction suppression, resumed
+  live output and removal/despawn handling. No manual completion triggers or
+  synchronous readbacks drive delivery. Playback-only remains checkpoint-free.
+- Add a nineteenth explicit serial native gate and hash all newly shared source.
+  Full host clock scheduling is still fixture-controlled, and the existing
+  32-tick output ring does not guarantee lossless delivery after arbitrary stalls.
+- **155** candidate checks, **151** shipping renderer lib regressions and **40**
+  hardware-required conformance checks pass. Workspace/candidate strict Clippy,
+  formatting, runner syntax and immutable source/executable evidence pass.
+- Validation and limits: [asynchronous output report](../../benchmarks/bevy-upgrade/async-host-outputs-2026-10-10.md).
+
+### B20-1 twentieth slice — Asynchronous extension-stage outputs
+
+- Share the actual stage-output callback wiring, mailbox receiver, latest-values
+  component and finished watcher between shipping and the isolated candidate.
+  Keep public exports and move the existing impact/finished unit coverage too.
+- Fix a deferred-insertion bug exposed by first-completion batches: merge sibling
+  stage values and share one pending edge tracker per owner. Cover repeated reads
+  and independently missing components without resetting surviving tracker state.
+- Add a twentieth serial native gate with actual compiled fluid pressure/force
+  producers. Two-stage force values and impact messages reach the host through
+  asynchronous executor callbacks; check owner isolation, output-less solvers,
+  copy-and-clear, paused read gating, removal and checkpoint-free playback-only.
+- Full host scheduling is still fixture-controlled. The legacy stage mailbox
+  lacks artifact/epoch identity and out-of-order rejection; nested stage routing
+  is not qualified. Keep these explicit in the full host lifecycle gate.
+- **159** candidate checks, **152** shipping renderer lib regressions and **40**
+  hardware-required conformance checks pass. Workspace/candidate strict Clippy,
+  formatting, runner syntax and immutable source/executable evidence pass.
+- Validation and boundaries: [stage-output report](../../benchmarks/bevy-upgrade/stage-outputs-2026-10-10.md).
+
+### B20-1 twenty-first slice — Stage callback identity and ordering safety
+
+- Stamp actual executor callbacks at submission with presentation/artifact identity,
+  seed, playback epoch, history revision and host-input epoch. A replacement
+  `PresentedEffect` gets a distinct token even when it reuses the same artifact;
+  ordinary extraction clones preserve that token.
+- Reject mismatched callbacks before decoding or changing tracker state. Clear
+  previous-context latest values on the next receiver pass, including sibling
+  stages without a fresh result. Reset edge/high-water state for the new context.
+- Sort each drain by tick, then reject duplicate/older ticks independently per
+  stage. Include context in the production read gate so a fresh context can read
+  the same paused tick. Keep the earlier first-batch merge/repair behavior.
+- Extend the existing serial native stage-output gate: hold actual queued fluid
+  callbacks across restart and same-artifact presentation replacement; reject
+  them, accept same-tick fresh reads and raise later live impacts again. No mock
+  completions, production GPU waits or replay requirement are introduced.
+- Shared regressions also cover seeks, revision invalidation, upper seed bits,
+  independently changing extraction identity fields and reordered completions.
+  Full stage reset/reconstruction scheduling, seek-event suppression and nested
+  stage routing remain separate from this delivery contract.
+- **162** candidate checks (including the existing **20** serial native gates),
+  **155** shipping renderer lib regressions and **40** hardware-required
+  conformance checks pass. Workspace/candidate strict Clippy, all-target workspace
+  check, both formatting checks, runner syntax and immutable evidence pass.
+- Validation and limits: [stage lifecycle report](../../benchmarks/bevy-upgrade/stage-output-lifecycle-2026-10-10.md).
+
+### B20-1 twenty-second slice — Canonical root clock and stage reset bridge
+
+- Share the actual host player clock/presentation systems and stage runtime
+  preparer with the isolated candidate. Derive stage inputs through one production
+  builder, including the history discontinuity boundary. Public host API exports
+  stay stable; clock advancement no longer requires profiling/status components.
+- Reset compatible stage timelines after restart, explicit simulation revision
+  changes and presentation replacement. Detect restart even when its first live
+  frame jumps beyond the old tick; preserve compatible seeks and constant-only
+  edits. Host rebinds invalidate checkpoints on both compatible paths.
+- Keep reconstructed latest force values, but silence gameplay impacts through
+  the seek boundary and first mixed aggregate. Subsequent wholly live reads can
+  raise events. Do not add GPU waits, extra readbacks or mandatory replay history.
+- Add a twenty-first explicit serial native gate driven by the actual host clock,
+  extraction and stage preparation. Verify bounded reconstruction, large-first-frame
+  restart, forward/backward seek suppression, live resumption, context/presentation
+  resets, zero playback-only checkpoints and teardown.
+- This is the root clock-to-stage bridge, not the entire host plugin: nested clips,
+  binding capture/forwarding, volume/profile preparation and the outer stage graph
+  scheduler still need combined 0.20 qualification. Native pixels/performance,
+  asynchronous readiness and pipelining remain separate acceptance gates.
+- **165** candidate checks (including **21** serial native gates), **61** shipping
+  host-library tests, **157** renderer-library regressions and **40** hardware-required
+  conformance checks pass. Workspace/candidate strict Clippy, workspace all-target
+  check, both formatting checks, runner syntax and final immutable evidence pass.
+- Implementation and validation: [host scheduling report](../../benchmarks/bevy-upgrade/host-stage-scheduling-2026-10-10.md).
+
+### B20-1 twenty-third slice — Nested project and live binding bridge
+
+- Compile the canonical project reconciliation and host-binding systems against
+  the isolated candidate, including their shared regressions. Reuse the actual
+  public scheduling sets and input-before-playback/deferred ordering; preserve
+  host API re-exports. Add the candidate's explicit `aestra-project` dev dependency.
+- Reset surviving offset children on a root restart even when the first new frame
+  requests a later tick than the preceding simulation. Preserve compatible child
+  entities, positive-seek revisions and source-time output-suppression boundaries.
+- Forward per-slot entity identity, not only snapshot values. Equal-value retargets
+  now rebind each forwarded level; normal movement does not relatch snapshot-on-spawn
+  slots or invalidate host-input history. Shared fixes also apply to shipping 0.19.
+- Add a twenty-second serial native gate: two roots sharing a two-level project,
+  composed source offsets, independent clocks, actual host-binding upload and GPU
+  fluid-force consumption, seed/parameter/layer inheritance, nested cue root/path
+  routing, seek suppression/live resumption, retarget/motion, restart and retirement.
+  Playback-only keeps zero checkpoint bytes; no production waits are added.
+- This qualifies combined project/live-binding scheduling, not the complete host
+  plugin, volume/profile preparation, native trace-driven projects, input-event
+  adapters or production outer graph scheduler. Nested stage impacts retain their
+  legacy child-local contract; choreography routing is the root/path oracle here.
+- **178** candidate checks (including **22** serial native gates), **63** shipping
+  host-library tests, **157** renderer-library regressions and **40** hardware-required
+  conformance checks pass. Workspace/candidate strict Clippy, all-target workspace
+  check, both formatting checks, runner syntax and final immutable evidence pass.
+- Implementation and validation: [project/host scheduling report](../../benchmarks/bevy-upgrade/project-host-scheduling-2026-10-10.md).
+
+### B20-1 twenty-fourth slice — Async readiness and pipelined host outputs
+
+- Add an opt-in threaded candidate feature and separate hashed native executable.
+  Bevy's async cache needs `multi_threaded`; merely disabling synchronous
+  compilation in the old default configuration would not qualify it. Retain
+  all existing synchronous gates and serial GPU-process execution.
+- Withhold the actual stateful pipeline descriptors' shader dependency for eight
+  frames at requested tick 30. Verify no ticks, spawn carry or ordinals are
+  consumed and allocations survive. Publish the real generated shader, observe
+  asynchronous `Creating`, and compare resumed GPU particles with the CPU oracle.
+  Reuse the complete stateful/alpha/draw integration assertions, including
+  repeated-time, stop, burst-once, seed/capacity invalidation and retirement.
+- Install Bevy's actual pipelined-rendering plugin: `RenderApp` moves off-thread,
+  real channels exist and context-stamped test telemetry records a distinct
+  graph thread. Reuse canonical nested host/project/binding scheduling and actual
+  GPU stages/output transport for two independent roots. Check restart, nested
+  cues, seek suppression, single live resumption, paused deduplication and teardown.
+- These complementary gates do not qualify the complete host plugin or production
+  outer graph. The particle gate retains local readback inspection; the threaded
+  stage gate retains its bounded driver and raw-wgpu stage pipeline creation.
+  No production synchronization, GPU waits, replay requirement or art changes.
+- **180** candidate checks (including **24** serial native gates) pass with
+  source-frozen evidence. Both candidate strict Clippy configurations, workspace
+  all-target check/strict Clippy, formatting and runner syntax checks pass.
+  Shipping host **63**, renderer **157** and hardware conformance **40** tests pass.
+- Implementation and validation: [async/pipelined scheduling report](../../benchmarks/bevy-upgrade/async-pipelined-scheduling-2026-10-10.md).
+
+Remaining B20-1: full-plugin/outer-graph integration (including combined async
+readiness across coupled/volume/profiling branches),
 B20-2's editor compatibility changes, coherent Bevy/wgpu/glam switch selecting the
 prepared shader/storage/extraction adapters, renderer/cache identity review, and
 native visual/performance parity. The shipping workspace still uses Bevy 0.19.1.
@@ -649,8 +913,9 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** qualify B20-1's actual trail-history/stateful simulation and host
-scheduler feeding the installed producers and queues, then pipelined/async readiness,
+**Next action:** assemble and qualify B20-1's full production outer graph and
+plugin integration beyond the accepted particle-readiness and pipelined
+root/project/live-binding gates,
 alongside B20-2's required editor API changes.
 Activate the qualified storage adapter, WESL composition paths
 and graph imports as the engine graph switches coherently to 0.20. Select the

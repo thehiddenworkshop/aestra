@@ -1,7 +1,7 @@
 //! Frame-loop execution of plugin extension stages (fluid F1, extensible-stages M13b).
 //!
 //! Every [`PresentedEffect`] whose compiled effect has extension stages (a fluid solver) gets its
-//! stages executed in the render world, each on a [`StageTimeline`]:
+//! stages executed in the render world, each on a [`crate::execution::StageTimeline`]:
 //!
 //! - the main world mirrors the instance's presentation time, seek quality, seed and host-binding
 //!   snapshot into [`ExtractedStages`] each frame;
@@ -26,17 +26,29 @@
 //! quad, a child of the effect. Scalar fields render as white with alpha = value × gain; vector fields
 //! as |xyz| × gain. The grid is placed in the effect's space (the domain-space decision is fluid F2).
 
+pub use super::output_context::AestraOutputEvent;
 pub(crate) use super::stage_inputs::ExtractedStages;
 use super::stage_inputs::FieldViewTarget;
+pub use super::stage_output_delivery::AestraEffectOutputs;
+use super::stage_output_delivery::{
+    StageOutputIdentity, StageOutputMailbox, StageOutputStamp, encode_stage_outputs,
+    raise_finished_events, receive_stage_outputs,
+};
+pub(crate) use super::stage_runtimes::StageRuntimes;
+#[cfg(test)]
+use super::stage_runtimes::StagesKey;
+use super::stage_runtimes::prepare_stage_runtimes;
 pub use super::world_sdf::AestraWorldSdf;
 use super::*;
-use crate::execution::{
-    DomainSpawnPipeline, FieldFollowPipeline, PassTimestamps, ProgramCache, StageExecutor,
-    StageInputs, StageTimeline, TimelinePolicy,
-};
+#[cfg(test)]
+use crate::execution::TimelinePolicy;
+use crate::execution::{DomainSpawnPipeline, FieldFollowPipeline, PassTimestamps};
+#[cfg(test)]
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::ResourceTypeId;
-use aestra_gpu::{GpuHostBindings, GpuWorldSdf};
+#[cfg(test)]
+use aestra_gpu::GpuHostBindings;
+use aestra_gpu::GpuWorldSdf;
 use aestra_runtime::{
     CompiledEffect, CompiledExtensionStage, EffectInstance, FieldLayout, ProfileValue,
 };
@@ -84,156 +96,6 @@ fn progress_target_tick(time: f32, tick_dt: f32, coupled: bool) -> u32 {
 
 #[derive(Resource, Default, Clone)]
 struct StageProgressMailbox(Arc<Mutex<HashMap<Entity, Option<StageProgressSample>>>>);
-
-/// What the stages of an effect report to the host (fluid F11, host bindings HB9): the latest value of
-/// every output (the force on each fluid collider, say), as read after the last frame that advanced
-/// them. Values arrive a frame or two after the ticks that produced them.
-#[derive(Component, Debug, Default, Clone)]
-pub struct AestraEffectOutputs {
-    values: Vec<aestra_runtime::StageOutputValue>,
-}
-
-impl AestraEffectOutputs {
-    /// Every output's latest value.
-    pub fn values(&self) -> &[aestra_runtime::StageOutputValue] {
-        &self.values
-    }
-
-    /// The latest value of the output `name` of authored module `source`.
-    pub fn get(&self, name: &str, source: aestra_core::ModuleId) -> Option<&[f32]> {
-        self.values
-            .iter()
-            .find(|value| value.name == name && value.source == Some(source))
-            .map(|value| value.value.as_slice())
-    }
-}
-
-/// An event an effect raised for gameplay — the one stream to listen to (event system §12B): an output
-/// rose past its threshold (a fluid pushing a collider hard enough for an `impact`), homing particles
-/// reached their target (`impact`), the target was lost or acquired, a play-once effect finished
-/// (host bindings HB9), or playback crossed a timeline cue. `event.tick` says when, even for events
-/// read back from the GPU frames later. Visual outcomes to hear, never gameplay state to obey: see
-/// `aestra_runtime::EVENT_IMPACT` and its siblings.
-#[derive(Message, Debug, Clone, PartialEq)]
-pub struct AestraOutputEvent {
-    /// Root player for nested timeline cues and native particle outputs.
-    pub effect: Entity,
-    /// Empty for the root; otherwise the clips from the root to the effect that raised it.
-    pub clip_path: Vec<aestra_core::EffectClipId>,
-    /// Observation identity for native GPU particle routes and timeline cues. Hosts may
-    /// reject queued events after their player starts a different history epoch.
-    /// `None` means an unqualified legacy/stage output, not epoch zero.
-    pub playback_epoch: Option<u32>,
-    /// Spatial and source context for native particle routes only. Other output
-    /// payloads retain their own semantics (e.g. a homing target is already world-space).
-    pub particle: Option<ParticleOutputContext>,
-    pub event: aestra_runtime::EffectOutputEvent,
-}
-
-impl AestraOutputEvent {
-    /// An event of the root effect on `effect`.
-    pub fn root(effect: Entity, event: aestra_runtime::EffectOutputEvent) -> Self {
-        Self {
-            effect,
-            clip_path: Vec::new(),
-            playback_epoch: None,
-            particle: None,
-            event,
-        }
-    }
-
-    pub fn in_epoch(mut self, epoch: u32) -> Self {
-        self.playback_epoch = Some(epoch);
-        self
-    }
-}
-
-/// Where the render world leaves output readbacks for the main world: the effect, the stage, and the
-/// words of its output resources.
-#[derive(Resource, Default, Clone)]
-struct StageOutputMailbox(Arc<Mutex<Vec<OutputRead>>>);
-
-/// One stage's output read: the effect, the stage, the tick it was read at, the words of each output
-/// resource.
-type OutputRead = (Entity, usize, u64, BTreeMap<ResourceTypeId, Vec<u32>>);
-
-/// The events an effect's outputs have raised so far, to raise each one once.
-#[derive(Component, Default)]
-struct OutputEvents(aestra_runtime::OutputEventTracker);
-
-fn receive_stage_outputs(
-    mailbox: Res<StageOutputMailbox>,
-    mut commands: Commands,
-    mut effects: Query<(
-        &PresentedEffect,
-        Option<&mut AestraEffectOutputs>,
-        Option<&mut OutputEvents>,
-    )>,
-    mut events: MessageWriter<AestraOutputEvent>,
-) {
-    let reads = match mailbox.0.lock() {
-        Ok(mut reads) => std::mem::take(&mut *reads),
-        Err(_) => return,
-    };
-    for (entity, stage, tick, words) in reads {
-        let Ok((presented, outputs, tracker)) = effects.get_mut(entity) else {
-            continue;
-        };
-        let Some(block) = stages(presented.effect())
-            .nth(stage)
-            .map(|stage| &stage.block)
-        else {
-            continue;
-        };
-        let values = aestra_runtime::read_stage_outputs(stage, block, &words);
-        let mut fresh = OutputEvents::default();
-        let raised = match tracker {
-            Some(mut tracker) => tracker.0.observe(&values, tick),
-            None => fresh.0.observe(&values, tick),
-        };
-        events.write_batch(
-            raised
-                .into_iter()
-                .map(|event| AestraOutputEvent::root(entity, event)),
-        );
-        match outputs {
-            Some(mut outputs) => {
-                outputs.values.retain(|value| value.stage != stage);
-                outputs.values.extend(values);
-            }
-            None => {
-                commands
-                    .entity(entity)
-                    .insert((AestraEffectOutputs { values }, fresh));
-            }
-        }
-    }
-}
-
-/// Whether an effect's playback has finished (host bindings HB9), to raise `finished` once.
-#[derive(Component, Default)]
-struct FinishedWatch(aestra_runtime::FinishedTracker);
-
-fn raise_finished_events(
-    mut commands: Commands,
-    mut effects: Query<(Entity, &PresentedEffect, Option<&mut FinishedWatch>)>,
-    mut events: MessageWriter<AestraOutputEvent>,
-) {
-    for (entity, presented, watch) in &mut effects {
-        let mut fresh = FinishedWatch::default();
-        let raised = match watch {
-            Some(mut watch) => watch.0.observe(&presented.instance),
-            None => {
-                let raised = fresh.0.observe(&presented.instance);
-                commands.entity(entity).insert(fresh);
-                raised
-            }
-        };
-        if let Some(event) = raised {
-            events.write(AestraOutputEvent::root(entity, event));
-        }
-    }
-}
 
 fn receive_stage_progress(
     mailbox: Res<StageProgressMailbox>,
@@ -325,17 +187,6 @@ impl GpuStageTiming {
             .map_or(ProfileValue::Unavailable, |(_, nanoseconds)| {
                 ProfileValue::Measured(nanoseconds)
             })
-    }
-}
-
-impl ExtractedStages {
-    /// The host inputs the domains tick with.
-    fn inputs(&self) -> StageInputs<'_> {
-        StageInputs {
-            host_bindings: Some(&self.host),
-            world_to_effect: self.world_to_effect,
-            world_sdf: self.world.as_ref(),
-        }
     }
 }
 
@@ -503,29 +354,16 @@ pub(super) fn sync_stage_inputs(
             }
             continue;
         }
-        let instance = &presented.instance;
         let mut entity = commands.entity(entity);
-        entity.insert(ExtractedStages {
-            effect: Arc::clone(effect),
-            time: instance.time(),
-            quality: presented.seek_quality(),
-            history_policy: presented.history_policy(),
-            host: GpuHostBindings::from_instance(instance),
-            seed: instance.seed() as u32,
-            history_epoch: instance.history_epoch(),
-            history_revision: instance.history_revision(),
-            host_epoch: instance.host_input_epoch(),
-            world_to_effect: transform.map_or(aestra_runtime::IDENTITY_AFFINE, world_to_local),
-            coupled: effect
-                .emitters
-                .iter()
-                .any(|emitter| emitter.enabled && emitter.coupled()),
-            view: view.map(|view| view.target.clone()),
-            volumes: volumes
+        entity.insert(ExtractedStages::from_presented(
+            presented,
+            transform.map_or(aestra_runtime::IDENTITY_AFFINE, world_to_local),
+            view.map(|view| view.target.clone()),
+            volumes
                 .map(super::volume::VolumeViews::targets)
                 .unwrap_or_default(),
-            world: world.cloned(),
-        });
+            world.cloned(),
+        ));
         if !timed {
             entity.insert(GpuStageTiming::default());
         }
@@ -697,160 +535,6 @@ fn receive_stage_timings(
     }
 }
 
-/// What one effect's stage timelines were built for: every stage's execution block, the seed and the
-/// host-binding size. Content, not the compiled effect's identity — an edit that leaves the stages
-/// alone (moving an emitter with the gizmo recompiles every frame) keeps the running simulation.
-#[derive(PartialEq)]
-struct StagesKey {
-    blocks: Vec<aestra_runtime::ExecutionBlock>,
-    seed: u32,
-    host_bytes: u64,
-}
-
-impl StagesKey {
-    fn of(extracted: &ExtractedStages) -> Self {
-        Self {
-            blocks: stages(&extracted.effect)
-                .map(|stage| stage.block.clone())
-                .collect(),
-            seed: extracted.seed,
-            host_bytes: extracted.host.byte_len(),
-        }
-    }
-
-    fn matches(&self, extracted: &ExtractedStages) -> bool {
-        self.seed == extracted.seed
-            && self.host_bytes == extracted.host.byte_len()
-            && self
-                .blocks
-                .iter()
-                .eq(stages(&extracted.effect).map(|stage| &stage.block))
-    }
-
-    /// Whether the effect's stages differ from these only in their constants' values (fluid F3): a
-    /// domain input edit or drag, which the running timelines take in place.
-    fn differs_only_in_constants(&self, extracted: &ExtractedStages) -> bool {
-        let same_shape = |old: &aestra_runtime::ExecutionBlock,
-                          new: &aestra_runtime::ExecutionBlock| {
-            old.resources == new.resources
-                && old.ops == new.ops
-                && old.fields == new.fields
-                && old.constants.len() == new.constants.len()
-        };
-        self.seed == extracted.seed
-            && self.host_bytes == extracted.host.byte_len()
-            && self.blocks.len() == stages(&extracted.effect).count()
-            && self
-                .blocks
-                .iter()
-                .zip(stages(&extracted.effect))
-                .all(|(old, new)| same_shape(old, &new.block))
-    }
-}
-
-/// One effect's stage timelines in the render world.
-struct EffectStages {
-    key: StagesKey,
-    host_epoch: u64,
-    /// One per stage; `None` when the stage could not be prepared (logged once).
-    timelines: Vec<Option<StageTimeline>>,
-    /// Per stage, the tick its outputs were last read at (fluid F11): read again only once it moved.
-    read_ticks: Vec<Option<u32>>,
-}
-
-#[derive(Resource, Default)]
-pub(crate) struct StageRuntimes(BTreeMap<Entity, EffectStages>);
-
-/// Builds, keeps or drops each effect's stage timelines.
-fn prepare_stage_runtimes(
-    mut runtimes: ResMut<StageRuntimes>,
-    mut pacer: ResMut<super::CatchupPacer>,
-    // Compiled programs outlive the runtimes: a rebuild after an edit reuses them.
-    mut programs_cache: Local<ProgramCache>,
-    device: Res<RenderDevice>,
-    queue: Res<RenderQueue>,
-    effects: Query<(Entity, &ExtractedStages)>,
-) {
-    pacer.frame(std::time::Instant::now());
-    runtimes.0.retain(|entity, _| effects.contains(*entity));
-    for (entity, extracted) in &effects {
-        if let Some(existing) = runtimes.0.get_mut(&entity) {
-            for timeline in existing.timelines.iter_mut().flatten() {
-                timeline.set_history_policy(extracted.history_policy);
-            }
-        }
-        if let Some(existing) = runtimes.0.get_mut(&entity)
-            && existing.key.matches(extracted)
-        {
-            if existing.host_epoch != extracted.host_epoch {
-                // Recorded against another host object: never restore it under this one.
-                for timeline in existing.timelines.iter_mut().flatten() {
-                    timeline.invalidate_checkpoints();
-                }
-                existing.host_epoch = extracted.host_epoch;
-            }
-            continue;
-        }
-        // Only constants changed (an input edit, a source dragged): keep simulating, with the new values.
-        if let Some(existing) = runtimes.0.get_mut(&entity)
-            && existing.key.differs_only_in_constants(extracted)
-        {
-            let blocks: Vec<_> = stages(&extracted.effect)
-                .map(|stage| stage.block.clone())
-                .collect();
-            for (timeline, block) in existing.timelines.iter_mut().zip(&blocks) {
-                if let Some(timeline) = timeline
-                    && let Err(error) = timeline.set_constants(&queue, &block.constants)
-                {
-                    warn!("extension stage constants could not be updated: {error}");
-                }
-            }
-            existing.key.blocks = blocks;
-            continue;
-        }
-        // A rebuilt domain replays from tick 0, and its ticks may cost anything now.
-        pacer.restart();
-        // The linked programs, including any extension linked since the last build.
-        let programs = ExtensionRegistry::linked().programs;
-        let wgpu_queue: &wgpu::Queue = &queue;
-        let timelines = stages(&extracted.effect)
-            .map(|stage| {
-                StageExecutor::with_cache(
-                    device.wgpu_device(),
-                    wgpu_queue,
-                    &stage.block,
-                    &programs,
-                    extracted.host.byte_len(),
-                    &mut programs_cache,
-                )
-                .map(|executor| {
-                    let mut timeline =
-                        StageTimeline::new(executor, TimelinePolicy::default(), extracted.seed);
-                    timeline.set_history_policy(extracted.history_policy);
-                    timeline
-                })
-                .map_err(|error| {
-                    warn!(
-                        "extension stage '{}' ({}) cannot run on this backend: {error}",
-                        stage.name,
-                        stage.stage_type.as_str()
-                    );
-                })
-                .ok()
-            })
-            .collect();
-        runtimes.0.insert(
-            entity,
-            EffectStages {
-                key: StagesKey::of(extracted),
-                host_epoch: extracted.host_epoch,
-                read_ticks: vec![None; stages(&extracted.effect).count()],
-                timelines,
-            },
-        );
-    }
-}
-
 /// Advances every effect's stage timelines to its presentation time, then refreshes field views.
 #[allow(clippy::too_many_arguments)]
 fn run_extension_stages(
@@ -964,22 +648,23 @@ fn run_extension_stages(
             let Some(timeline) = timeline else {
                 continue;
             };
-            if runtime.read_ticks[index] == Some(timeline.last_tick()) {
+            let stamp = StageOutputStamp {
+                owner: main_entity.id(),
+                stage: index,
+                tick: u64::from(timeline.last_tick()),
+                identity: StageOutputIdentity::of_extracted(extracted),
+            };
+            if runtime.read_ticks[index].as_ref() == Some(&stamp) {
                 continue;
             }
-            let mailbox = outputs.0.clone();
-            let owner = main_entity.id();
-            let tick = u64::from(timeline.last_tick());
-            if timeline.executor().encode_output_readback(
+            if encode_stage_outputs(
+                timeline.executor(),
                 wgpu_device,
                 render_context.command_encoder(),
-                move |words| {
-                    if let Ok(mut reads) = mailbox.lock() {
-                        reads.push((owner, index, tick, words));
-                    }
-                },
+                &outputs,
+                stamp.clone(),
             ) {
-                runtime.read_ticks[index] = Some(timeline.last_tick());
+                runtime.read_ticks[index] = Some(stamp);
             }
         }
         // The debug field slice.
@@ -1193,12 +878,14 @@ mod tests {
         let instance = EffectInstance::new(Arc::new(compiled));
         ExtractedStages {
             host: GpuHostBindings::from_instance(&instance),
+            output_identity: Arc::new(()),
             effect: Arc::clone(instance.effect()),
             time: 0.0,
             quality: SeekQuality::Exact,
             history_policy: PlaybackHistoryPolicy::default(),
             seed: 7,
             history_epoch: 0,
+            history_epoch_start_time: 0.,
             history_revision: 0,
             host_epoch: 0,
             world_to_effect: aestra_runtime::IDENTITY_AFFINE,
@@ -1207,141 +894,6 @@ mod tests {
             volumes: Vec::new(),
             world: None,
         }
-    }
-
-    /// Fluid F11: the render world's output reads become the effect's latest outputs, and an impact
-    /// reaches gameplay as a message — once per rise past the collider's threshold.
-    #[test]
-    fn output_reads_update_the_effect_and_raise_impacts_once() {
-        use bevy::ecs::message::Messages;
-        use bevy::ecs::system::RunSystemOnce;
-        let mut registry = ExtensionRegistry::builtin();
-        registry.install(&aestra_fluid::FluidExtension).unwrap();
-        let mut effect = aestra_fluid::fire_effect(&registry);
-        let mut shield = registry
-            .modules
-            .instantiate(&aestra_core::ModuleTypeId::new(
-                aestra_fluid::MODULE_SPHERE_COLLIDER,
-            ))
-            .unwrap();
-        shield.stage = aestra_core::StageKind::Simulation(effect.simulation_stages[0].name.clone());
-        let shield_id = shield.id;
-        let aestra_core::ModuleParameters::Custom(values) = &mut shield.parameters else {
-            unreachable!("plugin modules carry a generic payload");
-        };
-        values.insert("impact_threshold".into(), aestra_core::Value::Scalar(10.0));
-        effect.simulation_stages[0].modules.push(shield);
-        let compiled = aestra_compiler::EffectCompiler::with_extensions(registry)
-            .compile(&effect)
-            .unwrap();
-        let mut world = World::new();
-        world.init_resource::<Messages<AestraOutputEvent>>();
-        let mailbox = StageOutputMailbox::default();
-        world.insert_resource(mailbox.clone());
-        let entity = world.spawn(PresentedEffect::new(Arc::new(compiled))).id();
-        let push = |force: [f32; 3]| {
-            let mut words = vec![0u32; 16];
-            for (axis, value) in force.iter().enumerate() {
-                words[axis] = value.to_bits();
-            }
-            mailbox.0.lock().unwrap().push((
-                entity,
-                0,
-                42,
-                BTreeMap::from([(ResourceTypeId::new(aestra_fluid::RESOURCE_OUTPUTS), words)]),
-            ));
-        };
-        let mut raised = Vec::new();
-        let mut run = |world: &mut World| {
-            world.run_system_once(receive_stage_outputs).unwrap();
-            world.flush();
-            raised.extend(
-                world
-                    .resource_mut::<Messages<AestraOutputEvent>>()
-                    .drain()
-                    .collect::<Vec<_>>(),
-            );
-        };
-        push([0.0, 20.0, 0.0]);
-        run(&mut world);
-        assert_eq!(
-            world
-                .get::<AestraEffectOutputs>(entity)
-                .unwrap()
-                .get(aestra_fluid::OUTPUT_FORCE, shield_id),
-            Some(&[0.0, 20.0, 0.0][..])
-        );
-        push([0.0, 25.0, 0.0]);
-        run(&mut world);
-        push([0.0, 1.0, 0.0]);
-        run(&mut world);
-        push([30.0, 0.0, 0.0]);
-        run(&mut world);
-        assert_eq!(raised.len(), 2, "one impact per rise: {raised:?}");
-        assert!(raised.iter().all(|message| message.effect == entity
-            && message.event.tick == 42
-            && message.event.kind == aestra_fluid::EVENT_IMPACT
-            && message.event.source == Some(shield_id)));
-        assert_eq!(raised[1].event.value, [30.0, 0.0, 0.0]);
-    }
-
-    /// Host bindings HB9: a play-once effect raises `finished` once when its playback reaches the end,
-    /// and again after a restart reaches it again; a looping one never does.
-    #[test]
-    fn a_play_once_effect_raises_finished_once_per_playthrough() {
-        use bevy::ecs::message::Messages;
-        use bevy::ecs::system::RunSystemOnce;
-        let compile = |mode: aestra_core::EffectPlaybackMode| {
-            let mut effect = aestra_core::EffectAsset::new("Burst", 2.0);
-            effect.playback_mode = mode;
-            effect
-                .emitters
-                .push(aestra_core::Emitter::basic_sprite("Sparks", 2.0));
-            Arc::new(
-                aestra_compiler::EffectCompiler::default()
-                    .compile(&effect)
-                    .unwrap(),
-            )
-        };
-        let mut world = World::new();
-        world.init_resource::<Messages<AestraOutputEvent>>();
-        let once = world
-            .spawn(PresentedEffect::new(compile(
-                aestra_core::EffectPlaybackMode::Once,
-            )))
-            .id();
-        let looping = world
-            .spawn(PresentedEffect::new(compile(
-                aestra_core::EffectPlaybackMode::LoopRestart,
-            )))
-            .id();
-        let frame = |world: &mut World, time: f32| -> Vec<AestraOutputEvent> {
-            for entity in [once, looping] {
-                world
-                    .get_mut::<PresentedEffect>(entity)
-                    .unwrap()
-                    .instance
-                    .set_playback_time(time);
-            }
-            world.run_system_once(raise_finished_events).unwrap();
-            world.flush();
-            world
-                .resource_mut::<Messages<AestraOutputEvent>>()
-                .drain()
-                .collect()
-        };
-        let mut raised = Vec::new();
-        for time in [0.5, 1.9, 2.0, 2.5, 3.0] {
-            raised.extend(frame(&mut world, time));
-        }
-        assert_eq!(raised.len(), 1, "{raised:?}");
-        assert_eq!(raised[0].effect, once);
-        assert_eq!(raised[0].event.kind, aestra_runtime::EVENT_FINISHED);
-        assert_eq!(raised[0].event.origin, aestra_runtime::EventOrigin::Effect);
-        // A restart, played through again.
-        raised.extend(frame(&mut world, 0.0));
-        raised.extend(frame(&mut world, 2.0));
-        assert_eq!(raised.len(), 2);
     }
 
     #[test]

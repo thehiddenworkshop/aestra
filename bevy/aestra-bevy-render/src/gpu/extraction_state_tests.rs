@@ -230,6 +230,7 @@ fn stages(policy: PlaybackHistoryPolicy, id: u128) -> ExtractedStages {
     };
     ExtractedStages {
         effect: effect(),
+        output_identity: Arc::new(()),
         time: 2.5,
         quality: SeekQuality::Preview,
         history_policy: policy,
@@ -238,6 +239,7 @@ fn stages(policy: PlaybackHistoryPolicy, id: u128) -> ExtractedStages {
         },
         seed: 78,
         history_epoch: 4,
+        history_epoch_start_time: 0.5,
         history_revision: 9,
         host_epoch: 6,
         world_to_effect: aestra_runtime::IDENTITY_AFFINE,
@@ -263,7 +265,11 @@ fn stages(policy: PlaybackHistoryPolicy, id: u128) -> ExtractedStages {
 }
 fn assert_stages(actual: &ExtractedStages, expected: &ExtractedStages) {
     assert!(Arc::ptr_eq(&actual.effect, &expected.effect));
-    equal_fields!(actual, expected; time, quality, history_policy, host, seed, history_epoch, history_revision, host_epoch, world_to_effect, coupled);
+    assert!(Arc::ptr_eq(
+        &actual.output_identity,
+        &expected.output_identity
+    ));
+    equal_fields!(actual, expected; time, quality, history_policy, host, seed, history_epoch, history_epoch_start_time, history_revision, host_epoch, world_to_effect, coupled);
     assert_eq!(actual.view.is_some(), expected.view.is_some());
     if let (Some(actual), Some(expected)) = (&actual.view, &expected.view) {
         equal_fields!(actual, expected; image, stage, layout, slice, gain);

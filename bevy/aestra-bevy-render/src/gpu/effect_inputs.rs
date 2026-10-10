@@ -1,4 +1,27 @@
 //! Actual simulation extraction metadata; no device state or particle mirror.
+/// An effect's event routes as the lockstep loop runs them (event system E3): the bursts its input
+/// routes spawn, and its particle output routes, each with the `counters` word its ring starts at.
+#[derive(Clone, Copy, Default)]
+pub(super) struct RouteWiring<'a> {
+    pub bursts: &'a [aestra_runtime::InputSpawnBurst],
+    pub outputs: &'a [(aestra_runtime::CompiledParticleOutput, u32)],
+    pub output_epoch: u32,
+    pub output_suppress_through: u64,
+}
+
+pub(super) fn event_link_counter_base(dispatches: &[StatefulDispatch]) -> Option<u32> {
+    dispatches
+        .iter()
+        .flat_map(|dispatch| {
+            [
+                dispatch.arrival_word.map(|word| word + 1),
+                dispatch.overflow_word,
+            ]
+        })
+        .flatten()
+        .max()
+        .map(|word| word + 1)
+}
 pub(super) use super::trail_context::TrailContext;
 use aestra_gpu::GpuSimulationState;
 use aestra_runtime::{PlaybackHistoryPolicy, SeekQuality};
@@ -181,4 +204,136 @@ pub(super) struct TickSchedule {
     pub(super) homing: Vec<Option<aestra_runtime::HomingTarget>>,
     /// The spawn placement of each tick (empty for an emitter not attached to a binding).
     pub(super) placement: Vec<aestra_runtime::SpawnPlacement>,
+}
+
+impl HostEventHistory {
+    pub(super) fn of(instance: &aestra_runtime::EffectInstance) -> Self {
+        Self {
+            bursts: instance.input_spawn_bursts(),
+            events: Self::keys(instance),
+        }
+    }
+
+    pub(super) fn keys(instance: &aestra_runtime::EffectInstance) -> Vec<(u64, u64)> {
+        instance
+            .received_events()
+            .iter()
+            .map(|event| (event.tick, event.identity()))
+            .collect()
+    }
+
+    /// The first tick two histories (tick-ordered `(tick, identity)` lists) differ at — the first
+    /// tick whose advance is not the same — or `None` when they are the same.
+    pub(super) fn divergence(before: &[(u64, u64)], after: &[(u64, u64)]) -> Option<u64> {
+        let common = before
+            .iter()
+            .zip(after)
+            .take_while(|(before, after)| before == after)
+            .count();
+        let ticks = [before.get(common), after.get(common)];
+        ticks.into_iter().flatten().map(|(tick, _)| *tick).min()
+    }
+}
+
+impl TickSchedule {
+    /// The homing target and placement for `tick`, past the end the last ones.
+    pub(super) fn at<T: Copy>(values: &[T], tick: u32) -> Option<T> {
+        values
+            .get((tick as usize).min(values.len().saturating_sub(1)))
+            .copied()
+    }
+}
+
+impl StatefulDispatch {
+    /// A hash of the emitter's seed, slot placement, and dynamics. A change means a different
+    /// simulation, so the persistent state and its checkpoints are invalidated (hybrid roadmap M7).
+    pub(super) fn fingerprint(&self) -> u64 {
+        let mut hash = self.seed;
+        for bits in [
+            self.capacity,
+            self.slot_offset,
+            self.emitter_index,
+            self.spawn_rate.to_bits(),
+            self.burst_count,
+            self.burst_tick,
+            self.speed.0.to_bits(),
+            self.speed.1.to_bits(),
+            self.lifetime.0.to_bits(),
+            self.lifetime.1.to_bits(),
+            self.direction[0].to_bits(),
+            self.direction[1].to_bits(),
+            self.direction[2].to_bits(),
+            self.spread.to_bits(),
+            self.velocity_distribution,
+            self.drag.to_bits(),
+            self.turbulence.to_bits(),
+            self.shape_kind,
+            self.shape_radius.to_bits(),
+            self.shape_half_extents[0].to_bits(),
+            self.shape_half_extents[1].to_bits(),
+            self.shape_half_extents[2].to_bits(),
+            self.gravity[0].to_bits(),
+            self.gravity[1].to_bits(),
+            self.gravity[2].to_bits(),
+            self.colliders.len() as u32,
+        ] {
+            hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        // Following a field changes the simulation (fluid F2b).
+        if let Some(follow) = &self.field_follow {
+            for bits in [
+                follow.stage as u32,
+                follow.strength.to_bits(),
+                follow.field.dims[0],
+                follow.field.cell_size.to_bits(),
+                follow.field.origin[1].to_bits(),
+            ] {
+                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        // So does the world it collides with (host bindings HB10).
+        hash = (hash ^ self.world_revision).wrapping_mul(0x0000_0100_0000_01b3);
+        // So does the binding trace it replays (host bindings HB8).
+        if let Some(schedule) = &self.schedule {
+            hash = (hash ^ schedule.key).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        // So do its event links (host bindings HB9b).
+        hash = (hash ^ u64::from(self.event_mask)).wrapping_mul(0x0000_0100_0000_01b3);
+        hash = (hash ^ self.event_signature).wrapping_mul(0x0000_0100_0000_01b3);
+        if let Some((spacing, limit)) = self.distance_emission {
+            hash = (hash ^ u64::from(spacing.to_bits())).wrapping_mul(0x0000_0100_0000_01b3);
+            hash = (hash ^ u64::from(limit)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        // So does homing (host bindings HB7) — its steering, not where the target is.
+        if let Some(homing) = &self.homing {
+            let config = &homing.config;
+            for bits in [
+                config.speed.to_bits(),
+                config.acceleration.to_bits(),
+                config.turn_rate.to_bits(),
+                config.arrival_radius.to_bits(),
+                config.lost as u32,
+            ] {
+                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        // So does spawning from a domain (fluid F10).
+        if let Some(spawn) = &self.domain_spawn {
+            for bits in [
+                spawn.stage as u32,
+                spawn.emission.capacity,
+                spawn.inherit.to_bits(),
+            ] {
+                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        // Colliders change the simulation, so fold each one's shape and response into the fingerprint
+        // (hybrid roadmap M10): editing a collider invalidates the persistent state and checkpoints.
+        let mut block = [0u32; 27 + 10 * aestra_runtime::MAX_COLLIDERS];
+        aestra_gpu::pack_stateful_colliders(&self.colliders, &mut block);
+        for bits in &block[26..] {
+            hash = (hash ^ u64::from(*bits)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash
+    }
 }

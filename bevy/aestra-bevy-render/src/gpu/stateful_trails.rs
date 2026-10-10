@@ -1,7 +1,60 @@
 //! Histories observe the *presented result* of every fixed tick, including event births.
 //! Live frames advance incrementally. Seeking restores only a checkpoint shared by
 //! particles, domains and histories; independently replaying analytic heads is incorrect.
-use super::*;
+use super::{
+    coupled_simulation::CoupledHistory,
+    effect_inputs::GpuEffectBuffers,
+    paged_trails,
+    stateful_simulation::{STATEFUL_TICK_DT, StatefulPersistentState},
+    trail_checkpoints, trail_context,
+};
+use bevy::{
+    prelude::*,
+    render::{
+        diagnostic::RecordDiagnostics,
+        render_resource::{
+            BindGroup, Buffer, BufferInitDescriptor, BufferUsages, CommandEncoder,
+            ComputePassDescriptor, ComputePipeline,
+        },
+        renderer::RenderDevice,
+        storage::ShaderBuffer,
+    },
+};
+use std::{collections::BTreeMap, sync::Arc};
+
+impl CoupledHistory for Observer<'_> {
+    fn contains(&self, tick: u32) -> bool {
+        self.history
+            .checkpoints
+            .contains(tick as f32 * STATEFUL_TICK_DT)
+    }
+    fn is_current(&self, tick: u32) -> bool {
+        self.history.tick == Some(tick) && self.history.epoch == Some(self.effect.history_epoch)
+    }
+    fn is_unobserved(&self) -> bool {
+        self.history.tick.is_none()
+    }
+    fn retain_through(&mut self, tick: u32) {
+        self.history
+            .checkpoints
+            .retain_through(tick as f32 * STATEFUL_TICK_DT);
+    }
+    fn restore(&mut self, encoder: &mut CommandEncoder, tick: u32) {
+        Observer::restore(self, encoder, tick);
+    }
+    fn reset_history(&mut self, encoder: &mut CommandEncoder) {
+        Observer::reset_history(self, encoder);
+    }
+    fn prepare(&self, device: &RenderDevice, encoder: &mut CommandEncoder, tick: u32) {
+        Observer::prepare(self, device, encoder, tick);
+    }
+    fn record(&mut self, encoder: &mut CommandEncoder, tick: u32) {
+        Observer::record(self, encoder, tick);
+    }
+    fn capture(&mut self, device: &RenderDevice, encoder: &mut CommandEncoder, tick: u32) -> u64 {
+        Observer::capture(self, device, encoder, tick)
+    }
+}
 
 #[derive(Default)]
 pub(super) struct History {

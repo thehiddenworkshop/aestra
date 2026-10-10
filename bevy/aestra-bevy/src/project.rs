@@ -88,7 +88,12 @@ pub(super) fn sync_project_instances(
         }
         let discontinuity = child.epoch != player.instance().history_epoch()
             || child.revision != player.instance().history_revision();
-        if child.revision != player.instance().history_revision() {
+        // A root restart can leave this clip active at a positive source offset.
+        // Its output boundary must remain in source time, but GPU state still
+        // needs a reset even when the first new frame exceeds the old tick.
+        let restarted = child.epoch != player.instance().history_epoch()
+            && player.instance().history_epoch_start_time() == 0.0;
+        if restarted || child.revision != player.instance().history_revision() {
             presented.instance.invalidate_history();
         }
         child.epoch = player.instance().history_epoch();
@@ -241,6 +246,42 @@ mod tests {
                 (entity, child.path.clone(), presented.instance.clone())
             })
             .collect()
+    }
+
+    #[test]
+    fn restart_resets_surviving_offset_children_but_positive_seeks_reuse_history() {
+        let mut app = App::new();
+        app.add_systems(Update, sync_project_instances);
+        let mut player = EffectPlayer::from_project(fixture());
+        player.playing = false;
+        player.advance_clock(1.0);
+        let root = app.world_mut().spawn(player).id();
+        app.update();
+        let before = snapshots(&mut app, root);
+        assert_eq!(before.len(), 2);
+        {
+            let mut player = app.world_mut().get_mut::<EffectPlayer>(root).unwrap();
+            player.restart();
+            player.advance_clock(1.5);
+        }
+        app.update();
+        for (entity, _, old) in before {
+            let now = &app.world().get::<PresentedEffect>(entity).unwrap().instance;
+            assert!(now.time() > old.time());
+            assert!(now.history_revision() > old.history_revision());
+            assert_eq!(now.history_epoch_start_time(), now.time());
+        }
+        let before = snapshots(&mut app, root);
+        app.world_mut()
+            .get_mut::<EffectPlayer>(root)
+            .unwrap()
+            .seek(2.0);
+        app.update();
+        for (entity, _, old) in before {
+            let now = &app.world().get::<PresentedEffect>(entity).unwrap().instance;
+            assert_eq!(now.history_revision(), old.history_revision());
+            assert_eq!(now.history_epoch_start_time(), now.time());
+        }
     }
 
     #[test]

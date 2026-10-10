@@ -1,9 +1,11 @@
-//! Shared analytic pipeline setup and particle dispatch. No replay scheduler or readback.
+//! Shared analytic pipeline setup, particle and history dispatch. No replay scheduler or readback.
 use super::effect_inputs::GpuEffectBuffers;
+use super::paged_trails;
 use aestra_gpu::{GpuEmitter, GpuGlobals, GpuParticle, WORKGROUP_SIZE};
 use bevy::{
     prelude::*,
     render::{
+        diagnostic::RecordDiagnostics,
         render_asset::RenderAssets,
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
@@ -30,6 +32,75 @@ pub(super) struct SimulationPipeline {
     pub(super) link_ribbons: CachedComputePipelineId,
     pub(super) update_trails: CachedComputePipelineId,
     pub(super) paged_trails: [CachedComputePipelineId; 9],
+}
+
+/// Resolved history pipelines for one observation; paged stages retain their
+/// existing upload and phase boundaries rather than duplicating their dispatch.
+pub(super) struct TrailPipelines<'a> {
+    pub(super) update: &'a ComputePipeline,
+    pub(super) link_ribbons: Option<&'a ComputePipeline>,
+    pub(super) paged: Option<&'a paged_trails::Dispatch<'a>>,
+}
+
+pub(super) struct TrailTimestamps<'a> {
+    pub(super) history: Option<wgpu::ComputePassTimestampWrites<'a>>,
+    pub(super) paged_end: Option<wgpu::ComputePassTimestampWrites<'a>>,
+}
+
+/// Record actual history, optional paged stages, and ribbon linking in their
+/// production order. False preserves the caller's missing-globals early continue.
+pub(super) fn record_trails(
+    encoder: &mut CommandEncoder,
+    bind_group: &GpuBindGroup,
+    effect: &GpuEffectBuffers,
+    pipelines: TrailPipelines<'_>,
+    buffers: &RenderAssets<GpuShaderBuffer>,
+    timestamps: TrailTimestamps<'_>,
+    diagnostics: Option<&bevy::render::diagnostic::DiagnosticsRecorder>,
+) -> bool {
+    let span = diagnostics.time_span(encoder, "aestra::gpu::trail_history");
+    {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("aestra trail history"),
+            timestamp_writes: timestamps.history,
+        });
+        pass.set_bind_group(0, &bind_group.0, &[]);
+        pass.set_pipeline(pipelines.update);
+        pass.dispatch_workgroups(effect.trail_workgroups, 1, 1);
+        if pipelines.paged.is_none()
+            && effect.has_ribbons
+            && let Some(link) = pipelines.link_ribbons
+        {
+            pass.set_pipeline(link);
+            pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+        }
+    }
+    if let Some(paged) = pipelines.paged {
+        let Some(globals) = buffers.get(&effect.globals) else {
+            return false;
+        };
+        paged.record(encoder, &bind_group.0, &globals.buffer, diagnostics);
+    }
+    if pipelines.paged.is_some()
+        && effect.has_ribbons
+        && let Some(link) = pipelines.link_ribbons
+    {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("aestra ribbons after histories"),
+            timestamp_writes: None,
+        });
+        pass.set_bind_group(0, &bind_group.0, &[]);
+        pass.set_pipeline(link);
+        pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+    }
+    if pipelines.paged.is_some() {
+        drop(encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("aestra paged trails timing end"),
+            timestamp_writes: timestamps.paged_end,
+        }));
+    }
+    span.end(encoder);
+    true
 }
 
 pub(super) fn init_pipeline(

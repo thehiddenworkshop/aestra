@@ -18,6 +18,15 @@ mod capability_publication;
 mod catchup_pacing;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/clone_extraction.rs"]
 mod clone_extraction;
+mod coupled_native;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs"]
+mod coupled_simulation;
+#[path = "../../../bevy/aestra-bevy-render/src/execution.rs"]
+pub mod execution;
+// Namespace bridge to the same version-selected mapped-view boundary as shipping.
+mod gpu {
+    pub(crate) use crate::mapped_readback::with_mapped_range;
+}
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/draw_commands.rs"]
 mod draw_commands;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/draw_instance.rs"]
@@ -46,6 +55,7 @@ mod queue_native;
 mod render;
 use aestra_gpu::GpuBlend;
 use draw_instance::{GpuDrawInstance, GpuRenderMode};
+mod coupled_trails_native;
 mod draw_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/effect_inputs.rs"]
 mod effect_inputs;
@@ -55,14 +65,41 @@ mod extraction;
 mod extraction_cleanup;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/extraction_systems.rs"]
 mod extraction_systems;
+#[path = "../../../bevy/aestra-bevy-render/src/host_transform.rs"]
+mod host_transform;
+#[path = "../../../bevy/aestra-bevy-render/src/material.rs"]
+pub mod material;
 #[path = "../../../bevy/aestra-bevy-render/src/material_layout.rs"]
 mod material_layout;
+#[path = "../../../bevy/aestra-bevy-render/src/presented_effect.rs"]
+mod presented_effect;
+pub use presented_effect::{EffectRenderMode, PresentedEffect};
+#[path = "../../../bevy/aestra-bevy/src/bindings.rs"]
+mod bindings;
+#[path = "../../../bevy/aestra-bevy/src/playback.rs"]
+mod host_playback;
+#[path = "../../../bevy/aestra-bevy/src/project.rs"]
+mod project;
+pub use aestra_compiler::EffectCompiler;
+pub use aestra_runtime::PlaybackHistoryPolicy;
+pub use bindings::{
+    AestraBindingRecorder, AestraBindingTrace, AestraBindings, AestraLinearVelocity,
+};
+pub use project::EffectClipInstance;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/mesh_inputs.rs"]
 mod mesh_inputs;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/output_context.rs"]
+mod output_context;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/paged_trails.rs"]
+mod paged_trails;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_light_inputs.rs"]
 mod particle_light_inputs;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_light_transport.rs"]
 mod particle_light_transport;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_output_readback.rs"]
+mod particle_output_readback;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_outputs.rs"]
+mod particle_outputs;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/pipeline.rs"]
 mod pipeline;
 mod pipeline_native;
@@ -76,8 +113,26 @@ mod simulation_pipeline;
 mod sprite_culling;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/stage_inputs.rs"]
 mod stage_inputs;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/stage_output_delivery.rs"]
+mod stage_output_delivery;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/stage_runtimes.rs"]
+mod stage_runtimes;
+pub use host_playback::{AestraChoreographyEvent, AestraSet, EffectPlayer};
+pub use output_context::{AestraOutputEvent, EffectOutputContext};
+mod host_stage_native;
+mod stage_outputs_native;
+mod stateful_native;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs"]
+mod stateful_simulation;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/stateful_trails.rs"]
+mod stateful_trails;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/trail_checkpoints.rs"]
+mod trail_checkpoints;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/trail_context.rs"]
 mod trail_context;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/trail_replay.rs"]
+mod trail_replay;
+mod trail_simulation_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/view_phases.rs"]
 mod view_phases;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/wireframe.rs"]

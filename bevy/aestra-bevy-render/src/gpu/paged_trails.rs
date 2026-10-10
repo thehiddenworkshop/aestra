@@ -1,5 +1,12 @@
 //! Multi-pass history encoding; transient parameters reuse an existing globals lane.
-use super::*;
+use bevy::render::{
+    diagnostic::RecordDiagnostics,
+    render_resource::{
+        BindGroup, Buffer, BufferInitDescriptor, BufferUsages, CommandEncoder,
+        ComputePassDescriptor, ComputePipeline,
+    },
+    renderer::RenderDevice,
+};
 
 pub(super) struct Dispatch<'a> {
     passes: Vec<aestra_gpu::TrailPass>,

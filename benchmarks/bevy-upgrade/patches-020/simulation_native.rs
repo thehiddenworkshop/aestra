@@ -63,6 +63,7 @@ fn simulate(
     for (effect, group) in &effects {
         assert!(!effect.has_trails && !effect.has_ribbons && !effect.stateful_only);
         assert!(effect.stateful_dispatch.is_empty());
+        assert_eq!(effect.simulation_state.records, 0);
         assert_eq!(
             effect.history_policy,
             aestra_runtime::PlaybackHistoryPolicy::PlaybackOnly
@@ -112,22 +113,18 @@ fn globals(instance: &aestra_runtime::EffectInstance, capacity: u32, time: f32) 
         time,
         total_slots: capacity,
         seed: aestra_gpu::fold_seed(instance.seed()),
-        emitter_count: 1,
-        duration: 6.,
+        emitter_count: instance.effect().emitters.len() as u32,
+        duration: instance.effect().duration,
         ..default()
     }
 }
 
-fn inputs(
+pub(super) fn inputs(
     world: &mut World,
     instance: &aestra_runtime::EffectInstance,
     time: f32,
 ) -> GpuEffectBuffers {
-    let artifact = GpuEffectArtifact::from_instance(instance).unwrap();
-    assert_eq!(
-        artifact.simulation_state.records, 0,
-        "must use the analytic backend"
-    );
+    let mut artifact = GpuEffectArtifact::from_instance(instance).unwrap();
     assert!(
         artifact
             .particles
@@ -135,6 +132,21 @@ fn inputs(
             .all(|p| p.packed_emitter_alive == 0)
     );
     let slots = artifact.total_slots;
+    let has_trails = artifact.renderers.iter().any(|r| r.renderer_kind == 4);
+    let has_ribbons = artifact.renderers.iter().any(|r| r.renderer_kind == 3);
+    let emitters = artifact.emitters.len() as u32;
+    let trail_roots = artifact
+        .emitters
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.trail_points >= 2)
+        .map(|(i, e)| (i as u32, e.trail_offset))
+        .collect();
+    let trail_plan = aestra_gpu::TrailScratchPlan::configure(
+        &mut artifact.emitters,
+        artifact.particles.len() as u32,
+    )
+    .unwrap();
     let commands = aestra_gpu::indirect_draw_commands_with_statistics(&artifact.emitters);
     GpuEffectBuffers {
         emitters: asset(world, artifact.emitters),
@@ -142,21 +154,37 @@ fn inputs(
         particles: asset(world, artifact.particles),
         alive: asset(world, vec![0u32; slots as usize]),
         dead: asset(world, vec![0u32; slots as usize]),
-        counters: asset(world, vec![0u32; 2]),
+        counters: asset(
+            world,
+            vec![0u32; (2 + if has_trails { 6 * emitters } else { 0 }) as usize],
+        ),
         indirect: indirect_asset(world, commands),
         globals: asset(world, globals(instance, slots, time)),
-        aux: asset(world, vec![0u32; 1]),
-        render_globals: asset(world, GpuRenderGlobals::default()),
+        aux: asset(
+            world,
+            vec![
+                0u32;
+                if has_trails || has_ribbons {
+                    trail_plan.aux_words as usize
+                } else {
+                    1
+                }
+            ],
+        ),
+        render_globals: asset(
+            world,
+            GpuRenderGlobals {
+                time,
+                seed: aestra_gpu::fold_seed(instance.seed()),
+                ..default()
+            },
+        ),
         workgroups: slots.div_ceil(aestra_gpu::WORKGROUP_SIZE),
-        has_ribbons: false,
-        has_trails: false,
-        ribbon_workgroups: 0,
-        trail_workgroups: 0,
-        trail_plan: aestra_gpu::TrailScratchPlan {
-            aux_words: 1,
-            max_heads: 0,
-            max_owners: 0,
-        },
+        has_ribbons,
+        has_trails,
+        ribbon_workgroups: emitters.div_ceil(aestra_gpu::WORKGROUP_SIZE),
+        trail_workgroups: emitters,
+        trail_plan,
         total_slots: slots,
         simulation_time: time,
         seek_quality: aestra_runtime::SeekQuality::Exact,
@@ -164,7 +192,7 @@ fn inputs(
         history_epoch: 0,
         statistics_token: 0,
         checkpoint_context: default(),
-        trail_roots: vec![],
+        trail_roots,
         simulation_state: artifact.simulation_state,
         stateful_dispatch: vec![],
         event_links: vec![],
@@ -177,7 +205,7 @@ fn inputs(
     }
 }
 
-fn bind_inputs(world: &mut World, entity: Entity, effect: &GpuEffectBuffers) {
+pub(super) fn bind_inputs(world: &mut World, entity: Entity, effect: &GpuEffectBuffers) {
     let mut draw = world.get_mut::<crate::GpuDrawInstance>(entity).unwrap();
     draw.particles = effect.particles.clone();
     draw.renderers = effect.renderers.clone();

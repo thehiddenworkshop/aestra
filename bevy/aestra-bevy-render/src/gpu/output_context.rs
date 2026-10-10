@@ -1,6 +1,49 @@
 //! Main-world routing of validated native particle output records.
-use super::*;
+use crate::PresentedEffect;
 use aestra_core::{EffectClipId, EffectId};
+use bevy::prelude::*;
+#[cfg(test)]
+use std::sync::Arc;
+
+/// An event an effect raised for gameplay — the one stream to listen to (event system §12B): an output
+/// rose past its threshold (a fluid pushing a collider hard enough for an `impact`), homing particles
+/// reached their target (`impact`), the target was lost or acquired, a play-once effect finished
+/// (host bindings HB9), or playback crossed a timeline cue. `event.tick` says when, even for events
+/// read back from the GPU frames later. Visual outcomes to hear, never gameplay state to obey: see
+/// `aestra_runtime::EVENT_IMPACT` and its siblings.
+#[derive(Message, Debug, Clone, PartialEq)]
+pub struct AestraOutputEvent {
+    /// Root player for nested timeline cues and native particle outputs.
+    pub effect: Entity,
+    /// Empty for the root; otherwise the clips from the root to the effect that raised it.
+    pub clip_path: Vec<aestra_core::EffectClipId>,
+    /// Observation identity for native GPU particle routes and timeline cues. Hosts may
+    /// reject queued events after their player starts a different history epoch.
+    /// `None` means an unqualified legacy/stage output, not epoch zero.
+    pub playback_epoch: Option<u32>,
+    /// Spatial and source context for native particle routes only. Other output
+    /// payloads retain their own semantics (e.g. a homing target is already world-space).
+    pub particle: Option<ParticleOutputContext>,
+    pub event: aestra_runtime::EffectOutputEvent,
+}
+
+impl AestraOutputEvent {
+    /// An event of the root effect on `effect`.
+    pub fn root(effect: Entity, event: aestra_runtime::EffectOutputEvent) -> Self {
+        Self {
+            effect,
+            clip_path: Vec::new(),
+            playback_epoch: None,
+            particle: None,
+            event,
+        }
+    }
+
+    pub fn in_epoch(mut self, epoch: u32) -> Self {
+        self.playback_epoch = Some(epoch);
+        self
+    }
+}
 
 /// Routing identity maintained by a project host on each child presentation.
 /// The renderer first validates the child's GPU epoch, then qualifies the host

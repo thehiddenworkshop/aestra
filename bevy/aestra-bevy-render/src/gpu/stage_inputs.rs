@@ -8,12 +8,14 @@ use std::sync::Arc;
 #[derive(Component, Clone)]
 pub(crate) struct ExtractedStages {
     pub(super) effect: Arc<CompiledEffect>,
+    pub(super) output_identity: Arc<()>,
     pub(super) time: f32,
     pub(super) quality: SeekQuality,
     pub(super) history_policy: PlaybackHistoryPolicy,
     pub(super) host: GpuHostBindings,
     pub(super) seed: u32,
     pub(super) history_epoch: u32,
+    pub(super) history_epoch_start_time: f32,
     pub(super) history_revision: u64,
     pub(super) host_epoch: u64,
     /// The effect's placement: world space into its space (fluid F2).
@@ -26,6 +28,48 @@ pub(crate) struct ExtractedStages {
     pub(super) volumes: Vec<VolumeFieldTarget>,
     /// The host's world SDF (fluid F11), when it supplies one.
     pub(super) world: Option<GpuWorldSdf>,
+}
+
+impl ExtractedStages {
+    pub(super) fn from_presented(
+        presented: &crate::PresentedEffect,
+        world_to_effect: [[f32; 4]; 3],
+        view: Option<FieldViewTarget>,
+        volumes: Vec<VolumeFieldTarget>,
+        world: Option<GpuWorldSdf>,
+    ) -> Self {
+        let instance = &presented.instance;
+        let effect = presented.effect();
+        Self {
+            effect: effect.clone(),
+            output_identity: presented.output_identity.clone(),
+            time: instance.time(),
+            quality: presented.seek_quality(),
+            history_policy: presented.history_policy(),
+            host: GpuHostBindings::from_instance(instance),
+            seed: instance.seed() as u32,
+            history_epoch: instance.history_epoch(),
+            history_epoch_start_time: instance.history_epoch_start_time(),
+            history_revision: instance.history_revision(),
+            host_epoch: instance.host_input_epoch(),
+            world_to_effect,
+            coupled: effect
+                .emitters
+                .iter()
+                .any(|emitter| emitter.enabled && emitter.coupled()),
+            view,
+            volumes,
+            world,
+        }
+    }
+
+    pub(super) fn inputs(&self) -> crate::execution::StageInputs<'_> {
+        crate::execution::StageInputs {
+            host_bindings: Some(&self.host),
+            world_to_effect: self.world_to_effect,
+            world_sdf: self.world.as_ref(),
+        }
+    }
 }
 
 /// A field slice the render world copies into a view image.

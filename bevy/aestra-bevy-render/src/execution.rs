@@ -1012,9 +1012,13 @@ impl StageExecutor {
             if result.is_err() {
                 return;
             }
-            let words = split_outputs(&layout, &mapped.slice(..).get_mapped_range());
+            let words = crate::gpu::with_mapped_range(&mapped, 0..mapped.size(), |bytes| {
+                split_outputs(&layout, bytes)
+            });
             mapped.unmap();
-            done(words);
+            if let Some(words) = words {
+                done(words);
+            }
         });
         true
     }
@@ -2150,9 +2154,9 @@ fn read_buffer(
         .recv_timeout(READBACK_TIMEOUT)
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())?;
-    let bytes = slice.get_mapped_range().to_vec();
+    let bytes = crate::gpu::with_mapped_range(&readback, 0..readback.size(), <[u8]>::to_vec);
     readback.unmap();
-    Ok(bytes)
+    bytes.ok_or_else(|| "stage readback mapped range unavailable".to_owned())
 }
 
 fn split_outputs(

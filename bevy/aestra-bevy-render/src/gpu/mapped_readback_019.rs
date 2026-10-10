@@ -3,7 +3,7 @@ pub(super) type Wrapped<T> = bevy::render::renderer::WgpuWrapper<T>;
 pub(super) fn wrap<T>(value: T) -> Wrapped<T> {
     Wrapped::new(value)
 }
-pub(super) fn with_mapped_range<T>(
+pub(crate) fn with_mapped_range<T>(
     buffer: &wgpu::Buffer,
     range: std::ops::Range<u64>,
     read: impl FnOnce(&[u8]) -> T,

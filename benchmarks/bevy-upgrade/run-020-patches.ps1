@@ -32,6 +32,10 @@ function Inputs {
     $paths += @(
         'bevy/aestra-bevy-render/src/gpu.rs',
         'bevy/aestra-bevy-render/src/lib.rs',
+        'bevy/aestra-bevy-render/src/presented_effect.rs',
+        'bevy/aestra-bevy-render/src/gpu/output_context.rs',
+        'bevy/aestra-bevy-render/src/gpu/particle_output_readback.rs',
+        'bevy/aestra-bevy-render/src/gpu/particle_outputs.rs',
         'bevy/aestra-bevy-render/src/capabilities.rs',
         'bevy/aestra-bevy-render/src/render_settings.rs',
         'bevy/aestra-bevy-render/src/gpu/catchup_pacing.rs',
@@ -53,6 +57,10 @@ function Inputs {
         'bevy/aestra-bevy-render/src/gpu/preparation_timing.rs',
         'bevy/aestra-bevy-render/src/gpu/simulation_timing.rs',
         'bevy/aestra-bevy-render/src/gpu/simulation_pipeline.rs',
+        'bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs',
+        'bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs',
+        'bevy/aestra-bevy-render/src/execution.rs',
+        'bevy/aestra-bevy-render/src/gpu/paged_trails.rs',
         'bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs',
         'bevy/aestra-bevy-render/src/gpu/mapped_readback_019.rs',
         'bevy/aestra-bevy-render/src/gpu/mapped_readback_020.rs',
@@ -74,6 +82,12 @@ function Inputs {
         'bevy/aestra-bevy-render/src/gpu/clone_extraction.rs',
         'bevy/aestra-bevy-render/src/gpu/effect_inputs.rs',
         'bevy/aestra-bevy-render/src/gpu/stage_inputs.rs',
+        'bevy/aestra-bevy/src/playback.rs',
+        'bevy/aestra-bevy/src/project.rs',
+        'bevy/aestra-bevy/src/bindings.rs',
+        'bevy/aestra-bevy/src/lib.rs',
+        'bevy/aestra-bevy-render/src/gpu/stage_runtimes.rs',
+        'bevy/aestra-bevy-render/src/gpu/stage_output_delivery.rs',
         'bevy/aestra-bevy-render/src/gpu/particle_light_inputs.rs',
         'bevy/aestra-bevy-render/src/gpu/particle_light_transport.rs',
         'bevy/aestra-bevy-render/src/gpu/particle_lights.rs',
@@ -103,6 +117,9 @@ function Inputs {
         $paths += @(Get-ChildItem -LiteralPath "$directory/src" -File -Recurse |
             ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
     }
+    $paths += 'bevy/aestra-bevy-render/src/host_transform.rs', 'bevy/aestra-bevy-render/src/gpu/trail_replay.rs', 'extensions/aestra-fluid/Cargo.toml'
+    $paths += @(Get-ChildItem -LiteralPath (Join-Path $root 'extensions/aestra-fluid/src') -File -Recurse |
+        ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
     foreach ($directory in @('vendor/bevy_input_focus_020', 'vendor/bevy_pbr_020')) {
         $paths += @(Get-ChildItem -LiteralPath (Join-Path $root $directory) -File -Recurse -Force |
             ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
@@ -115,7 +132,7 @@ function RunCargo([string]$Name, [string[]]$Arguments) {
     $log = Join-Path $reports "$Name.log"
     & cargo "+$Toolchain" @Arguments 2>&1 | Tee-Object -FilePath $log | ForEach-Object {
         # Retain machine-readable evidence without flooding the console with it.
-        if ($Name -in @('native-build', 'shader-native-build', 'storage-native-build', 'extraction-native-build') -and $_.ToString().StartsWith('{')) {
+        if ($Name -in @('native-build', 'shader-native-build', 'storage-native-build', 'extraction-native-build', 'async-native-build') -and $_.ToString().StartsWith('{')) {
             $message = $_ | ConvertFrom-Json
             if ($message.reason -eq 'compiler-message') { Write-Host $message.message.rendered }
         } elseif ($Name -ne 'metadata') { $_ | Out-Host }
@@ -174,6 +191,7 @@ try {
     $shaderBinary = $null
     $storageBinary = $null
     $extractionBinary = $null
+    $asyncBinary = $null
     if ($Native) {
         RunCargo 'native-build' (@('test') + $common + @('--test', 'cluster_buffer_reuse', '--no-run', '--message-format=json'))
         $artifacts = Get-Content -LiteralPath "$reports/native-build.log" | ForEach-Object {
@@ -268,11 +286,77 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Native analytic simulation test failed ($LASTEXITCODE); retained $log" }
         if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
         if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Analytic simulation binary changed during qualification.' }
+        $log = Join-Path $reports 'native-trail-simulation.log'
+        & $extractionBinary trail_simulation_native::native_020_actual_trail_history_feeds_installed_producers_and_queues --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native trail simulation test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Trail simulation binary changed during qualification.' }
+        $log = Join-Path $reports 'native-stateful-simulation.log'
+        & $extractionBinary stateful_native::native_020_stateful_simulation_feeds_alpha_and_installed_queues --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native stateful simulation test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Stateful simulation binary changed during qualification.' }
+        $log = Join-Path $reports 'native-coupled-simulation.log'
+        & $extractionBinary coupled_native::native_020_coupled_routes_feed_alpha_and_installed_queues --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native coupled simulation test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Coupled simulation binary changed during qualification.' }
+        $log = Join-Path $reports 'native-fluid-joint-trails.log'
+        & $extractionBinary coupled_trails_native::native_020_fluid_coupling_and_joint_trails_feed_installed_queues --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native fluid/joint trail test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Fluid/joint trail binary changed during qualification.' }
+        $log = Join-Path $reports 'native-domain-births.log'
+        & $extractionBinary coupled_trails_native::native_020_domain_births_feed_particles_trails_and_output_rings --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native domain birth test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Domain birth binary changed during qualification.' }
+        $log = Join-Path $reports 'native-async-host-outputs.log'
+        & $extractionBinary coupled_trails_native::native_020_async_particle_outputs_reach_routed_host_messages_once --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native asynchronous host output test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Asynchronous host output binary changed during qualification.' }
+        $log = Join-Path $reports 'native-stage-outputs.log'
+        & $extractionBinary stage_outputs_native::native_020_stage_outputs_reach_host_values_and_impact_messages --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native stage output test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Stage output binary changed during qualification.' }
+        $log = Join-Path $reports 'native-host-stage-schedule.log'
+        & $extractionBinary host_stage_native::native_020_host_clock_drives_stage_reset_and_suppressed_seek_outputs --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native host stage schedule test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Host stage schedule binary changed during qualification.' }
+        $log = Join-Path $reports 'native-project-host-schedule.log'
+        & $extractionBinary host_stage_native::native_020_nested_project_bindings_drive_independent_stage_timelines --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native project host schedule test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Project host schedule binary changed during qualification.' }
         $log = Join-Path $reports 'native-timestamp-transport.log'
         & $extractionBinary trail_native::native_020_timestamp_transport_bounds_and_recycles_in_flight_batches --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "Native timestamp test failed ($LASTEXITCODE); retained $log" }
         if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
         if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Timestamp binary changed during qualification.' }
+        # Keep the local synchronous gates unchanged. Only these two explicit
+        # gates enable multithreaded shader compilation / real render pipelining.
+        RunCargo 'async-native-build' (@('test') + $common + @('--test', 'extraction', '--features', 'async-qualification', '--no-run', '--message-format=json'))
+        $artifacts = Get-Content -LiteralPath "$reports/async-native-build.log" | ForEach-Object {
+            try { $_ | ConvertFrom-Json } catch { $null }
+        }
+        $asyncBinary = @($artifacts | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'extraction' -and $_.executable } | Select-Object -ExpandProperty executable -Unique)
+        if ($asyncBinary.Count -ne 1) { throw 'Expected exactly one asynchronous test executable.' }
+        $asyncBinary = $asyncBinary[0]
+        $asyncBinaryBefore = Hash $asyncBinary
+        foreach ($test in @(
+            'stateful_native::native_020_delayed_shader_recovers_stateful_simulation_and_draws',
+            'host_stage_native::native_020_pipelined_project_outputs_survive_restart_seek_and_teardown'
+        )) {
+            $log = Join-Path $reports (($test -replace '::', '-') + '.log')
+            & $asyncBinary $test --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "$test failed ($LASTEXITCODE); retained $log" }
+            if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+            if (!(Select-String -LiteralPath $log -Pattern 'test result: ok\. 1 passed' -Quiet)) { throw "Native gate did not execute exactly one test: $log" }
+            if ((Hash $asyncBinary) -ne $asyncBinaryBefore) { throw 'Asynchronous binary changed during qualification.' }
+        }
     }
     $after = Inputs
     $after | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "$reports/inputs-after.json" -Encoding utf8NoBOM
@@ -287,6 +371,8 @@ try {
         storage_binary_sha256 = $(if ($Native) { $storageBinaryBefore } else { $null })
         extraction_binary = $extractionBinary
         extraction_binary_sha256 = $(if ($Native) { $extractionBinaryBefore } else { $null })
+        async_binary = $asyncBinary
+        async_binary_sha256 = $(if ($Native) { $asyncBinaryBefore } else { $null })
         source_hashes_unchanged = $true; shipping_lock_sha256 = $after['Cargo.lock']
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "$reports/summary.json" -Encoding utf8NoBOM
 } finally { Pop-Location }

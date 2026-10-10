@@ -209,13 +209,7 @@ pub(crate) fn resolve_host_bindings(
         let instance = player.instance_mut();
         // A slot now filled by a different entity is a new target, not a moving one.
         if let Some(previous) = previous.as_deref() {
-            for (index, (before, now)) in previous.0.iter().zip(&targets).enumerate() {
-                if let (Some(before), Some(now)) = (before, now)
-                    && before != now
-                {
-                    let _ = instance.rebind(BindingSlot(index));
-                }
-            }
+            rebind_changed_targets(instance, previous, &targets);
         }
         if let Err(error) = instance.apply_binding_frame(&frame) {
             warn!("aestra: could not apply host bindings to {entity}: {error}");
@@ -235,59 +229,109 @@ pub(crate) fn resolve_host_bindings(
     }
 }
 
+fn rebind_changed_targets(
+    instance: &mut aestra_runtime::EffectInstance,
+    previous: &ResolvedBindingTargets,
+    targets: &[Option<Entity>],
+) {
+    for (index, (before, now)) in previous.0.iter().zip(targets).enumerate() {
+        if let (Some(before), Some(now)) = (before, now)
+            && before != now
+        {
+            let _ = instance.rebind(BindingSlot(index));
+        }
+    }
+}
+
+struct ForwardedInputs {
+    effect: Arc<CompiledEffect>,
+    values: Vec<Option<BindingSnapshot>>,
+    targets: Vec<Option<Entity>>,
+}
+
 /// Fills nested clip presentations' forwarded bindings from their parents, shallow to deep, so a
 /// host binds only the root player (host bindings roadmap §9.6).
 pub(crate) fn forward_project_bindings(
-    roots: Query<(Entity, &EffectPlayer)>,
-    mut children: Query<(Entity, &EffectClipInstance, &mut PresentedEffect), Without<EffectPlayer>>,
+    mut commands: Commands,
+    roots: Query<(Entity, &EffectPlayer, Option<&ResolvedBindingTargets>)>,
+    mut children: Query<
+        (
+            Entity,
+            &EffectClipInstance,
+            &mut PresentedEffect,
+            Option<&mut ResolvedBindingTargets>,
+        ),
+        Without<EffectPlayer>,
+    >,
 ) {
     type Key = (Entity, Vec<aestra_core::EffectClipId>);
-    let mut resolved: BTreeMap<Key, (Arc<CompiledEffect>, Vec<Option<BindingSnapshot>>)> =
-        BTreeMap::new();
-    for (root, player) in &roots {
+    let mut resolved: BTreeMap<Key, ForwardedInputs> = BTreeMap::new();
+    for (root, player, targets) in &roots {
         if player.project().is_some() {
             resolved.insert(
                 (root, Vec::new()),
-                (
-                    player.effect().clone(),
-                    player.instance().resolved_bindings(),
-                ),
+                ForwardedInputs {
+                    effect: player.effect().clone(),
+                    values: player.instance().resolved_bindings(),
+                    targets: targets.map_or_else(Vec::new, |targets| targets.0.clone()),
+                },
             );
         }
     }
     let mut order: Vec<(usize, Entity)> = children
         .iter()
-        .map(|(entity, clip, _)| (clip.path.len(), entity))
+        .map(|(entity, clip, _, _)| (clip.path.len(), entity))
         .collect();
     order.sort();
     for (_, entity) in order {
-        let Ok((_, clip, mut presented)) = children.get_mut(entity) else {
+        let Ok((_, clip, mut presented, previous)) = children.get_mut(entity) else {
             continue;
         };
         let Some((last, parent_path)) = clip.path.split_last() else {
             continue;
         };
         let key = (clip.root, clip.path.clone());
-        if let Some((parent_effect, parent_values)) =
-            resolved.get(&(clip.root, parent_path.to_vec()))
-            && let Some(compiled_clip) = parent_effect
+        let mut targets = vec![None; presented.effect().bindings.len()];
+        if let Some(parent) = resolved.get(&(clip.root, parent_path.to_vec()))
+            && let Some(compiled_clip) = parent
+                .effect
                 .effect_clips
                 .iter()
                 .find(|candidate| candidate.source_clip == *last)
         {
+            // Preserve per-slot entity identity through every clip level. Equal
+            // snapshots from a different host object are still a rebind, whereas
+            // ordinary motion must not relatch SnapshotOnSpawn or invalidate history.
+            for forward in &compiled_clip.binding_forwards {
+                if let Some(target) = targets.get_mut(forward.child_slot.0) {
+                    *target = parent.targets.get(forward.parent_slot.0).copied().flatten();
+                }
+            }
+            if let Some(previous) = previous.as_deref() {
+                rebind_changed_targets(&mut presented.instance, previous, &targets);
+            }
             presented.instance.apply_forwarded_bindings(
-                parent_effect,
-                parent_values,
+                &parent.effect,
+                &parent.values,
                 &compiled_clip.binding_forwards,
             );
         }
         resolved.insert(
             key,
-            (
-                presented.effect().clone(),
-                presented.instance.resolved_bindings(),
-            ),
+            ForwardedInputs {
+                effect: presented.effect().clone(),
+                values: presented.instance.resolved_bindings(),
+                targets: targets.clone(),
+            },
         );
+        match previous {
+            Some(mut previous) => previous.0 = targets,
+            None => {
+                commands
+                    .entity(entity)
+                    .insert(ResolvedBindingTargets(targets));
+            }
+        }
     }
 }
 
@@ -546,6 +590,99 @@ mod tests {
                 .map(<[f32]>::to_vec),
             Some(vec![7.0, 0.0, 0.0])
         );
+    }
+
+    #[test]
+    fn nested_retargeting_preserves_slot_identity_not_just_snapshot_values() {
+        let mut root = EffectAsset::new("Root", 4.0);
+        root.bindings = vec![EffectBinding::spatial("Target", BindingUpdateMode::Live)];
+        let mut parent = EffectAsset::new("Parent", 4.0);
+        parent.bindings = vec![EffectBinding::spatial("Aim", BindingUpdateMode::Live)];
+        let mut leaf = EffectAsset::new("Leaf", 4.0);
+        leaf.bindings = vec![EffectBinding::spatial(
+            "Aim",
+            BindingUpdateMode::SnapshotOnSpawn,
+        )];
+        let mut clip = EffectClip::new(leaf.id, 0.0, 4.0);
+        clip.binding_forwards
+            .insert(leaf.bindings[0].id, parent.bindings[0].id);
+        parent.effect_clips.push(clip);
+        let mut clip = EffectClip::new(parent.id, 0.0, 4.0);
+        clip.binding_forwards
+            .insert(parent.bindings[0].id, root.bindings[0].id);
+        root.effect_clips.push(clip);
+        let project = crate::EffectCompiler::default()
+            .compile_resolved_project(&aestra_project::ResolvedEffectProject {
+                root,
+                dependencies: BTreeMap::from([(parent.id, parent), (leaf.id, leaf)]),
+                material_programs: BTreeMap::new(),
+                material_functions: BTreeMap::new(),
+            })
+            .unwrap();
+        let mut app = App::new();
+        app.add_systems(
+            Update,
+            (
+                resolve_host_bindings,
+                crate::project::sync_project_instances,
+                forward_project_bindings,
+            )
+                .chain(),
+        );
+        let first = object(&mut app, Vec3::X);
+        let root = app
+            .world_mut()
+            .spawn((
+                EffectPlayer::from_project(Arc::new(project)),
+                AestraBindings::new().bind("Target", first),
+            ))
+            .id();
+        app.update();
+        let children: Vec<_> = app
+            .world_mut()
+            .query::<(Entity, &EffectClipInstance, &PresentedEffect)>()
+            .iter(app.world())
+            .map(|(entity, clip, p)| (entity, clip.path.len(), p.instance.host_input_epoch()))
+            .collect();
+        assert_eq!(children.len(), 2);
+        move_to(&mut app, first, Vec3::Y);
+        app.update();
+        for &(entity, depth, epoch) in &children {
+            let instance = &app.world().get::<PresentedEffect>(entity).unwrap().instance;
+            assert_eq!(instance.host_input_epoch(), epoch, "motion is not a rebind");
+            let expected = if depth == 2 { Vec3::X } else { Vec3::Y };
+            assert_eq!(
+                instance.binding_field(BindingSlot(0), &position()),
+                Some(expected.to_array().as_slice())
+            );
+        }
+        // An identical current value from another entity must still relatch the leaf.
+        let second = object(&mut app, Vec3::Y);
+        app.world_mut()
+            .get_mut::<AestraBindings>(root)
+            .unwrap()
+            .set("Target", second);
+        app.update();
+        for &(entity, _, epoch) in &children {
+            let instance = &app.world().get::<PresentedEffect>(entity).unwrap().instance;
+            assert_ne!(instance.host_input_epoch(), epoch);
+            assert_eq!(
+                instance.binding_field(BindingSlot(0), &position()),
+                Some(Vec3::Y.to_array().as_slice())
+            );
+        }
+        app.world_mut().despawn(second);
+        app.update();
+        for &(entity, depth, _) in &children {
+            let instance = &app.world().get::<PresentedEffect>(entity).unwrap().instance;
+            if depth == 1 {
+                assert!(
+                    instance
+                        .binding_field(BindingSlot(0), &position())
+                        .is_none()
+                );
+            }
+        }
     }
 
     #[test]

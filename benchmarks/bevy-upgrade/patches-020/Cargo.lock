@@ -23,7 +23,10 @@ version = "0.0.0"
 dependencies = [
  "aestra-compiler",
  "aestra-core",
+ "aestra-extension",
+ "aestra-fluid",
  "aestra-gpu",
+ "aestra-project",
  "aestra-runtime",
  "bevy",
  "bevy_app",
@@ -70,6 +73,16 @@ dependencies = [
  "ron",
  "semver",
  "serde",
+]
+
+[[package]]
+name = "aestra-fluid"
+version = "0.1.0"
+dependencies = [
+ "aestra-core",
+ "aestra-extension",
+ "aestra-gpu",
+ "aestra-runtime",
 ]
 
 [[package]]
@@ -991,6 +1004,7 @@ dependencies = [
  "bevy_shape",
  "bevy_sprite",
  "bevy_sprite_render",
+ "bevy_state",
  "bevy_tasks",
  "bevy_text",
  "bevy_time",
@@ -1479,15 +1493,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_state"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09292e08e1eb34d2dd915630fb3c04ba75220c7819943c9f213d3a5f9a8be1e8"
+dependencies = [
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_platform",
+ "bevy_reflect",
+ "bevy_state_macros",
+ "bevy_utils",
+ "log",
+ "variadics_please",
+]
+
+[[package]]
+name = "bevy_state_macros"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fec1a8f6a253e39ddf7e447b1b9286caacb205ed8e619e6fb9a2e010d58dd04b"
+dependencies = [
+ "bevy_macro_utils",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "bevy_tasks"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fbd8116f12dc50bde3758a72fba85e1f4c00e6c66d0ad58bdc46c0c0690829a8"
 dependencies = [
+ "async-channel",
  "async-executor",
  "async-task",
  "atomic-waker",
  "bevy_platform",
+ "concurrent-queue",
  "crossbeam-queue",
  "derive_more",
  "futures-lite",

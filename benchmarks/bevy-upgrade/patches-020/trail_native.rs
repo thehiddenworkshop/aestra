@@ -34,14 +34,14 @@ fn cull_enabled(g: Res<Gates>) -> bool {
     g.cull
 }
 #[derive(Resource, Default)]
-struct Captured(Vec<Draw>);
-fn capture(submissions: Res<Submissions>, mut captured: ResMut<Captured>) {
+pub(super) struct Captured(pub(super) Vec<Draw>);
+pub(super) fn capture(submissions: Res<Submissions>, mut captured: ResMut<Captured>) {
     let mut frame = submissions.0.lock().unwrap();
     assert!(!frame.overflow);
     captured.0 = std::mem::take(&mut frame.draws);
 }
 
-pub(super) fn read(app: &App, source: &Buffer, words: usize) -> Vec<u32> {
+pub(super) fn read(app: &App, source: &wgpu::Buffer, words: usize) -> Vec<u32> {
     let world = app.sub_app(RenderApp).world();
     let device = world.resource::<RenderDevice>().wgpu_device();
     let queue = world.resource::<RenderQueue>();
