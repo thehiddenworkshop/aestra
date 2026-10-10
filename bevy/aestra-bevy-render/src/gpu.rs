@@ -1,6 +1,11 @@
 //! Bevy render-world adapter for engine-neutral Aestra GPU artifacts.
 
 mod alpha_sort;
+// Test-only wgpu-version boundary; playback never maps sort buffers.
+#[cfg(test)]
+fn alpha_sort_test_readback(buffer: &wgpu::Buffer) -> Vec<u8> {
+    buffer.slice(..).get_mapped_range().to_vec()
+}
 mod bounds;
 mod capability_publication;
 mod catchup_pacing;
@@ -15,6 +20,8 @@ mod extraction;
 mod extraction_cleanup;
 mod extraction_systems;
 mod geometry_statistics;
+#[path = "gpu/mapped_readback_019.rs"]
+mod mapped_readback;
 mod material_lighting;
 mod mesh_inputs;
 mod output_context;
@@ -27,6 +34,7 @@ mod particle_outputs;
 mod particle_statistics;
 mod physics;
 mod pipeline;
+mod preparation_context;
 mod preparation_timing;
 mod render;
 mod ribbon_bounds;
@@ -39,6 +47,7 @@ mod stage_inputs;
 mod stateful_trails;
 mod storage_buffers;
 mod storage_encoding;
+mod timestamp_transport;
 mod trail_checkpoints;
 mod trail_compaction;
 mod trail_context;
@@ -508,6 +517,7 @@ pub(crate) fn install(app: &mut App) {
         .add_systems(
             RenderGraph,
             run_simulation
+                .in_set(draw_resources::SimulateEffects)
                 .after(RenderGraphSystems::Begin)
                 .before(RenderGraphSystems::Render),
         );

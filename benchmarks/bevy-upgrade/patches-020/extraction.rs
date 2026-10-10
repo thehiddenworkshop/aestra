@@ -9,6 +9,9 @@ pub use render_settings::{AestraRenderSettings, PresentationMode, TransparentOrd
 #[path = "../../../bevy/aestra-bevy-render/src/capabilities.rs"]
 mod capabilities;
 pub use capabilities::{AestraRuntimeStatus, GpuCapabilities};
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/alpha_sort.rs"]
+mod alpha_sort;
+mod alpha_sort_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/capability_publication.rs"]
 mod capability_publication;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/catchup_pacing.rs"]
@@ -23,6 +26,21 @@ mod draw_instance;
 mod draw_preparation;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/draw_resources.rs"]
 mod draw_resources;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/mapped_readback_020.rs"]
+mod mapped_readback;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/preparation_context.rs"]
+mod preparation_context;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs"]
+mod timestamp_transport;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/trail_compaction.rs"]
+mod trail_compaction;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/trail_culling.rs"]
+mod trail_culling;
+mod trail_native;
+// Match the shipping test's readback boundary, with wgpu 30's fallible map view.
+fn alpha_sort_test_readback(buffer: &wgpu::Buffer) -> Vec<u8> {
+    buffer.slice(..).get_mapped_range().unwrap().to_vec()
+}
 mod queue_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/render.rs"]
 mod render;

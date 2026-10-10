@@ -78,7 +78,7 @@ fn native_alpha_sort_handles_large_sparse_pools_and_opposite_views() {
                 let offset = 17u32;
                 let particles = (0..offset + capacity)
                     .map(|slot| GpuParticle {
-                        position: Vec3::new(0.0, 0.0, ((slot * 17) % 23) as f32 - 12.0),
+                        position: [0.0, 0.0, ((slot * 17) % 23) as f32 - 12.0].into(),
                         particle_index: slot - slot.min(offset),
                         ..default()
                     })
@@ -99,9 +99,12 @@ fn native_alpha_sort_handles_large_sparse_pools_and_opposite_views() {
                 commands[9] = live;
                 let indirect = upload(&words(&commands));
                 let mut globals = StorageBuffer::new(Vec::new());
+                let mut world_from_effect = GpuRenderGlobals::default().world_from_effect;
+                world_from_effect.w_axis.x = 1.0;
+                world_from_effect.w_axis.z = 3.0;
                 globals
                     .write(&GpuRenderGlobals {
-                        world_from_effect: Mat4::from_translation(Vec3::new(1.0, 0.0, 3.0)),
+                        world_from_effect,
                         ..default()
                     })
                     .unwrap();
@@ -196,7 +199,7 @@ fn native_alpha_sort_handles_large_sparse_pools_and_opposite_views() {
                     })
                     .unwrap();
                 receive.recv().unwrap().unwrap();
-                let bytes = readback.slice(..).get_mapped_range();
+                let bytes = super::super::alpha_sort_test_readback(&readback);
                 let actual = bytes
                     .as_chunks::<4>()
                     .0
@@ -208,7 +211,8 @@ fn native_alpha_sort_handles_large_sparse_pools_and_opposite_views() {
                 expected.sort_by(|a, b| {
                     let z = |slot: u32| {
                         (view
-                            * (particles[slot as usize].position + Vec3::new(1.0, 0.0, 3.0))
+                            * (Vec3::from_array(particles[slot as usize].position.to_array())
+                                + Vec3::new(1.0, 0.0, 3.0))
                                 .extend(1.0))
                         .z
                     };

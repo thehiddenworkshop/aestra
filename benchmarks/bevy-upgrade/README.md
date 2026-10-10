@@ -249,3 +249,41 @@ Shared fixes retire unsupported/invisible entries and stale mesh-to-sprite geome
 Preparation markers and fixture indirect-count writes are not production compute
 dispatch. Pipelined rendering, full producers, pixels and performance remain open.
 See [implementation and evidence](queue-schedule-2026-10-10.md).
+
+## Actual alpha compute feeding installed queues
+
+The fixture imports the unchanged production alpha-sort preparation and dispatch
+code, with explicit imports and shared simulation/sort ordering sets. A ninth
+serial native gate runs its AssetServer/PipelineCache compute passes before the
+actual per-view render bindings and transparent commands. It verifies opposite
+camera permutations, camera movement, zero/partial/full populations, reuse,
+same-capacity source replacement, growth and teardown. A controlled dispatch
+gate verifies that prepared-but-undispatched draws fail closed rather than use
+stale indices; it is not an asynchronous shader-loading timing test.
+
+A tenth native process runs the existing 42-case sparse-pool shader contract,
+including capacity 65,537, against wgpu 30. Test-only observation/readback does
+not add production COPY_SRC usages, waits or CPU particle mirrors. Simulation
+inputs remain seeded fixtures; trail producers, pipelined rendering and full
+visual/performance parity remain open. Shipping still uses Bevy 0.19.1.
+See [implementation and evidence](alpha-compute-2026-10-10.md).
+
+## Actual trail compaction and per-view culling feeding installed queues
+
+The candidate imports the actual trail installers, preparation and dispatch.
+Shared simulation/compaction/culling sets preserve same-frame ordering before
+rendering. The bounded timestamp transport and preparation context are shared,
+with narrow adapters for Bevy's resource-wrapper removal and wgpu's fallible
+mapped views. The public timing API and shipping Bevy 0.19.1 graph are preserved.
+
+Native qualification checks stable indices across the 1,024-owner prefix-page
+boundary, two different camera decisions, exact indirect buffers consumed by the
+installed commands, source rebinding, output reuse/growth, all three dispatch
+fallback combinations, stale epochs, empty/expired histories and draw/view removal.
+Real asynchronous timestamp batches preserve owner/token metadata. Only test
+readbacks wait; normal playback stays GPU-resident and nonblocking.
+
+Histories are seeded, not simulated. Controlled dispatch gates are not evidence
+of asynchronous shader readiness, and synchronous headless rendering is not
+pipelined, visual or performance parity. See
+[implementation and evidence](trail-compute-2026-10-10.md).

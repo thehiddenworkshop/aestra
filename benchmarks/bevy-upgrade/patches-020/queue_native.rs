@@ -83,7 +83,7 @@ fn fixture_mesh_counts(draws: Query<&PreparedMeshDraw>, queue: Res<RenderQueue>)
     }
 }
 
-fn asset<T: ShaderType + encase::internal::WriteInto>(
+pub(super) fn asset<T: ShaderType + encase::internal::WriteInto>(
     world: &mut World,
     value: T,
 ) -> Handle<ShaderBuffer> {
@@ -92,7 +92,13 @@ fn asset<T: ShaderType + encase::internal::WriteInto>(
         .add(storage_buffers::new(value))
 }
 
-fn material(
+pub(super) fn indirect_asset(world: &mut World, words: Vec<u32>) -> Handle<ShaderBuffer> {
+    world
+        .resource_mut::<Assets<ShaderBuffer>>()
+        .add(storage_buffers::indirect(words))
+}
+
+pub(super) fn material(
     world: &mut World,
     program: &MaterialProgram,
     name: &str,

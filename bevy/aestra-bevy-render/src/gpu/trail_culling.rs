@@ -1,7 +1,7 @@
 //! Same-frame, per-view GPU culling. CPU visibility deliberately stays conservative:
 //! no asynchronous readback participates in correctness or stops history simulation.
-use super::{GpuDrawInstance, GpuEffectBuffers, GpuParticle, GpuRenderGlobals, GpuRenderer};
-use aestra_gpu::GpuTrailCullParams;
+use super::{draw_instance::GpuDrawInstance, effect_inputs::GpuEffectBuffers};
+use aestra_gpu::{GpuParticle, GpuRenderGlobals, GpuRenderer, GpuTrailCullParams};
 use bevy::{
     app::SubApp,
     camera::MainPassResolutionOverride,
@@ -44,7 +44,9 @@ pub(super) fn install(app: &mut SubApp) {
         )
         .add_systems(
             RenderGraph,
-            cull.after(super::run_simulation)
+            cull.in_set(super::draw_resources::CullTrails)
+                .after(super::draw_resources::SimulateEffects)
+                .after(RenderGraphSystems::Begin)
                 .after(super::trail_compaction::TrailCompactionSystems::Compact)
                 .before(RenderGraphSystems::Render),
         );
@@ -140,8 +142,14 @@ fn prepare(
             ) else {
                 continue;
             };
+            // Bevy and the neutral GPU ABI may use different glam versions.
+            let mut gpu_matrix = GpuRenderGlobals::default().world_from_effect;
+            gpu_matrix.x_axis = matrix.x_axis.to_array().into();
+            gpu_matrix.y_axis = matrix.y_axis.to_array().into();
+            gpu_matrix.z_axis = matrix.z_axis.to_array().into();
+            gpu_matrix.w_axis = matrix.w_axis.to_array().into();
             let params = GpuTrailCullParams {
-                clip_from_world: matrix,
+                clip_from_world: gpu_matrix,
                 renderer_index: draw.renderer_order,
                 instance_count,
                 epoch,
@@ -218,8 +226,8 @@ fn cull(
     pipeline: Res<TrailCullPipeline>,
     mut culling: ResMut<TrailCulling>,
     compaction: Res<super::trail_compaction::TrailCompaction>,
-    timing: super::preparation_timing::TimingContext,
-    mut timer: Local<super::simulation_timing::SimulationTimer>,
+    timing: super::preparation_context::TimingContext,
+    mut timer: Local<super::timestamp_transport::SimulationTimer>,
 ) {
     let Some(pipeline) = cache.get_compute_pipeline(pipeline.pipeline) else {
         return;

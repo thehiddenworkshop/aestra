@@ -1,9 +1,8 @@
 //! Separate per-owner render-preparation windows. No CPU waits or particle readbacks.
-use super::simulation_timing::{GpuSimulationTiming, SimulationTimer, TimingBatch, TimingMailbox};
+pub(super) use super::preparation_context::PreparationMailboxes;
+use super::simulation_timing::GpuSimulationTiming;
 use super::*;
 use aestra_runtime::{EffectInstance, EffectProfile, ProfileValue};
-use bevy::ecs::system::SystemParam;
-use bevy::render::{renderer::RenderQueue, sync_world::MainEntity};
 
 /// GPU trail compaction and per-view culling, excluding simulation and drawing.
 #[derive(Component, Debug, Default)]
@@ -27,12 +26,6 @@ impl GpuPreparationTiming {
             profile.gpu_trail_culling_time_ns = self.culling.time_ns(instance, context);
         }
     }
-}
-
-#[derive(Resource, Default, Clone)]
-pub(super) struct PreparationMailboxes {
-    pub compaction: TimingMailbox,
-    pub culling: TimingMailbox,
 }
 
 pub(super) fn receive(
@@ -70,25 +63,6 @@ pub(super) fn receive(
                 }
             }
         }
-    }
-}
-
-#[derive(SystemParam)]
-pub(super) struct TimingContext<'w, 's> {
-    device: Res<'w, RenderDevice>,
-    queue: Res<'w, RenderQueue>,
-    pub mailboxes: Res<'w, PreparationMailboxes>,
-    effects: Query<'w, 's, (&'static MainEntity, &'static GpuEffectBuffers)>,
-}
-
-impl TimingContext<'_, '_> {
-    pub fn begin(&self, timer: &mut SimulationTimer) -> Option<TimingBatch> {
-        timer.begin(&self.device, self.queue.get_timestamp_period())
-    }
-
-    pub fn owner(&self, batch: &mut TimingBatch, owner: Entity) -> Option<u32> {
-        let (_, effect) = self.effects.iter().find(|(main, _)| main.id() == owner)?;
-        batch.instance(owner, effect.statistics_token, effect.simulation_time)
     }
 }
 

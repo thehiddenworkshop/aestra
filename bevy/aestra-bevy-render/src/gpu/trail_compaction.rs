@@ -1,7 +1,25 @@
 //! Stable per-renderer compaction, shared by every view and rebuilt after simulation/replay.
-use super::*;
+use super::draw_instance::GpuDrawInstance;
+use aestra_gpu::{GpuParticle, GpuRenderGlobals, GpuRenderParams, GpuRenderer};
 use bevy::render::diagnostic::RecordDiagnostics;
 use bevy::render::render_resource::encase::UniformBuffer;
+use bevy::{
+    app::SubApp,
+    prelude::*,
+    render::{
+        Render, RenderStartup, RenderSystems,
+        render_asset::RenderAssets,
+        render_resource::{
+            BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+            BufferInitDescriptor, BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
+            ComputePipelineDescriptor, PipelineCache, ShaderStages,
+            binding_types::{storage_buffer, storage_buffer_read_only},
+        },
+        renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems},
+        storage::GpuShaderBuffer,
+    },
+};
+use std::collections::BTreeMap;
 
 pub(super) use super::draw_resources::TrailCompactionSystems;
 
@@ -26,7 +44,8 @@ pub(super) fn install(app: &mut SubApp) {
         .add_systems(
             RenderGraph,
             compact
-                .after(super::run_simulation)
+                .after(super::draw_resources::SimulateEffects)
+                .after(RenderGraphSystems::Begin)
                 .in_set(TrailCompactionSystems::Compact)
                 .before(RenderGraphSystems::Render),
         );
@@ -146,7 +165,7 @@ fn prepare(
             encoded
                 .write(&GpuRenderParams {
                     renderer_index: draw.renderer_order,
-                    _padding: UVec2::new(1, 0),
+                    _padding: [1, 0].into(),
                     ..default()
                 })
                 .unwrap();
@@ -195,8 +214,8 @@ fn compact(
     cache: Res<PipelineCache>,
     pipeline: Res<Pipeline>,
     mut state: ResMut<TrailCompaction>,
-    timing: super::preparation_timing::TimingContext,
-    mut timer: Local<super::simulation_timing::SimulationTimer>,
+    timing: super::preparation_context::TimingContext,
+    mut timer: Local<super::timestamp_transport::SimulationTimer>,
 ) {
     let [Some(classify), Some(prefix), Some(pages), Some(scatter)] =
         pipeline.passes.map(|id| cache.get_compute_pipeline(id))

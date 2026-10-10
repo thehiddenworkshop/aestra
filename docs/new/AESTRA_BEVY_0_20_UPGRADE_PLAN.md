@@ -412,7 +412,58 @@ selected only at the coherent engine switch; the shipping engine remains 0.19.1.
   pass, as do workspace/candidate strict Clippy and formatting.
   Validation and evidence: [queue/schedule report](../../benchmarks/bevy-upgrade/queue-schedule-2026-10-10.md).
 
-Remaining B20-1: production compute-to-render integration and pipelined rendering,
+### B20-1 eleventh slice — Actual alpha compute to installed queues
+
+- Import production `gpu/alpha_sort.rs` directly into the locked 0.20 fixture.
+  Replace ambient imports with explicit dependencies; shared simulation/sort sets
+  preserve shipping simulation-before-sort-before-draw ordering.
+- A ninth serial native gate installs the real producer alongside the real
+  extraction/render queues. Normal ShaderBuffer asset preparation, embedded WGSL
+  loading, PipelineCache, preparation, classify/merge/finish dispatch and actual
+  per-view draw bindings execute through `App::update`, not manual producer calls.
+- Test-only GPU observation checks exact permutations for opposite cameras,
+  camera movement, capacity 257/513, zero/partial/full populations, output reuse,
+  same-capacity source replacement, growth, settings changes and teardown.
+  Controlled dispatch gating before and after success verifies that prepared
+  but undispatched draws skip, without consuming uninitialized/stale indices.
+- A tenth serial native gate runs the existing 42-case sparse-pool contract
+  unchanged in intent on wgpu 30, through capacity 65,537. A narrow test-only map
+  adapter handles wgpu's fallible view API and the independent glam boundary.
+- This does not run actual simulation or trail producers, asynchronous pipeline
+  readiness, pipelined rendering, or visual/performance comparison. All GPU waits,
+  copies and permutation readbacks are confined to tests; production buffer usage
+  flags, allocation policy and playback/replay APIs remain unchanged.
+- **127** candidate checks (ten serial native tests), **151** shipping renderer
+  lib regressions, the shipping 42-case native alpha contract and **3** required
+  GPU/CPU conformance checks pass. Workspace/candidate strict Clippy, formatting,
+  runner syntax and source/executable immutability gates pass.
+- Validation and evidence: [alpha compute report](../../benchmarks/bevy-upgrade/alpha-compute-2026-10-10.md).
+
+### B20-1 twelfth slice — Actual trail producers to installed queues
+
+- Import production trail compaction and per-view culling installers, preparation
+  and compute dispatch directly into the locked candidate. Shared producer sets
+  preserve simulation → compaction → culling → draw ordering.
+- Extract the bounded timestamp transport and render-world preparation context,
+  retaining public timing/profile APIs. Narrow 0.19/0.20 adapters handle GPU
+  wrapper removal, RenderDevice construction and fallible mapped views.
+  Array-based conversion preserves the neutral glam matrix/vector ABI.
+- The native installed-producer contract checks owners 70/1,025, stable compacted
+  candidate indices, two per-view indirect counts, exact consumed command buffers,
+  output reuse/growth, source rebinding, camera motion, dispatch fallback combinations,
+  stale-epoch fail-open, empty/expired histories and draw/view retirement.
+- Timestamp ownership and bounded recycling are exercised on real hardware.
+  Seeded history records are not actual simulation, controlled dispatch gates are
+  not async shader-readiness qualification, and synchronous rendering does not
+  establish pipelined, visual or performance parity. No production GPU waits,
+  particle readbacks or per-particle ECS are introduced.
+- **131** candidate checks (12 explicit serial native tests), **151** shipping
+  renderer lib regressions and **5** hardware-required shipping GPU/CPU/trail
+  conformance checks pass. Workspace/candidate strict Clippy, formatting,
+  runner syntax and source/executable immutability gates pass.
+- Validation and evidence: [trail compute report](../../benchmarks/bevy-upgrade/trail-compute-2026-10-10.md).
+
+Remaining B20-1: simulation compute-to-render integration and pipelined rendering,
 B20-2's editor compatibility changes, coherent Bevy/wgpu/glam switch selecting the
 prepared shader/storage/extraction adapters, renderer/cache identity review, and
 native visual/performance parity. The shipping workspace still uses Bevy 0.19.1.
@@ -575,8 +626,8 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** qualify B20-1's actual compute producers feeding the installed
-queues and render graph, including dispatch readiness and pipelined rendering,
+**Next action:** qualify B20-1's actual simulation feeding the installed producers
+and queues, then pipelined/async readiness,
 alongside B20-2's required editor API changes.
 Activate the qualified storage adapter, WESL composition paths
 and graph imports as the engine graph switches coherently to 0.20. Select the

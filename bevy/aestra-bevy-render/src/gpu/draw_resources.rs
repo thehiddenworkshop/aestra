@@ -10,6 +10,16 @@ pub(super) const MAX_DRAWS: usize = 2048;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct PrepareAlphaSort;
 
+/// Simulation completes before view-local compute producers and graph drawing.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct SimulateEffects;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct SortAlpha;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct CullTrails;
+
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) enum TrailCompactionSystems {
     Prepare,

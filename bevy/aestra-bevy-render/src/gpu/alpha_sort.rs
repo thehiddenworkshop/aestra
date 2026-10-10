@@ -1,12 +1,31 @@
 //! Opt-in per-view sprite permutations: page sort + parallel binary-rank merges.
 //! Capacity-scaled O(N log² N) comparisons, O(N) storage, no particle readback or live-count cap.
-use super::*;
+use super::draw_instance::{GpuDrawInstance, GpuRenderMode};
+use crate::{AestraRenderSettings, TransparentOrderMode};
+use aestra_gpu::{GpuBlend, GpuParticle, GpuRenderGlobals, GpuRenderParams};
 use bevy::render::render_resource::{
     ShaderType,
     binding_types::uniform_buffer,
     encase::{StorageBuffer, UniformBuffer},
 };
 use bevy::render::{diagnostic::RecordDiagnostics, renderer::RenderQueue, view::ExtractedView};
+use bevy::{
+    app::SubApp,
+    prelude::*,
+    render::{
+        Render, RenderStartup, RenderSystems,
+        render_asset::RenderAssets,
+        render_resource::{
+            BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+            BufferInitDescriptor, BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
+            ComputePipelineDescriptor, PipelineCache, ShaderStages,
+            binding_types::{storage_buffer, storage_buffer_read_only},
+        },
+        renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems},
+        storage::GpuShaderBuffer,
+    },
+};
+use std::sync::Arc;
 
 pub(super) use super::draw_resources::PrepareAlphaSort as Prepare;
 #[derive(Resource)]
@@ -48,7 +67,9 @@ pub(super) fn install(app: &mut SubApp) {
         )
         .add_systems(
             RenderGraph,
-            sort.after(super::run_simulation)
+            sort.in_set(super::draw_resources::SortAlpha)
+                .after(super::draw_resources::SimulateEffects)
+                .after(RenderGraphSystems::Begin)
                 .before(RenderGraphSystems::Render),
         );
 }

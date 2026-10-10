@@ -22,7 +22,11 @@ function Hash([string]$Path) {
 }
 function Inputs {
     $paths = @('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml')
+    # A direct Cargo/format invocation may create a nested target directory.
+    # Generated compiler metadata is not source input; retain all actual fixture files.
+    $fixtureTarget = (Join-Path $PSScriptRoot 'patches-020/target') + [IO.Path]::DirectorySeparatorChar
     $paths += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'patches-020') -File -Recurse |
+        Where-Object { !$_.FullName.StartsWith($fixtureTarget, [StringComparison]::OrdinalIgnoreCase) } |
         ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
     $paths += 'benchmarks/bevy-upgrade/keyboard-020.rs', 'benchmarks/bevy-upgrade/run-020-patches.ps1'
     $paths += @(
@@ -41,8 +45,16 @@ function Inputs {
         'bevy/aestra-bevy-render/src/gpu/scene_depth_019.rs',
         'bevy/aestra-bevy-render/src/gpu/scene_depth_020.rs',
         'bevy/aestra-bevy-render/src/gpu/alpha_sort.rs',
+        'bevy/aestra-bevy-render/src/gpu/alpha_sort_tests.rs',
+        'bevy/aestra-bevy-render/src/gpu/alpha_sort.wgsl',
         'bevy/aestra-bevy-render/src/gpu/trail_compaction.rs',
         'bevy/aestra-bevy-render/src/gpu/trail_culling.rs',
+        'bevy/aestra-bevy-render/src/gpu/preparation_context.rs',
+        'bevy/aestra-bevy-render/src/gpu/preparation_timing.rs',
+        'bevy/aestra-bevy-render/src/gpu/simulation_timing.rs',
+        'bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs',
+        'bevy/aestra-bevy-render/src/gpu/mapped_readback_019.rs',
+        'bevy/aestra-bevy-render/src/gpu/mapped_readback_020.rs',
         'bevy/aestra-bevy-render/src/gpu/geometry_statistics.rs',
         'bevy/aestra-bevy-render/src/gpu/pipeline.rs',
         'bevy/aestra-bevy-render/src/material.rs',
@@ -235,6 +247,26 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Native queue schedule test failed ($LASTEXITCODE); retained $log" }
         if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
         if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Queue schedule binary changed during qualification.' }
+        $log = Join-Path $reports 'native-alpha-compute-schedule.log'
+        & $extractionBinary alpha_sort_native::native_020_alpha_compute_feeds_installed_queues_and_gates_stale_indices --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native alpha compute schedule test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Alpha compute schedule binary changed during qualification.' }
+        $log = Join-Path $reports 'native-alpha-sparse-pools.log'
+        & $extractionBinary alpha_sort::tests::native_alpha_sort_handles_large_sparse_pools_and_opposite_views --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native alpha sparse-pool test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Alpha sparse-pool binary changed during qualification.' }
+        $log = Join-Path $reports 'native-trail-compute-schedule.log'
+        & $extractionBinary trail_native::native_020_trail_producers_feed_installed_queues_and_fail_open --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native trail producer test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Trail producer binary changed during qualification.' }
+        $log = Join-Path $reports 'native-timestamp-transport.log'
+        & $extractionBinary trail_native::native_020_timestamp_transport_bounds_and_recycles_in_flight_batches --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native timestamp test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Timestamp binary changed during qualification.' }
     }
     $after = Inputs
     $after | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "$reports/inputs-after.json" -Encoding utf8NoBOM
