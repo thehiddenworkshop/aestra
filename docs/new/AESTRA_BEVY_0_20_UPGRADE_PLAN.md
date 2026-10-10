@@ -463,7 +463,30 @@ selected only at the coherent engine switch; the shipping engine remains 0.19.1.
   runner syntax and source/executable immutability gates pass.
 - Validation and evidence: [trail compute report](../../benchmarks/bevy-upgrade/trail-compute-2026-10-10.md).
 
-Remaining B20-1: simulation compute-to-render integration and pipelined rendering,
+### B20-1 thirteenth slice — Analytic simulation to installed queues
+
+- Extract production analytic pipeline setup, device gate, eight-binding layout,
+  bind-group preparation and particle reset/simulate/ribbon dispatch into a shared
+  module. Shipping keeps its observation ordering, timestamps and host scheduler;
+  the candidate imports this actual code instead of duplicating the GPU dispatch.
+- The native candidate starts with compiler-lowered authored inputs and zeroed
+  particle storage. Actual simulation generates particles, compacted alive slots,
+  counters and indirect commands before installed per-view sorting and drawing.
+- Check five times (empty/live/expired), CPU-reference positions/size/age, exact
+  counts/compaction, opposite-camera permutations, same-capacity source replacement,
+  257→513-slot growth and effect/draw retirement under `PlaybackOnly`.
+- All 13 analytic pipeline descriptors compile; trail/history entries are not
+  dispatched by this slice. The test supplies time, not the production host
+  scheduler: stateful/coupled simulation, actual trail-history scheduling and
+  async/pipelined rendering remain open. No production readback or GPU wait is added.
+- **132** candidate checks (13 explicit serial native tests) and **151** shipping
+  renderer lib regressions plus **5** hardware-required shipping conformance
+  checks pass, as do workspace/candidate strict Clippy,
+  formatting, runner syntax and source/executable immutability gates.
+- Validation and evidence: [analytic simulation report](../../benchmarks/bevy-upgrade/analytic-simulation-2026-10-10.md).
+
+Remaining B20-1: trail/stateful simulation and host scheduler integration, async
+readiness and pipelined rendering,
 B20-2's editor compatibility changes, coherent Bevy/wgpu/glam switch selecting the
 prepared shader/storage/extraction adapters, renderer/cache identity review, and
 native visual/performance parity. The shipping workspace still uses Bevy 0.19.1.
@@ -626,8 +649,8 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** qualify B20-1's actual simulation feeding the installed producers
-and queues, then pipelined/async readiness,
+**Next action:** qualify B20-1's actual trail-history/stateful simulation and host
+scheduler feeding the installed producers and queues, then pipelined/async readiness,
 alongside B20-2's required editor API changes.
 Activate the qualified storage adapter, WESL composition paths
 and graph imports as the engine graph switches coherently to 0.20. Select the

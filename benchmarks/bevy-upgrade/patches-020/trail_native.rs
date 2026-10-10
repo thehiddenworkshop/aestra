@@ -41,7 +41,7 @@ fn capture(submissions: Res<Submissions>, mut captured: ResMut<Captured>) {
     captured.0 = std::mem::take(&mut frame.draws);
 }
 
-fn read(app: &App, source: &Buffer, words: usize) -> Vec<u32> {
+pub(super) fn read(app: &App, source: &Buffer, words: usize) -> Vec<u32> {
     let world = app.sub_app(RenderApp).world();
     let device = world.resource::<RenderDevice>().wgpu_device();
     let queue = world.resource::<RenderQueue>();

@@ -98,6 +98,20 @@ pub(super) fn indirect_asset(world: &mut World, words: Vec<u32>) -> Handle<Shade
         .add(storage_buffers::indirect(words))
 }
 
+pub(super) fn update<T: ShaderType + encase::internal::WriteInto>(
+    world: &mut World,
+    handle: &Handle<ShaderBuffer>,
+    value: T,
+) {
+    storage_buffers::update(
+        &mut world
+            .resource_mut::<Assets<ShaderBuffer>>()
+            .get_mut(handle)
+            .unwrap(),
+        value,
+    );
+}
+
 pub(super) fn material(
     world: &mut World,
     program: &MaterialProgram,

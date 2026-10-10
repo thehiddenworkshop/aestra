@@ -41,6 +41,7 @@ mod ribbon_bounds;
 #[path = "gpu/scene_depth_019.rs"]
 mod scene_depth;
 mod shader_composition;
+mod simulation_pipeline;
 mod simulation_timing;
 mod sprite_culling;
 mod stage_inputs;
@@ -133,8 +134,9 @@ use std::{
     sync::Arc,
 };
 
-pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy_render/shaders/aestra_simulation.wesl";
+pub const WESL_SHADER_PATH: &str = simulation_pipeline::WESL_SHADER_PATH;
 pub use render::{WESL_MESH_WIREFRAME_SHADER_PATH, WESL_RENDER_SHADER_PATH};
+use simulation_pipeline::{GpuBindGroup, SimulationPipeline, init_pipeline, prepare_bind_groups};
 /// The unified stateful simulation module (hybrid roadmap M6): the death_integrate / spawn / present
 /// compute pipelines are built from this. Composed from the proven `aestra_gpu` WGSL primitives.
 pub const STATEFUL_SIMULATION_SHADER_PATH: &str =
@@ -363,9 +365,6 @@ pub(crate) struct MaterialShaderCache(BTreeMap<MaterialProgramFingerprint, Mater
 #[derive(Component)]
 pub(crate) struct GpuReadbackOwner(Entity);
 
-#[derive(Component)]
-struct GpuBindGroup(BindGroup);
-
 #[derive(Resource)]
 pub struct GpuFallbackTextures {
     pub white: Handle<Image>,
@@ -423,16 +422,6 @@ impl MaterialPreparationParams<'_> {
             &mut self.shader_cache,
         )
     }
-}
-
-#[derive(Resource)]
-struct SimulationPipeline {
-    layout: BindGroupLayoutDescriptor,
-    reset: CachedComputePipelineId,
-    simulate: CachedComputePipelineId,
-    link_ribbons: CachedComputePipelineId,
-    update_trails: CachedComputePipelineId,
-    paged_trails: [CachedComputePipelineId; 9],
 }
 
 /// The stateful GPU backend's compute pipelines (hybrid roadmap M6), built from the unified
@@ -2239,90 +2228,6 @@ pub(crate) fn receive_readback(
     );
 }
 
-fn init_pipeline(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    pipeline_cache: Res<PipelineCache>,
-    render_device: Res<RenderDevice>,
-    adapter: Res<RenderAdapter>,
-) {
-    let limits = render_device.limits();
-    if !adapter
-        .get_downlevel_capabilities()
-        .flags
-        .contains(DownlevelFlags::COMPUTE_SHADERS)
-        || limits.max_storage_buffers_per_shader_stage
-            < aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
-        || limits.max_bindings_per_bind_group < aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
-        || limits.max_compute_invocations_per_workgroup < WORKGROUP_SIZE
-        || limits.max_compute_workgroup_size_x < WORKGROUP_SIZE
-    {
-        return;
-    }
-    let layout = BindGroupLayoutDescriptor::new(
-        "aestra_gpu_simulation",
-        &BindGroupLayoutEntries::sequential(
-            ShaderStages::COMPUTE,
-            (
-                storage_buffer_read_only::<Vec<GpuEmitter>>(false),
-                storage_buffer::<Vec<GpuParticle>>(false),
-                storage_buffer::<Vec<u32>>(false),
-                storage_buffer::<Vec<u32>>(false),
-                storage_buffer::<Vec<u32>>(false),
-                storage_buffer::<Vec<u32>>(false),
-                storage_buffer_read_only::<GpuGlobals>(false),
-                storage_buffer::<Vec<u32>>(false),
-            ),
-        ),
-    );
-    let shader = asset_server.load(WESL_SHADER_PATH);
-    let reset = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-        label: Some("aestra reset counters".into()),
-        layout: vec![layout.clone()],
-        shader: shader.clone(),
-        entry_point: Some("reset".into()),
-        ..default()
-    });
-    let simulate = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-        label: Some("aestra simulate particles".into()),
-        layout: vec![layout.clone()],
-        shader: shader.clone(),
-        entry_point: Some("simulate".into()),
-        ..default()
-    });
-    let link_ribbons = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-        label: Some("aestra link ribbons".into()),
-        layout: vec![layout.clone()],
-        shader: shader.clone(),
-        entry_point: Some("link_ribbons".into()),
-        ..default()
-    });
-    let update_trails = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-        label: Some("aestra record trail history".into()),
-        layout: vec![layout.clone()],
-        shader: shader.clone(),
-        entry_point: Some("update_trails".into()),
-        ..default()
-    });
-    let paged_trails = aestra_gpu::PAGED_TRAIL_ENTRY_POINTS.map(|entry| {
-        pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-            label: Some(format!("aestra {entry}").into()),
-            layout: vec![layout.clone()],
-            shader: shader.clone(),
-            entry_point: Some(entry.into()),
-            ..default()
-        })
-    });
-    commands.insert_resource(SimulationPipeline {
-        layout,
-        reset,
-        simulate,
-        link_ribbons,
-        update_trails,
-        paged_trails,
-    });
-}
-
 /// Builds the stateful backend's compute pipelines (hybrid roadmap M6) from the unified
 /// `aestra_gpu::stateful_simulation_wgsl` module. The ten-binding layout is shared across the three
 /// entry points (each uses a subset). Gated on the same device limits as the analytic pipeline plus
@@ -2385,61 +2290,6 @@ fn init_stateful_pipeline(
         present: pipeline("aestra stateful present", "present"),
         order_present: pipeline("aestra stateful presentation order", "order_present"),
     });
-}
-
-fn prepare_bind_groups(
-    mut commands: Commands,
-    pipeline: Option<Res<SimulationPipeline>>,
-    render_device: Res<RenderDevice>,
-    pipeline_cache: Res<PipelineCache>,
-    buffers: Res<RenderAssets<GpuShaderBuffer>>,
-    effects: Query<(Entity, &GpuEffectBuffers)>,
-) {
-    let _span = tracing::info_span!("aestra::gpu::bind_groups").entered();
-    let Some(pipeline) = pipeline else {
-        return;
-    };
-    for (entity, effect) in &effects {
-        let Some(emitters) = buffers.get(&effect.emitters) else {
-            continue;
-        };
-        let Some(particles) = buffers.get(&effect.particles) else {
-            continue;
-        };
-        let Some(alive) = buffers.get(&effect.alive) else {
-            continue;
-        };
-        let Some(dead) = buffers.get(&effect.dead) else {
-            continue;
-        };
-        let Some(counters) = buffers.get(&effect.counters) else {
-            continue;
-        };
-        let Some(indirect) = buffers.get(&effect.indirect) else {
-            continue;
-        };
-        let Some(globals) = buffers.get(&effect.globals) else {
-            continue;
-        };
-        let Some(aux) = buffers.get(&effect.aux) else {
-            continue;
-        };
-        let bind_group = render_device.create_bind_group(
-            Some("aestra_gpu_simulation"),
-            &pipeline_cache.get_bind_group_layout(&pipeline.layout),
-            &BindGroupEntries::sequential((
-                emitters.buffer.as_entire_buffer_binding(),
-                particles.buffer.as_entire_buffer_binding(),
-                alive.buffer.as_entire_buffer_binding(),
-                dead.buffer.as_entire_buffer_binding(),
-                counters.buffer.as_entire_buffer_binding(),
-                indirect.buffer.as_entire_buffer_binding(),
-                globals.buffer.as_entire_buffer_binding(),
-                aux.buffer.as_entire_buffer_binding(),
-            )),
-        );
-        commands.entity(entity).insert(GpuBindGroup(bind_group));
-    }
 }
 
 type TrailHistories = BTreeMap<
@@ -4269,34 +4119,24 @@ fn run_simulation(
                     "aestra::gpu::trail_particles",
                 )
             });
-            let mut pass =
-                render_context
-                    .command_encoder()
-                    .begin_compute_pass(&ComputePassDescriptor {
-                        label: Some("aestra simulation"),
-                        timestamp_writes: timing_batch.as_ref().zip(timing_index).and_then(
-                            |(batch, index)| {
-                                batch.writes(
-                                    index,
-                                    observation == 0,
-                                    observation + 1 == observation_count && !effect.has_trails,
-                                )
-                            },
-                        ),
-                    });
-            pass.set_bind_group(0, &bind_group.0, &[]);
-            pass.set_pipeline(reset);
-            pass.dispatch_workgroups(1, 1, 1);
-            pass.set_pipeline(simulate);
-            pass.dispatch_workgroups(effect.workgroups, 1, 1);
-            if effect.has_ribbons
-                && !effect.has_trails
-                && let Some(link_ribbons) = link_ribbons
-            {
-                pass.set_pipeline(link_ribbons);
-                pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
-            }
-            drop(pass);
+            simulation_pipeline::record_particles(
+                render_context.command_encoder(),
+                bind_group,
+                effect,
+                reset,
+                simulate,
+                link_ribbons,
+                timing_batch
+                    .as_ref()
+                    .zip(timing_index)
+                    .and_then(|(batch, index)| {
+                        batch.writes(
+                            index,
+                            observation == 0,
+                            observation + 1 == observation_count && !effect.has_trails,
+                        )
+                    }),
+            );
             if let Some(span) = particle_span {
                 span.end(render_context.command_encoder());
             }

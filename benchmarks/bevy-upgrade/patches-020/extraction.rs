@@ -69,6 +69,9 @@ mod pipeline_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/scene_depth_020.rs"]
 mod scene_depth;
 mod shader_support;
+mod simulation_native;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/simulation_pipeline.rs"]
+mod simulation_pipeline;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/sprite_culling.rs"]
 mod sprite_culling;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/stage_inputs.rs"]

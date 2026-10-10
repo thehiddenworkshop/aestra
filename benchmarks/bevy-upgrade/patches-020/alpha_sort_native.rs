@@ -24,13 +24,13 @@ fn dispatch_enabled(gate: Res<DispatchEnabled>) -> bool {
 }
 
 #[derive(Resource)]
-struct Observer {
+pub(super) struct Observer {
     pipeline: wgpu::ComputePipeline,
     outputs: BTreeMap<Entity, (Buffer, Buffer)>,
-    draws: usize,
+    pub(super) draws: usize,
 }
 
-fn observe(
+pub(super) fn observe(
     mut context: RenderContext,
     device: Res<RenderDevice>,
     state: Res<AlphaSort>,
@@ -86,13 +86,13 @@ fn observe(
     }
 }
 
-fn capture(submissions: Res<Submissions>, mut observer: ResMut<Observer>) {
+pub(super) fn capture(submissions: Res<Submissions>, mut observer: ResMut<Observer>) {
     let mut frame = submissions.0.lock().unwrap();
     assert!(!frame.overflow);
     observer.draws = frame.draws.drain(..).count();
 }
 
-fn settle(app: &mut App, pairs: usize, dispatched: bool, draws: usize) {
+pub(super) fn settle(app: &mut App, pairs: usize, dispatched: bool, draws: usize) {
     for _ in 0..160 {
         app.update();
         let world = app.sub_app(RenderApp).world();
@@ -114,7 +114,7 @@ fn settle(app: &mut App, pairs: usize, dispatched: bool, draws: usize) {
     );
 }
 
-fn permutation(app: &App, camera: Entity) -> (Buffer, Vec<u32>) {
+pub(super) fn permutation(app: &App, camera: Entity) -> (Buffer, Vec<u32>) {
     let world = app.sub_app(RenderApp).world();
     let device = world.resource::<RenderDevice>().wgpu_device();
     let queue = world.resource::<bevy::render::renderer::RenderQueue>();
@@ -154,6 +154,38 @@ fn permutation(app: &App, camera: Entity) -> (Buffer, Vec<u32>) {
     drop(mapped);
     readback.unmap();
     (source.clone(), indices)
+}
+
+pub(super) fn install_observer(world: &mut World) {
+    let device = world.resource::<RenderDevice>().clone();
+    let module = device
+        .wgpu_device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(
+                "@group(0) @binding(0) var<storage, read> source: array<u32>;
+            @group(0) @binding(1) var<storage, read_write> output: array<u32>;
+            @compute @workgroup_size(64) fn observe(@builtin(global_invocation_id) id: vec3<u32>) {
+                if id.x < arrayLength(&output) { output[id.x] = source[id.x]; }
+            }"
+                .into(),
+            ),
+        });
+    let pipeline = device
+        .wgpu_device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: None,
+            module: &module,
+            entry_point: Some("observe"),
+            compilation_options: default(),
+            cache: None,
+        });
+    world.insert_resource(Observer {
+        pipeline,
+        outputs: default(),
+        draws: 0,
+    });
 }
 
 fn particles(capacity: u32) -> Vec<GpuParticle> {
@@ -261,34 +293,7 @@ fn native_020_alpha_compute_feeds_installed_queues_and_gates_stale_indices() {
     let scope = device
         .wgpu_device()
         .push_error_scope(wgpu::ErrorFilter::Validation);
-    let module = device
-        .wgpu_device()
-        .create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(
-                "@group(0) @binding(0) var<storage, read> source: array<u32>;
-            @group(0) @binding(1) var<storage, read_write> output: array<u32>;
-            @compute @workgroup_size(64) fn observe(@builtin(global_invocation_id) id: vec3<u32>) {
-                if id.x < arrayLength(&output) { output[id.x] = source[id.x]; }
-            }"
-                .into(),
-            ),
-        });
-    let pipeline = device
-        .wgpu_device()
-        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: None,
-            module: &module,
-            entry_point: Some("observe"),
-            compilation_options: default(),
-            cache: None,
-        });
-    world.insert_resource(Observer {
-        pipeline,
-        outputs: default(),
-        draws: 0,
-    });
+    install_observer(world);
     // Settings are extracted from the actual main-world resource each frame.
     app.world_mut()
         .resource_mut::<crate::AestraRenderSettings>()

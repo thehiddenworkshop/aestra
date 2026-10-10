@@ -52,6 +52,7 @@ function Inputs {
         'bevy/aestra-bevy-render/src/gpu/preparation_context.rs',
         'bevy/aestra-bevy-render/src/gpu/preparation_timing.rs',
         'bevy/aestra-bevy-render/src/gpu/simulation_timing.rs',
+        'bevy/aestra-bevy-render/src/gpu/simulation_pipeline.rs',
         'bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs',
         'bevy/aestra-bevy-render/src/gpu/mapped_readback_019.rs',
         'bevy/aestra-bevy-render/src/gpu/mapped_readback_020.rs',
@@ -262,6 +263,11 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Native trail producer test failed ($LASTEXITCODE); retained $log" }
         if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
         if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Trail producer binary changed during qualification.' }
+        $log = Join-Path $reports 'native-analytic-simulation.log'
+        & $extractionBinary simulation_native::native_020_analytic_simulation_feeds_alpha_and_installed_queues --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Native analytic simulation test failed ($LASTEXITCODE); retained $log" }
+        if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+        if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Analytic simulation binary changed during qualification.' }
         $log = Join-Path $reports 'native-timestamp-transport.log'
         & $extractionBinary trail_native::native_020_timestamp_transport_bounds_and_recycles_in_flight_batches --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "Native timestamp test failed ($LASTEXITCODE); retained $log" }
