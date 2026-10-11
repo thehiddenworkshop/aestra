@@ -200,7 +200,7 @@ pub(super) fn inputs(
         particle_outputs: vec![],
         output_suppress_through: 0,
         host_events: default(),
-        physics: Arc::from([]),
+        physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
         stateful_only: false,
     }
 }

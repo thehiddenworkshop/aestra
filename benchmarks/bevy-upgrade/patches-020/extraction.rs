@@ -39,6 +39,12 @@ mod draw_resources;
 mod mapped_readback;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/preparation_context.rs"]
 mod preparation_context;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/presentation_readiness.rs"]
+mod presentation_readiness;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/simulation_graph.rs"]
+mod simulation_graph;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/stage_coupling.rs"]
+mod stage_coupling;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs"]
 mod timestamp_transport;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/trail_compaction.rs"]
@@ -120,6 +126,7 @@ mod stage_runtimes;
 pub use host_playback::{AestraChoreographyEvent, AestraSet, EffectPlayer};
 pub use output_context::{AestraOutputEvent, EffectOutputContext};
 mod host_stage_native;
+mod outer_graph_native;
 mod stage_outputs_native;
 mod stateful_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs"]

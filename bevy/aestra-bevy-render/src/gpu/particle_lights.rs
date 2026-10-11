@@ -89,11 +89,7 @@ struct GlobalEntry {
     groups: Vec<BindGroup>,
 }
 
-#[derive(Resource, Default)]
-pub(super) struct PresentedOwners {
-    pub enabled: bool,
-    pub owners: std::collections::BTreeSet<Entity>,
-}
+use super::presentation_readiness::PresentedOwners;
 impl GlobalEntry {
     fn selected(&self) -> &Buffer {
         &self.scratch[self.work.merges.len() % 2]

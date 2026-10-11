@@ -103,6 +103,7 @@ fn simulate(
             None,
             None,
         )
+        .work
         .expect("linked/routed effects use the coupled scheduler");
         recorded.max_ticks = recorded.max_ticks.max(ticks);
         assert!(ticks <= crate::catchup_pacing::stateful_catchup_budget(effect.seek_quality));
@@ -297,9 +298,32 @@ fn step(app: &mut App, owner: Entity, effect: &mut GpuEffectBuffers, tick: u32) 
     panic!("stateful scheduling did not converge to tick {tick}");
 }
 
+fn observe_outer(
+    ready: Res<crate::presentation_readiness::PresentedOwners>,
+    effects: Query<(Entity, &GpuEffectBuffers)>,
+    mut recorded: ResMut<Dispatch>,
+) {
+    recorded.recorded_time = effects.iter().find_map(|(entity, effect)| {
+        ready
+            .owners
+            .contains(&entity)
+            .then_some(effect.simulation_time)
+    });
+}
+
 #[test]
 #[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
 fn native_020_coupled_routes_feed_alpha_and_installed_queues() {
+    run_coupled(false);
+}
+
+#[test]
+#[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
+fn native_020_outer_graph_coupled_routes_reach_draws_and_profiling() {
+    run_coupled(true);
+}
+
+fn run_coupled(outer_graph: bool) {
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -309,6 +333,13 @@ fn native_020_coupled_routes_feed_alpha_and_installed_queues() {
                 ..default()
             })
             .set(RenderPlugin {
+                render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(
+                    bevy::render::settings::WgpuSettings {
+                        backends: Some(wgpu::Backends::VULKAN),
+                        features: wgpu::Features::TIMESTAMP_QUERY,
+                        ..default()
+                    },
+                )),
                 synchronous_pipeline_compilation: true,
                 ..default()
             }),
@@ -332,18 +363,28 @@ fn native_020_coupled_routes_feed_alpha_and_installed_queues() {
         )
         .add_systems(
             RenderGraph,
-            simulate
-                .in_set(SimulateEffects)
-                .after(RenderGraphSystems::Begin)
-                .before(RenderGraphSystems::Render),
-        )
-        .add_systems(
-            RenderGraph,
             observer::observe
                 .after(SortAlpha)
                 .before(RenderGraphSystems::Render),
         )
         .add_systems(Render, observer::capture.in_set(RenderSystems::Cleanup));
+    if outer_graph {
+        render.add_systems(
+            RenderGraph,
+            observe_outer
+                .after(SimulateEffects)
+                .before(RenderGraphSystems::Render),
+        );
+        crate::outer_graph_native::install(&mut app);
+    } else {
+        render.add_systems(
+            RenderGraph,
+            simulate
+                .in_set(SimulateEffects)
+                .after(RenderGraphSystems::Begin)
+                .before(RenderGraphSystems::Render),
+        );
+    }
     for (path, source) in [
         (
             "aestra_bevy_render/shaders/aestra_stateful_simulation.wgsl",
@@ -570,13 +611,25 @@ fn native_020_coupled_routes_feed_alpha_and_installed_queues() {
     // A long jump is split into bounded render frames, not a GPU wait or CPU simulation.
     step(&mut app, owner, &mut effect, 120);
     snapshot(&app, &effect);
-    assert!(
-        app.sub_app(RenderApp)
-            .world()
-            .resource::<Dispatch>()
-            .max_ticks
-            > 1
-    );
+    if outer_graph {
+        crate::outer_graph_native::assert_timings(&app);
+        println!("outer_graph=true coupled_readiness=true simulation_timestamps=true");
+        assert!(
+            app.sub_app(RenderApp)
+                .world()
+                .resource::<crate::outer_graph_native::TimingEvidence>()
+                .max_ticks
+                > 1
+        );
+    } else {
+        assert!(
+            app.sub_app(RenderApp)
+                .world()
+                .resource::<Dispatch>()
+                .max_ticks
+                > 1
+        );
+    }
     app.world_mut().entity_mut(draw).despawn();
     app.world_mut().entity_mut(owner).despawn();
     observer::settle(&mut app, 0, false, 0);

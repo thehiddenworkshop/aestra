@@ -749,6 +749,51 @@ selected only at the coherent engine switch; the shipping engine remains 0.19.1.
   Shipping host **63**, renderer **157** and hardware conformance **40** tests pass.
 - Implementation and validation: [async/pipelined scheduling report](../../benchmarks/bevy-upgrade/async-pipelined-scheduling-2026-10-10.md).
 
+### B20-1 twenty-fifth slice — Production outer simulation graph
+
+- Extract the actual shipping outer simulation system into a shared module,
+  together with canonical particle world upload, domain/event coupling and
+  this-frame presentation readiness. Compile that implementation on both versions
+  rather than reproducing its orchestration in another candidate dispatcher.
+- Add three serial native gates: independent persistent particles and linked
+  event generations through the production graph into real alpha/draw consumers
+  and hardware simulation timestamps; delayed shader recovery through that same
+  graph with genuine asynchronous compilation. Preserve all previous gates.
+- Fix successful independent presentation being mistaken for unavailable work:
+  distinguish readiness from optional shared lockstep tick/checkpoint counters.
+  Keep absent counters unknown and waiting trail dispatch unready; no new replay
+  requirement, production readback/wait or authored API change.
+- The entire system compiles, but this slice executes its independent/linked
+  stateful branches, not its full mixed/analytic/joint-fluid-history combinations
+  or complete plugin. Particle-light eligibility is tested, not full selection.
+- Full source-frozen qualification: **183 checks**, **27 native gates** and
+  **424 unchanged input hashes**. Shipping host **63**, renderer **157** and
+  hardware conformance **40** tests,
+  all-target workspace check, strict workspace/candidate Clippy, formatting,
+  PowerShell AST and whitespace validation pass.
+- Implementation and validation: [outer simulation graph report](../../benchmarks/bevy-upgrade/outer-simulation-graph-2026-10-11.md).
+
+### B20-1 twenty-sixth slice — Production outer fluid and joint history
+
+- Run the shared outer graph and canonical stage preparer with the real fluid
+  extension: field-follow particles, inline/paged trails and domain-born particles
+  into installed compaction/culling/draw queues and real output rings. Keep all
+  existing narrow-dispatch gates as comparisons.
+- Check playback-only retention, optional replay, exact joint buffer restoration
+  and an actual ten-tick/ten-observation timestamp window for tick 60 → 70.
+  Pacing uses the main-world setting and normal extraction; GPU waits are test-only.
+- Fix missing required domains/resources silently falling back to link-only
+  coupling. Wait before clearing counters or consuming ticks/births; cover missing
+  extracted inputs, unavailable timelines/emission resources, then exact recovery.
+- Full presentation installers, outer analytic/mixed combinations and combined
+  pipelined host scheduling remain open; no shipping dependency switch or visual
+  approval is implied.
+- Source-frozen qualification: **185 checks / 29 native gates**, **424 unchanged
+  input hashes** and five verified executables. Shipping host **63**, renderer
+  **157** and hardware-required conformance **40** pass; workspace check, strict
+  workspace/candidate Clippy, formatting, PowerShell AST and whitespace pass.
+- Implementation and validation: [outer fluid/history report](../../benchmarks/bevy-upgrade/outer-fluid-history-2026-10-11.md).
+
 Remaining B20-1: full-plugin/outer-graph integration (including combined async
 readiness across coupled/volume/profiling branches),
 B20-2's editor compatibility changes, coherent Bevy/wgpu/glam switch selecting the
@@ -913,9 +958,9 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** assemble and qualify B20-1's full production outer graph and
-plugin integration beyond the accepted particle-readiness and pipelined
-root/project/live-binding gates,
+**Next action:** integrate the production extension-stage/volume/light installers
+with the accepted shared outer graph, then combine
+it with the accepted pipelined root/project/live-binding scheduling,
 alongside B20-2's required editor API changes.
 Activate the qualified storage adapter, WESL composition paths
 and graph imports as the engine graph switches coherently to 0.20. Select the

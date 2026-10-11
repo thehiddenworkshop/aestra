@@ -57,6 +57,9 @@ function Inputs {
         'bevy/aestra-bevy-render/src/gpu/preparation_timing.rs',
         'bevy/aestra-bevy-render/src/gpu/simulation_timing.rs',
         'bevy/aestra-bevy-render/src/gpu/simulation_pipeline.rs',
+        'bevy/aestra-bevy-render/src/gpu/simulation_graph.rs',
+        'bevy/aestra-bevy-render/src/gpu/stage_coupling.rs',
+        'bevy/aestra-bevy-render/src/gpu/presentation_readiness.rs',
         'bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs',
         'bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs',
         'bevy/aestra-bevy-render/src/execution.rs',
@@ -336,7 +339,20 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Native timestamp test failed ($LASTEXITCODE); retained $log" }
         if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
         if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Timestamp binary changed during qualification.' }
-        # Keep the local synchronous gates unchanged. Only these two explicit
+        foreach ($test in @(
+            'stateful_native::native_020_outer_graph_stateful_particles_reach_draws_and_profiling',
+            'coupled_native::native_020_outer_graph_coupled_routes_reach_draws_and_profiling',
+            'coupled_trails_native::native_020_outer_graph_fluid_and_joint_trails_restore_and_present',
+            'coupled_trails_native::native_020_outer_graph_domain_births_reach_trails_and_output_rings'
+        )) {
+            $log = Join-Path $reports (($test -replace '::', '-') + '.log')
+            & $extractionBinary $test --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "$test failed ($LASTEXITCODE); retained $log" }
+            if (Select-String -LiteralPath $log -Pattern '\bERROR\b|panicked at' -Quiet) { throw "Native errors in $log" }
+            if (!(Select-String -LiteralPath $log -Pattern 'test result: ok\. 1 passed' -Quiet)) { throw "Native gate did not execute exactly one test: $log" }
+            if ((Hash $extractionBinary) -ne $extractionBinaryBefore) { throw 'Outer-graph binary changed during qualification.' }
+        }
+        # Keep the local synchronous gates unchanged. Only these explicit
         # gates enable multithreaded shader compilation / real render pipelining.
         RunCargo 'async-native-build' (@('test') + $common + @('--test', 'extraction', '--features', 'async-qualification', '--no-run', '--message-format=json'))
         $artifacts = Get-Content -LiteralPath "$reports/async-native-build.log" | ForEach-Object {
@@ -348,6 +364,7 @@ try {
         $asyncBinaryBefore = Hash $asyncBinary
         foreach ($test in @(
             'stateful_native::native_020_delayed_shader_recovers_stateful_simulation_and_draws',
+            'stateful_native::native_020_outer_graph_recovers_delayed_stateful_readiness',
             'host_stage_native::native_020_pipelined_project_outputs_survive_restart_seek_and_teardown'
         )) {
             $log = Join-Path $reports (($test -replace '::', '-') + '.log')

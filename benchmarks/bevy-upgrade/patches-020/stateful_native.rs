@@ -129,6 +129,40 @@ fn simulate(
     }
 }
 
+// Observe the real producer's readiness marker; never dispatch from this system.
+fn observe_outer(
+    cache: Res<PipelineCache>,
+    pipeline: Option<Res<StatefulSimulationPipeline>>,
+    ready: Res<crate::presentation_readiness::PresentedOwners>,
+    effects: Query<(Entity, &GpuEffectBuffers)>,
+    mut recorded: ResMut<Dispatch>,
+) {
+    recorded.recorded_time = effects.iter().find_map(|(entity, effect)| {
+        ready
+            .owners
+            .contains(&entity)
+            .then_some(effect.simulation_time)
+    });
+    if recorded.recorded_time.is_none() {
+        recorded.pending_frames += 1;
+    }
+    if let Some(pipeline) = pipeline {
+        recorded.asynchronous_creation |= [
+            pipeline.death_integrate,
+            pipeline.spawn,
+            pipeline.present,
+            pipeline.order_present,
+        ]
+        .iter()
+        .any(|id| {
+            matches!(
+                cache.get_compute_pipeline_state(*id),
+                CachedPipelineState::Creating(_)
+            )
+        });
+    }
+}
+
 fn instance(capacity: u32, seed: u64, burst: bool) -> aestra_runtime::EffectInstance {
     use aestra_core::*;
     let mut effect = EffectAsset::new("Stateful integration", 10.);
@@ -277,7 +311,24 @@ fn step(app: &mut App, owner: Entity, effect: &mut GpuEffectBuffers, tick: u32) 
         }
         std::thread::yield_now();
     }
-    panic!("stateful scheduling did not converge to tick {tick}");
+    let world = app.sub_app_mut(RenderApp).world_mut();
+    let effects = world
+        .query::<(
+            Entity,
+            Option<&crate::extraction::MainEntity>,
+            Option<&crate::simulation_pipeline::GpuBindGroup>,
+        )>()
+        .iter(world)
+        .filter(|(e, _, _)| world.get::<GpuEffectBuffers>(*e).is_some())
+        .map(|(e, main, group)| (e, main.is_some(), group.is_some()))
+        .collect::<Vec<_>>();
+    panic!(
+        "stateful scheduling did not converge to tick {tick}; effects={effects:?}, world_buffer={}, ready={:?}",
+        world.contains_resource::<crate::stage_coupling::ParticleWorldBuffer>(),
+        world
+            .get_resource::<crate::presentation_readiness::PresentedOwners>()
+            .map(|r| &r.owners)
+    );
 }
 
 fn verify(
@@ -331,7 +382,14 @@ fn verify(
             &permutation[..order.len()],
             &order.iter().map(|v| v.0).collect::<Vec<_>>()
         );
-        assert!(permutation[order.len()..].iter().all(|v| *v == u32::MAX));
+        assert!(
+            permutation[order.len()..].iter().all(|v| *v == u32::MAX),
+            "time={} live={} view={} tail={:?}",
+            effect.simulation_time,
+            order.len(),
+            index,
+            &permutation[order.len()..]
+        );
     }
     let states = world
         .resource::<StatefulStates>()
@@ -351,17 +409,30 @@ fn verify(
 #[test]
 #[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
 fn native_020_stateful_simulation_feeds_alpha_and_installed_queues() {
-    run_stateful(true);
+    run_stateful(true, false);
 }
 
 #[cfg(feature = "async-qualification")]
 #[test]
 #[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
 fn native_020_delayed_shader_recovers_stateful_simulation_and_draws() {
-    run_stateful(false);
+    run_stateful(false, false);
 }
 
-fn run_stateful(synchronous: bool) {
+#[test]
+#[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
+fn native_020_outer_graph_stateful_particles_reach_draws_and_profiling() {
+    run_stateful(true, true);
+}
+
+#[cfg(feature = "async-qualification")]
+#[test]
+#[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
+fn native_020_outer_graph_recovers_delayed_stateful_readiness() {
+    run_stateful(false, true);
+}
+
+fn run_stateful(synchronous: bool, outer_graph: bool) {
     let mut app = App::new();
     let plugins = DefaultPlugins
         .set(bevy::window::WindowPlugin {
@@ -370,6 +441,13 @@ fn run_stateful(synchronous: bool) {
             ..default()
         })
         .set(RenderPlugin {
+            render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(
+                bevy::render::settings::WgpuSettings {
+                    backends: Some(wgpu::Backends::VULKAN),
+                    features: wgpu::Features::TIMESTAMP_QUERY,
+                    ..default()
+                },
+            )),
             synchronous_pipeline_compilation: synchronous,
             ..default()
         });
@@ -397,18 +475,28 @@ fn run_stateful(synchronous: bool) {
         )
         .add_systems(
             RenderGraph,
-            simulate
-                .in_set(SimulateEffects)
-                .after(RenderGraphSystems::Begin)
-                .before(RenderGraphSystems::Render),
-        )
-        .add_systems(
-            RenderGraph,
             observer::observe
                 .after(SortAlpha)
                 .before(RenderGraphSystems::Render),
         )
         .add_systems(Render, observer::capture.in_set(RenderSystems::Cleanup));
+    if outer_graph {
+        render.add_systems(
+            RenderGraph,
+            observe_outer
+                .after(SimulateEffects)
+                .before(RenderGraphSystems::Render),
+        );
+        crate::outer_graph_native::install(&mut app);
+    } else {
+        render.add_systems(
+            RenderGraph,
+            simulate
+                .in_set(SimulateEffects)
+                .after(RenderGraphSystems::Begin)
+                .before(RenderGraphSystems::Render),
+        );
+    }
     for (path, source) in [
         (
             "aestra_bevy_render/shaders/aestra_stateful_simulation.wgsl",
@@ -584,7 +672,12 @@ fn run_stateful(synchronous: bool) {
             timeout: Some(std::time::Duration::from_secs(60)),
         })
         .unwrap();
-    assert!(pollster::block_on(scope.pop()).is_none());
+    let error = pollster::block_on(scope.pop());
+    assert!(error.is_none(), "simulation graph validation: {error:?}");
+    if outer_graph {
+        crate::outer_graph_native::assert_timings(&app);
+        println!("outer_graph=true independent_readiness=true simulation_timestamps=true");
+    }
     println!(
         "stateful_integration ticks=0,3,20,44,80,120 capacities=129,257 seed_invalidation=true opposite_views=2 cpu_positions=true death_reuse=true stop_tick=70 bounded_preview=true burst_once=true repeated_time=true playback_only_no_checkpoints=true teardown=true test_only_readback=true coupled_host_scheduler_qualified=false"
     );

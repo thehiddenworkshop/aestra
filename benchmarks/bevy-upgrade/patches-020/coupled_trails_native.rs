@@ -45,6 +45,62 @@ struct Couplers {
     gatherer: crate::execution::EventGatherPipeline,
     domains: Vec<Option<crate::execution::StageTimeline>>,
 }
+#[derive(Resource)]
+struct OuterGraph;
+#[derive(Resource)]
+struct DomainSource(crate::PresentedEffect);
+
+fn domain(app: &App) -> &crate::execution::StageTimeline {
+    let world = app.sub_app(RenderApp).world();
+    if app.world().contains_resource::<OuterGraph>() {
+        world
+            .resource::<crate::stage_runtimes::StageRuntimes>()
+            .0
+            .values()
+            .next()
+            .unwrap()
+            .timelines[0]
+            .as_ref()
+            .unwrap()
+    } else {
+        world.resource::<Couplers>().domains[0].as_ref().unwrap()
+    }
+}
+
+// Observe production readiness and timeline state only; never dispatch from this system.
+fn observe_outer(
+    ready: Res<crate::presentation_readiness::PresentedOwners>,
+    states: Res<StatefulStates>,
+    domains: Res<crate::stage_runtimes::StageRuntimes>,
+    effects: Query<(Entity, &GpuEffectBuffers)>,
+    mut recorded: ResMut<Recorded>,
+) {
+    recorded.tick = None;
+    for (entity, effect) in &effects {
+        if !ready.owners.contains(&entity) {
+            continue;
+        }
+        let persistent = &states.0[&entity];
+        let tick = persistent[0].last_tick;
+        let timelines = &domains.0[&entity].timelines;
+        assert!(
+            timelines
+                .iter()
+                .flatten()
+                .all(|domain| domain.last_tick() == tick)
+        );
+        if effect.history_policy == PlaybackHistoryPolicy::PlaybackOnly {
+            assert!(persistent.iter().all(|state| state.checkpoints.is_empty()));
+            assert!(
+                timelines
+                    .iter()
+                    .flatten()
+                    .all(|domain| domain.checkpoint_bytes() == 0)
+            );
+        }
+        recorded.tick = Some(tick);
+    }
+}
 fn simulate(
     mut context: RenderContext,
     cache: Res<PipelineCache>,
@@ -200,6 +256,7 @@ fn simulate(
             None,
             Some(&mut observer),
         )
+        .work
         .unwrap();
         assert!(ticks <= crate::catchup_pacing::stateful_catchup_budget(effect.seek_quality));
         let tick = persistent[0].last_tick;
@@ -379,6 +436,26 @@ fn upload_globals(
 }
 fn step(app: &mut App, owner: Entity, effect: &mut GpuEffectBuffers, tick: u32) {
     effect.simulation_time = tick as f32 * STATEFUL_TICK_DT + 0.0001;
+    if app.world().contains_resource::<OuterGraph>() {
+        let mut stages = crate::stage_inputs::ExtractedStages::from_presented(
+            &app.world().resource::<DomainSource>().0,
+            aestra_runtime::IDENTITY_AFFINE,
+            None,
+            vec![],
+            None,
+        );
+        stages.time = effect.simulation_time;
+        stages.quality = effect.seek_quality;
+        stages.seed = effect.stateful_dispatch[0].seed as u32;
+        stages.history_policy = effect.history_policy;
+        stages.history_epoch = effect.history_epoch;
+        stages.history_epoch_start_time = if tick == 0 {
+            0.
+        } else {
+            effect.simulation_time
+        };
+        app.world_mut().entity_mut(owner).insert(stages);
+    }
     app.world_mut().entity_mut(owner).insert(effect.clone());
     for _ in 0..180 {
         app.update();
@@ -393,6 +470,62 @@ fn step(app: &mut App, owner: Entity, effect: &mut GpuEffectBuffers, tick: u32) 
         std::thread::yield_now();
     }
     panic!("coupled fluid/trail schedule did not converge to {tick}");
+}
+fn begin_restore_evidence(app: &mut App) {
+    if app.world().contains_resource::<OuterGraph>() {
+        // Test-only synchronization: recycle the bounded timing slots before
+        // requiring a particular window. Production intentionally drops samples
+        // under pressure and retains only the latest completed snapshot.
+        wait_for_gpu(app);
+        app.sub_app_mut(RenderApp)
+            .world_mut()
+            .resource_mut::<crate::outer_graph_native::TimingEvidence>()
+            .windows
+            .clear();
+    }
+}
+fn assert_joint_restore(app: &mut App) {
+    if !app.world().contains_resource::<OuterGraph>() {
+        return;
+    }
+    wait_for_gpu(app);
+    for _ in 0..180 {
+        app.update();
+        let evidence = app
+            .sub_app(RenderApp)
+            .world()
+            .resource::<crate::outer_graph_native::TimingEvidence>();
+        if evidence.windows.iter().any(|(time, work)| {
+            aestra_runtime::trace_tick(*time) == 70
+                && work.fixed_ticks == Some(10)
+                && work.trail_observations == 10
+                && work.checkpoint_capture_bytes == Some(0)
+        }) {
+            return;
+        }
+        std::thread::yield_now();
+    }
+    panic!(
+        "joint tick-60 restore must replay exactly ten ticks/observations, not restart from zero: {:?}",
+        app.sub_app(RenderApp)
+            .world()
+            .resource::<crate::outer_graph_native::TimingEvidence>()
+            .windows
+            .iter()
+            .filter(|(_, work)| work.fixed_ticks.unwrap_or(0) > 0)
+            .collect::<Vec<_>>()
+    );
+}
+fn wait_for_gpu(app: &App) {
+    app.sub_app(RenderApp)
+        .world()
+        .resource::<RenderDevice>()
+        .wgpu_device()
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(std::time::Duration::from_secs(60)),
+        })
+        .unwrap();
 }
 #[derive(PartialEq)]
 struct Snapshot {
@@ -474,8 +607,7 @@ fn snapshot(app: &App, effect: &GpuEffectBuffers, near: Entity) -> Snapshot {
     consumed.sort_unstable();
     produced.sort_unstable();
     assert_eq!(consumed, produced);
-    let couplers = world.resource::<Couplers>();
-    let domain = couplers.domains[0].as_ref().unwrap();
+    let domain = domain(app);
     let read_field = |name| {
         let raw = domain.executor().buffer(name).unwrap();
         read(app, raw, raw.size() as usize / 4)
@@ -488,7 +620,10 @@ fn snapshot(app: &App, effect: &GpuEffectBuffers, near: Entity) -> Snapshot {
         velocity: read_field(aestra_fluid::RESOURCE_VELOCITY),
     }
 }
-fn app() -> App {
+fn app(outer_graph: bool) -> App {
+    if outer_graph {
+        aestra_fluid::link();
+    }
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -499,6 +634,12 @@ fn app() -> App {
             })
             .set(RenderPlugin {
                 synchronous_pipeline_compilation: true,
+                render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(
+                    bevy::render::settings::WgpuSettings {
+                        features: wgpu::Features::TIMESTAMP_QUERY,
+                        ..default()
+                    },
+                )),
                 ..default()
             }),
     );
@@ -516,23 +657,38 @@ fn app() -> App {
         .init_resource::<Recorded>()
         .init_resource::<Histories>()
         .init_resource::<StatefulStates>()
-        .add_systems(RenderStartup, (init_pipeline, init_stateful_pipeline))
+        .add_systems(RenderStartup, init_stateful_pipeline)
         .add_systems(
             Render,
             prepare_stateful_states.in_set(RenderSystems::PrepareBindGroups),
         )
-        .add_systems(
-            Render,
-            prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),
-        )
-        .add_systems(
-            RenderGraph,
-            simulate
-                .in_set(SimulateEffects)
-                .after(RenderGraphSystems::Begin)
-                .before(RenderGraphSystems::Render),
-        )
         .add_systems(Render, capture.in_set(RenderSystems::Cleanup));
+    if outer_graph {
+        app.insert_resource(OuterGraph)
+            .insert_resource(crate::catchup_pacing::AestraCatchupPacing { paced: false });
+        crate::outer_graph_native::install(&mut app);
+        app.sub_app_mut(RenderApp)
+            .add_systems(
+                Render,
+                crate::stage_runtimes::prepare_stage_runtimes
+                    .in_set(RenderSystems::PrepareResources),
+            )
+            .add_systems(Render, observe_outer.in_set(RenderSystems::Cleanup));
+    } else {
+        app.sub_app_mut(RenderApp)
+            .add_systems(RenderStartup, init_pipeline)
+            .add_systems(
+                Render,
+                prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),
+            )
+            .add_systems(
+                RenderGraph,
+                simulate
+                    .in_set(SimulateEffects)
+                    .after(RenderGraphSystems::Begin)
+                    .before(RenderGraphSystems::Render),
+            );
+    }
     for (name, source) in [
         (
             "aestra_simulation",
@@ -578,6 +734,12 @@ fn install_domain(
     instance: &aestra_runtime::EffectInstance,
     registry: &aestra_extension::ExtensionRegistry,
 ) {
+    if app.world().contains_resource::<OuterGraph>() {
+        let mut presented = crate::PresentedEffect::new(instance.effect().clone());
+        presented.instance = instance.clone();
+        app.insert_resource(DomainSource(presented));
+        return;
+    }
     let device = app
         .sub_app(RenderApp)
         .world()
@@ -673,7 +835,15 @@ fn scene(app: &mut App, distance: f32) -> (Entity, Entity, [Entity; 2]) {
 #[test]
 #[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
 fn native_020_fluid_coupling_and_joint_trails_feed_installed_queues() {
-    let mut app = app();
+    run_joint_trails(false);
+}
+#[test]
+#[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
+fn native_020_outer_graph_fluid_and_joint_trails_restore_and_present() {
+    run_joint_trails(true);
+}
+fn run_joint_trails(outer_graph: bool) {
+    let mut app = app(outer_graph);
     let world = app.sub_app(RenderApp).world();
     let info = world.resource::<RenderAdapterInfo>();
     assert_eq!(info.backend, wgpu::Backend::Vulkan);
@@ -736,6 +906,79 @@ fn native_020_fluid_coupling_and_joint_trails_feed_installed_queues() {
         live,
         "paused time is idempotent"
     );
+    if outer_graph {
+        // Missing extracted domains must not silently run as link-only coupling.
+        app.world_mut()
+            .entity_mut(owner)
+            .remove::<crate::stage_inputs::ExtractedStages>();
+        effect.simulation_time = 44. * STATEFUL_TICK_DT + 0.0001;
+        app.world_mut().entity_mut(owner).insert(effect.clone());
+        for _ in 0..4 {
+            app.update();
+            let world = app.sub_app(RenderApp).world();
+            let persistent = world
+                .resource::<StatefulStates>()
+                .0
+                .values()
+                .next()
+                .unwrap();
+            assert_eq!(
+                persistent[0].last_tick, 30,
+                "unavailable domain cannot consume ticks"
+            );
+            assert!(
+                world
+                    .resource::<crate::presentation_readiness::PresentedOwners>()
+                    .owners
+                    .is_empty()
+            );
+        }
+        step(&mut app, owner, &mut effect, 30);
+        assert_same(&snapshot(&app, &effect, cameras[0]), &live);
+        // Also cover a prepared owner with one unavailable domain timeline.
+        let saved_domain = app
+            .sub_app_mut(RenderApp)
+            .world_mut()
+            .resource_mut::<crate::stage_runtimes::StageRuntimes>()
+            .0
+            .values_mut()
+            .next()
+            .unwrap()
+            .timelines[0]
+            .take();
+        effect.simulation_time = 44. * STATEFUL_TICK_DT + 0.0001;
+        app.world_mut().entity_mut(owner).insert(effect.clone());
+        for _ in 0..4 {
+            app.update();
+            let world = app.sub_app(RenderApp).world();
+            assert_eq!(
+                world
+                    .resource::<StatefulStates>()
+                    .0
+                    .values()
+                    .next()
+                    .unwrap()[0]
+                    .last_tick,
+                30
+            );
+            assert!(
+                world
+                    .resource::<crate::presentation_readiness::PresentedOwners>()
+                    .owners
+                    .is_empty()
+            );
+        }
+        app.sub_app_mut(RenderApp)
+            .world_mut()
+            .resource_mut::<crate::stage_runtimes::StageRuntimes>()
+            .0
+            .values_mut()
+            .next()
+            .unwrap()
+            .timelines[0] = saved_domain;
+        step(&mut app, owner, &mut effect, 30);
+        assert_same(&snapshot(&app, &effect, cameras[0]), &live);
+    }
     step(&mut app, owner, &mut effect, 70);
     let playback = snapshot(&app, &effect, cameras[0]);
     assert_eq!(
@@ -748,16 +991,24 @@ fn native_020_fluid_coupling_and_joint_trails_feed_installed_queues() {
         0
     );
     assert!(playback.candidates[1] > 0, "dead heads retain live tails");
-    assert!(
-        app.sub_app(RenderApp)
-            .world()
-            .resource::<Recorded>()
-            .max_ticks
-            > 1
-    );
+    if !outer_graph {
+        assert!(
+            app.sub_app(RenderApp)
+                .world()
+                .resource::<Recorded>()
+                .max_ticks
+                > 1
+        );
+    }
 
     // Reset once into optional replay, then compare a common domain/particle/trail restore.
     effect.history_policy = PlaybackHistoryPolicy::ReplayEnabled;
+    if outer_graph {
+        app.sub_app_mut(RenderApp)
+            .world_mut()
+            .resource_mut::<crate::outer_graph_native::TimingEvidence>()
+            .replay_allowed = true;
+    }
     effect.history_epoch += 1;
     upload_globals(app.world_mut(), &instance, &effect);
     step(&mut app, owner, &mut effect, 0);
@@ -775,18 +1026,14 @@ fn native_020_fluid_coupling_and_joint_trails_feed_installed_queues() {
             .values()
             .next()
             .unwrap();
-        let histories = &world.resource::<Histories>().0;
-        let history = &histories.values().next().unwrap().1;
         assert!(states[0].checkpoints.iter().any(|c| c.tick == 60));
-        assert!(history.checkpoints.contains(60. * STATEFUL_TICK_DT));
-        assert!(history.checkpoints.bytes() > 0);
-        assert!(
-            world.resource::<Couplers>().domains[0]
-                .as_ref()
-                .unwrap()
-                .checkpoint_ticks()
-                .contains(&60)
-        );
+        if !outer_graph {
+            let histories = &world.resource::<Histories>().0;
+            let history = &histories.values().next().unwrap().1;
+            assert!(history.checkpoints.contains(60. * STATEFUL_TICK_DT));
+            assert!(history.checkpoints.bytes() > 0);
+        }
+        assert!(domain(&app).checkpoint_ticks().contains(&60));
         // Also cover the shared analytic buffer-identity guard, without cloning its algorithm.
         let gpu = world.resource::<RenderAssets<GpuShaderBuffer>>();
         let mut guard = crate::trail_checkpoints::TrailHistory::default();
@@ -802,7 +1049,9 @@ fn native_020_fluid_coupling_and_joint_trails_feed_installed_queues() {
     );
     effect.history_epoch += 1;
     upload_globals(app.world_mut(), &instance, &effect);
+    begin_restore_evidence(&mut app);
     step(&mut app, owner, &mut effect, 70);
+    assert_joint_restore(&mut app);
     assert_eq!(
         snapshot(&app, &effect, cameras[0]),
         replay,
@@ -813,6 +1062,9 @@ fn native_020_fluid_coupling_and_joint_trails_feed_installed_queues() {
     // Replacing the source must restart domain and history too, including paged storage.
     for (capacity, seed) in [(70, 11), (1025, 13)] {
         let replacement = self::instance(&registry, capacity, seed);
+        if outer_graph {
+            install_domain(&mut app, &replacement, &registry);
+        }
         effect = inputs(app.world_mut(), &replacement);
         assert_eq!(effect.trail_plan.paged(), capacity > 1024);
         crate::simulation_native::bind_inputs(app.world_mut(), draw, &effect);
@@ -841,6 +1093,22 @@ fn native_020_fluid_coupling_and_joint_trails_feed_installed_queues() {
     assert!(world.resource::<Histories>().0.is_empty());
     assert!(world.resource::<StatefulStates>().0.is_empty());
     assert!(world.resource::<Captured>().0.is_empty());
+    if outer_graph {
+        assert!(
+            world
+                .resource::<crate::stage_runtimes::StageRuntimes>()
+                .0
+                .is_empty()
+        );
+        crate::outer_graph_native::assert_timings(&app);
+        let timing = world.resource::<crate::outer_graph_native::TimingEvidence>();
+        assert!(timing.max_ticks > 1);
+        assert!(timing.max_capture_bytes > 0);
+        assert!(timing.max_trail_observations > 1);
+        println!(
+            "outer_graph=true canonical_stage_preparation=true actual_trail_history=true simulation_timestamps=true"
+        );
+    }
     device
         .wgpu_device()
         .poll(wgpu::PollType::Wait {
@@ -940,7 +1208,15 @@ fn persistent(app: &App) -> &StatefulPersistentState {
 #[test]
 #[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
 fn native_020_domain_births_feed_particles_trails_and_output_rings() {
-    let mut app = app();
+    run_domain_births(false);
+}
+#[test]
+#[ignore = "Requires a native Vulkan GPU; run explicitly and serially"]
+fn native_020_outer_graph_domain_births_reach_trails_and_output_rings() {
+    run_domain_births(true);
+}
+fn run_domain_births(outer_graph: bool) {
+    let mut app = app(outer_graph);
     let world = app.sub_app(RenderApp).world();
     let info = world.resource::<RenderAdapterInfo>();
     assert_eq!(info.backend, wgpu::Backend::Vulkan);
@@ -986,8 +1262,7 @@ fn native_020_domain_births_feed_particles_trails_and_output_rings() {
     step(&mut app, owner, &mut effect, 0);
     assert_eq!(read(&app, &persistent(&app).spawn_counter, 1), [0]);
     step(&mut app, owner, &mut effect, 1);
-    let world = app.sub_app(RenderApp).world();
-    let domain = world.resource::<Couplers>().domains[0].as_ref().unwrap();
+    let domain = domain(&app);
     let list = read(
         &app,
         domain
@@ -1049,6 +1324,27 @@ fn native_020_domain_births_feed_particles_trails_and_output_rings() {
         output.first,
         (0..3).map(|i| (i as u64, positions[i])).collect::<Vec<_>>()
     );
+    if outer_graph {
+        // A prepared domain with an unavailable emission resource must not
+        // advance, consume ordinals or publish a partial birth ring.
+        let valid = effect.clone();
+        effect.stateful_dispatch[0]
+            .domain_spawn
+            .as_mut()
+            .unwrap()
+            .emission
+            .resource = aestra_core::ResourceTypeId::new("missing/emission");
+        effect.simulation_time = 2. * STATEFUL_TICK_DT + 0.0001;
+        app.world_mut().entity_mut(owner).insert(effect.clone());
+        for _ in 0..4 {
+            app.update();
+            assert_eq!(persistent(&app).last_tick, 1);
+            assert_eq!(self::domain(&app).last_tick(), 1);
+            assert_eq!(read(&app, &persistent(&app).spawn_counter, 1), [10]);
+            assert_eq!(output_ring(&app, &effect), ring);
+        }
+        effect = valid;
+    }
     step(&mut app, owner, &mut effect, 1);
     assert_same(&snapshot(&app, &effect, cameras[0]), &first);
     assert_eq!(
@@ -1072,6 +1368,12 @@ fn native_020_domain_births_feed_particles_trails_and_output_rings() {
     assert!(playback.candidates[1] > 0);
     // Replay is optional and must reconstruct the same actual domain births and joint trails.
     effect.history_policy = PlaybackHistoryPolicy::ReplayEnabled;
+    if outer_graph {
+        app.sub_app_mut(RenderApp)
+            .world_mut()
+            .resource_mut::<crate::outer_graph_native::TimingEvidence>()
+            .replay_allowed = true;
+    }
     effect.history_epoch += 1;
     upload_globals(app.world_mut(), &instance, &effect);
     let before_replay = output_ring(&app, &effect);
@@ -1086,29 +1388,27 @@ fn native_020_domain_births_feed_particles_trails_and_output_rings() {
     {
         let world = app.sub_app(RenderApp).world();
         assert!(persistent(&app).checkpoints.iter().any(|c| c.tick == 60));
-        assert!(
-            world
-                .resource::<Histories>()
-                .0
-                .values()
-                .next()
-                .unwrap()
-                .1
-                .checkpoints
-                .contains(60. * STATEFUL_TICK_DT)
-        );
-        assert!(
-            world.resource::<Couplers>().domains[0]
-                .as_ref()
-                .unwrap()
-                .checkpoint_ticks()
-                .contains(&60)
-        );
+        if !outer_graph {
+            assert!(
+                world
+                    .resource::<Histories>()
+                    .0
+                    .values()
+                    .next()
+                    .unwrap()
+                    .1
+                    .checkpoints
+                    .contains(60. * STATEFUL_TICK_DT)
+            );
+        }
+        assert!(self::domain(&app).checkpoint_ticks().contains(&60));
     }
     step(&mut app, owner, &mut effect, 100);
     effect.history_epoch += 1;
     upload_globals(app.world_mut(), &instance, &effect);
+    begin_restore_evidence(&mut app);
     step(&mut app, owner, &mut effect, 70);
+    assert_joint_restore(&mut app);
     assert_same(&snapshot(&app, &effect, cameras[0]), &playback);
     assert_eq!(output_ring(&app, &effect), before_replay);
     effect.history_policy = PlaybackHistoryPolicy::PlaybackOnly;
@@ -1122,6 +1422,18 @@ fn native_020_domain_births_feed_particles_trails_and_output_rings() {
     assert!(world.resource::<Histories>().0.is_empty());
     assert!(world.resource::<StatefulStates>().0.is_empty());
     assert!(world.resource::<Captured>().0.is_empty());
+    if outer_graph {
+        assert!(
+            world
+                .resource::<crate::stage_runtimes::StageRuntimes>()
+                .0
+                .is_empty()
+        );
+        crate::outer_graph_native::assert_timings(&app);
+        println!(
+            "outer_graph=true canonical_stage_preparation=true domain_births=true simulation_timestamps=true"
+        );
+    }
     device
         .wgpu_device()
         .poll(wgpu::PollType::Wait {
@@ -1183,7 +1495,7 @@ fn native_020_async_particle_outputs_reach_routed_host_messages_once() {
         },
     };
     use bevy::render::gpu_readback::Readback;
-    let mut app = app();
+    let mut app = app(false);
     app.add_message::<AestraOutputEvent>()
         .init_resource::<Delivered>()
         .add_systems(Last, collect_outputs);

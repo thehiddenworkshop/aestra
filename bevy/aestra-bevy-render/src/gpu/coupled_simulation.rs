@@ -543,7 +543,36 @@ pub(super) fn run_stateful_dispatches(
     owns_shared_reset: bool,
     pacer: Option<&mut CatchupPacer>,
     trails: Option<&mut dyn CoupledHistory>,
-) -> Option<(u32, u64)> {
+) -> StatefulDispatchResult {
+    // Link-only coupling is valid for events/trails, but not a substitute for
+    // a required domain. Preparation may omit a timeline or fail its resource
+    // bindings; wait before clearing counters or consuming particle history.
+    let domains_ready = dispatches.iter().all(|dispatch| {
+        dispatch.field_follow.as_ref().is_none_or(|follow| {
+            coupling
+                .as_ref()
+                .and_then(|coupling| coupling.domains.get(follow.stage))
+                .and_then(Option::as_ref)
+                .is_some_and(|domain| domain.executor().field_buffers(&follow.field).is_some())
+        }) && dispatch.domain_spawn.as_ref().is_none_or(|spawn| {
+            coupling
+                .as_ref()
+                .and_then(|coupling| coupling.domains.get(spawn.stage))
+                .and_then(Option::as_ref)
+                .is_some_and(|domain| {
+                    domain
+                        .executor()
+                        .buffer(spawn.emission.resource.as_str())
+                        .is_some()
+                })
+        })
+    });
+    if !domains_ready {
+        return StatefulDispatchResult {
+            presented: false,
+            work: None,
+        };
+    }
     if owns_shared_reset {
         // Clear the shared live counter once, before any emitter's present bumps it.
         encoder.clear_buffer(render.counters, 0, Some(4));
@@ -589,7 +618,10 @@ pub(super) fn run_stateful_dispatches(
             // Never silently use the independent path: it cannot observe every
             // emitter at a shared tick or restore histories with particles.
             warn!("stateful trail simulation is waiting for lockstep pipelines");
-            return None;
+            return StatefulDispatchResult {
+                presented: false,
+                work: None,
+            };
         }
         None => {
             for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
@@ -646,5 +678,15 @@ pub(super) fn run_stateful_dispatches(
             simulation_time,
         );
     }
-    ticks
+    StatefulDispatchResult {
+        presented: true,
+        work: ticks,
+    }
+}
+
+/// Readiness is independent of optional lockstep work counters. Independent
+/// emitters present successfully without a shared fixed-tick count.
+pub(super) struct StatefulDispatchResult {
+    pub presented: bool,
+    pub work: Option<(u32, u64)>,
 }

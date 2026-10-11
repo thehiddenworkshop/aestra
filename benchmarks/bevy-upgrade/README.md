@@ -505,3 +505,31 @@ hashes, and all native processes still run serially. This adds a one-time thread
 build variant; it does not change shipping dependencies, enable mandatory replay,
 or qualify the complete host plugin/production outer graph.
 See [implementation and evidence](async-pipelined-scheduling-2026-10-10.md).
+
+## Production outer simulation graph
+
+Shipping and the candidate now share the actual outer simulation system, particle
+world upload, coupling construction and presentation-readiness marker. Three new
+native gates run independent/linked stateful particles through that system into
+real alpha/draw consumers and asynchronous simulation timestamps, including
+delayed-shader recovery. Fix independent particles being excluded from light
+eligibility because optional lockstep work counters were mistaken for readiness.
+
+The complete plugin, outer-graph joint fluid/history and volume/light installers,
+combined pipelined integration, editor compatibility and visual/performance parity
+remain open. Shipping remains Bevy 0.19.1. See
+[implementation and evidence](outer-simulation-graph-2026-10-11.md).
+
+## Production outer fluid and joint history
+
+Two more native gates use the shared outer graph and canonical stage preparer,
+not the narrow fluid dispatcher: actual field-follow/solver state, inline/paged
+trails, domain-born particles, real output rings and timestamped joint restore.
+Missing extracted domains, unavailable timelines or emission resources must wait
+without consuming ticks/births, then recover exactly. A production readiness guard
+now prevents those dependencies from silently becoming link-only coupling.
+
+The complete extension-stage/volume/light installers and combined pipelined host
+integration remain open, alongside editor compatibility and final parity.
+Shipping remains Bevy 0.19.1. See
+[implementation and evidence](outer-fluid-history-2026-10-11.md).
