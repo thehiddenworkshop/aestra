@@ -1,8 +1,12 @@
 //! Bounded, non-blocking GPU simulation timestamps, separate from draw timings.
+use super::particle_statistics::GpuParticleStatistics;
 pub use super::timestamp_transport::GpuSimulationWork;
-pub(super) use super::timestamp_transport::{Sample, SimulationTimer, TimingMailbox};
-use super::*;
+pub(super) use super::timestamp_transport::{Sample, TimingMailbox};
+use crate::PresentedEffect;
 use aestra_runtime::{EffectInstance, ProfileValue};
+use bevy::prelude::*;
+#[cfg(test)]
+use std::sync::Arc;
 
 /// Latest context-valid GPU simulation observation. Includes all replay dispatches
 /// for this instance in the sampled frame, but never its draw calls or CPU work.

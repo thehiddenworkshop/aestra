@@ -10,6 +10,12 @@ pub struct RibbonParticleBounds {
 }
 
 impl RibbonParticleBounds {
+    /// Scalar boundary for engine adapters that use a different math-library version.
+    pub fn half_extents_from_columns(&self, world_from_effect: [f32; 9]) -> Option<[f32; 3]> {
+        self.half_extents(Mat3::from_cols_array(&world_from_effect))
+            .map(|extent| extent.to_array())
+    }
+
     /// Bevy applies the effect transform to this box. Pull a camera-independent
     /// world-space width sphere back through that transform so even a compressed
     /// local axis encloses the billboard. Segment interiors are convex combinations

@@ -106,6 +106,11 @@ fn validate(
 }
 
 pub(crate) fn compile(source: String, defs: &[ShaderDefVal]) -> std::sync::Arc<Compiled> {
+    compile_asset(Shader::from_wesl(source, "qualification/root.wesl"), defs)
+}
+
+/// Compile the actual asset emitted by production preparation, including language/path/import metadata.
+pub(crate) fn compile_asset(shader: Shader, defs: &[ShaderDefVal]) -> std::sync::Arc<Compiled> {
     let mut assets = Assets::<Shader>::default();
     let mut cache = ShaderCache::new((), validate);
     for (path, source) in libraries() {
@@ -127,7 +132,6 @@ pub(crate) fn compile(source: String, defs: &[ShaderDefVal]) -> std::sync::Arc<C
         let id = assets.add(shader.clone()).id();
         cache.set_shader(id, shader);
     }
-    let shader = Shader::from_wesl(source, "qualification/root.wesl");
     let id: AssetId<Shader> = assets.add(shader.clone()).id();
     cache.set_shader(id, shader);
     cache

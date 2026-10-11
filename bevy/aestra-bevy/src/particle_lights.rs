@@ -1,8 +1,7 @@
 //! Opt-in shadowless scene lights from the globally selected GPU prefix.
 //! This is presentation, not an event stream or one entity per source particle.
-use crate::{ActiveBackend, EffectOutputContext, EffectRuntimeStatus, PresentedEffect};
-use aestra_bevy_render::gpu::particle_lights::ParticleLightSource;
-pub use aestra_bevy_render::gpu::{
+use crate::gpu::particle_lights::ParticleLightSource;
+pub use crate::gpu::{
     particle_light_readback::{
         AestraParticleLightReadbackPlugin, ParticleLightReadback, ParticleLightReadbackFrame,
         ParticleLightReadbackSettings, ParticleLightReadbackStatistics, ParticleLightSnapshot,
@@ -10,12 +9,13 @@ pub use aestra_bevy_render::gpu::{
     },
     particle_lights::{AestraParticleLightSettings, ParticleLightMode},
 };
+use crate::{ActiveBackend, EffectOutputContext, EffectRuntimeStatus, PresentedEffect};
 use bevy::{camera::visibility::RenderLayers, prelude::*, transform::TransformSystems};
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 /// Independent host safety clamps. Shadows remain off; disable the entire GPU
 /// selection/transport/realization path with `AestraParticleLightSettings.max_lights = 0`.
-#[derive(Resource, Clone, Debug, bevy::render::extract_resource::ExtractResource)]
+#[derive(Resource, Clone, Debug)]
 pub struct ParticleLightRealizationSettings {
     pub max_lumens: f32,
     pub max_range: f32,
@@ -347,11 +347,11 @@ fn apply(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gpu::particle_lights::ParticleLightArtifact;
     use crate::{
         CompatibilityReport, CompatibilityTarget, EffectAsset, EffectCompiler, Emitter,
         ParticlePointLightProperties, PlaybackHistoryPolicy, SceneOutputInstance,
     };
-    use aestra_bevy_render::gpu::particle_lights::ParticleLightArtifact;
     use std::time::Duration;
 
     fn fixture() -> (World, Entity, ParticleLightSnapshot) {

@@ -1,17 +1,58 @@
 //! Actual production payloads and candidate adapter, not substitute components.
+pub use aestra_core::*;
 pub use aestra_runtime::{
-    BackendCapabilities, CompatibilityIssueCode, CompatibilityReport, CompatibilityTarget,
-    EffectRequirements, RendererCapability,
+    BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
+    CompatibilityTarget, EffectOutputEvent, EffectRequirements, EventOrigin, RendererCapability,
 };
+pub use capabilities::{ActiveBackend, EffectRuntimeStatus};
+#[path = "../../../bevy/aestra-bevy/src/lights.rs"]
+pub mod host_lights;
+#[path = "../../../bevy/aestra-bevy/src/lighting_quality.rs"]
+pub mod lighting_quality;
+#[path = "../../../bevy/aestra-bevy/src/particle_light_boundary_020.rs"]
+mod particle_light_boundary;
+#[path = "../../../bevy/aestra-bevy/src/particle_light_gpu.rs"]
+pub mod particle_light_gpu;
+#[path = "../../../bevy/aestra-bevy/src/particle_lights.rs"]
+pub mod particle_light_realization;
+pub use host_lights::{MAX_TRANSIENT_LIGHTS, TransientLightSettings};
+pub use lighting_quality::LightingQualityPolicy;
+pub use particle_light_gpu::ParticleLightGpuSettings;
+pub use particle_light_realization::{
+    AestraParticleLightSettings, ParticleLightMode, ParticleLightReadbackSettings,
+    ParticleLightRealizationSettings,
+};
+#[path = "../../../bevy/aestra-bevy-render/src/render_set.rs"]
+mod render_set;
 #[path = "../../../bevy/aestra-bevy-render/src/render_settings.rs"]
 mod render_settings;
+pub use render_set::AestraRenderSet;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/extension_stages.rs"]
+mod extension_stages;
+pub use extension_stages::{AestraEffectOutputs, GpuStageProgress, GpuStageTiming};
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/volume.rs"]
+mod volume;
+mod volume_native;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/volume_shader_020.rs"]
+mod volume_shader;
+use pipeline_native::composition as shader_composition;
 pub use render_settings::{AestraRenderSettings, PresentationMode, TransparentOrderMode};
 #[path = "../../../bevy/aestra-bevy-render/src/capabilities.rs"]
 mod capabilities;
 pub use capabilities::{AestraRuntimeStatus, GpuCapabilities};
+#[path = "../../../bevy/aestra-bevy-render/src/project_assets.rs"]
+pub mod project_assets;
+pub use project_assets::AestraTextureRoot;
+pub(crate) use project_assets::ProjectAssetCache;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/bounds_test_types_020.rs"]
+mod bounds_test_types;
+#[derive(bevy::prelude::Component)]
+pub(crate) struct GpuPresentationPrepared;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/alpha_sort.rs"]
 mod alpha_sort;
 mod alpha_sort_native;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/bounds.rs"]
+mod bounds;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/capability_publication.rs"]
 mod capability_publication;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/catchup_pacing.rs"]
@@ -23,9 +64,22 @@ mod coupled_native;
 mod coupled_simulation;
 #[path = "../../../bevy/aestra-bevy-render/src/execution.rs"]
 pub mod execution;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/material_shader_020.rs"]
+mod material_shader;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/preparation.rs"]
+mod preparation;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/preparation_timing.rs"]
+pub mod preparation_timing;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/ribbon_bounds.rs"]
+mod ribbon_bounds;
+#[path = "../../../bevy/aestra-bevy-render/src/sampling.rs"]
+pub mod sampling;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/simulation_timing.rs"]
+pub mod simulation_timing;
 // Namespace bridge to the same version-selected mapped-view boundary as shipping.
 mod gpu {
     pub(crate) use crate::mapped_readback::with_mapped_range;
+    pub use crate::{particle_light_readback, particle_lights};
 }
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/draw_commands.rs"]
 mod draw_commands;
@@ -37,6 +91,11 @@ mod draw_preparation;
 mod draw_resources;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/mapped_readback_020.rs"]
 mod mapped_readback;
+mod material_preparation_tests;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_statistics.rs"]
+pub mod particle_statistics;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/physics.rs"]
+pub mod physics;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/preparation_context.rs"]
 mod preparation_context;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/presentation_readiness.rs"]
@@ -45,6 +104,10 @@ mod presentation_readiness;
 mod simulation_graph;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/stage_coupling.rs"]
 mod stage_coupling;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/storage_buffers_020.rs"]
+mod storage_buffers;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/storage_encoding.rs"]
+mod storage_encoding;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs"]
 mod timestamp_transport;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/trail_compaction.rs"]
@@ -52,6 +115,11 @@ mod trail_compaction;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/trail_culling.rs"]
 mod trail_culling;
 mod trail_native;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/transform_sync.rs"]
+mod transform_sync;
+mod transform_sync_tests;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/visibility_updates.rs"]
+mod visibility_updates;
 // Match the shipping test's readback boundary, with wgpu 30's fallible map view.
 fn alpha_sort_test_readback(buffer: &wgpu::Buffer) -> Vec<u8> {
     buffer.slice(..).get_mapped_range().unwrap().to_vec()
@@ -92,6 +160,7 @@ pub use bindings::{
     AestraBindingRecorder, AestraBindingTrace, AestraBindings, AestraLinearVelocity,
 };
 pub use project::EffectClipInstance;
+mod host_lights_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/mesh_inputs.rs"]
 mod mesh_inputs;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/output_context.rs"]
@@ -100,8 +169,13 @@ mod output_context;
 mod paged_trails;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_light_inputs.rs"]
 mod particle_light_inputs;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_light_readback.rs"]
+pub mod particle_light_readback;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_light_transport.rs"]
 mod particle_light_transport;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_lights.rs"]
+pub mod particle_lights;
+mod particle_lights_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_output_readback.rs"]
 mod particle_output_readback;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/particle_outputs.rs"]
@@ -109,6 +183,8 @@ mod particle_outputs;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/pipeline.rs"]
 mod pipeline;
 mod pipeline_native;
+#[cfg(feature = "async-qualification")]
+mod pipelined_installers_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/scene_depth_020.rs"]
 mod scene_depth;
 mod shader_support;
@@ -124,6 +200,7 @@ mod stage_output_delivery;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/stage_runtimes.rs"]
 mod stage_runtimes;
 pub use host_playback::{AestraChoreographyEvent, AestraSet, EffectPlayer};
+pub use output_context::ParticleOutputContext;
 pub use output_context::{AestraOutputEvent, EffectOutputContext};
 mod host_stage_native;
 mod outer_graph_native;

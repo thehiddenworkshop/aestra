@@ -794,8 +794,153 @@ selected only at the coherent engine switch; the shipping engine remains 0.19.1.
   workspace/candidate Clippy, formatting, PowerShell AST and whitespace pass.
 - Implementation and validation: [outer fluid/history report](../../benchmarks/bevy-upgrade/outer-fluid-history-2026-10-11.md).
 
-Remaining B20-1: full-plugin/outer-graph integration (including combined async
-readiness across coupled/volume/profiling branches),
+### B20-1 twenty-seventh slice — Production particle-light installer
+
+- Include the actual shipping light installer in the candidate: embedded shader
+  registration, main-world collection, extraction, preparation and graph selection
+  consume the production outer graph's separate analytic/stateful owners.
+- Preserve production transform/simulation ordering through shared internal sets
+  instead of monolithic function imports; infer the portable planner's identity
+  matrix across the candidate glam boundary. No public API or playback change.
+- Native gate covers global/per-output caps, exact pause, live world transforms,
+  unavailable stateful-pipeline readiness, nested identities, artifact/seed
+  replacement, memory-budget rejection, settings/backend/component retirement and
+  teardown. Playback-only keeps no particle checkpoints; readbacks are test-only.
+- Volume/extension-stage installers, host light realization, mixed emitters within
+  one owner and complete/pipelined plugin integration remain open. Fixture inputs
+  do not qualify the monolithic main-world particle preparation/transform sync.
+- Validation: frozen runner **186 checks / 30 native gates**, **425 unchanged
+  input hashes**; shipping host **63**, renderer **157**, light conformance **2**
+  and explicit native light playback **2** pass. Workspace/candidate strict lint,
+  all-target workspace check, formatting and runner syntax checks pass.
+- Implementation and validation: [production light installer report](../../benchmarks/bevy-upgrade/production-light-installer-2026-10-11.md).
+
+### B20-1 twenty-eighth slice — Production extension-stage/volume installers
+
+- Include and call the actual production installers in the candidate: normal
+  volume creation and stage inputs, extraction, stage execution, field copies
+  and actual PBR material rendering. No substitute dispatcher or seeded textures.
+- Share the unchanged public scheduling set and use the existing simulation set
+  for ordering; select a narrow 0.19/0.20 volume shader-creation boundary. Shipping
+  remains on WGSL, the candidate uses qualified WESL composition. No public API change.
+- Native dense volume-only gate verifies real progress, live density/texture
+  agreement, nonblack material pixels, exact pause/forward changes, look-edit
+  reuse, layout rebuild, timestamps, debug fallback, camera re-entry and teardown.
+  Playback-only keeps no domain checkpoints; all readbacks/waits are test-only.
+- Sparse/coupled/transformed volume integration, host light realization, complete
+  plugin/pipelined integration and visual/performance parity remain open.
+- Validation: frozen runner **196 checks / 31 native gates**, **429 unchanged
+  input hashes**; shipping renderer **157**, host **63**, GPU-required staged-fluid
+  conformance **3** pass. Workspace/candidate strict lint, all-target workspace
+  check, formatting and runner syntax checks pass.
+- Implementation and validation: [production volume installer report](../../benchmarks/bevy-upgrade/production-volume-installer-2026-10-11.md).
+
+### B20-1 twenty-ninth slice — Host particle-light realization
+
+- Include the real host pooled/GPU light adapters, transport, representative-light
+  adapter and quality policy in the candidate; call the actual light plugin with
+  shared outer graph and production stage/volume installers.
+- Isolate extraction and clustered-light shader construction in 0.19/0.20
+  boundaries. Preserve public types, budgets and the shared shader body; use
+  app-labeled extraction and WESL only in the candidate. Route transport through
+  the existing fallible mapped-view boundary. Shipping remains on 0.19.
+- Native stateful playback-only receiver gate checks both modes, exact settled
+  GPU positions, motion/layers/pool reuse, clamp/transport/manifest admission,
+  same-render-sequence injection without further position readbacks, actual PBR
+  illumination, rejection/recovery and source/slot retirement.
+- The stage/volume installers coexist in this fixture, but combined volume-light
+  pixels, nested/pipelined host-light and complete-plugin integration remain open.
+- Validation: frozen runner **218 checks / 32 native gates**, **437 unchanged
+  input hashes**; shipping host **63**, renderer **157**, explicit portable
+  receiver/lifecycle and bounded same-frame GPU/PBR regression **1 each** pass.
+  Workspace/candidate strict lint,
+  all-target workspace check, formatting and runner syntax checks pass.
+- Implementation and validation: [host light realization report](../../benchmarks/bevy-upgrade/host-light-realization-2026-10-11.md).
+
+### B20-1 thirtieth slice — Combined pipelined installers
+
+- Combine the canonical binding/playback/project systems with the shared outer
+  simulation graph and actual stage/volume/light installers plus host light plugin
+  on Bevy's real pipelined RenderApp, with asynchronous pipeline compilation.
+- Add a required native gate with two nested analytic-light/dense-fluid owners:
+  independent root clocks, live binding consumption, stage/output/readiness
+  convergence, restart/seek, current nested source identities, both host-light
+  modes, same-frame selection/injection, real receiver pixels, profiling,
+  admission disable/recovery and root/volume/light teardown.
+- Fix a reproduced shared profiling race: paused empty timestamp batches could
+  supersede real in-flight stage measurements. Start stage batches only when
+  stages advance, preserving the last real measurement without a blocking wait.
+- Monolithic analytic particle asset preparation remains a fixture adapter.
+  This does not certify nested stateful/fluid lockstep, joint volume-light
+  scattering pixels, sparse volumes or the full renderer/host plugin.
+- Validation: frozen runner **219 checks / 33 native gates**, **438 unchanged
+  input hashes**; shipping renderer **157**, host **63** pass. Strict candidate
+  lint in both configurations, workspace strict lint/all-target check with
+  `aestra-bench/gpu`, formatting, runner parsing and whitespace checks pass.
+- Implementation and validation: [pipelined installers report](../../benchmarks/bevy-upgrade/pipelined-installers-2026-10-11.md).
+
+### B20-1 thirty-first slice — Production clock and transform synchronization
+
+- Extract the existing main-world synchronization and its schedule installer into
+  shared production code. Shipping and candidate retain post-propagation,
+  pre-visibility ordering, including the particle-light consumer dependency.
+- Remove per-frame fixture clock/epoch/seed/matrix uploads from the combined
+  pipelined gate. Exercise actual paused root placement changes through async
+  light proxy positions; verify buffer reuse through playback, restart and seeks.
+- Add drained 0.20 storage regressions for propagated parent/host-track matrices,
+  context tokens, cutoffs, quality/history policy and repeated host updates.
+  Keep the engine-neutral ABI independent from Bevy's newer glam version.
+- Initial analytic allocation remains a fixture. This is not full particle/material
+  preparation, draw-child wiring, a new stateful binding oracle or full-plugin acceptance.
+- Validation: frozen runner **228 checks / 33 native gates**, **442 unchanged
+  input hashes**; shipping renderer **158**, host **63** pass (three existing ignores).
+  Strict workspace/candidate lint, all-target check and formatting pass.
+- Implementation and validation: [production transform report](../../benchmarks/bevy-upgrade/production-transform-sync-2026-10-11.md).
+
+### B20-1 thirty-second slice — Production particle and material preparation
+
+- Share the existing initial allocation, live emitter/renderer/material updates,
+  fallback textures, shader cache and trail-statistics setup through the production
+  preparation module/installer. Preserve public reexports and schedule ordering.
+- Remove manual particle allocation from the combined threaded native gate; wait
+  for real capabilities before assigning its fixture backend status. Keep all
+  existing host-clock/output/light/pixel/profiling/seek/reuse/teardown assertions.
+- Keep shipping WGSL unchanged through a version-selected shader boundary; compile
+  actual prepared 0.20 WESL assets for both sampling variants through ShaderCache.
+- Run shared allocation/backend/capacity/trail/readback/material regressions on both
+  engines. Include existing project-root, bounds, sampling and timing regressions;
+  scalar math boundaries preserve the engine-neutral storage ABI.
+- Full-plugin bootstrap and main-world draw-child/visibility wiring remain open;
+  analytic particles plus dense stages are not a new combined coupled oracle.
+- Correct the asynchronous host-stage thread probe to observe the actual schedule
+  caller, not a stealable worker; retain the separate-thread assertion and all
+  channel/output/seek/lifecycle checks.
+- Validation: frozen runner **249 checks / 33 native gates**, **454 unchanged
+  input hashes**; shipping renderer **163**, host **63**, engine-neutral ribbon
+  bounds **2** pass. Strict workspace/candidate lint, all-target check, formatting
+  and whitespace validation pass; the three existing shipping ignores remain.
+- Implementation and validation: [production preparation report](../../benchmarks/bevy-upgrade/production-preparation-2026-10-11.md).
+
+### B20-1 thirty-third slice — Production draw-child and visibility wiring
+
+- Share the existing main-world visibility installer, host-motion draw-child local
+  and exact global poses, mesh/ribbon bounds, wireframe and replay/sampling culling
+  systems. Preserve all ordering around propagation, uploads and visibility.
+- Run existing sampling/transform/ribbon regressions from shared source on both
+  engines, retaining nested tracks, clip offsets, shear and repeated/backward seeks.
+- Install this wiring in the combined real pipelined gate; inspect actual extracted
+  draw centers and IDs through paused placement edits and inherited hide/show.
+  Retain all host-clock/output/light/pixel/profiling/seek/buffer-reuse assertions.
+- The candidate still assembles installers explicitly; full-plugin bootstrap and
+  combined coupled readiness remain open. No root dependency or visual-reference
+  changes are approved by this slice.
+- Validation: frozen runner **251 checks / 33 native gates**, **456 unchanged input
+  hashes** and five unchanged executable hashes; shipping renderer **163**, host
+  **63** pass. Strict workspace/candidate lint, all-target check, formatting and
+  whitespace validation pass; the three existing shipping ignores remain.
+- Implementation and validation: [production visibility report](../../benchmarks/bevy-upgrade/production-visibility-2026-10-11.md).
+
+Remaining B20-1: full-plugin/outer-graph integration (plugin bootstrap and combined coupled readiness),
 B20-2's editor compatibility changes, coherent Bevy/wgpu/glam switch selecting the
 prepared shader/storage/extraction adapters, renderer/cache identity review, and
 native visual/performance parity. The shipping workspace still uses Bevy 0.19.1.
@@ -958,9 +1103,9 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** integrate the production extension-stage/volume/light installers
-with the accepted shared outer graph, then combine
-it with the accepted pipelined root/project/live-binding scheduling,
+**Next action:** remove the remaining plugin-bootstrap boundary and qualify the
+complete renderer/host plugin, including
+combined coupled readiness,
 alongside B20-2's required editor API changes.
 Activate the qualified storage adapter, WESL composition paths
 and graph imports as the engine graph switches coherently to 0.20. Select the

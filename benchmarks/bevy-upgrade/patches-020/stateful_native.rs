@@ -189,7 +189,10 @@ fn instance(capacity: u32, seed: u64, burst: bool) -> aestra_runtime::EffectInst
     aestra_runtime::EffectInstance::with_seed(Arc::new(compiled), seed)
 }
 
-fn inputs(world: &mut World, instance: &aestra_runtime::EffectInstance) -> GpuEffectBuffers {
+pub(super) fn inputs(
+    world: &mut World,
+    instance: &aestra_runtime::EffectInstance,
+) -> GpuEffectBuffers {
     let artifact = GpuEffectArtifact::from_instance(instance).unwrap();
     let emitter = &artifact.emitters[0];
     let compiled = &instance.effect().emitters[0];

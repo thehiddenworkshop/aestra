@@ -1,11 +1,12 @@
 //! Opt-in bounded native Bevy GPU-clustered realization. No selected-position
 //! readback. Default layers only until layer-aware GPU clustering is certified.
-use crate::{
-    EffectOutputContext, ParticleLightMode, ParticleLightRealizationSettings, PresentedEffect,
-};
-use aestra_bevy_render::gpu::particle_lights::{
+use super::particle_light_boundary::{Extract, ExtractSchedule, MainWorld};
+use crate::gpu::particle_lights::{
     AestraParticleLightSettings, GpuSelectedParticleLights, ParticleLightArtifact,
     ParticleLightSelectionSet, ParticleLightSource,
+};
+use crate::{
+    EffectOutputContext, ParticleLightMode, ParticleLightRealizationSettings, PresentedEffect,
 };
 use bevy::{
     camera::visibility::RenderLayers,
@@ -13,10 +14,8 @@ use bevy::{
     pbr::{GlobalClusterableObjectMeta, GpuClusteredLight},
     prelude::*,
     render::{
-        Extract, ExtractSchedule, MainWorld, Render, RenderApp, RenderSystems,
+        Render, RenderApp, RenderSystems,
         diagnostic::RecordDiagnostics,
-        extract_component::{ExtractComponent, ExtractComponentPlugin},
-        extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_resource::*,
         renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems, RenderQueue},
         view::ExtractedView,
@@ -31,7 +30,7 @@ use std::{
 /// buffer bytes include our mapping/token/uniform buffers and the reserved Bevy
 /// logical light records, not Bevy's allocation granularity/camera-cluster storage
 /// or the separately budgeted selector. This is not a total renderer-memory cap.
-#[derive(Resource, Clone, Debug, ExtractResource)]
+#[derive(Resource, Clone, Debug)]
 pub struct ParticleLightGpuSettings {
     pub max_lights: u32,
     pub max_buffer_bytes: u64,
@@ -80,7 +79,7 @@ pub struct ParticleLightGpuObservation {
     pub reserve_cpu_ms: f64,
     pub authorize_cpu_ms: f64,
 }
-#[derive(Resource, Clone, Default, ExtractResource)]
+#[derive(Resource, Clone, Default)]
 pub struct ParticleLightGpuStatistics(Arc<Mutex<ParticleLightGpuObservation>>);
 impl ParticleLightGpuStatistics {
     pub fn snapshot(&self) -> ParticleLightGpuObservation {
@@ -92,7 +91,7 @@ impl ParticleLightGpuStatistics {
 /// visibility, layers or transform. Slots stay zero-lumen in the main world,
 /// with a finite neutral range; the reusable pool is hidden when no possible GPU
 /// source remains. Only render-world injection supplies an active light's range.
-#[derive(Component, Clone, Copy, ExtractComponent)]
+#[derive(Component, Clone, Copy)]
 pub struct ParticleLightGpuSlot(pub u32);
 #[derive(Resource, Default)]
 struct Slots(Vec<Entity>);
@@ -103,8 +102,8 @@ struct Authorizations {
     sources: BTreeSet<ParticleLightSource>,
     rejection: Option<ParticleLightGpuRejection>,
 }
-#[derive(Resource, Clone, ExtractResource)]
-struct BridgeShader(Handle<Shader>);
+#[derive(Resource, Clone)]
+pub(super) struct BridgeShader(pub(super) Handle<Shader>);
 #[derive(Resource)]
 struct Pipeline {
     layout: BindGroupLayoutDescriptor,
@@ -141,17 +140,9 @@ pub(super) fn install(app: &mut App) {
     let shader = app
         .world_mut()
         .resource_mut::<Assets<Shader>>()
-        .add(Shader::from_wgsl(
-            include_str!("particle_light_gpu.wgsl"),
-            file!(),
-        ));
-    app.insert_resource(BridgeShader(shader)).add_plugins((
-        ExtractComponentPlugin::<ParticleLightGpuSlot>::default(),
-        ExtractResourcePlugin::<ParticleLightGpuSettings>::default(),
-        ExtractResourcePlugin::<ParticleLightGpuStatistics>::default(),
-        ExtractResourcePlugin::<ParticleLightRealizationSettings>::default(),
-        ExtractResourcePlugin::<BridgeShader>::default(),
-    ));
+        .add(super::particle_light_boundary::shader());
+    app.insert_resource(BridgeShader(shader));
+    super::particle_light_boundary::install(app);
     app.sub_app_mut(RenderApp)
         .init_resource::<Authorizations>()
         .init_resource::<State>()
@@ -430,7 +421,9 @@ fn authorize(
                         output: output.source,
                         artifact: ParticleLightArtifact(player.effect().clone()),
                     };
-                    let Some(layers) = super::particle_lights::source_layers(&main, &source) else {
+                    let Some(layers) =
+                        crate::particle_light_realization::source_layers(&main, &source)
+                    else {
                         continue;
                     };
                     // Extraction runs after visibility propagation; hide a
@@ -687,7 +680,7 @@ fn inject(
         }
         let buffers = state.buffers.as_mut().unwrap();
         let encoded = |values: &Vec<UVec4>| {
-            let mut b = encase::StorageBuffer::new(Vec::new());
+            let mut b = bevy::render::render_resource::encase::StorageBuffer::new(Vec::new());
             b.write(values).unwrap();
             b.into_inner()
         };

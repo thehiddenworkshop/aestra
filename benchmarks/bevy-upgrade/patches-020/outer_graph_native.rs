@@ -50,6 +50,14 @@ fn observe_timings(mailbox: Res<TimingMailbox>, mut evidence: ResMut<TimingEvide
 }
 
 pub(super) fn install(app: &mut App) {
+    install_graph(app, true);
+}
+
+pub(super) fn install_with_stage_installer(app: &mut App) {
+    install_graph(app, false);
+}
+
+fn install_graph(app: &mut App, install_stage_coupling: bool) {
     let path = "aestra_bevy_render/shaders/aestra_simulation.wesl";
     app.world()
         .resource::<EmbeddedAssetRegistry>()
@@ -66,10 +74,10 @@ pub(super) fn install(app: &mut App) {
             enabled: true,
             ..default()
         })
-        .add_systems(RenderStartup, (init_pipeline, init_field_follow))
+        .add_systems(RenderStartup, init_pipeline)
         .add_systems(
             Render,
-            (prepare_bind_groups, prepare_particle_world).in_set(RenderSystems::PrepareBindGroups),
+            prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),
         )
         .add_systems(
             RenderGraph,
@@ -79,6 +87,14 @@ pub(super) fn install(app: &mut App) {
                 .before(RenderGraphSystems::Render),
         )
         .add_systems(Render, observe_timings.in_set(RenderSystems::Cleanup));
+    if install_stage_coupling {
+        app.sub_app_mut(RenderApp)
+            .add_systems(RenderStartup, init_field_follow)
+            .add_systems(
+                Render,
+                prepare_particle_world.in_set(RenderSystems::PrepareBindGroups),
+            );
+    }
 }
 
 pub(super) fn assert_timings(app: &App) {

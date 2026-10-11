@@ -45,13 +45,17 @@ pub(super) fn sync_mesh_bounds(
             .or_insert_with(|| meshes.get(&source.mesh).and_then(geometry_bounds));
         let bounds = source.motion.and_then(|motion| {
             let displacement = source.displacement?;
-            geometry
-                .and_then(|(min, max)| motion.half_extents(min - displacement, max + displacement))
+            geometry.and_then(|(min, max)| {
+                motion.half_extents(
+                    (min - displacement).to_array().into(),
+                    (max + displacement).to_array().into(),
+                )
+            })
         });
         if let Some(half_extents) = bounds {
             let bounds = Aabb {
                 center: Vec3::ZERO.into(),
-                half_extents: half_extents.into(),
+                half_extents: half_extents.to_array().into(),
             };
             if aabb.center != bounds.center || aabb.half_extents != bounds.half_extents {
                 *aabb = bounds;
@@ -98,8 +102,8 @@ mod tests {
 
     fn motion(size: f32) -> MeshParticleBounds {
         MeshParticleBounds {
-            position_half_extents: Vec3::splat(5.0),
-            linear_from_local: Mat3::IDENTITY,
+            position_half_extents: [5.0; 3].into(),
+            linear_from_local: Default::default(),
             maximum_size: size,
         }
     }
@@ -248,13 +252,8 @@ mod tests {
 
     #[test]
     fn off_center_mesh_remains_visible_at_frustum_edge_with_scaled_effect() {
-        use bevy::{
-            camera::primitives::Frustum,
-            math::{
-                Affine3A,
-                primitives::{HalfSpace, ViewFrustum},
-            },
-        };
+        use super::super::bounds_test_types::{HalfSpace, ViewFrustum};
+        use bevy::{camera::primitives::Frustum, math::Affine3A};
         let frustum = Frustum(ViewFrustum {
             half_spaces: [
                 Vec3::X,
@@ -270,8 +269,9 @@ mod tests {
         let aabb = Aabb {
             center: Vec3::ZERO.into(),
             half_extents: model
-                .half_extents(Vec3::new(40.0, -1.0, -1.0), Vec3::new(60.0, 1.0, 1.0))
+                .half_extents([40.0, -1.0, -1.0].into(), [60.0, 1.0, 1.0].into())
                 .unwrap()
+                .to_array()
                 .into(),
         };
         let transform = Affine3A::from_scale_rotation_translation(

@@ -20,7 +20,7 @@
 //! Volumes need a 3-D camera and Bevy's PBR plugin; without them the debug field slices remain.
 
 pub(super) use super::stage_inputs::VolumeFieldTarget;
-use super::*;
+use crate::PresentedEffect;
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::{ComputeProgramId, ResourceTypeId};
 use aestra_runtime::{
@@ -28,12 +28,18 @@ use aestra_runtime::{
 };
 use bevy::{
     asset::RenderAssetUsages,
+    camera::visibility::RenderLayers,
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
     mesh::MeshVertexBufferLayoutRef,
     pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin, MeshMaterial3d},
-    render::render_resource::{
-        AsBindGroup, CompareFunction, Face, RenderPipelineDescriptor, ShaderType,
-        SpecializedMeshPipelineError, TextureUsages,
+    prelude::*,
+    render::{
+        RenderApp, RenderStartup,
+        render_resource::{
+            AsBindGroup, CompareFunction, Extent3d, Face, RenderPipelineDescriptor, ShaderType,
+            SpecializedMeshPipelineError, TextureDimension, TextureFormat, TextureUsages,
+        },
+        renderer::RenderDevice,
     },
     shader::Shader,
 };
@@ -145,11 +151,7 @@ impl Material for VolumeMaterial {
 /// The full shader of a march function: Bevy's view and mesh prelude, the portable interface, the
 /// plugin's WGSL, and the vertex and fragment entry points that set up the ray.
 pub(crate) fn compose_volume_shader(program_wgsl: &str, entry_point: &str) -> String {
-    super::shader_composition::compose_volume(
-        program_wgsl,
-        entry_point,
-        super::shader_composition::Dialect::Bevy019,
-    )
+    super::volume_shader::compose(program_wgsl, entry_point)
 }
 
 // Invocation-private state: each ray converts uvw with its own full box transform, including
@@ -380,7 +382,7 @@ fn sync_volume_views(
                     let wgsl = programs
                         .get(&key.program)
                         .map_or_else(String::new, |program| program.wgsl.clone());
-                    shaders.add(Shader::from_wgsl(
+                    shaders.add(super::volume_shader::shader(
                         compose_volume_shader(&wgsl, &key.entry_point),
                         format!("aestra-volume/{}/{}", key.program.as_str(), key.entry_point),
                     ))
@@ -462,6 +464,7 @@ fn init_field_volume_pipeline(mut commands: Commands, device: Res<RenderDevice>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn scene_light_helper_validates_with_cluster_binding_contract() {
@@ -502,10 +505,11 @@ fn volume_clusters_get_clusterable_object_id(index: u32) -> u32 {{ return index;
     fn a_composed_volume_shader_parses_and_validates_without_the_bevy_prelude() {
         // The Bevy imports are resolved by Bevy's composer at run time; the interface, a march
         // function and the entry-point body must be valid WGSL on their own.
-        let composed = compose_volume_shader(
+        let composed = super::super::shader_composition::compose_volume(
             "fn march(ray: AestraVolumeRay) -> vec4<f32> {\n    \
              return aestra_volume_field(0u, ray.origin) * (ray.t_far - ray.t_near);\n}",
             "march",
+            super::super::shader_composition::Dialect::Bevy019,
         );
         assert!(composed.contains("return march(AestraVolumeRay("));
         assert!(composed.contains(SCENE_LIGHTING_WGSL));

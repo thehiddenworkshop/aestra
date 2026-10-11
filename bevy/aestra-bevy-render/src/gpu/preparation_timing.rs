@@ -1,8 +1,12 @@
 //! Separate per-owner render-preparation windows. No CPU waits or particle readbacks.
+use super::particle_statistics::GpuParticleStatistics;
 pub(super) use super::preparation_context::PreparationMailboxes;
 use super::simulation_timing::GpuSimulationTiming;
-use super::*;
+use crate::PresentedEffect;
 use aestra_runtime::{EffectInstance, EffectProfile, ProfileValue};
+use bevy::prelude::*;
+#[cfg(test)]
+use std::sync::Arc;
 
 /// GPU trail compaction and per-view culling, excluding simulation and drawing.
 #[derive(Component, Debug, Default)]

@@ -1,6 +1,10 @@
-use super::*;
+use crate::PresentedEffect;
 use aestra_runtime::{CompiledEffect, EffectInstance, EffectProfile};
-use std::sync::atomic::{AtomicU32, Ordering};
+use bevy::{prelude::*, render::gpu_readback::ReadbackComplete};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+};
 
 // Unique across owners and rebuilt buffers, not merely across seeks of one player.
 static NEXT_CONTEXT: AtomicU32 = AtomicU32::new(1);
@@ -17,7 +21,7 @@ pub struct GpuParticleStatistics {
     seed: u64,
     token: u32,
     observation: Option<(f32, Vec<u32>)>,
-    pub(super) geometry: Option<super::geometry_statistics::Sample>,
+    pub(super) geometry: Option<super::draw_resources::GeometrySample>,
 }
 
 impl GpuParticleStatistics {
@@ -238,6 +242,36 @@ mod tests {
             profile.gpu_time_ns,
             aestra_runtime::ProfileValue::Unavailable
         );
+    }
+
+    #[test]
+    fn geometry_observations_expire_with_the_instance_context() {
+        use aestra_runtime::ProfileValue::{Measured, Unavailable};
+        let mut instance = instance();
+        let mut stats = GpuParticleStatistics::new(&instance);
+        let owner = Entity::from_raw_u32(1).unwrap();
+        let sample = super::super::draw_resources::GeometrySample {
+            owner: Some(owner),
+            token: stats.context_token(&instance).unwrap(),
+            time: 1.0,
+            instances: 7,
+            vertices: 28,
+            primitives: 14,
+            draws: 2,
+        };
+        assert_eq!(sample.owner, Some(owner));
+        stats.geometry = Some(sample);
+        let mut profile = EffectProfile::from_compiled(instance.effect());
+        stats.record_geometry_profile(&instance, &mut profile);
+        assert_eq!(profile.submitted_instances, Measured(7));
+        assert_eq!(profile.submitted_vertices, Measured(28));
+        assert_eq!(profile.submitted_primitives, Measured(14));
+        assert_eq!(profile.draw_calls, Measured(2));
+        instance.set_seed(919);
+        stats.record_geometry_profile(&instance, &mut profile);
+        assert_eq!(profile.draw_calls, Unavailable);
+        stats.sync(&instance);
+        assert!(stats.geometry.is_none());
     }
 
     #[test]

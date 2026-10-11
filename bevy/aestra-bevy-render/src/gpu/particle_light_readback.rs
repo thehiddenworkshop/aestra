@@ -320,9 +320,10 @@ fn copy_frame(inputs: &mut CopyInputs, context: &mut RenderContext) {
     let selected_capacity = set.selected_capacity;
     encoder.map_buffer_on_submit(&buffer.clone(), MapMode::Read, 0..bytes, move |result| {
         let decoded = if result.is_ok() {
-            let view = buffer.slice(..).get_mapped_range();
-            let decoded = decode(&view, count, selected_capacity, snapshot.manifest.len());
-            drop(view);
+            let decoded = super::mapped_readback::with_mapped_range(&buffer, 0..bytes, |view| {
+                decode(view, count, selected_capacity, snapshot.manifest.len())
+            })
+            .flatten();
             buffer.unmap();
             decoded
         } else {

@@ -42,8 +42,11 @@ mod choreography_tests;
 mod input_events;
 mod lighting_quality;
 mod lights;
+#[path = "particle_light_boundary_019.rs"]
+mod particle_light_boundary;
 mod particle_light_gpu;
 mod particle_lights;
+use particle_lights as particle_light_realization;
 mod playback;
 #[cfg(test)]
 use playback::dispatch_choreography_events;

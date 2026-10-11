@@ -12,6 +12,9 @@ use bevy::{
 };
 use std::sync::Arc;
 
+#[derive(Component)]
+pub(super) struct HostMotionDraw;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(super) enum GpuRenderMode {
     #[default]

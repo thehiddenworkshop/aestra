@@ -32,6 +32,17 @@ function Inputs {
     $paths += @(
         'bevy/aestra-bevy-render/src/gpu.rs',
         'bevy/aestra-bevy-render/src/lib.rs',
+        'bevy/aestra-bevy-render/src/project_assets.rs',
+        'bevy/aestra-bevy-render/src/sampling.rs',
+        'bevy/aestra-bevy-render/src/gpu/preparation.rs',
+        'bevy/aestra-bevy-render/src/gpu/preparation_tests.rs',
+        'bevy/aestra-bevy-render/src/gpu/bounds.rs',
+        'bevy/aestra-bevy-render/src/gpu/ribbon_bounds.rs',
+        'bevy/aestra-bevy-render/src/gpu/bounds_test_types_019.rs',
+        'bevy/aestra-bevy-render/src/gpu/bounds_test_types_020.rs',
+        'bevy/aestra-bevy-render/src/gpu/material_lighting.rs',
+        'bevy/aestra-bevy-render/src/gpu/material_shader_019.rs',
+        'bevy/aestra-bevy-render/src/gpu/material_shader_020.rs',
         'bevy/aestra-bevy-render/src/presented_effect.rs',
         'bevy/aestra-bevy-render/src/gpu/output_context.rs',
         'bevy/aestra-bevy-render/src/gpu/particle_output_readback.rs',
@@ -46,6 +57,11 @@ function Inputs {
         'bevy/aestra-bevy-render/src/gpu/draw_commands.rs',
         'bevy/aestra-bevy-render/src/gpu/draw_preparation.rs',
         'bevy/aestra-bevy-render/src/gpu/draw_resources.rs',
+        'bevy/aestra-bevy-render/src/gpu/particle_statistics.rs',
+        'bevy/aestra-bevy-render/src/gpu/physics.rs',
+        'bevy/aestra-bevy-render/src/gpu/transform_sync.rs',
+        'bevy/aestra-bevy-render/src/gpu/visibility_updates.rs',
+        'bevy/aestra-bevy-render/src/gpu/visibility_tests.rs',
         'bevy/aestra-bevy-render/src/gpu/scene_depth_019.rs',
         'bevy/aestra-bevy-render/src/gpu/scene_depth_020.rs',
         'bevy/aestra-bevy-render/src/gpu/alpha_sort.rs',
@@ -89,6 +105,13 @@ function Inputs {
         'bevy/aestra-bevy/src/project.rs',
         'bevy/aestra-bevy/src/bindings.rs',
         'bevy/aestra-bevy/src/lib.rs',
+        'bevy/aestra-bevy/src/particle_lights.rs',
+        'bevy/aestra-bevy/src/particle_light_gpu.rs',
+        'bevy/aestra-bevy/src/particle_light_gpu.wgsl',
+        'bevy/aestra-bevy/src/particle_light_boundary_019.rs',
+        'bevy/aestra-bevy/src/particle_light_boundary_020.rs',
+        'bevy/aestra-bevy/src/lighting_quality.rs',
+        'bevy/aestra-bevy/src/lights.rs',
         'bevy/aestra-bevy-render/src/gpu/stage_runtimes.rs',
         'bevy/aestra-bevy-render/src/gpu/stage_output_delivery.rs',
         'bevy/aestra-bevy-render/src/gpu/particle_light_inputs.rs',
@@ -100,6 +123,9 @@ function Inputs {
         'bevy/aestra-bevy-render/src/gpu/stateful_trails.rs',
         'bevy/aestra-bevy-render/src/gpu/stateful_trails_tests.rs',
         'bevy/aestra-bevy-render/src/gpu/volume.rs',
+        'bevy/aestra-bevy-render/src/render_set.rs',
+        'bevy/aestra-bevy-render/src/gpu/volume_shader_019.rs',
+        'bevy/aestra-bevy-render/src/gpu/volume_shader_020.rs',
         'bevy/aestra-bevy-render/src/gpu/mesh_inputs.rs',
         'bevy/aestra-bevy-render/src/gpu/world_sdf.rs',
         'bevy/aestra-bevy-render/src/gpu/extension_stages.rs',
@@ -343,7 +369,10 @@ try {
             'stateful_native::native_020_outer_graph_stateful_particles_reach_draws_and_profiling',
             'coupled_native::native_020_outer_graph_coupled_routes_reach_draws_and_profiling',
             'coupled_trails_native::native_020_outer_graph_fluid_and_joint_trails_restore_and_present',
-            'coupled_trails_native::native_020_outer_graph_domain_births_reach_trails_and_output_rings'
+            'coupled_trails_native::native_020_outer_graph_domain_births_reach_trails_and_output_rings',
+            'particle_lights_native::native_020_production_light_installer_selects_mixed_playback_and_retires_stale_sources',
+            'host_lights_native::native_020_host_lights_realize_async_and_same_frame_and_retire',
+            'volume_native::native_020_production_volume_installer_copies_live_fields_draws_and_retires'
         )) {
             $log = Join-Path $reports (($test -replace '::', '-') + '.log')
             & $extractionBinary $test --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host
@@ -365,7 +394,8 @@ try {
         foreach ($test in @(
             'stateful_native::native_020_delayed_shader_recovers_stateful_simulation_and_draws',
             'stateful_native::native_020_outer_graph_recovers_delayed_stateful_readiness',
-            'host_stage_native::native_020_pipelined_project_outputs_survive_restart_seek_and_teardown'
+            'host_stage_native::native_020_pipelined_project_outputs_survive_restart_seek_and_teardown',
+            'pipelined_installers_native::native_020_pipelined_installers_share_nested_clock_outputs_and_lights'
         )) {
             $log = Join-Path $reports (($test -replace '::', '-') + '.log')
             & $asyncBinary $test --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host

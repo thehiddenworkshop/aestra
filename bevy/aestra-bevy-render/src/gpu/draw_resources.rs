@@ -6,6 +6,18 @@ use bevy::{
 use std::{collections::BTreeMap, sync::Mutex};
 pub(super) const MAX_DRAWS: usize = 2048;
 
+/// CPU-side observation payload, independent from the readback transport.
+#[derive(Clone, Debug, Default)]
+pub(super) struct GeometrySample {
+    pub owner: Option<Entity>,
+    pub token: u32,
+    pub time: f32,
+    pub instances: u32,
+    pub vertices: u64,
+    pub primitives: u64,
+    pub draws: u32,
+}
+
 /// Producer ordering shared with effect-bind-group preparation.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct PrepareAlphaSort;
@@ -13,6 +25,10 @@ pub(super) struct PrepareAlphaSort;
 /// Simulation completes before view-local compute producers and graph drawing.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct SimulateEffects;
+
+/// Main-world particle consumers observe the current propagated render inputs.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct SyncGpuRenderTransforms;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct SortAlpha;

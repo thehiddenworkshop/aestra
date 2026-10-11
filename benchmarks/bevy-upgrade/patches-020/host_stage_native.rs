@@ -40,6 +40,13 @@ struct ThreadSnapshot {
     owners: BTreeMap<Entity, (u32, StageOutputIdentity)>,
 }
 
+// A sendable system may run on a pool worker, including the waiting host thread.
+// An exclusive system observes the actual render schedule caller instead.
+#[cfg(feature = "async-qualification")]
+fn mark_render_thread(world: &mut World) {
+    world.resource::<ThreadProgress>().0.lock().unwrap().thread = Some(std::thread::current().id());
+}
+
 fn inputs(mut commands: Commands, effects: Query<(Entity, &PresentedEffect)>) {
     for (owner, presented) in &effects {
         commands
@@ -72,7 +79,6 @@ fn simulate(
     let mut threaded = threaded.0.lock().unwrap();
     #[cfg(feature = "async-qualification")]
     {
-        threaded.thread = Some(std::thread::current().id());
         threaded.owners.clear();
     }
     for (entity, owner, extracted) in &effects {
@@ -253,6 +259,13 @@ fn configured_host_app(pipelined: bool) -> (App, RenderDevice) {
                 .after(RenderGraphSystems::Begin)
                 .before(RenderGraphSystems::Render),
         );
+    #[cfg(feature = "async-qualification")]
+    render.add_systems(
+        RenderGraph,
+        mark_render_thread
+            .after(simulate)
+            .before(RenderGraphSystems::Render),
+    );
     app.finish();
     let device = app
         .sub_app(RenderApp)
@@ -386,6 +399,18 @@ fn native_020_host_clock_drives_stage_reset_and_suppressed_seek_outputs() {
 fn bound_project(
     registry: &aestra_compiler::ExtensionRegistry,
 ) -> std::sync::Arc<aestra_runtime::CompiledEffectProject> {
+    project_fixture(registry, false)
+}
+#[cfg(feature = "async-qualification")]
+pub(super) fn project_with_lights(
+    registry: &aestra_compiler::ExtensionRegistry,
+) -> std::sync::Arc<aestra_runtime::CompiledEffectProject> {
+    project_fixture(registry, true)
+}
+fn project_fixture(
+    registry: &aestra_compiler::ExtensionRegistry,
+    lights: bool,
+) -> std::sync::Arc<aestra_runtime::CompiledEffectProject> {
     use aestra_core::*;
     let mut leaf = super::stage_outputs_native::plate_asset(registry, 5., false, true);
     leaf.duration = 4.;
@@ -418,6 +443,22 @@ fn bound_project(
     let parameter_id = parameter.id;
     leaf.parameters.push(parameter);
     let mut emitter = Emitter::basic_sprite("Parameter probe", 4.);
+    if lights {
+        emitter.max_particles = 129;
+        emitter.modules[1] = ModuleInstance::shape(EmitterShape::Sphere { radius: 0.2 });
+        emitter.modules[2] = ModuleInstance::initialize(
+            ScalarRange::new(1., 2.),
+            ScalarRange::new(2., 3.),
+            [0., 0., 1.],
+            30.,
+            ScalarRange::new(0., 0.),
+        );
+        emitter
+            .scene_outputs
+            .push(SceneOutputInstance::particle_point_light(
+                ParticlePointLightProperties::new(1000., 12.),
+            ));
+    }
     emitter
         .modules
         .iter_mut()
@@ -455,7 +496,7 @@ fn bound_project(
     )
 }
 
-fn leaf(app: &mut App, root: Entity) -> Entity {
+pub(super) fn leaf(app: &mut App, root: Entity) -> Entity {
     app.world_mut()
         .query::<(Entity, &crate::EffectClipInstance)>()
         .iter(app.world())
@@ -463,7 +504,7 @@ fn leaf(app: &mut App, root: Entity) -> Entity {
         .unwrap()
         .0
 }
-fn force(app: &App, owner: Entity) -> f32 {
+pub(super) fn force(app: &App, owner: Entity) -> f32 {
     app.world()
         .get::<AestraEffectOutputs>(owner)
         .unwrap()

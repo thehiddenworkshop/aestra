@@ -39,7 +39,12 @@ pub(crate) use super::stage_runtimes::StageRuntimes;
 use super::stage_runtimes::StagesKey;
 use super::stage_runtimes::prepare_stage_runtimes;
 pub use super::world_sdf::AestraWorldSdf;
-use super::*;
+use super::{
+    catchup_pacing::{AestraCatchupPacing, CatchupPacer},
+    draw_resources::SimulateEffects,
+    timestamp_transport::{SimulationTimer, TimingMailbox},
+};
+use crate::PresentedEffect;
 use crate::execution::PassTimestamps;
 #[cfg(test)]
 use crate::execution::TimelinePolicy;
@@ -52,9 +57,26 @@ use aestra_gpu::GpuWorldSdf;
 use aestra_runtime::{
     CompiledEffect, CompiledExtensionStage, EffectInstance, FieldLayout, ProfileValue,
 };
-use bevy::render::{renderer::RenderQueue, sync_world::MainEntity, texture::GpuImage};
-use simulation_timing::{SimulationTimer, TimingMailbox};
-use std::{collections::HashMap, sync::Mutex};
+#[cfg(test)]
+use aestra_runtime::{PlaybackHistoryPolicy, SeekQuality};
+use bevy::{
+    asset::RenderAssetUsages,
+    camera::visibility::RenderLayers,
+    prelude::*,
+    render::{
+        Render, RenderApp, RenderStartup, RenderSystems,
+        diagnostic::RecordDiagnostics,
+        render_asset::RenderAssets,
+        render_resource::{Extent3d, TextureDimension, TextureFormat},
+        renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems, RenderQueue},
+        sync_world::MainEntity,
+        texture::GpuImage,
+    },
+};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use wgpu::util::DeviceExt;
 
 /// Latest render-world confirmation that all extension stages reached the requested time.
@@ -186,7 +208,7 @@ pub(super) fn install(app: &mut App) {
     let progress = StageProgressMailbox::default();
     let outputs = StageOutputMailbox::default();
     app.init_resource::<AestraDebugViews>()
-        .init_resource::<super::AestraCatchupPacing>()
+        .init_resource::<AestraCatchupPacing>()
         .insert_resource(mailbox.clone())
         .insert_resource(progress.clone())
         .insert_resource(outputs.clone())
@@ -223,7 +245,7 @@ pub(super) fn install(app: &mut App) {
             // After the particle simulation, which advances coupled domains itself (fluid F2b), so
             // field views show every domain's final state for the frame.
             run_extension_stages
-                .after(super::run_simulation)
+                .after(SimulateEffects)
                 .before(RenderGraphSystems::Render),
         );
 }
@@ -464,7 +486,7 @@ fn run_extension_stages(
     device: Res<RenderDevice>,
     queue: Res<RenderQueue>,
     mailbox: Res<StageTimingMailbox>,
-    mut pacer: ResMut<super::CatchupPacer>,
+    mut pacer: ResMut<CatchupPacer>,
     progress: Res<StageProgressMailbox>,
     outputs: Res<StageOutputMailbox>,
     mut timer: Local<SimulationTimer>,
@@ -475,14 +497,17 @@ fn run_extension_stages(
     if effects.is_empty() {
         return;
     }
-    let _span = tracing::info_span!("aestra::gpu::extension_stages").entered();
+    let _span = bevy::log::info_span!("aestra::gpu::extension_stages").entered();
     let diagnostics = render_context.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let gpu_span = diagnostics.time_span(
         render_context.command_encoder(),
         "aestra::gpu::extension_stages",
     );
-    let mut batch = timer.begin(&device, queue.get_timestamp_period());
+    // A paused frame must not publish a newer empty batch: with pipelined
+    // rendering it can supersede the last advancing frame's in-flight callback.
+    // Allocate lazily, keeping the last real stage measurement as documented.
+    let mut batch = None;
     let wgpu_device = device.wgpu_device();
     for (entity, main_entity, extracted) in &effects {
         let Some(runtime) = runtimes.0.get_mut(&entity) else {
@@ -505,6 +530,9 @@ fn run_extension_stages(
                 })
                 .collect()
         };
+        if !pending.is_empty() && batch.is_none() {
+            batch = timer.begin(&device, queue.get_timestamp_period());
+        }
         let timing = (!pending.is_empty())
             .then(|| {
                 batch

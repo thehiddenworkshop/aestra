@@ -533,3 +533,103 @@ The complete extension-stage/volume/light installers and combined pipelined host
 integration remain open, alongside editor compatibility and final parity.
 Shipping remains Bevy 0.19.1. See
 [implementation and evidence](outer-fluid-history-2026-10-11.md).
+
+## Production particle-light installer
+
+The candidate now includes the actual light collection/extraction/preparation/
+selection installer, consuming separate analytic and stateful owners from the
+shared production graph. An additional native gate checks global/per-output caps,
+same-frame readiness, paused/transform refresh, nested identities, replacement,
+budget rejection, disable/re-enable, backend changes and teardown. No selector is
+duplicated and all readbacks are test-only.
+
+Volume presentation, host light realization, full-plugin/pipelined integration and
+final parity remain open; shipping is still Bevy 0.19.1. See
+[implementation and evidence](production-light-installer-2026-10-11.md).
+
+## Production extension-stage and volume installers
+
+The candidate now calls the real stage/volume installers, including main-world
+view creation, stage inputs, extraction, actual fluid dispatch, density texture
+copies and the actual PBR material draw. The version-selected shader boundary
+keeps shipping WGSL unchanged and uses the qualified WESL composition for 0.20.
+An additional native gate checks live field/texture agreement, nonblack material
+pixels, pause/forward playback, look-edit reuse, grid rebuild, stage timestamps,
+debug-slice fallback, camera re-entry and owner teardown.
+
+This covers dense volume-only integration, not sparse/coupled volume rendering
+or full-plugin/pipelined integration. Host light realization and final parity
+remain open; shipping is still Bevy 0.19.1. See
+[implementation and evidence](production-volume-installer-2026-10-11.md).
+
+## Host particle-light realization
+
+The candidate now includes the actual host light plugin and both realization modes.
+Narrow version-selected extraction/WGSL-WESL boundaries keep host pooling, source
+authorization, budgets and GPU injection shared. The actual asynchronous transport
+uses the established fallible mapped-view boundary for wgpu 30.
+
+A required native receiver gate verifies clamped async proxies, GPU motion/layer
+refresh and reuse, transport rejection/recovery, mode transitions, same-render-
+sequence injection with no additional position readbacks, actual illumination,
+camera-layer/manifest rejection, hidden/despawned source retirement and teardown.
+The real stage/volume installers are registered too; combined volume-light pixels,
+complete-plugin and pipelined host-light integration remain open. Shipping stays
+Bevy 0.19.1. See [implementation and evidence](host-light-realization-2026-10-11.md).
+
+## Combined pipelined installers
+
+The actual host project/binding clock now runs with the shared outer graph and
+production stage/volume/light installers on Bevy's real pipelined render app.
+An additional required asynchronous native gate covers two nested roots, live
+fluid bindings, readiness/output convergence, both host-light modes, exact-frame
+GPU injection, actual receiver pixels, stage/simulation profiling and teardown.
+It also reproduces and fixes paused empty timing batches superseding in-flight
+stage measurements; batches now start only when a stage advances.
+
+This covers analytic particles and dense volumes, not a complete-plugin or
+joint volume-light scattering oracle. Monolithic particle preparation/transform
+wiring, editor compatibility and final parity remain open. Shipping stays on
+Bevy 0.19.1. See [implementation and evidence](pipelined-installers-2026-10-11.md).
+
+## Production clock and transform synchronization
+
+The combined pipelined candidate now calls the actual main-world synchronization
+installer. Its fixture only allocates initial analytic assets; it no longer
+uploads clocks, seeds, epochs or render transforms each frame. Paused nested root
+placement edits reach actual async light proxies, and buffers survive playback,
+restart and seeks. Focused tests also drain 0.20 storage uploads and verify exact
+matrix/context/cutoff lanes and asset reuse across repeated host updates.
+
+Initial/dynamic particle/material preparation and draw-child wiring still need
+qualification before claiming the full plugin. Shipping stays Bevy 0.19.1. See
+[implementation and evidence](production-transform-sync-2026-10-11.md).
+
+## Production particle and material preparation
+
+The combined pipelined candidate now calls actual initial allocation and live
+emitter/renderer/material preparation; its manual particle allocator is removed.
+Shipping and candidate share the preparation installer, project asset cache and
+trail readback setup. A version-selected generated-shader boundary preserves
+shipping WGSL and creates actual 0.20 WESL assets for both sampling variants.
+
+Shared regressions cover allocation reuse, backend/capacity gates, persistent
+trail resources, readback ownership and live material edits. Candidate tests also
+compile the actual generated assets through Bevy's ShaderCache and run existing
+bounds, sampling, asset-root and timing regressions. Main-world draw-child/
+visibility wiring, full-plugin bootstrap, editor compatibility and final parity
+remain open. Shipping stays Bevy 0.19.1. See
+[implementation and evidence](production-preparation-2026-10-11.md).
+
+## Production draw-child and visibility wiring
+
+Shipping and candidate now share the main-world installer for host-motion draw
+transforms, exact global matrices, bounds/wireframe scheduling and replay/sampling
+culling policy. Existing visibility regressions run on both engine graphs.
+The combined threaded native gate observes actual extracted draw records and
+checks paused placement centers, inherited hide/show, stable child IDs and buffer
+reuse without fixture-owned visibility.
+
+Full-plugin bootstrap, combined coupled readiness, editor compatibility, the
+root dependency switch and final parity remain open. Shipping stays Bevy 0.19.1.
+See [implementation and evidence](production-visibility-2026-10-11.md).

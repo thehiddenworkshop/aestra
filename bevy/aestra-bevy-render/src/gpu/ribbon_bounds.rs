@@ -24,7 +24,7 @@ pub(super) fn sync_ribbon_bounds(
             if !affine.translation.is_finite() {
                 return None;
             }
-            model.half_extents(Mat3::from(affine.matrix3))
+            model.half_extents_from_columns(Mat3::from(affine.matrix3).to_cols_array())
         });
         if let Some(half_extents) = bounds {
             let bounds = Aabb {
@@ -45,19 +45,13 @@ pub(super) fn sync_ribbon_bounds(
 
 #[cfg(test)]
 mod tests {
+    use super::super::bounds_test_types::{HalfSpace, ViewFrustum};
     use super::*;
-    use bevy::{
-        camera::primitives::Frustum,
-        math::{
-            Affine3A,
-            primitives::{HalfSpace, ViewFrustum},
-        },
-        transform::TransformSystems,
-    };
+    use bevy::{camera::primitives::Frustum, math::Affine3A, transform::TransformSystems};
 
     fn model(width: f32) -> RibbonParticleBounds {
         RibbonParticleBounds {
-            position_half_extents: Vec3::new(0.0, 2.0, 0.0),
+            position_half_extents: [0.0, 2.0, 0.0].into(),
             maximum_half_width: width,
         }
     }
@@ -88,14 +82,16 @@ mod tests {
             let bounds = Aabb {
                 center: Vec3::ZERO.into(),
                 half_extents: source
-                    .half_extents(Mat3::from(transform.matrix3))
+                    .half_extents_from_columns(Mat3::from(transform.matrix3).to_cols_array())
                     .unwrap()
                     .into(),
             };
             assert!(frustum().intersects_obb(&bounds, &transform, true, true));
             let naive = Aabb {
                 center: Vec3::ZERO.into(),
-                half_extents: (source.position_half_extents + Vec3::ONE).into(),
+                half_extents: (Vec3::from_array(source.position_half_extents.to_array())
+                    + Vec3::ONE)
+                    .into(),
             };
             assert!(!frustum().intersects_obb(&naive, &transform, true, true));
             let outside = Affine3A::from_translation(Vec3::new(20.0, 0.0, 0.0)) * transform;
@@ -146,9 +142,16 @@ mod tests {
         app.update();
         let actual = app.world().get::<Aabb>(draw).unwrap().half_extents;
         let expected = model(3.0)
-            .half_extents(Mat3::from_diagonal(Vec3::new(-0.01, 5.0, 1.0)))
+            .half_extents_from_columns(
+                Mat3::from_diagonal(Vec3::new(-0.01, 5.0, 1.0)).to_cols_array(),
+            )
             .unwrap();
-        assert!((Vec3::from(actual) - expected).abs().max_element() < 0.001);
+        assert!(
+            (Vec3::from(actual) - Vec3::from_array(expected))
+                .abs()
+                .max_element()
+                < 0.001
+        );
         // Collapse one parent axis: no finite local box can enclose world-facing width.
         app.world_mut()
             .get_mut::<Transform>(parent)

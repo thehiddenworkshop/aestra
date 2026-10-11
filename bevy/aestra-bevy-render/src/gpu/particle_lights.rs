@@ -4,13 +4,40 @@ pub use super::particle_light_inputs::{
     AestraParticleLightSettings, ParticleLightArtifact, ParticleLightMode, ParticleLightSource,
 };
 use super::particle_light_inputs::{Input, Inputs};
-use super::*;
+use super::{
+    draw_resources::{SimulateEffects, SyncGpuRenderTransforms},
+    effect_inputs::GpuEffectBuffers,
+    output_context::EffectOutputContext,
+};
+use crate::{
+    PresentedEffect,
+    capabilities::{ActiveBackend, EffectRuntimeStatus},
+};
 use aestra_gpu::particle_lights::*;
-use bevy::render::{
-    render_resource::{
-        BufferDescriptor, ShaderType, binding_types::uniform_buffer, encase::StorageBuffer,
+use aestra_gpu::{GpuParticle, GpuRenderGlobals};
+use bevy::{
+    asset::io::embedded::EmbeddedAssetRegistry,
+    prelude::*,
+    render::{
+        Render, RenderApp, RenderSystems,
+        diagnostic::RecordDiagnostics,
+        render_asset::RenderAssets,
+        render_resource::{
+            BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntries, Buffer, BufferDescriptor, BufferInitDescriptor, BufferUsages,
+            CachedComputePipelineId, ComputePassDescriptor, ComputePipelineDescriptor,
+            PipelineCache, ShaderStages, ShaderType,
+            binding_types::{storage_buffer, storage_buffer_read_only, uniform_buffer},
+            encase::StorageBuffer,
+        },
+        renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems, RenderQueue},
+        storage::GpuShaderBuffer,
     },
-    renderer::RenderQueue,
+};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
 /// Render-graph scheduling point after selected GPU records are written and
@@ -111,7 +138,7 @@ pub(super) fn install(app: &mut App) {
     }
     app.init_resource::<AestraParticleLightSettings>()
         .init_resource::<ParticleLightMode>()
-        .add_systems(PostUpdate, collect.after(super::sync_gpu_render_transforms));
+        .add_systems(PostUpdate, collect.after(SyncGpuRenderTransforms));
     if let Some(render) = app.get_sub_app_mut(RenderApp) {
         render
             .init_resource::<GpuSelectedParticleLights>()
@@ -122,7 +149,7 @@ pub(super) fn install(app: &mut App) {
                 RenderGraph,
                 select
                     .in_set(ParticleLightSelectionSet)
-                    .after(super::run_simulation)
+                    .after(SimulateEffects)
                     .before(RenderGraphSystems::Render),
             );
     }
@@ -384,7 +411,7 @@ fn prepare(
                     &input.parameters,
                     input.emitter_index,
                     token,
-                    Mat4::IDENTITY,
+                    Default::default(), // neutral artifact identity across the Bevy/glam boundary
                     storage_limit,
                 ) {
                     Ok(value) => value,

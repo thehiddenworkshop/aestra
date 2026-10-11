@@ -11,16 +11,7 @@ const MAX_OWNERS: usize = 256;
 const MAX_IN_FLIGHT: usize = 3;
 const BUFFER_SIZE: u64 = (MAX_OWNERS * 16 + MAX_DRAWS * 8) as u64;
 
-#[derive(Clone, Debug, Default)]
-pub(super) struct Sample {
-    pub owner: Option<Entity>,
-    pub token: u32,
-    pub time: f32,
-    pub instances: u32,
-    pub vertices: u64,
-    pub primitives: u64,
-    pub draws: u32,
-}
+pub(super) use super::draw_resources::GeometrySample as Sample;
 
 impl Sample {
     fn add(&mut self, vertices: u32, instances: u32, topology: Topology) {

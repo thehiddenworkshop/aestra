@@ -20,10 +20,7 @@ use bevy::{
 };
 use std::collections::BTreeMap;
 
-#[path = "../../../bevy/aestra-bevy-render/src/gpu/storage_buffers_020.rs"]
-mod storage_buffers;
-#[path = "../../../bevy/aestra-bevy-render/src/gpu/storage_encoding.rs"]
-mod storage_encoding;
+use crate::storage_buffers;
 
 #[derive(Resource, Default, Debug)]
 struct Capture {
