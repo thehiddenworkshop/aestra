@@ -1,5 +1,50 @@
 use super::*;
 
+#[test]
+fn insertion_anchors_the_drop_cascades_neighbors_and_rejects_stale_apply() {
+    let mut input = scene([
+        (0, node(0.0, 0.0, 100.0, 100.0)),
+        (1, node(90.0, 0.0, 100.0, 100.0)),
+    ]);
+    let candidate = solve_insertion(&input, &0, limits()).unwrap();
+    assert_eq!(
+        candidate.positions(),
+        &BTreeMap::from([(1, Vec2::new(110.0, 0.0))])
+    );
+    let stale = solve_insertion(&input, &0, limits()).unwrap();
+    candidate.apply(&mut input).unwrap();
+    assert_eq!(input.nodes[&0].position, Vec2::ZERO);
+    assert_eq!(input.nodes[&1].position, Vec2::new(110.0, 0.0));
+    let applied = input.clone();
+    assert_eq!(stale.apply(&mut input), Err(Conflict::Stale));
+    assert_eq!(input, applied);
+}
+
+#[test]
+fn insertion_budget_or_frozen_neighbor_conflicts_leave_snapshot_unchanged() {
+    let mut input = scene([
+        (0, node(0.0, 0.0, 100.0, 100.0)),
+        (1, node(90.0, 0.0, 100.0, 100.0)),
+    ]);
+    let original = input.clone();
+    let error = solve_insertion(
+        &input,
+        &0,
+        Limits {
+            max_affected: 0,
+            ..limits()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.conflict, Conflict::Budget(Budget::AffectedNodes));
+    assert_eq!(input, original);
+    input.nodes.get_mut(&1).unwrap().frozen = true;
+    let frozen = input.clone();
+    let error = solve_insertion(&input, &0, limits()).unwrap_err();
+    assert!(matches!(error.conflict, Conflict::Anchors(0, 1)));
+    assert_eq!(input, frozen);
+}
+
 fn node(x: f32, y: f32, w: f32, h: f32) -> Node {
     Node {
         position: Vec2::new(x, y),

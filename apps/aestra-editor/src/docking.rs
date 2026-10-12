@@ -468,10 +468,7 @@ pub(crate) enum DockDrop {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct DockNodeId(pub(crate) u64);
 
-/// Identity of one open editor-view instance (a dockable asset editor). Distinct from the editor's
-/// kind and from its document, so several editors of the same kind can be docked at once.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub(crate) struct EditorViewId(pub(crate) u64);
+pub(crate) use crate::editor_identity::EditorViewId;
 
 /// What a dock tab hosts: a singleton [`ToolPanel`], or a dynamic asset-editor view. Tool panels are
 /// deduplicated; editor views are not, so multiple asset editors can coexist as independent tabs.

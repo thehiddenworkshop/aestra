@@ -18,11 +18,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "aestra-bevy-020-patch-qualification"
-version = "0.0.0"
+name = "aestra-authoring"
+version = "0.1.0"
 dependencies = [
  "aestra-compiler",
  "aestra-core",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "aestra-bevy-020-patch-qualification"
+version = "0.0.0"
+dependencies = [
+ "aestra-authoring",
+ "aestra-compiler",
+ "aestra-core",
+ "aestra-example-extension",
  "aestra-extension",
  "aestra-fluid",
  "aestra-gpu",
@@ -39,7 +51,9 @@ dependencies = [
  "naga",
  "pollster",
  "resvg",
+ "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "tiny-skia",
  "unic-langid",
@@ -67,6 +81,15 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "uuid",
+]
+
+[[package]]
+name = "aestra-example-extension"
+version = "0.1.0"
+dependencies = [
+ "aestra-core",
+ "aestra-extension",
+ "aestra-runtime",
 ]
 
 [[package]]
@@ -1062,6 +1085,7 @@ dependencies = [
  "bevy_time",
  "bevy_transform",
  "bevy_ui",
+ "bevy_ui_render",
  "bevy_ui_widgets",
  "bevy_utils",
  "bevy_window",

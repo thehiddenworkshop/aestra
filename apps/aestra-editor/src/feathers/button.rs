@@ -1,16 +1,12 @@
 //! Editor action buttons and the bridge from Feathers activation to Aestra actions.
 
-use super::{button_activation::AuditedButton, scenes};
+use super::{action_activation::queue_activation, button_activation::AuditedButton, scenes};
 use crate::EditorAction;
 use bevy::{feathers::theme::ThemedText, prelude::*, ui_widgets::Activate};
 
-/// Marks a standard editor action implemented by a Bevy Feathers button.
-#[derive(Component)]
-pub(crate) struct FeathersActionButton;
-
-/// Marks an intentional editor-native interaction with no Feathers equivalent.
-#[derive(Component)]
-pub(crate) struct EditorNativeControl;
+pub(crate) use super::action_activation::{
+    EditorNativeControl, FeathersActionButton, PendingFeathersActivation,
+};
 
 pub(crate) type UnclassifiedEditorActionControl = (
     Added<EditorAction>,
@@ -19,20 +15,12 @@ pub(crate) type UnclassifiedEditorActionControl = (
     Without<EditorNativeControl>,
 );
 
-#[derive(Component)]
-pub(crate) struct PendingFeathersActivation;
-
 pub(crate) fn queue_action_activation(
     activate: On<Activate>,
-    actions: Query<(), (With<EditorAction>, With<FeathersActionButton>)>,
-    mut commands: Commands,
+    actions: Query<(), (With<FeathersActionButton>, With<EditorAction>)>,
+    commands: Commands,
 ) {
-    if actions.contains(activate.entity) {
-        commands.entity(activate.entity).insert((
-            PendingFeathersActivation,
-            super::button_activation::pressed_state(),
-        ));
-    }
+    queue_activation(activate, actions, commands);
 }
 
 pub(crate) fn audit_action_controls(controls: Query<Entity, UnclassifiedEditorActionControl>) {

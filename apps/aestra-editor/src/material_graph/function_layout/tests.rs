@@ -19,7 +19,11 @@ fn material_camera_persistence_uses_focused_visible_owner_not_query_order() {
 }
 
 fn camera_owner(asset: DocumentKey) {
-    use crate::{docking::EditorViewId, editor_view::ActiveEditorContext};
+    use crate::{
+        docking::EditorViewId,
+        document::DocumentManager,
+        editor_view::{ActiveEditorContext, EditorViewKind, EditorViewManager},
+    };
     let root = tempfile::tempdir().unwrap();
     let catalog = ProjectEffectCatalog::scan(root.path());
     let key = match asset {
@@ -31,11 +35,25 @@ fn camera_owner(asset: DocumentKey) {
         project: catalog.root().to_owned(),
         asset,
     };
+    let kind = match asset {
+        DocumentKey::MaterialFunction(_) => EditorViewKind::MaterialFunctionGraph,
+        DocumentKey::MaterialProgram(_) => EditorViewKind::MaterialGraph,
+        _ => unreachable!(),
+    };
+    let mut documents = DocumentManager::default();
+    let document_id = documents.open(asset);
+    let mut views = EditorViewManager::default();
+    // Resolve the persisted split-view IDs through the real authorities, as workspace restore does.
+    for id in [1, 2] {
+        views.restore_view(EditorViewId(id), document_id, kind);
+    }
     let (mut app, ui_root) = crate::feathers::node_graph::geometry::tests::layout_app(1.25);
     app.insert_resource(catalog)
+        .insert_resource(documents)
+        .insert_resource(views)
         .insert_resource(ActiveEditorContext {
             active_view: Some(EditorViewId(2)),
-            active_document: None,
+            active_document: Some(document_id),
         });
     let cameras = [
         (Vec2::new(20.0, 40.0), 0.5),

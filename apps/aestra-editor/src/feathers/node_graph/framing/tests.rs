@@ -1,6 +1,10 @@
 use super::*;
 use crate::{docking::EditorViewId, document::DocumentKey};
 use aestra_core::{MaterialExpressionId, MaterialFunctionId, MaterialProgramId};
+use bevy::{
+    input::mouse::{MouseScrollUnit, MouseWheel},
+    window::{CursorMoved, PrimaryWindow},
+};
 
 #[test]
 fn wheel_navigation_uses_logical_viewport_size_and_cancels_pending_frame() {
@@ -8,7 +12,8 @@ fn wheel_navigation_uses_logical_viewport_size_and_cancels_pending_frame() {
     for scale in [1.0, 1.25, 2.0] {
         for zoom in [0.5, 1.0, 1.75] {
             let mut app = App::new();
-            app.init_resource::<Messages<CursorMoved>>()
+            app.init_resource::<UiScale>()
+                .init_resource::<Messages<CursorMoved>>()
                 .init_resource::<Messages<MouseWheel>>()
                 .init_resource::<ButtonInput<MouseButton>>()
                 .init_resource::<ButtonInput<KeyCode>>()
@@ -95,7 +100,8 @@ fn graph_pan_only_uses_middle_or_space_left_and_resets_cursor_on_release() {
         (MouseButton::Left, true),
     ] {
         let mut app = App::new();
-        app.init_resource::<Messages<CursorMoved>>()
+        app.init_resource::<UiScale>()
+            .init_resource::<Messages<CursorMoved>>()
             .init_resource::<Messages<MouseWheel>>()
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<ButtonInput<KeyCode>>()

@@ -14,6 +14,7 @@ use crate::feathers::{
     icon::load_svg_icon,
     node_graph::*,
 };
+use aestra_authoring::MaterialAuthoringDocument;
 use aestra_authoring::{
     MaterialConnectionTarget, MaterialExpressionInput, MaterialFunctionBodyCommand as Edit,
 };

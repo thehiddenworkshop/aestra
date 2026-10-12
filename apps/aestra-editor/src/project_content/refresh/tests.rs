@@ -1,4 +1,5 @@
 use super::*;
+use aestra_core::material::{MaterialFunction, MaterialProgram};
 
 #[test]
 fn cached_panel_graph_timeline_and_compile_queries_do_not_reopen_sources() {

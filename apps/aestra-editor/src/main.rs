@@ -11,7 +11,11 @@ mod diagnostics;
 mod dock_ui;
 mod docking;
 mod document;
+mod document_registry;
+mod editor_identity;
+mod editor_target;
 mod editor_view;
+mod editor_view_registry;
 mod effect_authoring;
 mod feathers;
 mod history;
@@ -21,6 +25,7 @@ mod material_document;
 mod material_drafts;
 mod material_function_editor;
 mod material_graph;
+mod material_target;
 mod menus;
 mod persistence;
 mod preview_mocks;
@@ -55,7 +60,7 @@ use aestra_core::{
     FlipbookTimeSource, MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId,
     RendererProperties, StageKind, Value,
 };
-pub(crate) use aestra_project::{EffectAssetRef, ProjectSourceId as ProjectEffectEntryId};
+pub(crate) use aestra_project::EffectAssetRef;
 use asset_actions::{AssetActionsSet, EditorAssetActionsPlugin};
 pub(crate) use asset_actions::{AssetOperationState, spawn_asset_operation_overlay};
 #[cfg(test)]

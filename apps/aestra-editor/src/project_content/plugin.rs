@@ -3,23 +3,11 @@ use super::*;
 
 pub(crate) struct EditorProjectContentPlugin;
 
-#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ProjectContentSet {
-    Input,
-}
-
 impl Plugin for EditorProjectContentPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorProjectContent>()
-            .init_resource::<io::ProjectIoTasks>()
-            .init_resource::<ProjectEffectWatchState>()
+            .add_plugins(super::services::ProjectContentServicesPlugin)
             .init_resource::<aestra_bevy_render::AestraTextureRoot>()
-            .add_systems(
-                Update,
-                (io::poll, poll_project_effect_catalog.run_if(io::idle))
-                    .chain()
-                    .in_set(ProjectContentSet::Input),
-            )
             .add_systems(
                 Update,
                 sync_project_texture_root

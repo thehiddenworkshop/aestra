@@ -12,32 +12,63 @@ use super::{
 };
 use crate::feathers::icon::{SvgColor, SvgFile, UiSvg};
 use crate::theme;
+#[cfg(test)]
+use bevy::picking::{
+    events::{Drag, DragEnd, DragStart, Pointer},
+    pointer::PointerButton,
+};
 use bevy::{
     asset::embedded_asset,
-    ecs::query::{QueryData, QueryFilter},
-    feathers::{
-        controls::{FeathersCheckbox, FeathersTextInputContainer},
-        cursor::{EntityCursor, OverrideCursor},
-    },
-    input::mouse::{MouseScrollUnit, MouseWheel},
-    picking::events::{Drag, DragEnd, DragStart, Pointer, Press},
-    picking::pointer::PointerButton,
+    feathers::controls::{FeathersCheckbox, FeathersTextInputContainer},
     prelude::*,
-    reflect::TypePath,
-    render::render_resource::AsBindGroup,
-    shader::ShaderRef,
     ui::RelativeCursorPosition,
-    ui_render::prelude::{UiMaterial, UiMaterialPlugin},
+    ui_render::prelude::UiMaterialPlugin,
     ui_widgets::Activate,
-    window::{CursorMoved, PrimaryWindow, SystemCursorIcon, Window},
+    window::SystemCursorIcon,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#[cfg(test)]
+use std::collections::BTreeSet;
 
 mod drag_assist;
+mod drag_context;
+mod memory;
+pub(crate) use memory::GraphViewportMemory;
+mod drag;
+use drag::*;
+#[path = "node_graph/interaction/pointer_019.rs"]
+mod graph_pointer;
+mod node;
+use node::begin_graph_node_press;
+pub(crate) use node::{
+    FeathersGraphNode, FeathersGraphNodePreview, GraphModifiedDragTarget, GraphModifiedNodeDrag,
+    GraphNodeDragModifier, GraphPinEdit, GraphPresentationBatchEdit, GraphPresentationEdit,
+};
+mod marquee;
+use marquee::{
+    GraphMarqueeGesture, begin_graph_marquee, cancel_graph_marquee, cleanup_graph_marquee,
+    end_graph_marquee, update_graph_marquee,
+};
+pub(crate) use marquee::{GraphMarqueeSelection, GraphSelectionMode};
+#[path = "node_graph/navigation/cursor_019.rs"]
+mod graph_cursor;
+use graph_cursor::EntityCursor;
+#[cfg(test)]
+use graph_cursor::OverrideCursor;
+mod navigation;
+use navigation::*;
+pub(crate) use navigation::{
+    FeathersGraphNavigationBlocker, FeathersGraphViewport, GraphFrameTarget,
+};
+mod materials;
+use materials::GraphGridMaterial;
+pub(crate) use materials::GraphWireMaterial;
 mod framing;
 pub(crate) use drag_assist::spawn_controls as spawn_graph_drag_controls;
 pub(crate) mod geometry;
 pub(crate) mod insertion;
+#[cfg(test)]
+#[path = "node_graph/insertion/tests.rs"]
+mod insertion_tests;
 mod overlay;
 pub(crate) mod placement;
 mod resize;
@@ -48,14 +79,8 @@ pub(crate) const PORT_ROW_HEIGHT: f32 = 24.0;
 pub(crate) const NODE_PREVIEW_SIZE: f32 = 208.0;
 pub(crate) const SOCKET_HIT_SIZE: f32 = 20.0;
 const SOCKET_SIZE: f32 = 10.0;
-// Overview navigation should reach well beyond the old 25% floor. The adaptive grid and fixed
-// wire layer remain legible at this scale; editing controls are intended for closer zoom levels.
-const MIN_ZOOM: f32 = 0.08;
-const MAX_ZOOM: f32 = 2.0;
 const SELECTED_BORDER_WIDTH: f32 = 2.0;
 const MIN_SELECTED_BORDER_SCREEN_WIDTH: f32 = 2.0;
-const FRAME_PADDING: f32 = 42.0;
-const GRID_SPACING: f32 = 32.0;
 
 type GraphNodeControlFilter = Or<(
     With<FeathersGraphSocket>,
@@ -158,13 +183,14 @@ impl Plugin for FeathersNodeGraphPlugin {
             .add_observer(queue_graph_frame_activation)
             .add_observer(queue_graph_collapse_activation)
             .add_observer(queue_graph_pin_activation)
-            .add_observer(begin_graph_node_press)
-            .add_observer(begin_graph_node_drag)
+            .add_observer(begin_graph_node_press::<GraphNodeControlFilter>)
+            .add_observer(begin_graph_node_drag::<GraphNodeControlFilter>)
             .add_observer(drag_graph_node)
             .add_observer(end_graph_node_drag)
-            .add_observer(begin_graph_marquee)
+            .add_observer(begin_graph_marquee::<GraphNodeControlFilter>)
             .add_observer(update_graph_marquee)
             .add_observer(end_graph_marquee)
+            .add_observer(cancel_graph_marquee)
             .add_observer(drag_assist::toggle)
             .add_systems(
                 Update,
@@ -180,6 +206,7 @@ impl Plugin for FeathersNodeGraphPlugin {
                     handle_graph_collapse_buttons,
                     handle_graph_pin_buttons,
                     navigate_graph_viewports,
+                    cleanup_graph_marquee,
                     sync_graph_viewport_transforms,
                     sync_graph_selection_outlines,
                     update_socket_visuals,
@@ -206,19 +233,6 @@ pub(crate) struct GraphViewportProps {
     pub(crate) initial_view: Option<(Vec2, f32)>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GraphFrameTarget {
-    All,
-    Selection,
-}
-
-/// A visible overlay that owns pointer navigation above a graph viewport.
-///
-/// Graph wheel navigation is message-based rather than pointer-event based, so overlays use this
-/// marker to prevent a wheel gesture from both scrolling the overlay and zooming the graph below.
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct FeathersGraphNavigationBlocker;
-
 #[derive(Component, Debug, Clone)]
 pub(crate) struct GraphFrameAction {
     key: String,
@@ -234,32 +248,6 @@ impl GraphFrameAction {
     }
 }
 
-#[derive(Component, Debug, Clone)]
-pub(crate) struct FeathersGraphViewport {
-    key: String,
-    pan: Vec2,
-    zoom: f32,
-    content_size: Vec2,
-    selection_bounds: Option<Rect>,
-    frame_request: Option<GraphFrameTarget>,
-    measured_frame: Option<(GraphFrameTarget, GraphView)>,
-}
-
-impl FeathersGraphViewport {
-    pub(crate) fn project_graph_point(&self, point: Vec2) -> Vec2 {
-        self.pan + point * self.zoom
-    }
-
-    pub(crate) fn unproject_viewport_point(&self, point: Vec2) -> Vec2 {
-        (point - self.pan) / self.zoom
-    }
-}
-
-#[derive(Component, Debug, Clone, Copy)]
-struct FeathersGraphCanvas {
-    viewport: Entity,
-}
-
 /// Graph-space layer rendered below the node canvas with the exact same pan/zoom transform.
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct FeathersGraphWireLayer {
@@ -269,278 +257,6 @@ pub(crate) struct FeathersGraphWireLayer {
 #[derive(Component, Debug, Clone, Copy)]
 struct FeathersGraphGrid {
     viewport: Entity,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct GraphView {
-    pan: Vec2,
-    zoom: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct GraphNodeView {
-    /// Authored base position. Temporary display offsets must never be stored here.
-    position: Vec2,
-    collapsed: bool,
-}
-
-#[derive(Resource, Default)]
-pub(crate) struct GraphViewportMemory {
-    views: HashMap<String, GraphView>,
-    nodes: HashMap<(String, String), GraphNodeView>,
-    pinned: HashSet<(String, String)>,
-    offsets: HashMap<(String, String), Vec2>,
-    placement_revisions: HashMap<(String, String), u64>,
-    offset_epochs: HashMap<String, u64>,
-    graph_revisions: HashMap<String, u64>,
-    serial: u64,
-}
-
-impl GraphViewportMemory {
-    pub(crate) fn base_nodes(
-        &self,
-        graph: &str,
-    ) -> std::collections::BTreeMap<String, (Vec2, bool)> {
-        self.nodes
-            .iter()
-            .filter(|((key, _), _)| key == graph)
-            .map(|((_, key), node)| (key.clone(), (node.position, node.collapsed)))
-            .collect()
-    }
-    pub(crate) fn pinned_nodes(&self, graph: &str) -> BTreeSet<String> {
-        self.pinned
-            .iter()
-            .filter(|(key, _)| key == graph)
-            .map(|(_, node)| node.clone())
-            .collect()
-    }
-    /// Remove a document and all of its independent view cameras without touching other widgets.
-    pub(crate) fn retain_graphs(&mut self, keep: impl Fn(&str) -> bool) {
-        self.views.retain(|key, _| keep(key));
-        self.nodes.retain(|(key, _), _| keep(key));
-        self.pinned.retain(|(key, _)| keep(key));
-        self.offsets.retain(|(key, _), _| keep(key));
-        self.placement_revisions.retain(|(key, _), _| keep(key));
-        self.offset_epochs.retain(|key, _| keep(key));
-        self.graph_revisions.retain(|key, _| keep(key));
-    }
-
-    pub(crate) fn retain_nodes(&mut self, graph: &str, keep: impl Fn(&str) -> bool) {
-        self.nodes
-            .retain(|(key, node), _| key != graph || keep(node));
-        self.pinned.retain(|(key, node)| key != graph || keep(node));
-        self.offsets
-            .retain(|(key, node), _| key != graph || keep(node));
-        self.placement_revisions
-            .retain(|(key, node), _| key != graph || keep(node));
-    }
-
-    /// Semantic reload/edit invalidates session displacement, not authored base placement.
-    pub(crate) fn clear_offsets(&mut self, graph: &str) {
-        self.offsets.retain(|(key, _), _| key != graph);
-        self.touch_graph(graph);
-        self.offset_epochs.insert(graph.to_owned(), self.serial);
-    }
-
-    /// Monotonic document-local token used to reject stale asynchronous layout results.
-    pub(crate) fn placement_revision(&self, graph: &str) -> u64 {
-        self.graph_revisions.get(graph).copied().unwrap_or_default()
-    }
-
-    fn touch_graph(&mut self, graph: &str) {
-        self.serial += 1;
-        self.graph_revisions.insert(graph.to_owned(), self.serial);
-    }
-
-    pub(crate) fn view(&self, graph_key: &str) -> Option<(Vec2, f32)> {
-        self.views.get(graph_key).map(|view| (view.pan, view.zoom))
-    }
-
-    pub(crate) fn set_view(&mut self, graph_key: impl Into<String>, pan: Vec2, zoom: f32) {
-        self.views.insert(graph_key.into(), GraphView { pan, zoom });
-    }
-
-    pub(crate) fn node_position(&self, graph_key: &str, node_key: &str) -> Option<Vec2> {
-        let key = (graph_key.to_owned(), node_key.to_owned());
-        self.nodes
-            .get(&key)
-            .map(|node| node.position + self.offsets.get(&key).copied().unwrap_or(Vec2::ZERO))
-    }
-
-    /// Persistent base position and collapse state, never the displayed/effective position.
-    pub(crate) fn node(&self, graph_key: &str, node_key: &str) -> Option<(Vec2, bool)> {
-        self.nodes
-            .get(&(graph_key.to_owned(), node_key.to_owned()))
-            .map(|node| (node.position, node.collapsed))
-    }
-
-    pub(crate) fn is_pinned(&self, graph_key: &str, node_key: &str) -> bool {
-        self.pinned
-            .contains(&(graph_key.to_owned(), node_key.to_owned()))
-    }
-
-    pub(crate) fn set_pinned(&mut self, graph_key: &str, node_key: &str, pinned: bool) {
-        let key = (graph_key.to_owned(), node_key.to_owned());
-        let changed = if pinned {
-            self.pinned.insert(key)
-        } else {
-            self.pinned.remove(&key)
-        };
-        if changed {
-            self.touch_graph(graph_key);
-        }
-    }
-
-    pub(crate) fn set_node(
-        &mut self,
-        graph_key: impl Into<String>,
-        node_key: impl Into<String>,
-        position: Vec2,
-        collapsed: bool,
-    ) {
-        let graph_key = graph_key.into();
-        let key = (graph_key.clone(), node_key.into());
-        if self
-            .nodes
-            .get(&key)
-            .is_none_or(|node| node.position != position || node.collapsed != collapsed)
-        {
-            self.touch_graph(&graph_key);
-            self.placement_revisions.insert(key.clone(), self.serial);
-        }
-        self.offsets.remove(&key);
-        self.nodes.insert(
-            key,
-            GraphNodeView {
-                position,
-                collapsed,
-            },
-        );
-    }
-
-    pub(crate) fn place_node(
-        &mut self,
-        graph_key: impl Into<String>,
-        node_key: impl Into<String>,
-        position: Vec2,
-    ) {
-        self.set_node(graph_key, node_key, position, false);
-    }
-
-    pub(crate) fn remove_node(&mut self, graph_key: &str, node_key: &str) {
-        let key = (graph_key.to_owned(), node_key.to_owned());
-        let changed = self.nodes.remove(&key).is_some()
-            | self.pinned.remove(&key)
-            | self.offsets.remove(&key).is_some()
-            | self.placement_revisions.remove(&key).is_some();
-        if changed {
-            self.touch_graph(graph_key);
-        }
-    }
-
-    /// Replacement rather than accumulation keeps rebuild/remeasurement idempotent.
-    #[allow(dead_code)]
-    pub(crate) fn set_temporary_offset(
-        &mut self,
-        graph_key: &str,
-        node_key: &str,
-        offset: Vec2,
-    ) -> bool {
-        let key = (graph_key.to_owned(), node_key.to_owned());
-        let Some(node) = self.nodes.get(&key) else {
-            return false;
-        };
-        if !offset.is_finite() || !(node.position + offset).is_finite() {
-            return false;
-        }
-        if offset == Vec2::ZERO {
-            self.offsets.remove(&key);
-        } else {
-            self.offsets.insert(key, offset);
-        }
-        true
-    }
-
-    fn set_collapsed(&mut self, graph_key: &str, node_key: &str, fallback: Vec2, collapsed: bool) {
-        // Collapse changes presentation, not placement: preserve the base even while displaced.
-        let key = (graph_key.to_owned(), node_key.to_owned());
-        self.nodes
-            .entry(key)
-            .or_insert(GraphNodeView {
-                position: fallback,
-                collapsed,
-            })
-            .collapsed = collapsed;
-    }
-}
-
-#[derive(Resource, Default)]
-struct GraphPanGesture {
-    viewport: Option<Entity>,
-    button: Option<MouseButton>,
-    cursor_position: Option<Vec2>,
-}
-
-#[derive(Resource, Default)]
-struct GraphMarqueeGesture {
-    viewport: Option<Entity>,
-    overlay: Option<Entity>,
-    start: Vec2,
-    current: Vec2,
-    mode: GraphSelectionMode,
-}
-
-#[derive(Resource, Default)]
-struct GraphNodeDragGesture {
-    active: Option<Entity>,
-    members: BTreeSet<Entity>,
-    before: BTreeMap<String, (Vec2, bool)>,
-}
-
-#[derive(Component)]
-struct GraphMarqueeOverlay;
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum GraphSelectionMode {
-    #[default]
-    Replace,
-    Add,
-    Toggle,
-}
-
-#[derive(Event, Debug, Clone)]
-pub(crate) struct GraphMarqueeSelection {
-    pub viewport: Entity,
-    pub nodes: BTreeSet<String>,
-    pub mode: GraphSelectionMode,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GraphNodeDragModifier {
-    Duplicate,
-    Upstream,
-    Downstream,
-}
-
-/// Marks semantic expression nodes that support modifier-drag duplication/branch movement.
-/// Synthetic output nodes intentionally omit this marker and retain ordinary movement.
-#[derive(Component)]
-pub(crate) struct GraphModifiedDragTarget;
-
-#[derive(Event, Debug, Clone)]
-pub(crate) struct GraphModifiedNodeDrag {
-    pub graph: String,
-    pub node: String,
-    pub before: (Vec2, bool),
-    pub after: (Vec2, bool),
-    pub modifier: GraphNodeDragModifier,
-}
-
-#[derive(Event, Debug, Clone)]
-pub(crate) struct GraphPresentationBatchEdit {
-    pub graph: String,
-    pub before: BTreeMap<String, (Vec2, bool)>,
-    pub origin: Option<Entity>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -584,77 +300,6 @@ pub(crate) struct GraphNodePreviewToggleProps {
 
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct FeathersGraphNodePreviewToggle;
-
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct FeathersGraphNodePreview;
-
-#[derive(Component, Debug, Clone)]
-pub(crate) struct FeathersGraphNode {
-    graph_key: String,
-    node_key: String,
-    position: Vec2,
-    selected: bool,
-    pinned: bool,
-    collapsed: bool,
-    dragging: bool,
-    drag_before: Option<(Vec2, bool)>,
-    drag_modifier: Option<GraphNodeDragModifier>,
-    suppress_release_click: bool,
-}
-
-/// One completed user gesture, never camera motion or passive memory synchronization.
-#[derive(Event, Clone)]
-pub(crate) struct GraphPresentationEdit {
-    pub(crate) graph: String,
-    pub(crate) node: String,
-    pub(crate) before: (Vec2, bool),
-    pub(crate) after: (Vec2, bool),
-    pub(crate) origin: Option<Entity>,
-}
-
-#[derive(Event, Clone)]
-pub(crate) struct GraphPinEdit {
-    pub(crate) graph: String,
-    pub(crate) node: String,
-    pub(crate) before: bool,
-    pub(crate) after: bool,
-    pub(crate) origin: Option<Entity>,
-}
-
-impl FeathersGraphNode {
-    pub(crate) fn position(&self) -> Vec2 {
-        self.position
-    }
-
-    pub(crate) fn collapsed(&self) -> bool {
-        self.collapsed
-    }
-
-    pub(crate) fn graph_key(&self) -> &str {
-        &self.graph_key
-    }
-
-    pub(crate) fn node_key(&self) -> &str {
-        &self.node_key
-    }
-
-    fn begin_drag(&mut self) {
-        self.dragging = true;
-        self.suppress_release_click = false;
-    }
-
-    fn note_drag_motion(&mut self) {
-        self.suppress_release_click = true;
-    }
-
-    fn end_drag(&mut self) {
-        self.dragging = false;
-    }
-
-    pub(crate) fn consume_suppressed_release_click(&mut self) -> bool {
-        std::mem::take(&mut self.suppress_release_click)
-    }
-}
 
 /// Returns the graph-local proxy anchor used by wires while a node is compact.
 ///
@@ -725,72 +370,6 @@ pub(crate) struct GraphPortProps {
     pub(crate) tooltip_description: String,
     pub(crate) side: GraphSocketSide,
     pub(crate) color: Color,
-}
-
-/// Anti-aliased cubic wire drawn across a graph canvas.
-#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-pub(crate) struct GraphWireMaterial {
-    #[uniform(0)]
-    pub(crate) start: Vec2,
-    #[uniform(0)]
-    pub(crate) control_start: Vec2,
-    #[uniform(0)]
-    pub(crate) control_end: Vec2,
-    #[uniform(0)]
-    pub(crate) end: Vec2,
-    #[uniform(0)]
-    pub(crate) color: Vec4,
-    #[uniform(0)]
-    pub(crate) width: f32,
-    #[uniform(0)]
-    pub(crate) inverse_scale: f32,
-}
-
-impl Default for GraphWireMaterial {
-    fn default() -> Self {
-        Self {
-            start: Vec2::ZERO,
-            control_start: Vec2::ZERO,
-            control_end: Vec2::ZERO,
-            end: Vec2::ZERO,
-            color: Vec4::new(0.61, 0.47, 1.0, 0.78),
-            width: 2.0,
-            inverse_scale: 1.0,
-        }
-    }
-}
-
-impl UiMaterial for GraphWireMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "embedded://aestra_editor/feathers/shaders/node_graph_wire.wgsl".into()
-    }
-}
-
-/// Viewport-space grid whose graph coordinates follow pan and zoom without finite edges.
-#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-struct GraphGridMaterial {
-    #[uniform(0)]
-    pan: Vec2,
-    #[uniform(0)]
-    zoom: f32,
-    #[uniform(0)]
-    spacing: f32,
-}
-
-impl Default for GraphGridMaterial {
-    fn default() -> Self {
-        Self {
-            pan: Vec2::ZERO,
-            zoom: 1.0,
-            spacing: GRID_SPACING,
-        }
-    }
-}
-
-impl UiMaterial for GraphGridMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "embedded://aestra_editor/feathers/shaders/node_graph_grid.wgsl".into()
-    }
 }
 
 pub(crate) fn graph_canvas(size: Vec2) -> impl Bundle {
@@ -1119,470 +698,6 @@ fn sync_graph_nodes_from_memory(
     }
 }
 
-fn begin_graph_node_press(
-    press: On<Pointer<Press>>,
-    mut nodes: Query<&mut FeathersGraphNode>,
-    parents: Query<&ChildOf>,
-    controls: Query<(), GraphNodeControlFilter>,
-) {
-    if press.button != PointerButton::Primary {
-        return;
-    }
-    let Some(entity) = graph_node_from_target(
-        press.event_target(),
-        &nodes.as_readonly(),
-        &parents,
-        &controls,
-    ) else {
-        return;
-    };
-    if let Ok(mut node) = nodes.get_mut(entity) {
-        // A new press starts a new click-or-drag gesture. This clears a stale release guard when a
-        // platform did not synthesize a Click after the previous drag.
-        node.suppress_release_click = false;
-    }
-}
-
-fn begin_graph_node_drag(
-    mut drag: On<Pointer<DragStart>>,
-    mut nodes: Query<(Entity, &mut FeathersGraphNode)>,
-    parents: Query<&ChildOf>,
-    controls: Query<(), GraphNodeControlFilter>,
-    modified_targets: Query<(), With<GraphModifiedDragTarget>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    memory: Res<GraphViewportMemory>,
-    mut gesture: ResMut<GraphNodeDragGesture>,
-    mut assistance: drag_assist::Context,
-    mut commands: Commands,
-) {
-    if drag.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
-        return;
-    }
-    let Some(entity) = graph_node_from_target(
-        drag.event_target(),
-        &nodes.as_readonly(),
-        &parents,
-        &controls,
-    ) else {
-        return;
-    };
-    let modifier = if !modified_targets.contains(entity) {
-        None
-    } else if keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight) {
-        Some(GraphNodeDragModifier::Duplicate)
-    } else if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) {
-        Some(GraphNodeDragModifier::Upstream)
-    } else if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
-        Some(GraphNodeDragModifier::Downstream)
-    } else {
-        None
-    };
-    let Ok((_, node)) = nodes.get(entity) else {
-        return;
-    };
-    let graph = node.graph_key.clone();
-    let selected = node.selected;
-    let Some((viewport, _)) = assistance.viewport(entity, &parents) else {
-        return;
-    };
-    let members = if modifier.is_none() && selected {
-        nodes
-            .iter()
-            .filter_map(|(candidate, node)| {
-                (node.selected
-                    && node.graph_key == graph
-                    && std::iter::once(candidate)
-                        .chain(parents.iter_ancestors(candidate))
-                        .any(|ancestor| ancestor == viewport))
-                .then_some(candidate)
-            })
-            .collect::<BTreeSet<_>>()
-    } else {
-        BTreeSet::from([entity])
-    };
-    let before = members
-        .iter()
-        .filter_map(|member| {
-            let (_, node) = nodes.get(*member).ok()?;
-            Some((
-                node.node_key.clone(),
-                memory
-                    .node(&node.graph_key, &node.node_key)
-                    .unwrap_or((node.position, node.collapsed)),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let Ok((_, mut node)) = nodes.get_mut(entity) else {
-        return;
-    };
-    node.drag_before = Some(
-        memory
-            .node(&node.graph_key, &node.node_key)
-            .unwrap_or((node.position, node.collapsed)),
-    );
-    node.drag_modifier = modifier;
-    node.begin_drag();
-    *gesture = GraphNodeDragGesture {
-        active: Some(entity),
-        members,
-        before,
-    };
-    assistance.begin(entity, &node, &parents, &memory);
-    commands.queue(move |world: &mut World| insertion::begin(world, entity));
-    drag.propagate(false);
-}
-
-fn drag_graph_node(
-    mut drag: On<Pointer<Drag>>,
-    mut nodes: Query<(&mut FeathersGraphNode, &mut Node, &ComputedNode)>,
-    parents: Query<&ChildOf>,
-    mut assistance: drag_assist::Context,
-    gesture: Res<GraphNodeDragGesture>,
-    mut memory: ResMut<GraphViewportMemory>,
-    mut override_cursor: ResMut<OverrideCursor>,
-    mut commands: Commands,
-) {
-    if drag.button != PointerButton::Primary {
-        return;
-    }
-    // The press target can be reported through a rebuilt header child after a collapse or preview
-    // action. The gesture captured the actual node at DragStart, so it is the durable owner for
-    // every subsequent motion event.
-    let Some(entity) = gesture.active else {
-        return;
-    };
-    let Ok((graph_node, _, computed)) = nodes.get(entity) else {
-        return;
-    };
-    if !graph_node.dragging {
-        return;
-    }
-    // Scale the drag by the zoom of the node's own viewport. The viewport's memory key is per-view
-    // (and differs from the node's per-document graph key), so resolve it by hierarchy, not by key.
-    let zoom = assistance
-        .viewport(entity, &parents)
-        .map_or(1.0, |(_, zoom)| zoom.max(MIN_ZOOM));
-    let delta = graph_drag_delta(drag.delta * computed.inverse_scale_factor, zoom);
-    let moving = if gesture.active == Some(entity) {
-        &gesture.members
-    } else {
-        return;
-    };
-    let position = assistance.motion(
-        entity,
-        delta,
-        graph_node.position,
-        zoom,
-        &memory,
-        moving,
-        |id, rect, collapsed| {
-            nodes.get(id).is_ok_and(|(node, _, computed)| {
-                node.collapsed == collapsed
-                    && (computed.size() * computed.inverse_scale_factor - rect.size())
-                        .abs()
-                        .max_element()
-                        <= 0.5
-                    && (moving.contains(&id) || node.position.distance(rect.min) <= 0.5)
-            })
-        },
-    );
-    if !position.is_finite() {
-        return;
-    }
-    let movement = position - graph_node.position;
-    for member in moving {
-        let Ok((mut graph_node, mut style, _)) = nodes.get_mut(*member) else {
-            continue;
-        };
-        if *member == entity {
-            // Drag is emitted only after picking recognizes real motion. Keep the release guard.
-            graph_node.note_drag_motion();
-        }
-        graph_node.position += movement;
-        style.left = Val::Px(graph_node.position.x);
-        style.top = Val::Px(graph_node.position.y);
-        memory.set_node(
-            graph_node.graph_key.clone(),
-            graph_node.node_key.clone(),
-            graph_node.position,
-            graph_node.collapsed,
-        );
-    }
-    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
-    commands.queue(move |world: &mut World| insertion::motion(world, entity));
-    drag.propagate(false);
-}
-
-fn graph_drag_delta(screen_delta: Vec2, zoom: f32) -> Vec2 {
-    screen_delta / zoom.max(MIN_ZOOM)
-}
-
-fn end_graph_node_drag(
-    mut drag: On<Pointer<DragEnd>>,
-    mut nodes: Query<(&mut FeathersGraphNode, &mut Node)>,
-    mut override_cursor: ResMut<OverrideCursor>,
-    mut commands: Commands,
-    mut memory: ResMut<GraphViewportMemory>,
-    mut gesture: ResMut<GraphNodeDragGesture>,
-    mut assistance: drag_assist::Context,
-) {
-    if drag.button != PointerButton::Primary {
-        return;
-    }
-    // DragEnd may bubble from a collapse/preview control, or from a freshly rebuilt descendant.
-    // Always finish the node captured at DragStart so the cursor and helper state cannot remain
-    // active after the pointer is released.
-    let Some(entity) = gesture.active else {
-        return;
-    };
-    let mut edit = None;
-    let mut modified = None;
-    let mut batch = None;
-    if let Ok((mut node, mut style)) = nodes.get_mut(entity) {
-        if let Some(before) = node.drag_before.take() {
-            let after = (node.position, node.collapsed);
-            if before != after {
-                if let Some(modifier) = node.drag_modifier.take() {
-                    modified = Some(GraphModifiedNodeDrag {
-                        graph: node.graph_key.clone(),
-                        node: node.node_key.clone(),
-                        before,
-                        after,
-                        modifier,
-                    });
-                    if modifier == GraphNodeDragModifier::Duplicate {
-                        node.position = before.0;
-                        style.left = Val::Px(before.0.x);
-                        style.top = Val::Px(before.0.y);
-                        memory.set_node(&node.graph_key, &node.node_key, before.0, before.1);
-                    }
-                } else {
-                    // A displaced node's displayed drop location becomes its authored base,
-                    // including a drag-start/end with no intervening motion event.
-                    memory.set_node(&node.graph_key, &node.node_key, after.0, after.1);
-                    if gesture.before.len() > 1 {
-                        batch = Some(GraphPresentationBatchEdit {
-                            graph: node.graph_key.clone(),
-                            before: std::mem::take(&mut gesture.before),
-                            origin: Some(entity),
-                        });
-                    } else {
-                        edit = Some(GraphPresentationEdit {
-                            graph: node.graph_key.clone(),
-                            node: node.node_key.clone(),
-                            before,
-                            after,
-                            origin: Some(entity),
-                        });
-                    }
-                }
-            }
-        }
-        node.drag_modifier = None;
-        node.end_drag();
-    }
-    commands.queue(move |world: &mut World| {
-        insertion::finish(world, entity, edit);
-        if let Some(modified) = modified {
-            world.trigger(modified);
-        }
-        if let Some(batch) = batch {
-            world.trigger(batch);
-        }
-    });
-    gesture.active = None;
-    gesture.members.clear();
-    gesture.before.clear();
-    assistance.end(entity);
-    override_cursor.0 = None;
-    drag.propagate(false);
-}
-
-fn graph_node_from_target<D: QueryData, F: QueryFilter>(
-    mut entity: Entity,
-    nodes: &Query<D, F>,
-    parents: &Query<&ChildOf>,
-    controls: &Query<(), GraphNodeControlFilter>,
-) -> Option<Entity> {
-    loop {
-        if controls.contains(entity) {
-            return None;
-        }
-        if nodes.contains(entity) {
-            return Some(entity);
-        }
-        entity = parents.get(entity).ok()?.parent();
-    }
-}
-
-fn graph_viewport_from_target(
-    mut entity: Entity,
-    viewports: &Query<(&ComputedNode, &UiGlobalTransform, &FeathersGraphViewport)>,
-    nodes: &Query<(), With<FeathersGraphNode>>,
-    controls: &Query<(), GraphNodeControlFilter>,
-    parents: &Query<&ChildOf>,
-) -> Option<Entity> {
-    loop {
-        if nodes.contains(entity) || controls.contains(entity) {
-            return None;
-        }
-        if viewports.contains(entity) {
-            return Some(entity);
-        }
-        entity = parents.get(entity).ok()?.parent();
-    }
-}
-
-fn begin_graph_marquee(
-    mut drag: On<Pointer<DragStart>>,
-    viewports: Query<(&ComputedNode, &UiGlobalTransform, &FeathersGraphViewport)>,
-    nodes: Query<(), With<FeathersGraphNode>>,
-    controls: Query<(), GraphNodeControlFilter>,
-    parents: Query<&ChildOf>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut gesture: ResMut<GraphMarqueeGesture>,
-    mut commands: Commands,
-) {
-    if drag.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
-        return;
-    }
-    let Some(viewport) =
-        graph_viewport_from_target(drag.event_target(), &viewports, &nodes, &controls, &parents)
-    else {
-        return;
-    };
-    let Ok((computed, transform, _)) = viewports.get(viewport) else {
-        return;
-    };
-    let start = crate::feathers::context_menu::pointer_position_in_node(
-        drag.pointer_location.position,
-        computed,
-        transform,
-    );
-    if !start.is_finite() {
-        return;
-    }
-    let mode = if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) {
-        GraphSelectionMode::Toggle
-    } else if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
-        GraphSelectionMode::Add
-    } else {
-        GraphSelectionMode::Replace
-    };
-    let overlay = commands
-        .spawn((
-            GraphMarqueeOverlay,
-            ChildOf(viewport),
-            Pickable::IGNORE,
-            GlobalZIndex(200),
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(start.x),
-                top: Val::Px(start.y),
-                width: Val::Px(0.0),
-                height: Val::Px(0.0),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.38, 0.22, 0.72, 0.16)),
-            BorderColor::all(theme::ACCENT),
-        ))
-        .id();
-    *gesture = GraphMarqueeGesture {
-        viewport: Some(viewport),
-        overlay: Some(overlay),
-        start,
-        current: start,
-        mode,
-    };
-    drag.propagate(false);
-}
-
-fn update_graph_marquee(
-    mut drag: On<Pointer<Drag>>,
-    viewports: Query<(&ComputedNode, &UiGlobalTransform, &FeathersGraphViewport)>,
-    mut overlays: Query<&mut Node, With<GraphMarqueeOverlay>>,
-    mut gesture: ResMut<GraphMarqueeGesture>,
-) {
-    if drag.button != PointerButton::Primary {
-        return;
-    }
-    let (Some(viewport), Some(overlay)) = (gesture.viewport, gesture.overlay) else {
-        return;
-    };
-    let Ok((computed, transform, _)) = viewports.get(viewport) else {
-        return;
-    };
-    let current = crate::feathers::context_menu::pointer_position_in_node(
-        drag.pointer_location.position,
-        computed,
-        transform,
-    );
-    if !current.is_finite() {
-        return;
-    }
-    gesture.current = current;
-    if let Ok(mut node) = overlays.get_mut(overlay) {
-        let min = gesture.start.min(current);
-        let size = (current - gesture.start).abs();
-        node.left = Val::Px(min.x);
-        node.top = Val::Px(min.y);
-        node.width = Val::Px(size.x);
-        node.height = Val::Px(size.y);
-    }
-    drag.propagate(false);
-}
-
-fn end_graph_marquee(
-    mut drag: On<Pointer<DragEnd>>,
-    mut gesture: ResMut<GraphMarqueeGesture>,
-    viewports: Query<&FeathersGraphViewport>,
-    nodes: Query<(Entity, &FeathersGraphNode, &ComputedNode)>,
-    parents: Query<&ChildOf>,
-    mut commands: Commands,
-) {
-    if drag.button != PointerButton::Primary {
-        return;
-    }
-    let Some(viewport_entity) = gesture.viewport.take() else {
-        return;
-    };
-    if let Some(overlay) = gesture.overlay.take()
-        && let Ok(mut overlay) = commands.get_entity(overlay)
-    {
-        overlay.despawn();
-    }
-    let Ok(viewport) = viewports.get(viewport_entity) else {
-        return;
-    };
-    let start = viewport.unproject_viewport_point(gesture.start);
-    let end = viewport.unproject_viewport_point(gesture.current);
-    let marquee = Rect::from_corners(start.min(end), start.max(end));
-    let selected = nodes
-        .iter()
-        .filter(|(entity, _, _)| {
-            parents
-                .iter_ancestors(*entity)
-                .any(|ancestor| ancestor == viewport_entity)
-        })
-        .filter(|(_, node, computed)| {
-            let size = computed.size() * computed.inverse_scale_factor;
-            let bounds = Rect::from_corners(node.position, node.position + size);
-            marquee.min.x <= bounds.max.x
-                && marquee.max.x >= bounds.min.x
-                && marquee.min.y <= bounds.max.y
-                && marquee.max.y >= bounds.min.y
-        })
-        .map(|(_, node, _)| node.node_key.clone())
-        .collect();
-    commands.trigger(GraphMarqueeSelection {
-        viewport: viewport_entity,
-        nodes: selected,
-        mode: gesture.mode,
-    });
-    drag.propagate(false);
-}
-
 fn queue_graph_collapse_activation(
     activate: On<Activate>,
     actions: Query<(), (With<GraphCollapseAction>, With<FeathersActionButton>)>,
@@ -1753,186 +868,6 @@ fn apply_graph_node_collapse(
                 icon.collapse_icon.clone()
             };
         }
-    }
-}
-
-fn navigate_graph_viewports(
-    mut cursor_moved: MessageReader<CursorMoved>,
-    mut wheel: MessageReader<MouseWheel>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut gesture: ResMut<GraphPanGesture>,
-    mut override_cursor: ResMut<OverrideCursor>,
-    primary_window: Single<(Entity, &Window), With<PrimaryWindow>>,
-    mut viewports: Query<(
-        Entity,
-        &RelativeCursorPosition,
-        &ComputedNode,
-        &mut FeathersGraphViewport,
-    )>,
-    blockers: Query<
-        &RelativeCursorPosition,
-        (
-            With<FeathersGraphNavigationBlocker>,
-            Without<FeathersGraphViewport>,
-        ),
-    >,
-) {
-    let cursor_position = cursor_moved
-        .read()
-        .filter(|event| event.window == primary_window.0)
-        .last()
-        .map(|event| event.position)
-        .or_else(|| primary_window.1.cursor_position());
-    let scroll_delta = wheel.read().fold(0.0, |sum, event| {
-        let scale = match event.unit {
-            MouseScrollUnit::Line => 1.0,
-            MouseScrollUnit::Pixel => 0.02,
-        };
-        sum + event.y * scale
-    });
-    let navigation_blocked = blockers.iter().any(RelativeCursorPosition::cursor_over);
-    let hovered = (!navigation_blocked).then(|| {
-        viewports
-            .iter()
-            .find_map(|(entity, cursor, _, _)| cursor.cursor_over().then_some(entity))
-    });
-    let hovered = hovered.flatten();
-    let space = keys.pressed(KeyCode::Space);
-    let was_panning = gesture.viewport.is_some();
-
-    if !was_panning && let Some(cursor_position) = cursor_position {
-        gesture.cursor_position = Some(cursor_position);
-    }
-
-    if !was_panning {
-        let button = if buttons.just_pressed(MouseButton::Middle) {
-            Some(MouseButton::Middle)
-        } else if space && buttons.just_pressed(MouseButton::Left) {
-            Some(MouseButton::Left)
-        } else {
-            None
-        };
-        if let (Some(viewport), Some(button)) = (hovered, button) {
-            gesture.viewport = Some(viewport);
-            gesture.button = Some(button);
-        }
-    }
-
-    if let (Some(entity), Some(button)) = (gesture.viewport, gesture.button) {
-        // Apply cursor movement before testing release. Otherwise the final movement and button-up
-        // arriving in the same frame leaves the canvas visibly trailing a fast pointer.
-        if was_panning && let Some(cursor_position) = cursor_position {
-            let pointer_delta = gesture
-                .cursor_position
-                .replace(cursor_position)
-                .map_or(Vec2::ZERO, |previous| cursor_position - previous);
-            if pointer_delta != Vec2::ZERO
-                && let Ok((_, _, _, mut viewport)) = viewports.get_mut(entity)
-            {
-                // CursorMoved is already expressed in logical window pixels, matching UiTransform.
-                // Pan is screen-space, so neither display scale nor graph zoom belongs here.
-                viewport.pan += pointer_delta;
-                viewport.frame_request = None;
-            }
-        }
-        let still_active = buttons.pressed(button) && (button != MouseButton::Left || space);
-        if still_active {
-            override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
-        } else {
-            gesture.viewport = None;
-            gesture.button = None;
-            gesture.cursor_position = None;
-            override_cursor.0 = None;
-        }
-    }
-
-    if gesture.viewport.is_none()
-        && let Some(entity) = hovered
-        && let Ok((_, _, _, mut viewport)) = viewports.get_mut(entity)
-    {
-        if keys.just_pressed(KeyCode::Home) {
-            viewport.frame_request = Some(GraphFrameTarget::All);
-        } else if keys.just_pressed(KeyCode::KeyF) {
-            viewport.frame_request = Some(GraphFrameTarget::Selection);
-        }
-    }
-
-    if gesture.viewport.is_some() || scroll_delta == 0.0 {
-        return;
-    }
-    let Some(entity) = hovered else {
-        return;
-    };
-    let Ok((_, cursor, computed, mut viewport)) = viewports.get_mut(entity) else {
-        return;
-    };
-    let Some(normalized) = cursor.normalized else {
-        return;
-    };
-    let cursor = (normalized + Vec2::splat(0.5)) * computed.size() * computed.inverse_scale_factor;
-    let view = zoomed_graph_view_at(
-        GraphView {
-            pan: viewport.pan,
-            zoom: viewport.zoom,
-        },
-        cursor,
-        scroll_delta,
-    );
-    viewport.pan = view.pan;
-    viewport.zoom = view.zoom;
-    viewport.frame_request = None;
-}
-
-fn sync_graph_viewport_transforms(
-    mut viewports: Query<(Entity, &mut FeathersGraphViewport)>,
-    mut canvases: Query<(&FeathersGraphCanvas, &mut UiTransform)>,
-) {
-    for (entity, mut viewport) in &mut viewports {
-        if let Some((target, view)) = viewport.measured_frame.take()
-            && viewport.frame_request == Some(target)
-        {
-            viewport.pan = view.pan;
-            viewport.zoom = view.zoom;
-            viewport.frame_request = None;
-        }
-        for (canvas, mut transform) in &mut canvases {
-            if canvas.viewport == entity {
-                *transform =
-                    graph_canvas_transform(viewport.pan, viewport.zoom, viewport.content_size);
-            }
-        }
-    }
-}
-
-fn zoomed_graph_view_at(mut view: GraphView, cursor: Vec2, scroll_delta: f32) -> GraphView {
-    let anchor = (cursor - view.pan) / view.zoom;
-    view.zoom = (view.zoom * (scroll_delta * 0.12).exp()).clamp(MIN_ZOOM, MAX_ZOOM);
-    view.pan = cursor - anchor * view.zoom;
-    view
-}
-
-fn framed_graph_view(bounds: Rect, viewport_size: Vec2, maximum_zoom: f32) -> GraphView {
-    let extent = bounds.size().max(Vec2::splat(1.0));
-    let available = (viewport_size - Vec2::splat(FRAME_PADDING * 2.0)).max(Vec2::splat(1.0));
-    let zoom = (available.x / extent.x)
-        .min(available.y / extent.y)
-        .clamp(MIN_ZOOM, maximum_zoom);
-    GraphView {
-        pan: viewport_size * 0.5 - bounds.center() * zoom,
-        zoom,
-    }
-}
-
-fn graph_canvas_transform(pan: Vec2, zoom: f32, content_size: Vec2) -> UiTransform {
-    let centered_scale_offset = content_size * (zoom - 1.0) * 0.5;
-    UiTransform {
-        translation: Val2::px(
-            pan.x + centered_scale_offset.x,
-            pan.y + centered_scale_offset.y,
-        ),
-        scale: Vec2::splat(zoom),
-        ..default()
     }
 }
 

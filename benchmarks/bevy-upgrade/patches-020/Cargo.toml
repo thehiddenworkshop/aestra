@@ -12,7 +12,7 @@ publish = false
 # Separate native gates: existing fixtures intentionally inspect a local RenderApp.
 async-qualification = ["bevy/multi_threaded"]
 # Required editor API qualification, isolated from native renderer feature graphs.
-editor-qualification = ["bevy/bevy_feathers", "bevy/bevy_scene", "bevy/bevy_clipboard", "bevy/default_font"]
+editor-qualification = ["bevy/bevy_feathers", "bevy/bevy_scene", "bevy/bevy_clipboard", "bevy/default_font", "bevy/bevy_ui_render"]
 
 [dependencies]
 bevy_app = "=0.20.0"
@@ -22,14 +22,18 @@ bevy_input_focus = "=0.20.0"
 bevy_window = "=0.20.0"
 
 [dev-dependencies]
+tempfile = "3"
 bevy = { version = "=0.20.0", default-features = false, features = ["3d_bevy_render", "bevy_sprite_render", "bevy_log", "bevy_ui_widgets", "bevy_picking"] }
 bevy_ui_render = { version = "=0.20.0", default-features = false }
 aestra-core = { path = "../../../crates/aestra-core" }
+aestra-authoring = { path = "../../../crates/aestra-authoring" }
+serde = { version = "1", features = ["derive"] }
 aestra-compiler = { path = "../../../crates/aestra-compiler" }
 aestra-gpu = { path = "../../../crates/aestra-gpu" }
 aestra-runtime = { path = "../../../crates/aestra-runtime" }
 aestra-project = { path = "../../../crates/aestra-project" }
 aestra-extension = { path = "../../../crates/aestra-extension" }
+aestra-example-extension = { path = "../../../extensions/aestra-example-extension" }
 aestra-fluid = { path = "../../../extensions/aestra-fluid" }
 naga = { version = "=30.0.1", features = ["wgsl-in"] }
 serde_json = "1"
@@ -93,4 +97,9 @@ required-features = ["editor-qualification"]
 [[test]]
 name = "editor_tooltips"
 path = "editor_tooltips.rs"
+required-features = ["editor-qualification"]
+
+[[test]]
+name = "editor_graph"
+path = "editor_graph.rs"
 required-features = ["editor-qualification"]

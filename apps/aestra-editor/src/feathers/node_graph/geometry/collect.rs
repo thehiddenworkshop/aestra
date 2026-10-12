@@ -1,15 +1,23 @@
-use super::super::{FeathersGraphNode, FeathersGraphViewport};
-use super::*;
-use crate::{
-    ProjectEffectCatalog,
-    document::DocumentManager,
-    editor_view::{ActiveEditorContext, EditorViewManager},
+use super::super::{
+    navigation::FeathersGraphViewport,
+    node::{FeathersGraphNode, FeathersGraphNodePreview},
 };
+use super::model::{
+    GraphGeometryNode, GraphGeometryPort, GraphGeometryRegistry, GraphGeometryView,
+    GraphNodeGeometry, GraphPortGeometry, GraphViewKey, NodeObservation, ViewObservation,
+};
+use crate::{
+    document_registry::DocumentManager,
+    editor_view_registry::{ActiveEditorContext, EditorViewManager},
+};
+use bevy::prelude::*;
+use std::{collections::BTreeMap, path::PathBuf};
 
 /// Runs after UI layout/transform/clipping. Only the registry is mutable: no collector can move a
 /// node, trigger a semantic compile, persist a layout, or manufacture an Undo entry.
 #[allow(clippy::type_complexity)]
 pub(super) fn collect_graph_geometry(
+    In(project): In<Option<PathBuf>>,
     mut registry: ResMut<GraphGeometryRegistry>,
     views: Query<(Entity, &GraphGeometryView, &ComputedNode), With<FeathersGraphViewport>>,
     nodes: Query<(
@@ -25,10 +33,9 @@ pub(super) fn collect_graph_geometry(
         &ComputedNode,
         &UiGlobalTransform,
     )>,
-    previews: Query<(Entity, &ComputedNode, &Node), With<super::super::FeathersGraphNodePreview>>,
+    previews: Query<(Entity, &ComputedNode, &Node), With<FeathersGraphNodePreview>>,
     parents: Query<&ChildOf>,
     styles: Query<(&Node, Option<&Visibility>)>,
-    catalog: Option<Res<ProjectEffectCatalog>>,
     documents: Option<Res<DocumentManager>>,
     editor_views: Option<Res<EditorViewManager>>,
     active: Option<Res<ActiveEditorContext>>,
@@ -47,15 +54,25 @@ pub(super) fn collect_graph_geometry(
     for (entity, view, computed) in &views {
         if !visible(entity)
             || logical_size(computed).is_none()
-            || catalog
+            || project
                 .as_ref()
-                .is_some_and(|catalog| catalog.root() != view.key.document.project)
+                .is_some_and(|root| *root != view.key.document.project)
         {
             continue;
         }
-        let generation = if let (Some(id), Some(editor_views), Some(documents)) =
-            (view.key.view, editor_views.as_deref(), documents.as_deref())
+        let generation = if let Some(id) = view
+            .key
+            .view
+            .filter(|_| documents.is_some() || editor_views.is_some())
         {
+            // A docked view must resolve through both authorities. A partially torn-down
+            // registry must not silently reinterpret a stale dock tab as a tool panel.
+            // Resource-free widget fixtures retain the existing unbound measurement mode.
+            let (Some(editor_views), Some(documents)) =
+                (editor_views.as_deref(), documents.as_deref())
+            else {
+                continue;
+            };
             let Some(open) = editor_views
                 .view(id)
                 .and_then(|view| documents.document(view.document))
@@ -188,7 +205,14 @@ pub(super) fn collect_graph_geometry(
             observation.complete = false;
         }
     }
-    registry.observe(observations, active.and_then(|active| active.active_view));
+    let focused = active.and_then(|active| {
+        let id = active.active_view?;
+        let view = editor_views.as_ref()?.view(id)?;
+        (active.active_document == Some(view.document)
+            && documents.as_ref()?.is_open(view.document))
+        .then_some(id)
+    });
+    registry.observe(observations, focused);
 }
 
 fn logical_size(node: &ComputedNode) -> Option<Vec2> {
@@ -214,41 +238,5 @@ fn port_offset(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn invalid_measurements_are_unavailable_not_zero_sized_geometry() {
-        for (size, inverse_scale) in [
-            (Vec2::ZERO, 1.0),
-            (Vec2::new(-1.0, 10.0), 1.0),
-            (Vec2::new(f32::NAN, 20.0), 1.0),
-            (Vec2::splat(f32::INFINITY), 1.0),
-            (Vec2::splat(40.0), 0.0),
-            (Vec2::splat(40.0), f32::NAN),
-        ] {
-            assert!(
-                logical_size(&ComputedNode {
-                    size,
-                    inverse_scale_factor: inverse_scale,
-                    ..default()
-                })
-                .is_none()
-            );
-        }
-        let node = ComputedNode {
-            size: Vec2::new(448.0, 160.0),
-            inverse_scale_factor: 0.5,
-            ..default()
-        };
-        assert_eq!(logical_size(&node), Some(Vec2::new(224.0, 80.0)));
-        assert!(
-            port_offset(
-                &node,
-                &UiGlobalTransform::from_scale(Vec2::ZERO),
-                &UiGlobalTransform::default()
-            )
-            .is_none()
-        );
-    }
-}
+#[path = "collect/tests.rs"]
+mod tests;

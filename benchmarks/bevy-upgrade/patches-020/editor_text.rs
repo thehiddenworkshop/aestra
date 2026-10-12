@@ -1,6 +1,10 @@
 //! Real custom code/search compositions and context menus, not replacement widgets.
+#[path = "../../../apps/aestra-editor/src/feathers/action_activation.rs"]
+pub(crate) mod action_activation;
 #[path = "../../../apps/aestra-editor/src/theme/bevy_020.rs"]
 pub mod boundary;
+#[path = "../../../apps/aestra-editor/src/history/action.rs"]
+mod history_action;
 #[path = "../../../apps/aestra-editor/src/theme/palette.rs"]
 pub mod palette;
 mod theme {
@@ -39,7 +43,7 @@ mod node_graph {
     pub(crate) struct FeathersGraphNavigationBlocker;
 }
 mod feathers {
-    pub(crate) use super::{context_menu, text_input};
+    pub(crate) use super::{action_activation, context_menu, text_input};
 }
 // Host-only action/history identities. All widget behavior above is production source.
 #[derive(bevy::prelude::Component)]
@@ -72,6 +76,7 @@ fn candidate_action_bridge_uses_native_pressed_marker_and_ignores_non_actions() 
     assert!(app.world().get::<Pressed>(unrelated).is_none());
 }
 mod history {
+    pub(crate) use crate::history_action::{HistoryAction, queue_history_action_activation};
     #[derive(bevy::prelude::Component)]
     pub(crate) enum HistoryScope {
         Effect,

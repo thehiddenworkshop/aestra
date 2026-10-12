@@ -6,6 +6,76 @@ use bevy::{
 };
 
 #[test]
+fn shipping_graph_control_filter_blocks_every_embedded_control_from_marquee() {
+    let mut app = App::new();
+    app.init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<UiScale>()
+        .init_resource::<GraphMarqueeGesture>()
+        .add_observer(begin_graph_marquee::<GraphNodeControlFilter>);
+    let viewport = app
+        .world_mut()
+        .spawn((
+            viewport("material", 1.0),
+            ComputedNode::default(),
+            UiGlobalTransform::default(),
+        ))
+        .id();
+    let controls = [
+        app.world_mut()
+            .spawn((
+                FeathersGraphSocket {
+                    color: Color::WHITE,
+                },
+                ChildOf(viewport),
+            ))
+            .id(),
+        app.world_mut()
+            .spawn((
+                GraphCollapseAction {
+                    node: viewport,
+                    collapse_label: String::new(),
+                    expand_label: String::new(),
+                },
+                ChildOf(viewport),
+            ))
+            .id(),
+        app.world_mut()
+            .spawn((EditorNumberInput, ChildOf(viewport)))
+            .id(),
+        app.world_mut()
+            .spawn((FeathersCheckbox, ChildOf(viewport)))
+            .id(),
+        app.world_mut()
+            .spawn((FeathersTextInputContainer, ChildOf(viewport)))
+            .id(),
+        app.world_mut()
+            .spawn((FeathersActionButton, ChildOf(viewport)))
+            .id(),
+    ];
+    let window = app.world_mut().spawn_empty().id();
+    for control in controls {
+        let child = app.world_mut().spawn(ChildOf(control)).id();
+        for target in [control, child] {
+            app.world_mut().trigger(graph_pointer::tests::start(
+                target,
+                window,
+                Vec2::ZERO,
+                PointerId::Mouse,
+                PointerButton::Primary,
+            ));
+            app.world_mut().flush();
+            assert_eq!(
+                app.world_mut()
+                    .query::<&marquee::GraphMarqueeOverlay>()
+                    .iter(app.world())
+                    .count(),
+                0
+            );
+        }
+    }
+}
+
+#[test]
 fn effective_offsets_survive_ui_rebuild_without_becoming_base_positions() {
     let key = "function:project:f";
     let base = Vec2::new(70.0, 30.0);
@@ -315,7 +385,7 @@ fn drag_emits_one_base_placement_transaction_and_sibling_views_follow_undo() {
         .init_resource::<GraphNodeDragGesture>()
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<Edits>()
-        .add_observer(begin_graph_node_drag)
+        .add_observer(begin_graph_node_drag::<GraphNodeControlFilter>)
         .add_observer(drag_graph_node)
         .add_observer(end_graph_node_drag)
         .add_observer(

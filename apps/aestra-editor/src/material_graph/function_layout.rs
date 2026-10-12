@@ -6,10 +6,6 @@ use std::path::Path;
 
 const OUTPUT_NODE: &str = "outputs";
 
-pub(crate) fn function_graph_memory_key(root: &Path, function: MaterialFunctionId) -> String {
-    format!("function:{}:{function}", root.display())
-}
-
 pub(super) fn restore(
     root: &Path,
     document: &ProjectEditorLayout,

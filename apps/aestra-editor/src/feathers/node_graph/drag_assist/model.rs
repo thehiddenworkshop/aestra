@@ -1,16 +1,18 @@
 //! Pure, bounded soft snapping in logical graph units. Never moves other nodes.
 use bevy::prelude::*;
 
-pub(super) const MAX_NODES: usize = 512;
+pub(crate) const GRID_SPACING: f32 = 32.0;
+
+pub(crate) const MAX_NODES: usize = 512;
 const RADIUS: f32 = 6.0; // logical screen pixels, independent of canvas zoom/DPI
 
 #[derive(Clone, Debug)]
-pub(super) struct Shape {
+pub(crate) struct Shape {
     pub rect: Rect,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Guide {
+pub(crate) struct Guide {
     pub axis: usize,
     pub coordinate: f32,
     pub start: f32,
@@ -41,7 +43,7 @@ fn consider(best: &mut Option<Match>, delta: f32, guide: Guide, radius: f32) {
 }
 
 /// Raw pointer placement is the input every time; snapped output is never accumulated.
-pub(super) fn snap(
+pub(crate) fn snap(
     raw: Vec2,
     moving: &Shape,
     targets: &[Shape],
@@ -97,8 +99,7 @@ pub(super) fn snap(
             result[axis] += found.delta;
             guides.push(found.guide);
         } else if grid {
-            let nearest =
-                (raw[axis] / super::super::GRID_SPACING).round() * super::super::GRID_SPACING;
+            let nearest = (raw[axis] / GRID_SPACING).round() * GRID_SPACING;
             if (nearest - raw[axis]).abs() <= radius {
                 result[axis] = nearest;
                 guides.push(Guide {
@@ -114,4 +115,5 @@ pub(super) fn snap(
 }
 
 #[cfg(test)]
+#[path = "model/tests.rs"]
 mod tests;

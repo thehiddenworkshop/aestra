@@ -9,298 +9,25 @@
 #![allow(dead_code)] // Consumed by Milestones 4+.
 
 use crate::docking::{EditorViewId, WorkspaceLayout, workspace_config_path};
-use crate::document::{DocumentId, DocumentKey, DocumentManager};
+#[cfg(test)]
+use crate::document::DocumentId;
+use crate::document::{DocumentKey, DocumentManager};
 use crate::material_document::MaterialEditingTarget;
 use crate::session::EditorSession;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::{fs, io, path::PathBuf};
 
-/// The kind of asset editor a view renders. The document supplies the content; the kind selects
-/// which editor UI is docked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) enum EditorViewKind {
-    MaterialGraph,
-    MaterialFunctionGraph,
-    WeslSource,
-    // Added in later milestones: Effect, Texture, Mesh, Flipbook.
-}
+pub(crate) use crate::editor_view_registry::{
+    ActiveEditorContext, EditorViewKind, EditorViewManager, open_document_view,
+    open_document_view_in_new_tab,
+};
 
-/// One dockable asset-editor instance: a view of a document. Several views may target the same
-/// document (split views), each carrying independent view-local state (migrated in Milestone 4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct EditorView {
-    pub(crate) id: EditorViewId,
-    pub(crate) document: DocumentId,
-    pub(crate) kind: EditorViewKind,
-}
-
-/// Registry connecting documents to their dockable editor views, and the authority that allocates
-/// [`EditorViewId`]s.
-#[derive(Resource, Debug, Default)]
-pub(crate) struct EditorViewManager {
-    views: BTreeMap<EditorViewId, EditorView>,
-    next_id: u64,
-}
-
-impl EditorViewManager {
-    fn allocate_id(&mut self) -> EditorViewId {
-        let id = EditorViewId(self.next_id);
-        self.next_id += 1;
-        id
-    }
-
-    /// Creates a fresh view of `document`, always allocating a new id. Used for split / open-in-new;
-    /// the open flow uses [`Self::open_default_view`] instead so it does not duplicate views.
-    pub(crate) fn create_view(
-        &mut self,
-        document: DocumentId,
-        kind: EditorViewKind,
-    ) -> EditorViewId {
-        let id = self.allocate_id();
-        self.views.insert(id, EditorView { id, document, kind });
-        id
-    }
-
-    /// The open-flow entry point: returns an existing view of `document` (focus) or creates the
-    /// default view. Opening an already-open asset therefore focuses it rather than replacing
-    /// another asset's view.
-    pub(crate) fn open_default_view(
-        &mut self,
-        document: DocumentId,
-        kind: EditorViewKind,
-    ) -> EditorViewId {
-        if let Some(view) = self.views.values().find(|view| view.document == document) {
-            return view.id;
-        }
-        self.create_view(document, kind)
-    }
-
-    /// Reinserts a view under a specific, previously-allocated id (used by workspace restore so the
-    /// persisted `DockTab::Editor` references resolve). Keeps `next_id` ahead of every restored id so
-    /// later `create_view` calls never collide with a restored one.
-    pub(crate) fn restore_view(
-        &mut self,
-        id: EditorViewId,
-        document: DocumentId,
-        kind: EditorViewKind,
-    ) {
-        self.views.insert(id, EditorView { id, document, kind });
-        self.next_id = self.next_id.max(id.0 + 1);
-    }
-
-    pub(crate) fn view(&self, id: EditorViewId) -> Option<EditorView> {
-        self.views.get(&id).copied()
-    }
-
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &EditorView> + '_ {
-        self.views.values()
-    }
-
-    pub(crate) fn document_of(&self, id: EditorViewId) -> Option<DocumentId> {
-        self.views.get(&id).map(|view| view.document)
-    }
-
-    pub(crate) fn views_for_document(
-        &self,
-        document: DocumentId,
-    ) -> impl Iterator<Item = EditorViewId> + '_ {
-        self.views
-            .values()
-            .filter(move |view| view.document == document)
-            .map(|view| view.id)
-    }
-
-    /// Removes a view. Returns the removed view and whether its document now has no remaining views
-    /// (so the caller can decide whether to close the document too).
-    pub(crate) fn close_view(&mut self, id: EditorViewId) -> Option<(EditorView, bool)> {
-        let view = self.views.remove(&id)?;
-        let document_now_orphaned = !self
-            .views
-            .values()
-            .any(|other| other.document == view.document);
-        Some((view, document_now_orphaned))
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.views.len()
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.views.is_empty()
-    }
-}
-
-/// The editor view (and its document) that contextual tool panels follow — updated whenever an
-/// asset is opened or focused. Milestone 10 extends the tool panels to read this; for now it simply
-/// records what the user last brought forward.
-#[derive(Resource, Debug, Default)]
-pub(crate) struct ActiveEditorContext {
-    pub(crate) active_view: Option<EditorViewId>,
-    pub(crate) active_document: Option<DocumentId>,
-}
-
-/// Opens (or focuses) the document for `key`, ensures it has a default editor view of `kind`, and
-/// marks that view active. Returns the view. This is the single entry point the asset browser and
-/// other open paths route through, so opening an already-open asset focuses it rather than
-/// replacing another.
-pub(crate) fn open_document_view(
-    documents: &mut DocumentManager,
-    views: &mut EditorViewManager,
-    active: &mut ActiveEditorContext,
-    key: DocumentKey,
-    kind: EditorViewKind,
-) -> EditorViewId {
-    let document = documents.open(key);
-    let view = views.open_default_view(document, kind);
-    active.active_document = Some(document);
-    active.active_view = Some(view);
-    view
-}
-
-/// Opens the document for `key` in a *new* editor view, always allocating a fresh view even when the
-/// document is already open elsewhere (the "Open in New Tab" / split path). The new view is made
-/// active. Both views share the document — its draft, dirty state, and buffer — so this never forks a
-/// second conflicting draft; only the per-view state (pan / zoom / caret) is independent.
-pub(crate) fn open_document_view_in_new_tab(
-    documents: &mut DocumentManager,
-    views: &mut EditorViewManager,
-    active: &mut ActiveEditorContext,
-    key: DocumentKey,
-    kind: EditorViewKind,
-) -> EditorViewId {
-    let document = documents.open(key);
-    let view = views.create_view(document, kind);
-    active.active_document = Some(document);
-    active.active_view = Some(view);
-    view
-}
-
-/// Resolves the editing target an editor view renders, by following view → document → asset key.
-/// Returns `None` for a stale view (e.g. a persisted editor tab whose view no longer exists), so
-/// the dock can drop it gracefully. `root` is the current project root the target is scoped to.
-pub(crate) fn view_editing_target(
-    view: EditorViewId,
-    views: &EditorViewManager,
-    documents: &DocumentManager,
-    root: &std::path::Path,
-) -> Option<MaterialEditingTarget> {
-    let document_id = views.document_of(view)?;
-    let key = documents.document(document_id)?.key;
-    match key {
-        DocumentKey::MaterialProgram(id) => Some(MaterialEditingTarget::Program {
-            root: root.to_owned(),
-            id,
-        }),
-        DocumentKey::MaterialFunction(id) => Some(MaterialEditingTarget::Function {
-            root: root.to_owned(),
-            id,
-        }),
-        // WESL documents are not material targets; their view renders text, not a material graph.
-        DocumentKey::WeslSource(_) => None,
-    }
-}
-
-/// The shared-material document currently focused in an editor view. Unlike the session's
-/// compatibility target, this follows the view/document registry even if another operation last
-/// changed `material_target`.
-pub(crate) fn active_material_target(
-    active: &ActiveEditorContext,
-    views: &EditorViewManager,
-    documents: &DocumentManager,
-    root: &std::path::Path,
-) -> Option<MaterialEditingTarget> {
-    let view = active.active_view?;
-    let document = active.active_document?;
-    (views.document_of(view) == Some(document))
-        .then(|| view_editing_target(view, views, documents, root))
-        .flatten()
-}
-
-/// The editor kind a view renders (material graph vs WESL source), so the dock can pick the pane.
-pub(crate) fn view_kind(view: EditorViewId, views: &EditorViewManager) -> Option<EditorViewKind> {
-    views.view(view).map(|view| view.kind)
-}
-
-/// The editor view showing a given WESL source, if one is open — so the diagnostics panel can
-/// reveal the tab for a shader error.
-pub(crate) fn view_for_wesl_source(
-    id: crate::wesl_document::WeslSourceId,
-    views: &EditorViewManager,
-    documents: &DocumentManager,
-) -> Option<EditorViewId> {
-    views.iter().find_map(|view| {
-        let key = documents.document(view.document)?.key;
-        (key == DocumentKey::WeslSource(id)).then_some(view.id)
-    })
-}
-
-/// The WESL source id an editor view edits, if it is a WESL document view.
-pub(crate) fn view_wesl_source(
-    view: EditorViewId,
-    views: &EditorViewManager,
-    documents: &DocumentManager,
-) -> Option<crate::wesl_document::WeslSourceId> {
-    match view_document_key(view, views, documents)? {
-        DocumentKey::WeslSource(id) => Some(id),
-        _ => None,
-    }
-}
-
-/// Maps a material editing target to the document key and default view kind it corresponds to, or
-/// `None` for the effect's inline material (which is not a shared-asset document).
-fn document_key_for_target(
-    target: &MaterialEditingTarget,
-) -> Option<(DocumentKey, EditorViewKind)> {
-    match target {
-        MaterialEditingTarget::Program { id, .. } => Some((
-            DocumentKey::MaterialProgram(*id),
-            EditorViewKind::MaterialGraph,
-        )),
-        MaterialEditingTarget::Function { id, .. } => Some((
-            DocumentKey::MaterialFunction(*id),
-            EditorViewKind::MaterialFunctionGraph,
-        )),
-        MaterialEditingTarget::EffectInstance => None,
-    }
-}
-
-/// Reconciles the document/view model and active context with the material target, whatever path
-/// changed it (asset browser, menus, recovery, undo, return-to-effect). While `material_target`
-/// remains authoritative this keeps the view model it feeds correct from every entry point; per-view
-/// rendering (M4c) and target removal (M12) build on the model maintained here.
-pub(crate) fn reconcile_active_from_target(
-    target: &MaterialEditingTarget,
-    documents: &mut DocumentManager,
-    views: &mut EditorViewManager,
-    active: &mut ActiveEditorContext,
-) {
-    match document_key_for_target(target) {
-        Some((key, kind)) => {
-            let already = active
-                .active_document
-                .and_then(|id| documents.document(id))
-                .map(|document| document.key)
-                == Some(key);
-            if !already {
-                open_document_view(documents, views, active, key, kind);
-            }
-        }
-        None => {
-            // Returning to the effect material clears the active shared-material document, but a
-            // focused WESL module has no material target, so it must stay active.
-            let active_is_wesl = active
-                .active_document
-                .and_then(|id| documents.document(id))
-                .is_some_and(|document| matches!(document.key, DocumentKey::WeslSource(_)));
-            if !active_is_wesl {
-                active.active_view = None;
-                active.active_document = None;
-            }
-        }
-    }
-}
+pub(crate) use crate::editor_target::{
+    active_material_target, reconcile_active_from_target, view_document_key, view_editing_target,
+    view_for_wesl_source, view_kind, view_wesl_source,
+};
 
 /// System wrapper: reconciles the view model from the session material target on change.
 pub(crate) fn sync_active_document_from_target(
@@ -596,17 +323,6 @@ fn document_key_is_dirty(
         DocumentKey::MaterialFunction(id) => catalog.material_drafts.functions.contains_key(&id),
         DocumentKey::WeslSource(id) => wesl.is_dirty(id),
     }
-}
-
-/// Resolves the document key an editor view edits, if the view is still open.
-pub(crate) fn view_document_key(
-    view: EditorViewId,
-    views: &EditorViewManager,
-    documents: &DocumentManager,
-) -> Option<DocumentKey> {
-    documents
-        .document(views.document_of(view)?)
-        .map(|open| open.key)
 }
 
 /// Closes an editor view: removes its dock tab, drops the view, closes its document when it was the

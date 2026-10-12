@@ -4,8 +4,7 @@ use crate::feathers::{
     combo_box::{ComboOption, spawn_combo_control},
     text_input::spawn_text_input,
 };
-use crate::{EditorSession, ProjectEffectCatalog, material_document::MaterialEditingTarget};
-use aestra_authoring::MaterialAuthoringDocument;
+use crate::{EditorSession, ProjectEffectCatalog};
 use aestra_core::{
     MaterialExpressionId, MaterialFunctionId, MaterialFunctionInputId, MaterialFunctionOutputId,
     material::{
@@ -17,218 +16,16 @@ use bevy::{
     prelude::*,
     ui_widgets::{Activate, ValueChange},
 };
-use std::{collections::BTreeMap, path::PathBuf};
 
 pub(crate) mod graph;
 pub(crate) use graph::spawn as spawn_graph;
 
-type Key = (PathBuf, MaterialFunctionId);
-#[derive(Default)]
-struct History {
-    undo: Vec<(MaterialFunction, MaterialFunction)>,
-    redo: Vec<(MaterialFunction, MaterialFunction)>,
-}
-#[derive(Resource, Default)]
-pub(crate) struct FunctionEditor {
-    histories: BTreeMap<Key, History>,
-    reports: BTreeMap<Key, String>,
-}
+mod history;
+pub(crate) use history::FunctionEditor;
 
-fn key(session: &EditorSession) -> Result<Key, String> {
-    match &session.material_target {
-        MaterialEditingTarget::Function { root, id } => Ok((root.clone(), *id)),
-        _ => Err("No function selected".into()),
-    }
-}
-
-impl FunctionEditor {
-    pub(crate) fn clear_function_redo(&mut self, root: &std::path::Path, id: MaterialFunctionId) {
-        if let Some(history) = self.histories.get_mut(&(root.to_owned(), id)) {
-            history.redo.clear();
-        }
-    }
-    pub(crate) fn clear_redo(&mut self) {
-        for history in self.histories.values_mut() {
-            history.redo.clear();
-        }
-    }
-    pub(crate) fn clear_function(&mut self, root: &std::path::Path, id: MaterialFunctionId) {
-        let key = (root.to_owned(), id);
-        self.histories.remove(&key);
-        self.reports.remove(&key);
-    }
-    pub(crate) fn edit_body(
-        &mut self,
-        session: &mut EditorSession,
-        catalog: &mut ProjectEffectCatalog,
-        edits: Vec<aestra_authoring::MaterialFunctionBodyCommand>,
-    ) -> Result<(), String> {
-        let id = session
-            .standalone_function()
-            .ok_or("No function selected")?;
-        let mut document = session.graph_authoring_document(catalog)?;
-        aestra_authoring::MaterialCommandExecutor::execute(
-            &mut document,
-            &aestra_authoring::MaterialTransaction::new(
-                "Edit function body",
-                edits
-                    .into_iter()
-                    .map(
-                        |edit| aestra_authoring::MaterialCommand::EditMaterialFunctionBody {
-                            function: id,
-                            edit,
-                        },
-                    )
-                    .collect(),
-            ),
-        )
-        .map_err(|error| error.to_string())?;
-        let function = document
-            .material_functions
-            .into_iter()
-            .find(|function| function.id == id)
-            .ok_or("Function disappeared")?;
-        self.edit(session, catalog, function)
-    }
-    fn apply(
-        session: &mut EditorSession,
-        catalog: &mut ProjectEffectCatalog,
-        before: &MaterialFunction,
-        after: &MaterialFunction,
-    ) -> Result<String, String> {
-        if session.graph_function(catalog)?.normalized() != before.normalized() {
-            return Err("Function changed since this edit was prepared".into());
-        }
-        // Include every indexed program and draft, not only the active effect's consumers.
-        let programs = catalog
-            .content()
-            .asset_index()
-            .material_programs()
-            .iter()
-            .filter_map(|entry| entry.reference.map(|reference| reference.id()))
-            .map(|id| catalog.material_program(id))
-            .collect::<Result<Vec<_>, _>>()?;
-        let document = MaterialAuthoringDocument::standalone(programs)
-            .with_material_functions(catalog.material_functions()?);
-        let plan = document
-            .plan_function_edit(before.id, after.clone())
-            .map_err(|error| error.to_string())?;
-        let report = format!(
-            "{} direct call sites checked (indexed programs and functions).\n{}",
-            plan.call_sites.len(),
-            plan.diagnostics
-        );
-        if !plan.diagnostics.is_valid() {
-            return Err(report);
-        }
-        catalog.replace_material_function(before, after)?;
-        // Catalog change detection invalidates dependent viewport/graph previews. The effect
-        // and its history are never replaced by a function signature edit.
-        session.set_material_drafts(catalog.material_drafts.clone());
-        session.material_history_active = true;
-        Ok(report)
-    }
-
-    pub(crate) fn edit(
-        &mut self,
-        session: &mut EditorSession,
-        catalog: &mut ProjectEffectCatalog,
-        after: MaterialFunction,
-    ) -> Result<(), String> {
-        let key = key(session)?;
-        let before = session.graph_function(catalog)?;
-        if before == after {
-            return Ok(());
-        }
-        if before.custom_wesl.is_some() {
-            return Err("Custom WESL signatures remain read-only".into());
-        }
-        match Self::apply(session, catalog, &before, &after) {
-            Ok(report) => {
-                session.status = format!("Function updated (unsaved draft).\n{report}");
-                self.reports.insert(key.clone(), report);
-                let history = self.histories.entry(key).or_default();
-                history.undo.push((before, after));
-                if history.undo.len() > 256 {
-                    history.undo.remove(0);
-                }
-                history.redo.clear();
-                session
-                    .operation_order
-                    .record(crate::history::asset_order::Context::current(session));
-                Ok(())
-            }
-            Err(error) => {
-                self.reports.insert(key, error.clone());
-                Err(error)
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn available(&self, session: &EditorSession, undo: bool) -> bool {
-        key(session)
-            .ok()
-            .is_some_and(|(root, id)| self.available_for_function(&root, id, undo))
-    }
-
-    pub(crate) fn available_for_function(
-        &self,
-        root: &std::path::Path,
-        id: MaterialFunctionId,
-        undo: bool,
-    ) -> bool {
-        self.histories
-            .get(&(root.to_owned(), id))
-            .is_some_and(|history| {
-                if undo {
-                    !history.undo.is_empty()
-                } else {
-                    !history.redo.is_empty()
-                }
-            })
-    }
-
-    pub(crate) fn step(
-        &mut self,
-        session: &mut EditorSession,
-        catalog: &mut ProjectEffectCatalog,
-        undo: bool,
-    ) -> Result<(), String> {
-        let key = key(session)?;
-        let entry = self
-            .histories
-            .get(&key)
-            .and_then(|history| {
-                if undo {
-                    history.undo.last()
-                } else {
-                    history.redo.last()
-                }
-            })
-            .cloned()
-            .ok_or("No function history in this direction")?;
-        let (before, after) = &entry;
-        let report = if undo {
-            Self::apply(session, catalog, after, before)
-        } else {
-            Self::apply(session, catalog, before, after)
-        }?;
-        self.reports.insert(key.clone(), report);
-        let history = self.histories.get_mut(&key).unwrap();
-        if undo {
-            history.undo.pop();
-            history.redo.push(entry);
-        } else {
-            history.redo.pop();
-            history.undo.push(entry);
-        }
-        session
-            .operation_order
-            .step(crate::history::asset_order::Context::current(session), undo);
-        Ok(())
-    }
-}
+mod execution;
+#[cfg(test)]
+use execution::key;
 
 #[derive(Clone, Copy)]
 enum Port {
@@ -648,6 +445,7 @@ fn port_controls(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     fn fixture() -> MaterialFunction {
         let mut function = MaterialFunction::from_ron(include_str!(

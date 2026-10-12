@@ -799,3 +799,236 @@ workspace checking with `aestra-bench/gpu` and both formatting checks pass. The
 accepted source-frozen headless run passes **408 executed checks**, with all
 **559 input hashes** unchanged. No new renderer-native or full-editor visual
 acceptance is claimed.
+
+## Graph navigation/material/solver compatibility
+
+B20-2 slice 8 imports production viewport navigation, wire/grid UI materials
+and bounded snapping/resize solvers into the isolated candidate. It fixes UI-scale
+pan drift, foreign-window wheel input and stale cursor capture on viewport removal.
+The required `editor-graph` gate executes 33 checks, with one existing manual
+timing probe ignored. All graph source files and the shared resize profiling
+fixture are source-frozen. The editor feature set includes real UI rendering
+types; no package versions change. Shipping remains Bevy 0.19.1.
+
+Node/marquee observers, measured geometry ownership and native graph visuals
+remain open. See [implementation, scope and evidence](editor-graph-navigation-2026-10-12.md).
+
+Validation (2026-10-12): **1,240 editor unit + 3 architecture tests** pass,
+with ten existing ignores unchanged. Strict workspace/candidate lint and both
+formatting checks pass. The accepted source-frozen headless run passes
+**441 executed checks**, with all **587 input hashes** unchanged. No new
+renderer-native or full-editor visual acceptance is claimed.
+
+All-target workspace checking with `aestra-bench/gpu` also passes for slice 8.
+
+## Graph marquee/node-ownership compatibility
+
+B20-2 slice 9 imports production marquee observers, shared node state,
+ancestor routing and fresh-press release guards into the isolated candidate.
+It fixes scale-dependent marquee coordinates, missing final release movement,
+foreign pointer ownership and stale/cancelled overlays. The required
+`editor-graph` gate now executes 47 checks, including fourteen new shared
+interaction regressions; one existing manual timing probe remains ignored.
+A separate shipping regression covers all six actual embedded-control filters.
+
+Full node drag transactions, measured geometry/document authority and native
+graph workflows remain open. Shipping remains Bevy 0.19.1. See
+[implementation, scope and evidence](editor-graph-marquee-2026-10-12.md).
+
+Validation (2026-10-12): **1,255 editor unit + 3 architecture tests** pass;
+ten existing ignores remain unchanged. Strict workspace/candidate lint,
+all-target workspace checking with `aestra-bench/gpu`, both formatting checks
+and whitespace validation pass. The accepted source-frozen headless run executes
+**455 checks**, with all **592 input hashes** unchanged. No new native graph
+or full-editor workflow acceptance is claimed.
+
+## Graph drag/geometry-dependency compatibility
+
+B20-2 slice 10 imports the real node drag transactions, placement memory,
+document/view identities, stable geometry registry, snapping controller and
+wire-insertion controller into the isolated candidate. Eleven shared interaction
+tests and eight existing registry/spacing tests extend the required graph gate.
+Shipping remains Bevy 0.19.1; the root dependency graph is unchanged.
+
+Host UI geometry collection/document authority, semantic action dispatch and
+native graph acceptance remain open. Delta scaling and legacy drag ownership
+behavior are preserved, not claimed as native pointer qualification. See
+[implementation, scope and evidence](editor-graph-drag-2026-10-12.md).
+
+Validation (2026-10-12): **1,266 editor unit + 3 architecture tests pass**;
+ten existing ignores remain unchanged. Strict workspace/candidate all-target
+lint, workspace all-target checking with `aestra-bench/gpu`, both formatting
+checks and whitespace validation pass. The accepted headless frozen run passes
+**474 executed checks**, including **66 graph checks**, with all **602 input
+hashes** unchanged. No new native editor evidence is claimed.
+
+## Graph collection/document-authority compatibility
+
+B20-2 slice 11 imports the actual post-layout collector and document/view
+registries into the candidate. Project scope is passed directly from the host
+catalog through a system pipe, without a mirrored root resource. Partial registry
+teardown and inconsistent active view/document state cannot steal geometry.
+Eleven shared regressions include actual UI layout at three display scales;
+existing collector/document lifecycle tests also run in the candidate. A separate
+shipping regression checks catalog replacement. The root graph stays unchanged.
+
+Full panel composition, semantic action dispatch and native workflows remain
+open. See [implementation, scope and evidence](editor-graph-collection-2026-10-12.md).
+
+Validation (2026-10-12): **1,278 editor unit + 3 architecture tests pass**;
+ten existing ignores remain unchanged. Strict workspace/candidate lint,
+all-target workspace checking with `aestra-bench/gpu`, both formatting checks
+and whitespace validation pass. The accepted frozen headless run executes
+**490 checks**, including **82 graph checks**, with all **607 input hashes**
+unchanged. No new native editor acceptance is claimed.
+
+## Graph semantic preparation/history compatibility
+
+B20-2 slice 12 imports the real material-command preparation and material-program
+history resource/stack transitions. The shipping editor calls these shared
+modules; catalog publication/rollback and session routing remain host-side.
+Twelve new shared tests cover semantic operations, reversible extraction,
+failure-safe undo/redo, history bounds and root/asset isolation. See
+[implementation, scope and evidence](editor-graph-commands-2026-10-12.md).
+Full UI dispatch, function/ordered/layout history integration and native editor
+workflows remain open; the root engine graph is unchanged.
+
+Validation (2026-10-12): **1,290 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict workspace/candidate all-target lint,
+workspace all-target checking with `aestra-bench/gpu`, formatting and whitespace
+checks pass. The accepted frozen headless run executes **502 checks**, including
+**94 graph checks**, with all **613 input hashes** unchanged. No new native
+editor acceptance is claimed.
+
+## Graph activation and target-routing compatibility
+
+B20-2 slice 13 imports production activation queue/event dispatch, the actual
+history action identity and material target/view routing. Shipping calls the
+same modules, retaining host menu/session/catalog policy. Fourteen new shared
+tests cover activation guards, consumption and focused/stale/split/WESL routing.
+A shipping regression exercises real history button execution and menu dismissal.
+See [implementation, scope and evidence](editor-graph-routing-2026-10-12.md).
+Full host action/history integration, panel composition and native workflows
+remain open; the root engine graph is unchanged.
+
+The accepted frozen headless run executes **522 checks**, including **108 graph
+checks** and **38 text checks**, with all **620 input hashes** unchanged. Strict
+candidate all-target Clippy passes. No new native editor acceptance is claimed.
+
+Shipping validation: **1,305 editor unit + 3 architecture tests pass**, with
+ten existing ignores unchanged. Strict workspace all-target Clippy, workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation pass. Root manifest/toolchain/lockfile diffs remain empty.
+
+## Graph presentation transaction/order compatibility
+
+B20-2 slice 14 imports production presentation transaction validation/apply and
+per-document edit chronology. Shipping uses the same code while retaining host
+semantic resolution, publication and filesystem ordering. Thirteen new shared
+regressions cover context/bound isolation, compound attachment, preview state,
+manual placement conflicts and stale identity rejection. See
+[implementation, scope and evidence](editor-graph-history-2026-10-12.md).
+Complete host semantic undo, function history and native editor workflows remain
+open; no root dependency switch or optional widget replacement is included.
+
+The accepted frozen headless run executes **535 checks**, including **121 graph
+checks**, with all **628 input hashes** unchanged. Strict candidate all-target
+Clippy and both formatting checks pass. No new native editor acceptance is claimed.
+
+Shipping regression: **1,318 editor unit + 3 architecture tests pass**, with ten
+existing ignores unchanged. Root manifest/toolchain/lockfile diffs remain empty.
+
+Strict workspace all-target Clippy and all-target workspace checking with
+`aestra-bench/gpu`, formatting and whitespace validation pass.
+
+## Graph semantic snapshot/function-history compatibility
+
+B20-2 slice 15 imports the production semantic snapshot resolver, persisted graph
+identities and real function-history resource/transitions. Shipping uses the same
+logic, retaining authoritative catalog inventory, source readiness, call-site
+validation, publication and session chronology. Twelve new shared tests cover
+compiler projection parity, identity/source guards, semantic invalidation and
+failure-safe bounded/scoped function history. See
+[implementation, scope and evidence](editor-graph-semantics-2026-10-12.md).
+Full catalog/host execution, panel composition and native editor acceptance remain
+open; root dependencies remain unchanged.
+
+The accepted frozen headless run executes **547 checks**, including **133 graph
+checks**, with all **652 input hashes** unchanged. Strict candidate all-target
+Clippy and both formatting checks pass. No new native editor acceptance is claimed.
+
+Shipping regression: **1,330 editor unit + 3 architecture tests pass**, with ten
+existing ignores unchanged. Strict workspace all-target Clippy and all-target
+workspace checking with `aestra-bench/gpu`, formatting and whitespace checks pass.
+Root manifest/toolchain/lockfile diffs remain empty.
+
+
+## Catalog-backed semantic publication compatibility
+
+B20-2 slice 16 imports the actual editor catalog and draft store, plus production
+material/function publication, project compilation and extraction/undo rollback.
+Shipping uses the same modules, retaining session installation, chronology and
+watch/I/O adapters. Ten new shared tests cover actual sources/drafts/compiler results,
+failed publication, compensation, conflict diagnostics and history retry. The
+candidate also runs five existing draft-save regressions. See
+[implementation, scope and evidence](editor-publication-2026-10-12.md).
+Complete session/action execution, watcher/I/O and native editor workflows remain
+open; no root engine switch or widget replacement is included.
+
+The accepted frozen headless run executes **562 checks**, including **148 graph
+checks**, with all **661 input hashes** unchanged. Strict candidate all-target
+Clippy and both formatting checks pass. No new native editor acceptance is claimed.
+
+Shipping regression: **1,340 editor unit + 3 architecture tests pass**, with ten
+existing ignores unchanged. Strict workspace all-target Clippy and all-target
+workspace checking with `aestra-bench/gpu`, formatting and whitespace checks pass.
+Root manifest/toolchain/lockfile diffs remain empty.
+
+## Real session preview and scoped semantic-history compatibility
+
+B20-2 slice 17 imports the actual editor session, preview installer, standalone graph
+context, material/function execution, semantic history ledger and action-domain
+executor. Shipping calls the same sources; complete application focus/modal/I/O,
+filesystem and presentation routing remain host-owned. Twelve new shared regressions
+exercise installation/failure preservation, candidate precedence, project-scoped
+undo/redo, retryable failures and real extraction/save history. Existing session,
+semantic-fixture and preview-mock tests now run on 0.20 too. See
+[implementation, scope and evidence](editor-session-history-2026-10-12.md).
+No root dependency switch, optional widget replacement or new native acceptance
+is included. The next boundary is project watch/I/O and remaining action integration.
+
+The accepted frozen headless run executes **613 checks**, including **199 graph/session
+checks**, with all **675 input hashes** unchanged. Strict candidate all-target Clippy
+and both formatting checks pass. No new native editor acceptance is claimed.
+
+Shipping regression: **1,352 editor unit + 3 architecture tests pass**, with ten
+existing ignores unchanged. Strict workspace all-target Clippy and all-target
+workspace checking with `aestra-bench/gpu`, formatting and whitespace checks pass.
+Root manifest/toolchain/lockfile diffs remain empty.
+
+## Project watch and background I/O compatibility
+
+B20-2 slice 18 imports actual project I/O, refresh and lifecycle scheduling into the
+candidate. Shipping installs the same services, retaining native texture-root
+integration. Thirteen new shared regressions cover queue draining/busy/rejection,
+stale guards, preserved drafts, actual asynchronous filesystem refresh, project
+switches, malformed-source recovery and I/O/watch ordering. Eleven existing refresh
+tests and eight localization tests also execute on 0.20. See
+[implementation, scope and evidence](editor-project-lifecycle-2026-10-12.md).
+
+The graph/session/lifecycle gate now uses
+`--features editor-qualification,async-qualification` to exercise the real
+multithreaded I/O pool. Other gate feature combinations remain separate. This adds
+a first-build cost for the combined feature graph, without changing shipping
+dependencies or introducing a synchronous task substitute.
+
+The accepted frozen headless run executes **645 checks**, including **231
+graph/session/lifecycle checks**, with all **680 input hashes** unchanged. Strict
+candidate all-target Clippy with the combined feature set and both formatting
+checks pass. No new native editor acceptance is claimed.
+
+Shipping regression: **1,365 editor unit + 3 architecture tests pass**, with ten
+existing ignores unchanged. Strict workspace all-target Clippy and all-target
+checking with `aestra-bench/gpu`, formatting and whitespace checks pass. Root
+manifest/toolchain/lockfile diffs remain empty. Next: complete history/action
+integration, remaining application/panel composition and native workflow acceptance.

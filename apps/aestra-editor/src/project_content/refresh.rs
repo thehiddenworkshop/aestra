@@ -1,8 +1,20 @@
-use super::*;
-use bevy::tasks::{IoTaskPool, Task, futures_lite::future};
-
-#[cfg(test)]
-mod tests;
+use super::{EditorProjectContent, PreparedProject};
+use crate::{localization::Localizer, session::EditorSession};
+use aestra_core::EffectAsset;
+use aestra_project::{
+    ProjectContentChanges, ProjectContentRefresh, ProjectContentSnapshot, ProjectContentVersion,
+    ProjectTreeStamp, same_project_source_location,
+};
+use aestra_runtime::CompiledEffectProject;
+use bevy::{
+    prelude::*,
+    tasks::{IoTaskPool, Task, futures_lite::future},
+};
+use fluent_bundle::FluentArgs;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 const POLL_SECONDS: f32 = 0.25;
 
@@ -335,3 +347,7 @@ pub(crate) fn apply_project_effect_catalog_refresh(
     let changes = current.changes_from(previous);
     install_refresh(catalog, session, result, &changes, localizer);
 }
+
+#[cfg(test)]
+#[path = "refresh/tests.rs"]
+mod tests;

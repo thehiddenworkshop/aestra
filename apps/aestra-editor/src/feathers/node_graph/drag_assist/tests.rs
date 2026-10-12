@@ -41,7 +41,7 @@ fn setup_scene(zoom: f32, scale: f32) -> (App, Entity, Entity) {
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<Edits>()
         .init_resource::<BatchEdits>()
-        .add_observer(begin_graph_node_drag)
+        .add_observer(begin_graph_node_drag::<GraphNodeControlFilter>)
         .add_observer(drag_graph_node)
         .add_observer(end_graph_node_drag)
         .add_observer(
@@ -302,7 +302,7 @@ fn measured_alignment_is_view_scoped_and_invalidates_changed_targets() {
                 .init_resource::<GraphNodeDragGesture>()
                 .init_resource::<ButtonInput<KeyCode>>()
                 .init_resource::<OverrideCursor>()
-                .add_observer(begin_graph_node_drag)
+                .add_observer(begin_graph_node_drag::<GraphNodeControlFilter>)
                 .add_observer(drag_graph_node);
             let mut surfaces = Vec::new();
             for (view_id, zoom) in [(1, 0.5), (2, 1.75)] {

@@ -1,6 +1,6 @@
 //! Adapter from a validated drag snapshot to the shared bounded solver. Planning is read-only.
+use super::super::resize;
 use super::*;
-use crate::feathers::node_graph::resize;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Move {
@@ -179,4 +179,5 @@ pub(super) fn capture(
 }
 
 #[cfg(test)]
+#[path = "spacing/tests.rs"]
 mod tests;

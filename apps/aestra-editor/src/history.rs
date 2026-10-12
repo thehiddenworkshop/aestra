@@ -7,18 +7,20 @@ use crate::{
     session::EditorSession,
     theme,
 };
-use aestra_authoring::{MaterialCommand, MaterialCommandExecutor, MaterialTransaction};
-use aestra_core::{
-    EffectId,
-    material::{MaterialFunction, MaterialProgram},
-};
-use bevy::{prelude::*, ui::InteractionDisabled, ui_widgets::Activate};
-use std::{
-    collections::{BTreeMap, VecDeque},
-    path::PathBuf,
-};
+#[cfg(test)]
+use aestra_core::material::{MaterialFunction, MaterialProgram};
+#[cfg(test)]
+use bevy::ui_widgets::Activate;
+use bevy::{prelude::*, ui::InteractionDisabled};
+use std::collections::VecDeque;
+use std::path::PathBuf;
 
-const MATERIAL_HISTORY_LIMIT: usize = 256;
+mod action;
+use crate::feathers::action_activation::dispatch_action;
+pub(crate) use action::{HistoryAction, queue_history_action_activation};
+mod material_program;
+pub(crate) mod publication;
+pub(crate) use material_program::MaterialProgramEditHistory;
 pub(crate) mod asset_order;
 
 pub(crate) struct EditorHistoryPlugin;
@@ -133,475 +135,11 @@ impl Plugin for EditorHistoryPlugin {
     }
 }
 
-#[derive(Debug, Clone)]
-struct MaterialProgramHistoryEntry {
-    label: String,
-    before: MaterialProgram,
-    after: MaterialProgram,
-    created_function: Option<MaterialFunction>,
-}
+mod material_program_execution;
 
-#[derive(Resource, Debug, Default)]
-pub(crate) struct MaterialProgramEditHistory {
-    undo: VecDeque<MaterialProgramHistoryEntry>,
-    redo: Vec<MaterialProgramHistoryEntry>,
-    standalone: BTreeMap<(PathBuf, aestra_core::MaterialProgramId), MaterialProgramEditHistory>,
-}
-
-impl MaterialProgramEditHistory {
-    pub(crate) fn clear_program(
-        &mut self,
-        root: &std::path::Path,
-        id: aestra_core::MaterialProgramId,
-    ) {
-        self.standalone.remove(&(root.to_owned(), id));
-    }
-    fn for_target_mut(&mut self, session: &EditorSession) -> &mut Self {
-        if !session.material_history_active {
-            return self;
-        }
-        match &session.material_target {
-            crate::material_document::MaterialEditingTarget::EffectInstance => self,
-            crate::material_document::MaterialEditingTarget::Function { .. } => self,
-            crate::material_document::MaterialEditingTarget::Program { root, id } => {
-                self.standalone.entry((root.clone(), *id)).or_default()
-            }
-        }
-    }
-
-    #[cfg(test)]
-    fn for_target(&self, session: &EditorSession) -> Option<&Self> {
-        if !session.material_history_active {
-            return Some(self);
-        }
-        match &session.material_target {
-            crate::material_document::MaterialEditingTarget::EffectInstance => Some(self),
-            crate::material_document::MaterialEditingTarget::Function { .. } => None,
-            crate::material_document::MaterialEditingTarget::Program { root, id } => {
-                self.standalone.get(&(root.clone(), *id))
-            }
-        }
-    }
-
-    fn available_for_program(
-        &self,
-        root: &std::path::Path,
-        id: aestra_core::MaterialProgramId,
-        undo: bool,
-    ) -> bool {
-        self.standalone
-            .get(&(root.to_owned(), id))
-            .is_some_and(|history| {
-                if undo {
-                    !history.undo.is_empty()
-                } else {
-                    !history.redo.is_empty()
-                }
-            })
-    }
-    pub(crate) fn execute_replacement(
-        &mut self,
-        session: &mut EditorSession,
-        catalog: &mut ProjectEffectCatalog,
-        label: impl Into<String>,
-        before: MaterialProgram,
-        after: MaterialProgram,
-    ) -> Result<(), String> {
-        let label = label.into();
-        apply_material_program_replacement(session, catalog, &label, &before, &after)?;
-        session.set_material_drafts(catalog.material_drafts.clone());
-        let history = self.for_target_mut(session);
-        history.undo.push_back(MaterialProgramHistoryEntry {
-            label,
-            before,
-            after,
-            created_function: None,
-        });
-        while history.undo.len() > MATERIAL_HISTORY_LIMIT {
-            history.undo.pop_front();
-        }
-        history.redo.clear();
-        session
-            .operation_order
-            .record(asset_order::Context::current(session));
-        Ok(())
-    }
-
-    pub(crate) fn execute_extraction(
-        &mut self,
-        session: &mut EditorSession,
-        catalog: &mut ProjectEffectCatalog,
-        label: impl Into<String>,
-        before: MaterialProgram,
-        after: MaterialProgram,
-        function: MaterialFunction,
-    ) -> Result<(), String> {
-        let label = label.into();
-        apply_material_function_extraction(session, catalog, &label, &before, &after, &function)?;
-        session.set_material_drafts(catalog.material_drafts.clone());
-        let history = self.for_target_mut(session);
-        history.undo.push_back(MaterialProgramHistoryEntry {
-            label,
-            before,
-            after,
-            created_function: Some(function),
-        });
-        while history.undo.len() > MATERIAL_HISTORY_LIMIT {
-            history.undo.pop_front();
-        }
-        history.redo.clear();
-        session
-            .operation_order
-            .record(asset_order::Context::current(session));
-        Ok(())
-    }
-
-    fn undo(
-        &mut self,
-        session: &mut EditorSession,
-        catalog: &mut ProjectEffectCatalog,
-    ) -> Result<Option<String>, String> {
-        let Some(entry) = self.undo.pop_back() else {
-            return Ok(None);
-        };
-        let result = if let Some(function) = &entry.created_function {
-            undo_material_function_extraction(session, catalog, &entry, function)
-        } else {
-            apply_material_program_replacement(
-                session,
-                catalog,
-                &format!("Undo {}", entry.label),
-                &entry.after,
-                &entry.before,
-            )
-        };
-        match result {
-            Ok(()) => {
-                session.set_material_drafts(catalog.material_drafts.clone());
-                let label = entry.label.clone();
-                self.redo.push(entry);
-                session
-                    .operation_order
-                    .step(asset_order::Context::current(session), true);
-                Ok(Some(label))
-            }
-            Err(error) => {
-                self.undo.push_back(entry);
-                Err(error)
-            }
-        }
-    }
-
-    fn redo(
-        &mut self,
-        session: &mut EditorSession,
-        catalog: &mut ProjectEffectCatalog,
-    ) -> Result<Option<String>, String> {
-        let Some(entry) = self.redo.pop() else {
-            return Ok(None);
-        };
-        let result = if let Some(function) = &entry.created_function {
-            apply_material_function_extraction(
-                session,
-                catalog,
-                &format!("Redo {}", entry.label),
-                &entry.before,
-                &entry.after,
-                function,
-            )
-        } else {
-            apply_material_program_replacement(
-                session,
-                catalog,
-                &format!("Redo {}", entry.label),
-                &entry.before,
-                &entry.after,
-            )
-        };
-        match result {
-            Ok(()) => {
-                session.set_material_drafts(catalog.material_drafts.clone());
-                let label = entry.label.clone();
-                self.undo.push_back(entry);
-                session
-                    .operation_order
-                    .step(asset_order::Context::current(session), false);
-                Ok(Some(label))
-            }
-            Err(error) => {
-                self.redo.push(entry);
-                Err(error)
-            }
-        }
-    }
-
-    fn clear(&mut self) {
-        self.undo.clear();
-        self.redo.clear();
-        self.standalone.clear();
-    }
-
-    fn clear_redo(&mut self) {
-        self.redo.clear();
-    }
-}
-
-fn apply_material_function_extraction(
-    session: &mut EditorSession,
-    catalog: &mut ProjectEffectCatalog,
-    label: &str,
-    before: &MaterialProgram,
-    after: &MaterialProgram,
-    function: &MaterialFunction,
-) -> Result<(), String> {
-    catalog.create_material_function(function)?;
-    if let Err(error) = apply_material_program_replacement(session, catalog, label, before, after) {
-        return Err(match catalog.delete_material_function(function) {
-            Ok(()) => error,
-            Err(rollback) => {
-                format!("{error}; removing the extracted function also failed: {rollback}")
-            }
-        });
-    }
-    Ok(())
-}
-
-fn undo_material_function_extraction(
-    session: &mut EditorSession,
-    catalog: &mut ProjectEffectCatalog,
-    entry: &MaterialProgramHistoryEntry,
-    function: &MaterialFunction,
-) -> Result<(), String> {
-    apply_material_program_replacement(
-        session,
-        catalog,
-        &format!("Undo {}", entry.label),
-        &entry.after,
-        &entry.before,
-    )?;
-    if let Err(error) = catalog.delete_material_function(function) {
-        return Err(
-            match apply_material_program_replacement(
-                session,
-                catalog,
-                &format!("Restore {} after failed undo", entry.label),
-                &entry.before,
-                &entry.after,
-            ) {
-                Ok(()) => error,
-                Err(rollback) => format!(
-                    "{error}; restoring the material after the failed function removal also failed: \
-                 {rollback}"
-                ),
-            },
-        );
-    }
-    Ok(())
-}
-
-fn apply_material_program_replacement(
-    session: &mut EditorSession,
-    catalog: &mut ProjectEffectCatalog,
-    label: &str,
-    expected: &MaterialProgram,
-    replacement: &MaterialProgram,
-) -> Result<(), String> {
-    let standalone = session.standalone_material().is_some() && session.material_history_active;
-    let mut document = if standalone {
-        session.graph_authoring_document(catalog)?
-    } else {
-        aestra_authoring::MaterialAuthoringDocument::new(
-            session.effect.clone(),
-            catalog.material_programs_for_effect(&session.effect)?,
-        )
-        .with_material_functions(catalog.material_functions()?)
-    };
-    MaterialCommandExecutor::execute(
-        &mut document,
-        &MaterialTransaction::single(
-            label,
-            MaterialCommand::ReplaceMaterialProgram {
-                id: expected.id,
-                program: replacement.clone(),
-            },
-        ),
-    )
-    .map_err(|error| error.to_string())?;
-    let replacement = document
-        .programs
-        .into_iter()
-        .find(|program| program.id == expected.id)
-        .ok_or_else(|| format!("material program {} disappeared", expected.id))?;
-    catalog.replace_material_program(expected, &replacement)?;
-    if standalone {
-        // Source validation is independent of the active effect. The viewport's normal
-        // catalog synchronization refreshes any consumers without editing their source/history.
-        return Ok(());
-    }
-    let compiled = match catalog.compile_project(&session.effect) {
-        Ok(project) => project.root,
-        Err(error) => {
-            return Err(rollback_material_program_replacement(
-                catalog,
-                &replacement,
-                expected,
-                error,
-            ));
-        }
-    };
-    if let Err(error) = session.install_compiled_project_root(compiled) {
-        return Err(rollback_material_program_replacement(
-            catalog,
-            &replacement,
-            expected,
-            error.to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn rollback_material_program_replacement(
-    catalog: &mut ProjectEffectCatalog,
-    current: &MaterialProgram,
-    previous: &MaterialProgram,
-    error: String,
-) -> String {
-    match catalog.replace_material_program(current, previous) {
-        Ok(()) => error,
-        Err(rollback) => {
-            format!("{error}; restoring the previous material also failed: {rollback}")
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HistoryDomain {
-    Effect,
-    MaterialProgram,
-}
-
-#[derive(Resource, Debug, Default)]
-pub(crate) struct EditorHistoryLedger {
-    undo: Vec<HistoryDomain>,
-    redo: Vec<HistoryDomain>,
-    effect: Option<EffectId>,
-    observed_generation: u64,
-    observed_edit_serial: u64,
-    observed_effect_undo: usize,
-    observed_effect_redo: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EffectHistoryChange {
-    None,
-    Edited,
-    Reset,
-}
-
-impl EditorHistoryLedger {
-    fn capture_effect_changes(&mut self, session: &EditorSession) -> EffectHistoryChange {
-        let effect_changed = self
-            .effect
-            .is_some_and(|effect| effect != session.effect.id);
-        let generation_changed =
-            self.effect.is_some() && self.observed_generation != session.history_generation();
-        let history_cleared =
-            session.effect_undo_len() < self.observed_effect_undo && session.effect_redo_len() == 0;
-        if effect_changed || generation_changed || history_cleared {
-            self.undo.clear();
-            self.undo.extend(std::iter::repeat_n(
-                HistoryDomain::Effect,
-                session.effect_undo_len(),
-            ));
-            self.redo.clear();
-            self.effect = Some(session.effect.id);
-            self.observed_generation = session.history_generation();
-            self.observed_edit_serial = session.effect_edit_serial();
-            self.observed_effect_undo = session.effect_undo_len();
-            self.observed_effect_redo = session.effect_redo_len();
-            return EffectHistoryChange::Reset;
-        }
-        self.effect.get_or_insert(session.effect.id);
-        self.observed_generation = session.history_generation();
-        if session.effect_edit_serial() > self.observed_edit_serial {
-            self.undo.extend(std::iter::repeat_n(
-                HistoryDomain::Effect,
-                ((session.effect_edit_serial() - self.observed_edit_serial) as usize)
-                    .min(session.effect_undo_len()),
-            ));
-            self.trim_domain(HistoryDomain::Effect, session.effect_undo_len());
-            self.observed_edit_serial = session.effect_edit_serial();
-            self.redo.clear();
-            self.observed_effect_undo = session.effect_undo_len();
-            self.observed_effect_redo = session.effect_redo_len();
-            return EffectHistoryChange::Edited;
-        }
-        self.observed_effect_undo = session.effect_undo_len();
-        self.observed_effect_redo = session.effect_redo_len();
-        EffectHistoryChange::None
-    }
-
-    pub(crate) fn record_material_edit(&mut self, session: &mut EditorSession) {
-        if session.standalone_material().is_some() && session.material_history_active {
-            return;
-        }
-        self.capture_effect_changes(session);
-        session.clear_effect_redo();
-        self.observe_effect_history(session);
-        self.undo.push(HistoryDomain::MaterialProgram);
-        self.trim_domain(HistoryDomain::MaterialProgram, MATERIAL_HISTORY_LIMIT);
-        self.redo.clear();
-    }
-
-    fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
-    }
-
-    fn trim_domain(&mut self, domain: HistoryDomain, retained: usize) {
-        let mut excess = self
-            .undo
-            .iter()
-            .filter(|entry| **entry == domain)
-            .count()
-            .saturating_sub(retained);
-        self.undo.retain(|entry| {
-            if *entry == domain && excess > 0 {
-                excess -= 1;
-                false
-            } else {
-                true
-            }
-        });
-    }
-
-    fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
-    }
-
-    fn observe_effect_history(&mut self, session: &EditorSession) {
-        self.observed_edit_serial = session.effect_edit_serial();
-        self.observed_effect_undo = session.effect_undo_len();
-        self.observed_effect_redo = session.effect_redo_len();
-    }
-}
-
-#[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HistoryAction {
-    Undo,
-    Redo,
-}
-
-fn queue_history_action_activation(
-    activate: On<Activate>,
-    actions: Query<(), (With<HistoryAction>, With<FeathersActionButton>)>,
-    mut commands: Commands,
-) {
-    if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
-}
+mod document_execution;
+pub(crate) use document_execution::EditorHistoryLedger;
+use document_execution::{EffectHistoryChange, execute_document_history};
 
 #[allow(clippy::type_complexity)]
 fn handle_history_buttons(
@@ -635,15 +173,17 @@ fn handle_history_buttons(
             Interaction::Hovered if feathers.is_none() => background.0 = theme::BUTTON_HOVER,
             Interaction::None if feathers.is_none() => background.0 = theme::BUTTON,
             Interaction::Pressed => {
-                if feathers.is_some() {
-                    if pending.is_none() {
-                        continue;
-                    }
-                    commands
-                        .entity(entity)
-                        .remove::<PendingFeathersActivation>()
-                        .insert(Interaction::None);
-                } else {
+                if !dispatch_action(
+                    &mut commands,
+                    entity,
+                    *action,
+                    feathers.is_some(),
+                    pending.is_some(),
+                    disabled.is_some(),
+                ) {
+                    continue;
+                }
+                if feathers.is_none() {
                     background.0 = theme::ACCENT_DIM;
                 }
                 menu.open = None;
@@ -651,7 +191,6 @@ fn handle_history_buttons(
                 if menu.tab_context.take().is_some() {
                     session.ui_revision += 1;
                 }
-                commands.trigger(*action);
             }
             _ => {}
         }
@@ -783,119 +322,6 @@ pub(crate) fn execute_history_action(
         session.material_target = previous_target;
         session.material_history_active = previous_active;
     }
-}
-
-fn execute_document_history(
-    action: HistoryAction,
-    session: &mut EditorSession,
-    catalog: &mut ProjectEffectCatalog,
-    material_history: &mut MaterialProgramEditHistory,
-    ledger: &mut EditorHistoryLedger,
-    functions: &mut crate::material_function_editor::FunctionEditor,
-) -> bool {
-    if session.standalone_function().is_some() && session.material_history_active {
-        let result = functions.step(session, catalog, action == HistoryAction::Undo);
-        let succeeded = result.is_ok();
-        session.status = match result {
-            Ok(()) => "Function history applied".into(),
-            Err(error) => error,
-        };
-        session.ui_revision += 1;
-        return succeeded;
-    }
-    match ledger.capture_effect_changes(session) {
-        EffectHistoryChange::Reset => material_history.clear(),
-        EffectHistoryChange::Edited => material_history.clear_redo(),
-        EffectHistoryChange::None => {}
-    }
-    if session.standalone_material().is_some() && session.material_history_active {
-        let history = material_history.for_target_mut(session);
-        let result = match action {
-            HistoryAction::Undo => history.undo(session, catalog),
-            HistoryAction::Redo => history.redo(session, catalog),
-        };
-        let succeeded = matches!(&result, Ok(Some(_)));
-        session.status = match result {
-            Ok(Some(label)) => format!(
-                "{} {label}",
-                if action == HistoryAction::Undo {
-                    "Undid"
-                } else {
-                    "Redid"
-                }
-            ),
-            Ok(None) => "No material history in this direction".into(),
-            Err(error) => format!("Material history failed: {error}"),
-        };
-        session.ui_revision += 1;
-        return succeeded;
-    }
-    let domain = match action {
-        HistoryAction::Undo => ledger.undo.pop(),
-        HistoryAction::Redo => ledger.redo.pop(),
-    };
-    let Some(domain) = domain else {
-        session.status = match action {
-            HistoryAction::Undo => "Nothing to undo".into(),
-            HistoryAction::Redo => "Nothing to redo".into(),
-        };
-        return false;
-    };
-
-    let result = match (action, domain) {
-        (HistoryAction::Undo, HistoryDomain::Effect) => {
-            let before = session.effect_undo_len();
-            session.undo();
-            (session.effect_undo_len() < before).then(|| {
-                ledger.redo.push(domain);
-            })
-        }
-        (HistoryAction::Redo, HistoryDomain::Effect) => {
-            let before = session.effect_redo_len();
-            session.redo();
-            (session.effect_redo_len() < before).then(|| {
-                ledger.undo.push(domain);
-            })
-        }
-        (HistoryAction::Undo, HistoryDomain::MaterialProgram) => {
-            match material_history.undo(session, catalog) {
-                Ok(Some(label)) => {
-                    session.status = format!("Undid {label}");
-                    session.ui_revision += 1;
-                    ledger.redo.push(domain);
-                    Some(())
-                }
-                Ok(None) => None,
-                Err(error) => {
-                    session.status = format!("Material undo failed: {error}");
-                    None
-                }
-            }
-        }
-        (HistoryAction::Redo, HistoryDomain::MaterialProgram) => {
-            match material_history.redo(session, catalog) {
-                Ok(Some(label)) => {
-                    session.status = format!("Redid {label}");
-                    session.ui_revision += 1;
-                    ledger.undo.push(domain);
-                    Some(())
-                }
-                Ok(None) => None,
-                Err(error) => {
-                    session.status = format!("Material redo failed: {error}");
-                    None
-                }
-            }
-        }
-    };
-    if result.is_none() {
-        match action {
-            HistoryAction::Undo => ledger.undo.push(domain),
-            HistoryAction::Redo => ledger.redo.push(domain),
-        }
-    }
-    ledger.observe_effect_history(session);
-    result.is_some()
 }
 
 fn history_keyboard_input(
@@ -1634,6 +1060,79 @@ mod tests {
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
         assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+    }
+
+    #[test]
+    fn feathers_history_button_dispatches_to_real_history_and_closes_menus_once() {
+        let mut app = App::new();
+        let changed_duration = edited_session().effect.duration;
+        app.insert_resource(edited_session())
+            .insert_resource(MenuState {
+                open: Some(crate::menus::MenuKind::Edit),
+                panels_open: true,
+                tab_context: Some(crate::menus::TabContextMenu {
+                    panel: crate::docking::ToolPanel::MaterialGraph,
+                    position: [12.0, 24.0],
+                }),
+                ..default()
+            });
+        add_history_resources(&mut app);
+        app.add_observer(queue_history_action_activation)
+            .add_observer(execute_history_action)
+            .add_systems(Update, handle_history_buttons);
+        let background = BackgroundColor(theme::BUTTON);
+        let button = app
+            .world_mut()
+            .spawn((
+                HistoryAction::Undo,
+                FeathersActionButton,
+                Interaction::None,
+                background,
+            ))
+            .id();
+        app.update();
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.duration,
+            changed_duration
+        );
+        assert!(app.world().resource::<MenuState>().open.is_some());
+
+        app.world_mut().trigger(Activate { entity: button });
+        app.update();
+        let undone_duration = app.world().resource::<EditorSession>().effect.duration;
+        assert_ne!(undone_duration, changed_duration);
+        let menu = app.world().resource::<MenuState>();
+        assert!(menu.open.is_none());
+        assert!(!menu.panels_open);
+        assert!(menu.tab_context.is_none());
+        assert!(
+            app.world()
+                .get::<PendingFeathersActivation>(button)
+                .is_none()
+        );
+        assert_eq!(
+            app.world().get::<Interaction>(button),
+            Some(&Interaction::None)
+        );
+        assert_eq!(
+            app.world().get::<BackgroundColor>(button),
+            Some(&background)
+        );
+        app.update();
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.duration,
+            undone_duration
+        );
+
+        app.world_mut()
+            .entity_mut(button)
+            .insert(HistoryAction::Redo);
+        app.world_mut().trigger(Activate { entity: button });
+        app.update();
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.duration,
+            changed_duration
+        );
     }
 
     #[test]

@@ -9,43 +9,10 @@
 #![allow(dead_code)] // Editing/save/diagnostics consume the rest from Milestone 7-2+.
 
 use bevy::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-/// Stable identity of a WESL source document: a deterministic hash of its project-relative path.
-/// Serializable so it can persist in the editor-document manifest, and `Copy` so [`DocumentKey`]
-/// stays `Copy`. Like the source-tree ids, it changes if the file is moved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub(crate) struct WeslSourceId {
-    // Two u64 halves rather than a u128 so the id round-trips cleanly through RON in the manifest.
-    high: u64,
-    low: u64,
-}
-
-impl WeslSourceId {
-    pub(crate) fn for_relative_path(relative: &Path) -> Self {
-        // Normalize separators so the same file yields the same id on every platform.
-        let normalized = relative.to_string_lossy().replace('\\', "/");
-        let hash = |salt: u64| {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            salt.hash(&mut hasher);
-            normalized.hash(&mut hasher);
-            hasher.finish()
-        };
-        Self {
-            high: hash(0),
-            low: hash(0xa5a5_5a5a),
-        }
-    }
-}
-
-impl std::fmt::Display for WeslSourceId {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{:016x}{:016x}", self.high, self.low)
-    }
-}
+pub(crate) use crate::editor_identity::WeslSourceId;
 
 /// One open WESL source buffer. `disk` is the last text read from (or written to) the file, so a
 /// future editing slice can compare it against `text` for dirty state.

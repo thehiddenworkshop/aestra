@@ -5,9 +5,10 @@ use crate::feathers::node_graph::{
 };
 use crate::history::asset_order::Context;
 use crate::material_document::MaterialEditingTarget;
-use std::hash::{DefaultHasher, Hash, Hasher};
 
-type Nodes = BTreeMap<String, (Vec2, bool)>;
+mod semantic;
+mod transaction;
+pub(crate) use transaction::{Snapshot, Transaction};
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct State<'w> {
@@ -26,15 +27,8 @@ impl State<'_> {
             .memory
             .as_deref()
             .ok_or("Graph layout is unavailable")?;
-        if let Some((program, before, after)) = &transaction.previews {
-            let previews = self
-                .previews
-                .as_deref()
-                .ok_or("Graph previews are unavailable")?;
-            if visible(previews, *program) != *(if undo { after } else { before }) {
-                return Err("Preview visibility changed since this action".into());
-            }
-        }
+        transaction
+            .validate_previews(undo, self.previews.as_deref().map(|state| &state.visible))?;
         transaction.validate(undo, catalog, session, memory)
     }
     pub(crate) fn apply(&mut self, transaction: &Transaction, undo: bool) {
@@ -47,30 +41,6 @@ impl State<'_> {
             self.previews.as_deref_mut().unwrap_or(&mut no_previews),
         );
     }
-}
-
-#[derive(Clone)]
-pub(crate) struct Snapshot {
-    root: PathBuf,
-    generation: u64,
-    graph: String,
-    stamp: u64,
-    keys: BTreeSet<String>,
-    nodes: Nodes,
-    pinned: BTreeSet<String>,
-    order_serial: u64,
-}
-
-#[derive(Clone)]
-pub(crate) struct Transaction {
-    before: Snapshot,
-    after: Snapshot,
-    previews: Option<(
-        MaterialProgramId,
-        BTreeSet<MaterialGraphPreviewTarget>,
-        BTreeSet<MaterialGraphPreviewTarget>,
-    )>,
-    invalidated: bool,
 }
 
 impl Snapshot {
@@ -238,70 +208,34 @@ pub(crate) fn arrange(
     Ok(())
 }
 
-fn stamp(value: &impl std::fmt::Debug) -> u64 {
-    let mut hash = DefaultHasher::new();
-    format!("{value:?}").hash(&mut hash);
-    hash.finish()
-}
-
 fn semantic(
     graph: &str,
     catalog: &ProjectEffectCatalog,
     session: &EditorSession,
 ) -> Option<(u64, BTreeSet<String>)> {
     if graph.starts_with("material:") {
-        let program = layout_lifecycle::programs(catalog, session)
-            .into_iter()
-            .find(|p| material_graph_view_key(p.id) == graph)?;
-        if catalog.material_program(program.id).is_err()
-            && MaterialProgram::built_in(aestra_core::material::MaterialProgramRef::BuiltIn(
-                program.id,
-            ))
-            .is_none()
-        {
-            return None;
-        }
-        // Presentation history follows projected canvas nodes, not every semantic expression.
-        // Single-use constants rendered inline on a socket have no independent geometry or base
-        // position and must not make a valid whole-graph layout look incomplete.
-        let inline = program.inline_constants();
-        let keys = program
-            .expressions
-            .iter()
-            .filter(|expression| !inline.contains(&expression.id))
-            .map(|e| material_graph_expression_node_key(e.id))
-            .chain(std::iter::once(MATERIAL_GRAPH_OUTPUT_NODE_KEY.into()))
-            .collect();
-        Some((stamp(&program), keys))
+        semantic::program(graph, layout_lifecycle::programs(catalog, session), |id| {
+            catalog.material_program(id).is_ok()
+        })
     } else {
-        let function = catalog.material_functions().ok()?.into_iter().find(|f| {
-            function_graph_memory_key(catalog.root(), f.id) == graph && f.custom_wesl.is_none()
-        })?;
-        catalog
-            .content()
-            .cached_material_function(aestra_core::material::MaterialFunctionRef::Project(
-                function.id,
-            ))
-            .ok()?;
-        let keys = function
-            .expressions
-            .iter()
-            .map(|e| e.id.to_string())
-            .chain(std::iter::once("outputs".into()))
-            .collect();
-        Some((stamp(&function), keys))
+        semantic::function(
+            graph,
+            catalog.root(),
+            catalog.material_functions().ok()?,
+            |id| {
+                catalog
+                    .content()
+                    .cached_material_function(aestra_core::material::MaterialFunctionRef::Project(
+                        id,
+                    ))
+                    .is_ok()
+            },
+        )
     }
 }
 
 impl Transaction {
-    pub(crate) fn invalidate(&mut self, graph: Option<&str>) {
-        if graph.is_none_or(|graph| self.before.graph == graph) {
-            self.invalidated = true;
-        }
-    }
-
-    /// Validate before touching semantics or presentation. Removed identities are only restored
-    /// by a compound command whose semantic history restores them first.
+    /// Host semantic resolution remains authoritative; the shared core validates before mutation.
     pub(crate) fn validate(
         &self,
         undo: bool,
@@ -309,47 +243,13 @@ impl Transaction {
         session: &EditorSession,
         memory: &GraphViewportMemory,
     ) -> Result<(), String> {
-        let expected = if undo { &self.after } else { &self.before };
-        if self.invalidated
-            || expected.root != catalog.root()
-            || expected.generation != catalog.content_revision().generation
-            || semantic(&expected.graph, catalog, session)
-                .is_none_or(|(stamp, _)| stamp != expected.stamp)
-        {
-            return Err("Layout history is stale: the graph was removed or reloaded".into());
-        }
-        for key in self.changed_nodes() {
-            if self
-                .before
-                .nodes
-                .get(&key)
-                .into_iter()
-                .chain(self.after.nodes.get(&key))
-                .any(|(position, _)| !position.is_finite())
-            {
-                return Err("Invalid layout position".into());
-            }
-            if memory.node(&expected.graph, &key) != expected.nodes.get(&key).copied() {
-                return Err("Layout changed since this action; history was not applied".into());
-            }
-            if memory.is_pinned(&expected.graph, &key) != expected.pinned.contains(&key) {
-                return Err(
-                    "Layout pinning changed since this action; history was not applied".into(),
-                );
-            }
-        }
-        Ok(())
-    }
-
-    fn changed_nodes(&self) -> BTreeSet<String> {
-        self.before
-            .nodes
-            .keys()
-            .chain(self.after.nodes.keys())
-            .filter(|key| self.before.nodes.get(*key) != self.after.nodes.get(*key))
-            .chain(self.before.pinned.symmetric_difference(&self.after.pinned))
-            .cloned()
-            .collect()
+        self.validate_layout(
+            undo,
+            catalog.root(),
+            catalog.content_revision().generation,
+            |graph| semantic(graph, catalog, session).map(|(stamp, _)| stamp),
+            memory,
+        )
     }
 
     pub(crate) fn apply(
@@ -358,24 +258,7 @@ impl Transaction {
         memory: &mut GraphViewportMemory,
         previews: &mut MaterialGraphPreviewState,
     ) {
-        let target = if undo { &self.before } else { &self.after };
-        for key in self.changed_nodes() {
-            if let Some((position, collapsed)) = target.nodes.get(&key) {
-                memory.set_node(&target.graph, &key, *position, *collapsed);
-                memory.set_pinned(&target.graph, &key, target.pinned.contains(&key));
-            } else {
-                memory.remove_node(&target.graph, &key);
-            }
-        }
-        memory.clear_offsets(&target.graph);
-        if let Some((program, before, after)) = &self.previews {
-            previews.visible.retain(|(id, _)| id != program);
-            previews.visible.extend(
-                (if undo { before } else { after })
-                    .iter()
-                    .map(|target| (*program, *target)),
-            );
-        }
+        self.apply_layout(undo, memory, &mut previews.visible);
     }
 }
 
@@ -578,12 +461,7 @@ pub(super) fn visible(
     previews: &MaterialGraphPreviewState,
     program: MaterialProgramId,
 ) -> BTreeSet<MaterialGraphPreviewTarget> {
-    previews
-        .visible
-        .iter()
-        .filter(|(id, _)| *id == program)
-        .map(|(_, target)| *target)
-        .collect()
+    transaction::visible_targets(&previews.visible, program)
 }
 
 #[cfg(test)]

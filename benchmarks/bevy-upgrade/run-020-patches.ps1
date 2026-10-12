@@ -29,6 +29,9 @@ function Inputs {
         Where-Object { !$_.FullName.StartsWith($fixtureTarget, [StringComparison]::OrdinalIgnoreCase) } |
         ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
     $paths += 'benchmarks/bevy-upgrade/keyboard-020.rs', 'benchmarks/bevy-upgrade/run-020-patches.ps1'
+    $paths += @(Get-ChildItem -LiteralPath (Join-Path $root 'apps/aestra-editor/src/feathers/node_graph') -File -Recurse |
+        ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
+    $paths += 'benchmarks/graph-layout/resize_profile.rs'
     $paths += @(
         'apps/aestra-editor/src/theme.rs',
         'apps/aestra-editor/src/theme/palette.rs',
@@ -43,6 +46,8 @@ function Inputs {
         'apps/aestra-editor/src/feathers/pointer_019.rs',
         'apps/aestra-editor/src/feathers/pointer_020.rs',
         'apps/aestra-editor/src/feathers/button.rs',
+        'apps/aestra-editor/src/feathers/action_activation.rs',
+        'apps/aestra-editor/src/feathers/action_activation/tests.rs',
         'apps/aestra-editor/src/feathers/button/activation_019.rs',
         'apps/aestra-editor/src/feathers/button/activation_020.rs',
         'apps/aestra-editor/src/feathers/context_menu.rs',
@@ -62,6 +67,67 @@ function Inputs {
         'apps/aestra-editor/locales/en-US/editor.ftl',
         'apps/aestra-editor/locales/fr-FR/editor.ftl',
         'apps/aestra-editor/src/main.rs',
+        'apps/aestra-editor/src/editor_identity.rs',
+        'apps/aestra-editor/src/document.rs',
+        'apps/aestra-editor/src/document_registry.rs',
+        'apps/aestra-editor/src/editor_view.rs',
+        'apps/aestra-editor/src/editor_view_registry.rs',
+        'apps/aestra-editor/src/editor_target.rs',
+        'apps/aestra-editor/src/editor_target/tests.rs',
+        'apps/aestra-editor/src/material_document.rs',
+        'apps/aestra-editor/src/material_target.rs',
+        'apps/aestra-editor/src/material_graph.rs',
+        'apps/aestra-editor/src/material_graph/command_preparation.rs',
+        'apps/aestra-editor/src/material_graph/command_preparation/tests.rs',
+        'apps/aestra-editor/src/history.rs',
+        'apps/aestra-editor/src/history/action.rs',
+        'apps/aestra-editor/src/history/asset_order.rs',
+        'apps/aestra-editor/src/history/asset_order/model.rs',
+        'apps/aestra-editor/src/history/asset_order/model/tests.rs',
+        'apps/aestra-editor/src/material_graph/presentation.rs',
+        'apps/aestra-editor/src/material_graph/presentation/tests.rs',
+        'apps/aestra-editor/src/material_graph/presentation/transaction.rs',
+        'apps/aestra-editor/src/material_graph/presentation/transaction/tests.rs',
+        'apps/aestra-editor/src/material_graph/preview_target.rs',
+        'apps/aestra-editor/src/material_graph/keys.rs',
+        'apps/aestra-editor/src/material_graph/layout_lifecycle.rs',
+        'apps/aestra-editor/src/material_graph/function_layout.rs',
+        'apps/aestra-editor/src/material_graph/presentation/semantic.rs',
+        'apps/aestra-editor/src/material_graph/presentation/semantic/tests.rs',
+        'apps/aestra-editor/src/material_function_editor.rs',
+        'apps/aestra-editor/src/material_function_editor/graph.rs',
+        'apps/aestra-editor/src/material_function_editor/history.rs',
+        'apps/aestra-editor/src/material_function_editor/history/tests.rs',
+        'assets/test/materials/pulse_wave.aestra.material-function.ron',
+        'apps/aestra-editor/src/history/material_program.rs',
+        'apps/aestra-editor/src/history/material_program/tests.rs',
+        'apps/aestra-editor/src/history/publication.rs',
+        'apps/aestra-editor/src/history/publication/tests.rs',
+        'apps/aestra-editor/src/history/material_program_execution.rs',
+        'apps/aestra-editor/src/history/document_execution.rs',
+        'apps/aestra-editor/src/history/document_execution/tests.rs',
+        'apps/aestra-editor/src/history/asset_order/session_context.rs',
+        'apps/aestra-editor/src/material_document/context.rs',
+        'apps/aestra-editor/src/material_function_editor/execution.rs',
+        'apps/aestra-editor/src/session.rs',
+        'apps/aestra-editor/src/session/preview_tests.rs',
+        'apps/aestra-editor/src/test_support.rs',
+        'apps/aestra-editor/src/preview_mocks.rs',
+        'assets/test/effects/material_graph_lab.aestra.ron',
+        'assets/test/materials/material_graph_lab.aestra.material.ron',
+        'apps/aestra-editor/src/material_drafts.rs',
+        'apps/aestra-editor/src/project_content/mod.rs',
+        'apps/aestra-editor/src/project_content/model.rs',
+        'apps/aestra-editor/src/project_content/catalog_tests.rs',
+        'apps/aestra-editor/src/project_content/refresh.rs',
+        'apps/aestra-editor/src/project_content/refresh/tests.rs',
+        'apps/aestra-editor/src/project_content/io.rs',
+        'apps/aestra-editor/src/project_content/io/tests.rs',
+        'apps/aestra-editor/src/project_content/plugin.rs',
+        'apps/aestra-editor/src/project_content/services.rs',
+        'apps/aestra-editor/src/project_content/services/tests.rs',
+        'apps/aestra-editor/src/docking.rs',
+        'apps/aestra-editor/src/wesl_document.rs',
         'apps/aestra-editor/src/feathers/color_picker.rs',
         'apps/aestra-editor/src/feathers/color_picker/interaction_tests.rs',
         'apps/aestra-editor/src/feathers/color_picker/pointer_019.rs',
@@ -191,7 +257,7 @@ function Inputs {
     # The shader fixture compiles real engine-neutral Aestra path dependencies too.
     $paths += @(Get-ChildItem -LiteralPath (Join-Path $root 'assets/icons') -Filter '*.svg' -File |
         ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
-    foreach ($crate in @('aestra-core', 'aestra-compiler', 'aestra-gpu', 'aestra-runtime', 'aestra-extension', 'aestra-project')) {
+    foreach ($crate in @('aestra-core', 'aestra-authoring', 'aestra-compiler', 'aestra-gpu', 'aestra-runtime', 'aestra-extension', 'aestra-project')) {
         $directory = Join-Path $root "crates/$crate"
         $paths += "crates/$crate/Cargo.toml"
         $paths += @(Get-ChildItem -LiteralPath "$directory/src" -File -Recurse |
@@ -199,6 +265,9 @@ function Inputs {
     }
     $paths += 'bevy/aestra-bevy-render/src/host_transform.rs', 'bevy/aestra-bevy-render/src/gpu/trail_replay.rs', 'extensions/aestra-fluid/Cargo.toml'
     $paths += @(Get-ChildItem -LiteralPath (Join-Path $root 'extensions/aestra-fluid/src') -File -Recurse |
+        ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
+    $paths += 'extensions/aestra-example-extension/Cargo.toml'
+    $paths += @(Get-ChildItem -LiteralPath (Join-Path $root 'extensions/aestra-example-extension/src') -File -Recurse |
         ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
     foreach ($directory in @('vendor/bevy_input_focus_020', 'vendor/bevy_pbr_020')) {
         $paths += @(Get-ChildItem -LiteralPath (Join-Path $root $directory) -File -Recurse -Force |
@@ -268,6 +337,7 @@ try {
     RunCargo 'editor-colors' (@('test') + $common + @('--test', 'editor_colors', '--features', 'editor-qualification', '--', '--test-threads=1'))
     RunCargo 'editor-text' (@('test') + $common + @('--test', 'editor_text', '--features', 'editor-qualification', '--', '--test-threads=1'))
     RunCargo 'editor-tooltips' (@('test') + $common + @('--test', 'editor_tooltips', '--features', 'editor-qualification', '--', '--test-threads=1'))
+    RunCargo 'editor-graph' (@('test') + $common + @('--test', 'editor_graph', '--features', 'editor-qualification,async-qualification', '--', '--test-threads=1'))
     RunCargo 'upstream-input-focus' (@('test') + $common + @('-p', 'bevy_input_focus', '--lib', '--', '--test-threads=1'))
     RunCargo 'cluster-units' (@('test') + $common + @('-p', 'bevy_pbr', '--lib', 'aestra_reuse_tests', '--', '--test-threads=1'))
     RunCargo 'shader-composition' (@('test') + $common + @('--test', 'shader_composition', '--', '--test-threads=1'))

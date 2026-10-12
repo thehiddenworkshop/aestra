@@ -73,20 +73,24 @@ mod arrange_context_tests;
 pub(crate) mod asset_drop;
 mod asset_preview;
 pub(crate) mod clipboard;
+mod command_preparation;
 mod function_layout;
 pub(crate) mod insertion;
+mod keys;
 mod layout_adapter;
 mod layout_lifecycle;
 mod node_previews;
 pub(crate) mod presentation;
 pub(crate) mod semantic_placement;
 pub(crate) use asset_preview::render_material_asset_preview;
-pub(crate) use function_layout::function_graph_memory_key;
+pub(crate) use keys::function_graph_memory_key;
+use keys::{
+    MATERIAL_GRAPH_OUTPUT_NODE_KEY, material_graph_expression_node_key, material_graph_view_key,
+};
 const CANVAS_PADDING: f32 = 34.0;
 const NODE_GAP: f32 = 22.0;
 const SNAP_RADIUS: f32 = 38.0;
 const MATERIAL_GRAPH_LAYOUT_SAVE_DELAY: Duration = Duration::from_millis(300);
-const MATERIAL_GRAPH_OUTPUT_NODE_KEY: &str = "output";
 
 pub(crate) struct EditorMaterialGraphPlugin;
 
@@ -233,13 +237,9 @@ fn queue_material_graph_menu_action_activation(
             )>,
         ),
     >,
-    mut commands: Commands,
+    commands: Commands,
 ) {
-    if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
+    crate::feathers::action_activation::queue_activation(activate, actions, commands);
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
@@ -581,11 +581,8 @@ fn arrange_seeds(
         .unwrap_or_default()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum MaterialGraphPreviewTarget {
-    Expression(MaterialExpressionId),
-    Output,
-}
+mod preview_target;
+pub(crate) use preview_target::MaterialGraphPreviewTarget;
 
 #[derive(Resource, Debug, Default)]
 pub(crate) struct MaterialGraphPreviewState {
@@ -3170,22 +3167,12 @@ fn apply_material_tool_command(
         }
         session.material_history_active = true;
     }
-    let programs = session.graph_material_programs(catalog)?;
-    let current = programs
-        .iter()
-        .find(|candidate| candidate.id == program)
-        .cloned()
-        .ok_or_else(|| format!("Material program {program} is unavailable"))?;
     let document = session.graph_authoring_document(catalog)?;
-    let plan = MaterialToolPlanner::plan(&document, command).map_err(|error| error.to_string())?;
-    let mut preview = document;
-    MaterialCommandExecutor::execute(&mut preview, &plan.transaction)
-        .map_err(|error| error.to_string())?;
-    let replacement = preview
-        .programs
-        .into_iter()
-        .find(|candidate| candidate.id == program)
-        .ok_or_else(|| format!("material tool plan removed program {program}"))?;
+    let command_preparation::PreparedEdit {
+        plan,
+        before: current,
+        after: replacement,
+    } = command_preparation::prepare(document, program, command)?;
     if let Some(function) = plan.created_function().cloned() {
         material_history.execute_extraction(
             session,
@@ -5647,12 +5634,6 @@ fn graph_preview_targets(
         .chain(std::iter::once(MaterialGraphPreviewTarget::Output))
 }
 
-/// The per-document key for a program's node layout (node positions, and the saved "document
-/// camera"). Shared by every view of the program, so moving a node moves it in all of them.
-fn material_graph_view_key(program: MaterialProgramId) -> String {
-    format!("material:{program}")
-}
-
 /// The per-view pan/zoom key. Editor views get a distinct key so two views of one program pan and
 /// zoom independently; the effect tool panel also has a distinct camera.
 fn material_graph_viewport_key(
@@ -5663,10 +5644,6 @@ fn material_graph_viewport_key(
         Some(view) => format!("material:{program}#view:{}", view.0),
         None => format!("material:{program}#tool"),
     }
-}
-
-fn material_graph_expression_node_key(expression: MaterialExpressionId) -> String {
-    format!("expression:{expression}")
 }
 
 fn spawn_graph_wires(parent: &mut ChildSpawnerCommands, graph: &MaterialGraphProjection) {

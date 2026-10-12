@@ -1,9 +1,14 @@
 //! Serialized explicit project I/O. Tasks are drained, never dropped after a disk write.
-use super::*;
+use super::{EditorProjectContent, ProjectEffectWatchState};
+use crate::session::EditorSession;
+use aestra_core::EffectAsset;
+use aestra_project::ProjectContentVersion;
 use bevy::{
     ecs::world::CommandQueue,
+    prelude::*,
     tasks::{IoTaskPool, Task, futures_lite::future},
 };
+use std::path::PathBuf;
 
 #[derive(Resource, Default)]
 pub(crate) struct ProjectIoTasks {
@@ -206,3 +211,7 @@ pub(crate) fn publish_catalog(world: &mut World, mut prepared: EditorProjectCont
         });
     }
 }
+
+#[cfg(test)]
+#[path = "io/tests.rs"]
+mod tests;

@@ -1,7 +1,9 @@
 //! Shared drag-on-wire hit testing. Adapters validate and commit semantics.
-use super::{geometry::*, *};
+use super::{geometry::*, memory::GraphViewportMemory, navigation::FeathersGraphViewport, node::*};
+use bevy::prelude::*;
 use std::collections::BTreeMap;
 
+#[path = "insertion/spacing.rs"]
 mod spacing;
 pub(crate) use spacing::Spacing;
 
@@ -48,7 +50,7 @@ pub(crate) struct Drop {
     pub before_offset: Vec2,
 }
 
-struct Gesture {
+pub(super) struct Gesture {
     node: Entity,
     viewport: Entity,
     snapshot: GraphGeometrySnapshot,
@@ -57,8 +59,8 @@ struct Gesture {
 
 #[derive(Resource, Default)]
 pub(crate) struct State {
-    gesture: Option<Gesture>,
-    candidate: Option<Candidate>,
+    pub(super) gesture: Option<Gesture>,
+    pub(super) candidate: Option<Candidate>,
     pub allowed: bool,
 }
 
@@ -77,7 +79,7 @@ impl State {
     }
 }
 
-fn belongs(world: &World, mut entity: Entity, viewport: Entity) -> bool {
+pub(super) fn belongs(world: &World, mut entity: Entity, viewport: Entity) -> bool {
     while let Some(parent) = world.get::<ChildOf>(entity) {
         entity = parent.parent();
         if entity == viewport {
@@ -125,7 +127,7 @@ pub(super) fn begin(world: &mut World, node: Entity) {
     });
 }
 
-fn candidate(world: &mut World, entity: Entity) -> Option<Candidate> {
+pub(super) fn candidate(world: &mut World, entity: Entity) -> Option<Candidate> {
     if world
         .get_resource::<ButtonInput<KeyCode>>()
         .is_some_and(|keys| {
@@ -304,6 +306,3 @@ pub(crate) fn distance_to_wire(point: Vec2, start: Vec2, end: Vec2) -> f32 {
     }
     distance
 }
-
-#[cfg(test)]
-mod tests;

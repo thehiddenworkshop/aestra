@@ -10,9 +10,9 @@ fn scene() -> resize::Snapshot<GraphNodeKey, GraphViewKey> {
         identity: GraphViewKey {
             document: GraphDocumentKey {
                 project: "project".into(),
-                asset: crate::document::DocumentKey::MaterialProgram(MaterialProgramId::from_u128(
-                    1,
-                )),
+                asset: crate::editor_identity::DocumentKey::MaterialProgram(
+                    MaterialProgramId::from_u128(1),
+                ),
             },
             view: None,
         },

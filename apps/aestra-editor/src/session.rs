@@ -2830,6 +2830,10 @@ fn default_layer(index: usize) -> Emitter {
 }
 
 #[cfg(test)]
+#[path = "session/preview_tests.rs"]
+mod preview_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support;
@@ -3214,7 +3218,15 @@ mod tests {
             saved.extensions,
             vec![aestra_core::ExtensionRequirement::new(
                 aestra_example_extension::PLUGIN_ID,
-                format!("^{}", env!("CARGO_PKG_VERSION")),
+                format!(
+                    "^{}",
+                    registry
+                        .installed_manifest(&aestra_core::ExtensionId::new(
+                            aestra_example_extension::PLUGIN_ID
+                        ))
+                        .unwrap()
+                        .version
+                ),
             )]
         );
         assert!(!session.dirty);
