@@ -1,10 +1,10 @@
 //! Delayed, window-aware editor tooltips.
 
+use super::pointer::{PointerDragStart, PointerOver};
 use crate::theme;
 use bevy::{
-    picking::events::{DragStart, Over, Pointer},
     prelude::*,
-    ui::RelativeCursorPosition,
+    ui::{DefaultUiCamera, RelativeCursorPosition},
     ui_widgets::popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
     window::PrimaryWindow,
 };
@@ -126,7 +126,7 @@ pub(crate) struct TooltipState {
 }
 
 pub(crate) fn begin_tooltip(
-    over: On<Pointer<Over>>,
+    over: On<PointerOver>,
     tooltips: Query<(), With<EditorTooltip>>,
     mut state: ResMut<TooltipState>,
     mut commands: Commands,
@@ -141,7 +141,7 @@ pub(crate) fn begin_tooltip(
 
 /// Dragging starts an edit or layout operation, so stale hover help must not obscure it.
 pub(crate) fn dismiss_tooltip_on_drag(
-    _drag: On<Pointer<DragStart>>,
+    _drag: On<PointerDragStart>,
     mut state: ResMut<TooltipState>,
     mut commands: Commands,
 ) {
@@ -156,6 +156,9 @@ pub(crate) fn update_tooltip(
     windows: Query<&Window, With<PrimaryWindow>>,
     parents: Query<&ChildOf>,
     cameras: Query<&UiTargetCamera>,
+    camera_views: Query<&Camera>,
+    default_camera: DefaultUiCamera,
+    ui_scale: Res<UiScale>,
 ) {
     if state.popup.is_some_and(|popup| !popups.contains(popup)) {
         state.popup = None;
@@ -209,15 +212,26 @@ pub(crate) fn update_tooltip(
             // up the tree and pin it explicitly (falling back to the default UI camera).
             let camera = std::iter::once(target)
                 .chain(parents.iter_ancestors(target))
-                .find_map(|entity| cameras.get(entity).ok().cloned());
+                .find_map(|entity| cameras.get(entity).ok().cloned())
+                .or_else(|| default_camera.get().map(UiTargetCamera));
+            // Window cursor coordinates are logical window pixels, but this root's
+            // Val::Px coordinates are viewport-local UI units. Convert the physical
+            // viewport offset by display scale, then divide once by UiScale.
+            let viewport_origin = camera
+                .as_ref()
+                .and_then(|target| camera_views.get(target.entity()).ok())
+                .and_then(|camera| camera.viewport.as_ref())
+                .map_or(Vec2::ZERO, |viewport| viewport.physical_position.as_vec2());
+            let position =
+                (cursor - viewport_origin / window.scale_factor()) / ui_scale.0.max(0.01);
             let mut anchor = commands.spawn((
                 TooltipPopup,
                 Pickable::IGNORE,
                 GlobalZIndex(300),
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(cursor.x),
-                    top: Val::Px(cursor.y),
+                    left: Val::Px(position.x),
+                    top: Val::Px(position.y),
                     ..default()
                 },
             ));
@@ -562,3 +576,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "tooltip/interaction_tests.rs"]
+mod interaction_tests;

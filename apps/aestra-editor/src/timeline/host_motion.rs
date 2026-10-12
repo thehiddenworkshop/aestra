@@ -1,11 +1,11 @@
 //! Effect-level pose keys. UI state never owns semantic motion or bypasses command history.
 use super::*;
+use crate::feathers::number_input::{NumberInputValue, UpdateNumberInput};
 use crate::feathers::{
     field_row::{FieldRowProps, spawn_field_row},
     number_input::ScrubbableNumber,
 };
 use aestra_core::{EffectId, EmitterTransform, HostTransformKey, HostTransformTrack};
-use bevy::feathers::controls::{NumberInputValue, UpdateNumberInput};
 use bevy::{camera::NormalizedRenderTarget, ecs::entity::ContainsEntity};
 
 #[derive(Debug, Default)]

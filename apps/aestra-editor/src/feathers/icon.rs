@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 
+#[path = "icon/svg.rs"]
 mod svg;
 pub(crate) use svg::{SvgColor, SvgFile, SvgPlugin, UiSvg};
 

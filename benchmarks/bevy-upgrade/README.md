@@ -633,3 +633,169 @@ reuse without fixture-owned visibility.
 Full-plugin bootstrap, combined coupled readiness, editor compatibility, the
 root dependency switch and final parity remain open. Shipping stays Bevy 0.19.1.
 See [implementation and evidence](production-visibility-2026-10-11.md).
+
+## Complete renderer and host plugin bootstrap
+
+The combined pipelined candidate now adds the real `AestraPlugin` and opt-in host
+light plugin, sharing shipping renderer/GPU/host startup instead of manually
+assembling systems or assigning a backend. It also uses the actual CPU fallback,
+input-event and project profiling modules. Native checks additionally require
+particle pixels, submitted geometry and owner/project timing delivery; receiver
+lighting measurements exclude emissive draw overdraw without changing thresholds.
+
+Full-plugin coupled stateful/fluid/trail readiness, editor compatibility, the root
+dependency switch and final parity remain open. Shipping stays Bevy 0.19.1. See
+[implementation and evidence](production-plugin-bootstrap-2026-10-11.md).
+
+## Full-plugin coupled readiness
+
+An additional required native gate runs persistent particles, dense fluid and
+paged trails through the actual threaded host/renderer plugins. An absent shader
+holds all joint simulation until readiness; insertion resumes the same allocation.
+Actual buffers, submitted living/dead-head trails, paused idempotence, exact-frame
+seek/restart reconstruction, PlaybackOnly capture policy and teardown are checked.
+
+The gate exposed a one-ULP clock mismatch that made valid post-seek telemetry look
+like a future frame. Shared production presentation now uses the canonical host
+clock, without weakening timestamp validation. Editor compatibility, the coherent
+dependency switch and final parity remain open; shipping stays Bevy 0.19.1. See
+[implementation and evidence](full-plugin-coupled-readiness-2026-10-11.md).
+
+## Editor theme compatibility
+
+The editor now shares its unchanged palette through version-selected Feathers
+theme adapters. The 0.20 adapter preserves exact per-control colors across all
+four surface contexts without accidentally sharing menu/button semantic fills.
+A required headless gate exercises actual Feathers buttons, menu styling,
+disabled text, context propagation and live theme replacement.
+
+This begins B20-2; it is not a complete editor port or visual parity approval.
+Scene/text/pointer compatibility, the root graph switch and final acceptance
+remain open. Shipping stays Bevy 0.19.1. See
+[implementation and evidence](editor-theme-2026-10-11.md).
+
+## Shared editor scenes and text-input compatibility
+
+B20-2 slice 2 shares 16 actual editor Feathers wrappers and the existing
+single-line text-input plugin between shipping and candidate qualification.
+Eight shared regressions exercise composition, real keyboard Unicode editing,
+Enter/focus-loss submission and field identity. Two additional 0.20 checks cover
+the new keyboard behavior marker and Escape propagation after focus release.
+Slider values use an explicit component override compatible with both versions.
+
+The source-frozen runner requires the new editor-controls gate and hashes its
+production scene/text/plugin inputs. Numeric/color-plane scenes, pointer/cursor
+compatibility, complete editor workflows and visual acceptance remain open.
+This is not a complete B20-2 port or a root dependency switch. See
+[implementation and evidence](editor-controls-2026-10-11.md).
+
+Final validation (2026-10-12): **1,179 shipping editor unit + 3 architecture tests**
+pass. The source-frozen native runner accepts **278 checks**, including all **34
+native gates**, with **475 input hashes** and five native executable hashes
+unchanged. Strict workspace/candidate lint, workspace checking and formatting pass.
+
+## Numeric scrub pointer/cursor compatibility
+
+B20-2 slice 3 shares the actual numeric scrub plugin with the candidate. Small
+version-selected aliases cover 0.20's flat pointer events and cursor types moving
+from Feathers to picking. Eight shared tests retain numeric policy and exercise
+real event dispatch, text replacement, modifier stepping, clamping, propagation,
+single final submission and cursor restoration. The required editor-controls
+gate now contains 18 tests; its new production inputs are source-frozen.
+
+Full numeric scene/arrow composition is still pending: 0.20's built-in handlers
+must not compete with Aestra's scrub/step behavior. Color-plane composition,
+other pointer consumers and full editor acceptance also remain open. See
+[implementation and evidence](editor-scrub-2026-10-12.md).
+
+Validation (2026-10-12): **1,185 editor unit + 3 architecture tests**, strict
+workspace/candidate lint, workspace checking and formatting pass. The accepted
+source-frozen headless run passes **252 checks**, with **480 input hashes**
+unchanged. Native renderer gates were not rerun for this UI-only slice.
+
+## Controlled numeric composition/value/arrow compatibility
+
+B20-2 slice 4 shares the complete production numeric composition, bridge,
+scrub and arrows across shipping/candidate graphs. It uses actual Feathers text
+primitives with an app-owned click/scrub surface rather than composing competing
+native 0.20 number handlers. Document-owned typed updates, axis labels/sigils,
+hover contrast/geometry and custom semantic stepping remain available.
+Selection-only events and programmatic display writes no longer duplicate
+numeric changes; Enter submits on press only.
+
+The source-frozen runner now requires `editor-numbers`: ten new shared composition
+regressions plus existing arrow/scrub/text/SVG/localization checks, 46 total.
+Actual numeric source, dependent catalogs and shipped icons are hashed. Native
+hit-testing/visual acceptance and upstream numeric adoption remain separate;
+shipping still uses Bevy 0.19.1. See
+[implementation, scope and evidence](editor-numbers-2026-10-12.md).
+
+Validation (2026-10-12): **1,195 editor unit + 3 architecture tests** pass;
+strict workspace/candidate lint, workspace checking and both formatting checks
+pass. The source-frozen headless run accepts **298 executed checks**, with
+**540 input hashes** unchanged. No new native renderer evidence is claimed.
+
+## Complete color-picker compatibility
+
+B20-2 slice 5 imports the real production color picker into the 0.20 graph,
+including the native plane, color sliders, numeric channels, tabs, hex editing
+and Automatic reset. Channel values remain unchanged: upstream 0.20 corrects
+the pointer/thumb vertical mapping to agree with the HSL gradient. Click commits
+no longer duplicate native drag commits; programmatic hex display writes cannot
+dirty the color or clear Automatic mode.
+
+The required `editor-colors` gate adds twelve shared regressions alongside five
+existing picker and 46 dependency checks, **63 executed checks**. The dependency
+checks intentionally repeat the numeric gate. Both pointer boundaries and the
+production regressions are source-frozen. Shipping remains Bevy 0.19.1; native
+hit-testing and visual acceptance are not claimed. See
+[implementation, scope and evidence](editor-colors-2026-10-12.md).
+
+Validation (2026-10-12): **1,207 editor unit + 3 architecture tests** pass;
+strict workspace/candidate lint and both formatting checks pass. The accepted
+source-frozen headless run executes **361 checks**, with **545 input hashes**
+unchanged. No new renderer-native evidence is claimed.
+
+All-target workspace checking with `aestra-bench/gpu` also passes for slice 5.
+
+## Custom text/search/context-menu compatibility
+
+B20-2 slice 6 imports the production custom code editor, search fields, context
+menus and button bridge into the isolated 0.20 graph. Shared pointer and action
+state boundaries preserve shipping behavior while avoiding deprecated candidate
+aliases. Pointer focus retains buffered focus changes; Search Clear no longer
+duplicates live changes or accepts empty/disabled clear actions.
+
+The required `editor-text` gate runs 32 checks, including ten new shared
+regressions and one candidate native-pressed bridge check. Real keyboard
+dispatch, text/focus/visibility schedules and Feathers controls are used, not
+widget substitutes. Shipping remains Bevy 0.19.1; native workflow, OS clipboard
+and visual acceptance remain open. See
+[implementation, scope and evidence](editor-text-2026-10-12.md).
+
+Validation (2026-10-12): **1,217 editor unit + 3 architecture tests** pass,
+with ten existing ignores unchanged. Strict workspace/candidate lint and both
+formatting checks pass. The accepted source-frozen headless run passes
+**393 executed checks**, with **556 input hashes** unchanged. No new native
+renderer or full-editor visual acceptance is claimed.
+
+## Tooltip pointer/layout compatibility
+
+B20-2 slice 7 imports the production tooltip widget into the 0.20 graph through
+the shared pointer boundary. Cursor-anchored popups now account for UI scale and
+physical camera viewport offsets, preserve the nearest/default camera and stay
+outside the clipped graph subtree. The candidate editor feature set now includes
+the default font, so the real text-wrapping gate cannot pass on empty text.
+
+The required `editor-tooltips` gate runs six existing checks and nine new shared
+lifecycle regressions: **15 checks**. It includes font-backed wrapping and all
+nine 1x/1.5x/2x UI/display-scale combinations for cursor placement. Shipping
+remains Bevy 0.19.1; native visual/workflow acceptance is not claimed. See
+[implementation, scope and evidence](editor-tooltips-2026-10-12.md).
+
+Validation (2026-10-12): **1,226 editor unit + 3 architecture tests** pass,
+with ten existing ignores unchanged. Strict workspace/candidate lint, all-target
+workspace checking with `aestra-bench/gpu` and both formatting checks pass. The
+accepted source-frozen headless run passes **408 executed checks**, with all
+**559 input hashes** unchanged. No new renderer-native or full-editor visual
+acceptance is claimed.

@@ -11,6 +11,16 @@ use bevy::{
     ui_widgets::ValueChange,
 };
 
+pub(crate) struct EditorTextInputPlugin;
+
+impl Plugin for EditorTextInputPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(emit_text_change)
+            .add_observer(submit_text_on_enter)
+            .add_observer(submit_text_on_focus_loss);
+    }
+}
+
 pub(crate) fn spawn_text_input<M: Bundle>(
     parent: &mut ChildSpawnerCommands,
     initial_value: &str,
@@ -114,3 +124,7 @@ fn submit_text(
         is_final: true,
     });
 }
+
+#[cfg(test)]
+#[path = "text_input/tests.rs"]
+pub(crate) mod tests;

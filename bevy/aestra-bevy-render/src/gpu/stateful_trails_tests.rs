@@ -688,7 +688,7 @@ fn event_born_800_star_trails_observe_ticks_retire_and_restore_together() {
         let render = read_back(&test.scene.device, &test.scene.queue, &test.render_globals);
         assert_eq!(
             f32::from_le_bytes(render[64..68].try_into().unwrap()),
-            34.0 * STATEFUL_TICK_DT
+            aestra_runtime::PlaybackClock::default().time_for_frame(34, f32::MAX)
         );
         test.frame(40, 8);
         assert_eq!(

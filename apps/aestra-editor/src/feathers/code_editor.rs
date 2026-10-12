@@ -7,16 +7,16 @@
 //! so a host can persist it. Clipboard (cut/copy/paste) is layered on in a later stage.
 #![allow(dead_code)] // Reusable widget API; not every hook is used by the current single consumer.
 
+use super::pointer::EntityCursor;
 use crate::feathers::context_menu::{
     pointer_position_in_node, should_dismiss_pointer_context_menu, spawn_pointer_context_menu,
     spawn_pointer_context_menu_item,
 };
 use crate::theme;
 use bevy::asset::RenderAssetUsages;
-use bevy::feathers::cursor::EntityCursor;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
-use bevy::input_focus::{FocusedInput, InputFocus};
+use bevy::input_focus::{FocusCause, FocusedInput, InputFocus};
 use bevy::math::BVec2;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -795,7 +795,7 @@ fn code_editor_pointer_input(
             .find_map(|(entity, _, relative, _)| relative.cursor_over.then_some(entity));
         if let Some(entity) = hovered {
             let (_, mut editor, relative, node) = editors.get_mut(entity).expect("hovered editor");
-            *focus = InputFocus::from_entity(entity);
+            focus.set(entity, FocusCause::Pressed);
             pointer.dragging = Some(entity);
             if let Some((x, y)) = local_cursor(relative, node) {
                 let caret = caret_from_local(&editor.text, x, y);
@@ -1093,7 +1093,7 @@ fn open_code_editor_context_menu(
     let Some(cursor) = window.physical_cursor_position() else {
         return;
     };
-    *focus = InputFocus::from_entity(editor);
+    focus.set(editor, FocusCause::Navigated);
     let position = pointer_position_in_node(cursor, node, transform) * node.inverse_scale_factor();
     commands.entity(host).with_children(|host| {
         spawn_pointer_context_menu(
@@ -1283,3 +1283,7 @@ mod tests {
         assert_eq!(editor.selected_text(), None);
     }
 }
+
+#[cfg(test)]
+#[path = "code_editor/interaction_tests.rs"]
+mod interaction_tests;

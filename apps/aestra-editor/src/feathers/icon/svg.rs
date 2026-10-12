@@ -158,6 +158,14 @@ fn sync_icons(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn repository_assets() -> std::path::PathBuf {
+        // The same source is qualified from the isolated upgrade manifest too.
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .map(|root| root.join("assets"))
+            .find(|assets| assets.join("icons/stop.svg").is_file())
+            .expect("repository icon assets")
+    }
 
     fn app() -> App {
         let mut app = App::new();
@@ -301,7 +309,7 @@ mod tests {
 
     #[test]
     fn all_shipped_icons_rasterize_and_have_visible_pixels() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/icons");
+        let root = repository_assets().join("icons");
         let mut count = 0;
         for entry in std::fs::read_dir(root).unwrap() {
             let path = entry.unwrap().path();
@@ -327,7 +335,7 @@ mod tests {
 
     #[test]
     fn asset_loader_shares_labeled_raster_and_releases_it_after_last_icon() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let root = repository_assets();
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,

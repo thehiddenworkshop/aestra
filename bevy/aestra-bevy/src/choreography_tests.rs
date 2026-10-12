@@ -1,6 +1,6 @@
 use super::*;
 use bevy::ecs::message::Messages;
-use bevy::prelude::{MessageWriter, On, ResMut};
+use bevy::prelude::{Commands, Entity, MessageWriter, On, Query, ResMut, Resource};
 
 fn notified(name: &str, duration: f32, times: &[f32]) -> EffectAsset {
     let mut effect = EffectAsset::new(name, duration);

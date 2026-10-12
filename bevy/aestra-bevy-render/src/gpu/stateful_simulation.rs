@@ -488,6 +488,13 @@ pub(super) fn prepare_stateful_states(
 /// The canonical fixed simulation tick, matching `aestra_runtime::StatefulSimulation::TICK_DT`.
 pub(super) const STATEFUL_TICK_DT: f32 = 1.0 / 60.0;
 
+/// Presentation must use the host clock's rounded boundary. Multiplying an f32
+/// reciprocal can round above it (e.g. tick 70), making valid GPU telemetry look
+/// like a future frame. Keep integration's fixed dt separate from clock conversion.
+pub(super) fn stateful_tick_time(tick: u32) -> f32 {
+    aestra_runtime::PlaybackClock::default().time_for_frame(u64::from(tick), f32::MAX)
+}
+
 /// The stateful params words for one dispatch (`aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS`):
 /// `spawn_per_tick` varies across advance ticks and `subtick` is the presentation-interpolation time
 /// `present` uses. `live` ticks count homing arrivals for the `impact` event; replays do not.
@@ -821,4 +828,21 @@ pub(super) fn dispatch_stateful_effect(
         render,
         simulation_time,
     );
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    #[test]
+    fn stateful_presentation_boundaries_match_host_clock_without_future_rounding() {
+        let mut clock = aestra_runtime::PlaybackClock::default();
+        for tick in 0..=36_000 {
+            clock.seek_frame(u64::from(tick), 600.);
+            let time = stateful_tick_time(tick);
+            assert_eq!(time, clock.elapsed_time(), "tick {tick}");
+            assert_eq!(aestra_runtime::trace_tick(time), u64::from(tick));
+        }
+        assert!(70. * STATEFUL_TICK_DT > stateful_tick_time(70));
+    }
 }

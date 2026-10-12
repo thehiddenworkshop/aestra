@@ -45,6 +45,7 @@ mod wesl_editor;
 mod wesl_syntax;
 
 use crate::feathers::icon::SvgPlugin;
+use crate::feathers::number_input::{NumberInputValue, UpdateNumberInput};
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy_render::AestraRenderPlugin;
 use aestra_compiler::ModuleMetadata;
@@ -65,7 +66,6 @@ use bevy::{
     feathers::{
         constants::fonts,
         containers::{group, group_body, group_header, pane_header},
-        controls::{NumberInputValue, UpdateNumberInput},
         cursor::{EntityCursor, OverrideCursor},
         display::{label, label_dim},
         theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText},

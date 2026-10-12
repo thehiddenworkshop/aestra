@@ -1,6 +1,6 @@
 //! Editor action buttons and the bridge from Feathers activation to Aestra actions.
 
-use super::scenes;
+use super::{button_activation::AuditedButton, scenes};
 use crate::EditorAction;
 use bevy::{feathers::theme::ThemedText, prelude::*, ui_widgets::Activate};
 
@@ -14,7 +14,7 @@ pub(crate) struct EditorNativeControl;
 
 pub(crate) type UnclassifiedEditorActionControl = (
     Added<EditorAction>,
-    With<Button>,
+    With<AuditedButton>,
     Without<FeathersActionButton>,
     Without<EditorNativeControl>,
 );
@@ -28,9 +28,10 @@ pub(crate) fn queue_action_activation(
     mut commands: Commands,
 ) {
     if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
+        commands.entity(activate.entity).insert((
+            PendingFeathersActivation,
+            super::button_activation::pressed_state(),
+        ));
     }
 }
 

@@ -31,7 +31,6 @@ struct Frame {
     stages: BTreeMap<Entity, (StageOutputIdentity, u32, usize)>,
     sources: Vec<crate::particle_lights::ParticleLightSource>,
     sequence: u64,
-    timing_samples: usize,
     ready: std::collections::BTreeSet<Entity>,
     draws: BTreeMap<Entity, (Entity, Vec3)>,
 }
@@ -39,7 +38,6 @@ struct Frame {
 type ObservationResources<'w> = (
     Res<'w, GpuSelectedParticleLights>,
     Res<'w, crate::presentation_readiness::PresentedOwners>,
-    Res<'w, crate::outer_graph_native::TimingEvidence>,
     Res<'w, ParticleLightGpuStatistics>,
     Res<'w, ParticleLightMode>,
 );
@@ -50,7 +48,7 @@ fn observe(
     runtimes: Res<crate::stage_runtimes::StageRuntimes>,
     resources: ObservationResources,
 ) {
-    let (selected, ready, timings, injected, mode) = resources;
+    let (selected, ready, injected, mode) = resources;
     let mut frame = evidence.0.lock().unwrap();
     frame.stages.clear();
     frame.draws = draws
@@ -95,7 +93,6 @@ fn observe(
             );
         }
     }
-    frame.timing_samples = timings.samples;
 }
 // Ordinary sendable systems can be stolen by any pool worker (even the host
 // thread while it awaits extraction). An exclusive system records the actual
@@ -104,28 +101,41 @@ fn mark_thread(world: &mut World) {
     world.resource::<Evidence>().0.lock().unwrap().thread = Some(std::thread::current().id());
 }
 
-// Only backend assignment is a host fixture; allocation and live updates are production systems.
-fn assign_backend(
-    mut commands: Commands,
-    capabilities: Res<crate::GpuCapabilities>,
-    owners: Query<(Entity, &crate::PresentedEffect), Without<crate::EffectRuntimeStatus>>,
+// Scene isolation only: receiver screenshots exclude emissive draw children,
+// without changing source visibility, light authorization or production dispatch.
+#[derive(Resource, Default)]
+struct ReceiverCapture(bool);
+fn isolate_particle_draws(
+    capture: Res<ReceiverCapture>,
+    mut draws: Query<&mut Visibility, With<crate::draw_instance::GpuDrawInstance>>,
 ) {
-    if !capabilities.detected {
-        return;
+    for mut visibility in &mut draws {
+        *visibility = if capture.0 {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        };
     }
-    assert!(capabilities.native_render_supported);
-    for (owner, _) in &owners {
-        commands.entity(owner).insert(crate::EffectRuntimeStatus {
-            active: crate::ActiveBackend::Gpu,
-            reason: "threaded qualification".into(),
-            compatibility: crate::CompatibilityReport::compatible(
-                crate::CompatibilityTarget::NativeGpu,
-            ),
-        });
-    }
+}
+fn capture_receiver(app: &mut App, target: &Handle<Image>, lit: bool) -> (f64, f64) {
+    app.world_mut().resource_mut::<ReceiverCapture>().0 = true;
+    let result = if lit {
+        receiver::lit(app, target)
+    } else {
+        receiver::capture(app, target)
+    };
+    app.world_mut().resource_mut::<ReceiverCapture>().0 = false;
+    app.update();
+    result
 }
 
 fn app() -> (App, RenderDevice) {
+    app_with(|_| {})
+}
+
+// Allow other full-plugin gates to attach read-only observers and controlled
+// readiness dependencies before Bevy moves the render app to its real thread.
+pub(super) fn app_with(configure: impl FnOnce(&mut App)) -> (App, RenderDevice) {
     aestra_fluid::link();
     let mut app = App::new();
     app.add_plugins(
@@ -147,56 +157,13 @@ fn app() -> (App, RenderDevice) {
                 ..default()
             }),
     );
-    crate::extraction::install(&mut app);
-    crate::outer_graph_native::install_with_stage_installer(&mut app);
-    crate::extension_stages::install(&mut app);
-    crate::volume::install(&mut app);
-    crate::particle_lights::install(&mut app);
-    crate::visibility_updates::install(&mut app);
-    crate::preparation::install(&mut app);
-    app.init_resource::<crate::ProjectAssetCache>()
-        .init_resource::<crate::GpuCapabilities>()
-        .init_resource::<crate::AestraRuntimeStatus>();
-    crate::extraction::install_device_publication(&mut app);
-    app.add_plugins(AestraParticleLightPlugin)
-        .init_resource::<crate::AestraRenderSettings>()
+    app.add_plugins((crate::AestraPlugin, AestraParticleLightPlugin))
+        .init_resource::<ReceiverCapture>()
         .insert_resource(crate::catchup_pacing::AestraCatchupPacing { paced: false })
         .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO))
-        .configure_sets(
-            Update,
-            (
-                crate::AestraSet::ResolveHostInputs,
-                crate::AestraSet::Playback,
-                crate::AestraRenderSet::Prepare,
-            )
-                .chain(),
-        )
         .add_systems(
             Update,
-            (
-                crate::bindings::apply_binding_traces,
-                crate::bindings::resolve_host_bindings,
-            )
-                .chain()
-                .in_set(crate::AestraSet::ResolveHostInputs),
-        )
-        .add_systems(
-            Update,
-            (
-                crate::host_playback::prepare_player_presentations,
-                crate::host_playback::advance_players,
-                crate::project::sync_project_instances,
-                crate::bindings::forward_project_bindings,
-                crate::host_playback::sync_player_presentations,
-            )
-                .chain()
-                .in_set(crate::AestraSet::Playback),
-        )
-        .add_systems(
-            Update,
-            (assign_backend, crate::preparation::prepare_gpu_effects)
-                .chain()
-                .in_set(crate::AestraRenderSet::Prepare),
+            isolate_particle_draws.after(crate::AestraRenderSet::Prepare),
         );
     app.world_mut()
         .resource_mut::<Time<Virtual>>()
@@ -205,13 +172,13 @@ fn app() -> (App, RenderDevice) {
     app.insert_resource(evidence.clone());
     app.sub_app_mut(RenderApp)
         .insert_resource(evidence)
-        .init_resource::<crate::stateful_simulation::StatefulStates>()
         .add_systems(
             Render,
             (observe, mark_thread)
                 .chain()
                 .in_set(RenderSystems::Cleanup),
         );
+    configure(&mut app);
     app.finish();
     let render = app.sub_app(RenderApp).world();
     let device = render.resource::<RenderDevice>().clone();
@@ -368,13 +335,27 @@ fn native_020_pipelined_installers_share_nested_clock_outputs_and_lights() {
     let a_leaf = project::leaf(&mut app, a);
     let b_leaf = project::leaf(&mut app, b);
     settle(&mut app, &[a_leaf, b_leaf]);
+    assert!(app.world().resource::<crate::GpuCapabilities>().detected);
+    assert_eq!(
+        app.world().resource::<crate::AestraRuntimeStatus>().active,
+        crate::ActiveBackend::Gpu
+    );
+    for owner in [a_leaf, b_leaf] {
+        assert_eq!(
+            app.world()
+                .get::<crate::EffectRuntimeStatus>(owner)
+                .unwrap()
+                .active,
+            crate::ActiveBackend::Gpu
+        );
+    }
     assert!(project::force(&app, a_leaf) > 0.00001);
     assert_eq!(project::force(&app, b_leaf), 0.);
     receiver::until(&mut app, |app| {
         let stats = app.world().resource::<ParticleLightStatistics>();
         stats.active == 2 && stats.readback.completed > 0
     });
-    receiver::lit(&mut app, &target);
+    capture_receiver(&mut app, &target, true);
     let buffers_before = [a_leaf, b_leaf].map(|owner| {
         let gpu = app
             .world()
@@ -391,6 +372,20 @@ fn native_020_pipelined_installers_share_nested_clock_outputs_and_lights() {
     // Identical nested seeds/inputs produce the same effect-local selected point.
     assert!(before_positions[0].distance(before_positions[1]) < 1e-5);
     let children_before = settle_draws(&mut app, &[a_leaf, b_leaf]);
+    let particles = receiver::capture(&mut app, &target);
+    assert!(
+        particles.0 > 0.5,
+        "full plugin must draw actual particle pixels: {particles:?}"
+    );
+    receiver::until(&mut app, |app| {
+        let profile = &app
+            .world()
+            .get::<crate::project_profile::ProjectProfiler>(a)
+            .unwrap()
+            .0;
+        matches!(profile.total.submitted_instances, aestra_runtime::ProfileValue::Measured(n) if n > 0)
+            && matches!(profile.total.submitted_vertices, aestra_runtime::ProfileValue::Measured(n) if n > 0)
+    });
     // A paused host placement edit must reach selection through production
     // PostUpdate synchronization, not a fixture-owned render-global upload.
     app.world_mut()
@@ -541,7 +536,7 @@ fn native_020_pipelined_installers_share_nested_clock_outputs_and_lights() {
         .take()
         .3
         .submitted;
-    let lit = receiver::lit(&mut app, &target);
+    let lit = capture_receiver(&mut app, &target, true);
     assert!(lit.0 > 0.5, "combined same-frame receiver: {lit:?}");
     assert_eq!(
         app.world()
@@ -551,15 +546,6 @@ fn native_020_pipelined_installers_share_nested_clock_outputs_and_lights() {
             .submitted,
         submitted
     );
-    receiver::until(&mut app, |app| {
-        app.world()
-            .resource::<Evidence>()
-            .0
-            .lock()
-            .unwrap()
-            .timing_samples
-            > 0
-    });
     // A paused stage need not have a new timestamp after a seek. Advance both
     // owners, then await their ordinary asynchronous measurement mailboxes.
     advance(&mut app, a, 1);
@@ -585,6 +571,31 @@ fn native_020_pipelined_installers_share_nested_clock_outputs_and_lights() {
             aestra_runtime::ProfileValue::Measured(ns) if ns > 0)
         })
     });
+    receiver::until(&mut app, |app| {
+        [a_leaf, b_leaf].iter().all(|owner| {
+            let world = app.world();
+            let presented = world.get::<crate::PresentedEffect>(*owner).unwrap();
+            let timing = world
+                .get::<crate::simulation_timing::GpuSimulationTiming>(*owner)
+                .unwrap();
+            let particles = world
+                .get::<crate::particle_statistics::GpuParticleStatistics>(*owner)
+                .unwrap();
+            matches!(timing.time_ns(&presented.instance, particles),
+                aestra_runtime::ProfileValue::Measured(ns) if ns > 0)
+        })
+    });
+    receiver::until(&mut app, |app| {
+        let world = app.world();
+        [a, b].iter().all(|owner| {
+            let Some(profile) = world.get::<crate::project_profile::ProjectProfiler>(*owner) else {
+                return false;
+            };
+            profile.0.instances.len() == 3
+                && matches!(profile.0.total.gpu_simulation_time_ns,
+                    aestra_runtime::ProfileValue::Measured(ns) if ns > 0)
+        })
+    });
     // Both bound sources are now outside the domain: the receiver cannot be
     // illuminated by the volume itself. Admission disable must extinguish it.
     app.world_mut()
@@ -597,7 +608,7 @@ fn native_020_pipelined_installers_share_nested_clock_outputs_and_lights() {
             .written_capacity
             == 0
     });
-    let rejected = receiver::capture(&mut app, &target);
+    let rejected = capture_receiver(&mut app, &target, false);
     assert!(
         rejected.0 < 0.1,
         "disabled particle lights left a lit receiver: {rejected:?}"
@@ -612,7 +623,7 @@ fn native_020_pipelined_installers_share_nested_clock_outputs_and_lights() {
             .written_capacity
             == 2
     });
-    receiver::lit(&mut app, &target);
+    capture_receiver(&mut app, &target, true);
     // Retire one root while its last async packet may still be in flight.
     app.world_mut().despawn(a);
     settle(&mut app, &[b_leaf]);
@@ -645,7 +656,7 @@ fn native_020_pipelined_installers_share_nested_clock_outputs_and_lights() {
             .count(),
         0
     );
-    let dark = receiver::capture(&mut app, &target);
+    let dark = capture_receiver(&mut app, &target, false);
     assert!(
         dark.0 < 0.1,
         "teardown left illumination or volume draws: {dark:?}"

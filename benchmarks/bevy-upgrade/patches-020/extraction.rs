@@ -2,7 +2,8 @@
 pub use aestra_core::*;
 pub use aestra_runtime::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
-    CompatibilityTarget, EffectOutputEvent, EffectRequirements, EventOrigin, RendererCapability,
+    CompatibilityTarget, CompiledEffect, CompiledEffectProject, EffectOutputEvent, EffectProfile,
+    EffectRequirements, EventOrigin, ParticleSample, ProfileValue, RendererCapability,
 };
 pub use capabilities::{ActiveBackend, EffectRuntimeStatus};
 #[path = "../../../bevy/aestra-bevy/src/lights.rs"]
@@ -43,9 +44,18 @@ pub use capabilities::{AestraRuntimeStatus, GpuCapabilities};
 #[path = "../../../bevy/aestra-bevy-render/src/project_assets.rs"]
 pub mod project_assets;
 pub use project_assets::AestraTextureRoot;
-pub(crate) use project_assets::ProjectAssetCache;
+pub(crate) use project_assets::{ProjectAssetCache, sync_texture_root};
+#[path = "../../../bevy/aestra-bevy-render/src/cpu.rs"]
+mod cpu;
+#[path = "../../../bevy/aestra-bevy-render/src/render_plugin.rs"]
+mod render_plugin;
+pub use render_plugin::AestraRenderPlugin;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/bootstrap.rs"]
+mod bootstrap;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/bounds_test_types_020.rs"]
 mod bounds_test_types;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/geometry_statistics.rs"]
+mod geometry_statistics;
 #[derive(bevy::prelude::Component)]
 pub(crate) struct GpuPresentationPrepared;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/alpha_sort.rs"]
@@ -78,7 +88,14 @@ pub mod sampling;
 pub mod simulation_timing;
 // Namespace bridge to the same version-selected mapped-view boundary as shipping.
 mod gpu {
+    pub(crate) use crate::bootstrap::{install, receive_readback};
+    pub use crate::extension_stages::GpuStageTiming;
     pub(crate) use crate::mapped_readback::with_mapped_range;
+    pub use crate::particle_statistics::GpuParticleStatistics;
+    pub(crate) use crate::preparation::prepare_gpu_effects;
+    pub use crate::preparation::{GpuFallbackTextures, GpuTrailStatistics};
+    pub use crate::preparation_timing::GpuPreparationTiming;
+    pub use crate::simulation_timing::GpuSimulationTiming;
     pub use crate::{particle_light_readback, particle_lights};
 }
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/draw_commands.rs"]
@@ -152,8 +169,17 @@ pub use presented_effect::{EffectRenderMode, PresentedEffect};
 mod bindings;
 #[path = "../../../bevy/aestra-bevy/src/playback.rs"]
 mod host_playback;
+use host_playback as playback;
+#[path = "../../../bevy/aestra-bevy/src/input_events.rs"]
+mod input_events;
+pub use input_events::AestraEventInput;
+#[path = "../../../bevy/aestra-bevy/src/host_plugin.rs"]
+mod host_plugin;
+pub use host_plugin::{AestraPlugin, EffectProfiler};
 #[path = "../../../bevy/aestra-bevy/src/project.rs"]
 mod project;
+#[path = "../../../bevy/aestra-bevy/src/project_profile.rs"]
+mod project_profile;
 pub use aestra_compiler::EffectCompiler;
 pub use aestra_runtime::PlaybackHistoryPolicy;
 pub use bindings::{
@@ -183,6 +209,8 @@ mod particle_outputs;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/pipeline.rs"]
 mod pipeline;
 mod pipeline_native;
+#[cfg(feature = "async-qualification")]
+mod pipelined_coupled_native;
 #[cfg(feature = "async-qualification")]
 mod pipelined_installers_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/scene_depth_020.rs"]

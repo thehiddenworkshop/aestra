@@ -30,8 +30,57 @@ function Inputs {
         ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
     $paths += 'benchmarks/bevy-upgrade/keyboard-020.rs', 'benchmarks/bevy-upgrade/run-020-patches.ps1'
     $paths += @(
+        'apps/aestra-editor/src/theme.rs',
+        'apps/aestra-editor/src/theme/palette.rs',
+        'apps/aestra-editor/src/theme/bevy_019.rs',
+        'apps/aestra-editor/src/theme/bevy_020.rs',
+        'apps/aestra-editor/src/theme/tests.rs',
+        'apps/aestra-editor/src/feathers/mod.rs',
+        'apps/aestra-editor/src/feathers/scenes.rs',
+        'apps/aestra-editor/src/feathers/scenes/common.rs',
+        'apps/aestra-editor/src/feathers/text_input.rs',
+        'apps/aestra-editor/src/feathers/text_input/tests.rs',
+        'apps/aestra-editor/src/feathers/pointer_019.rs',
+        'apps/aestra-editor/src/feathers/pointer_020.rs',
+        'apps/aestra-editor/src/feathers/button.rs',
+        'apps/aestra-editor/src/feathers/button/activation_019.rs',
+        'apps/aestra-editor/src/feathers/button/activation_020.rs',
+        'apps/aestra-editor/src/feathers/context_menu.rs',
+        'apps/aestra-editor/src/feathers/code_editor.rs',
+        'apps/aestra-editor/src/feathers/code_editor/interaction_tests.rs',
+        'apps/aestra-editor/src/feathers/search_field.rs',
+        'apps/aestra-editor/src/feathers/search_field/interaction_tests.rs',
+        'apps/aestra-editor/src/feathers/tooltip.rs',
+        'apps/aestra-editor/src/feathers/tooltip/interaction_tests.rs',
+        'apps/aestra-editor/src/feathers/number_input.rs',
+        'apps/aestra-editor/src/feathers/number_input/widget.rs',
+        'apps/aestra-editor/src/feathers/number_input/widget_tests.rs',
+        'apps/aestra-editor/src/feathers/number_input/arrows.rs',
+        'apps/aestra-editor/src/feathers/icon.rs',
+        'apps/aestra-editor/src/feathers/icon/svg.rs',
+        'apps/aestra-editor/src/localization.rs',
+        'apps/aestra-editor/locales/en-US/editor.ftl',
+        'apps/aestra-editor/locales/fr-FR/editor.ftl',
+        'apps/aestra-editor/src/main.rs',
+        'apps/aestra-editor/src/feathers/color_picker.rs',
+        'apps/aestra-editor/src/feathers/color_picker/interaction_tests.rs',
+        'apps/aestra-editor/src/feathers/color_picker/pointer_019.rs',
+        'apps/aestra-editor/src/feathers/color_picker/pointer_020.rs',
+        'apps/aestra-editor/src/feathers/node_graph.rs',
+        'apps/aestra-editor/src/feathers/node_graph/geometry/tests.rs',
+        'apps/aestra-editor/src/timeline/host_motion.rs',
+        'apps/aestra-editor/src/feathers/number_input/scrub.rs',
+        'apps/aestra-editor/src/feathers/number_input/scrub_tests.rs',
+        'apps/aestra-editor/src/feathers/number_input/pointer_019.rs',
+        'apps/aestra-editor/src/feathers/number_input/pointer_020.rs',
         'bevy/aestra-bevy-render/src/gpu.rs',
         'bevy/aestra-bevy-render/src/lib.rs',
+        'bevy/aestra-bevy-render/src/render_plugin.rs',
+        'bevy/aestra-bevy-render/src/cpu.rs',
+        'bevy/aestra-bevy-render/src/gpu/bootstrap.rs',
+        'bevy/aestra-bevy/src/host_plugin.rs',
+        'bevy/aestra-bevy/src/input_events.rs',
+        'bevy/aestra-bevy/src/project_profile.rs',
         'bevy/aestra-bevy-render/src/project_assets.rs',
         'bevy/aestra-bevy-render/src/sampling.rs',
         'bevy/aestra-bevy-render/src/gpu/preparation.rs',
@@ -140,6 +189,8 @@ function Inputs {
         'assets/test/materials/fireworks_lit_smoke.aestra.material.ron'
     )
     # The shader fixture compiles real engine-neutral Aestra path dependencies too.
+    $paths += @(Get-ChildItem -LiteralPath (Join-Path $root 'assets/icons') -Filter '*.svg' -File |
+        ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') })
     foreach ($crate in @('aestra-core', 'aestra-compiler', 'aestra-gpu', 'aestra-runtime', 'aestra-extension', 'aestra-project')) {
         $directory = Join-Path $root "crates/$crate"
         $paths += "crates/$crate/Cargo.toml"
@@ -211,6 +262,12 @@ try {
     }
     $common = @('--manifest-path', $manifest, '--locked', '--offline', '--target-dir', $target)
     RunCargo 'keyboard' (@('test') + $common + @('--test', 'keyboard', '--', '--test-threads=1'))
+    RunCargo 'editor-theme' (@('test') + $common + @('--test', 'editor_theme', '--features', 'editor-qualification', '--', '--test-threads=1'))
+    RunCargo 'editor-controls' (@('test') + $common + @('--test', 'editor_controls', '--features', 'editor-qualification', '--', '--test-threads=1'))
+    RunCargo 'editor-numbers' (@('test') + $common + @('--test', 'editor_numbers', '--features', 'editor-qualification', '--', '--test-threads=1'))
+    RunCargo 'editor-colors' (@('test') + $common + @('--test', 'editor_colors', '--features', 'editor-qualification', '--', '--test-threads=1'))
+    RunCargo 'editor-text' (@('test') + $common + @('--test', 'editor_text', '--features', 'editor-qualification', '--', '--test-threads=1'))
+    RunCargo 'editor-tooltips' (@('test') + $common + @('--test', 'editor_tooltips', '--features', 'editor-qualification', '--', '--test-threads=1'))
     RunCargo 'upstream-input-focus' (@('test') + $common + @('-p', 'bevy_input_focus', '--lib', '--', '--test-threads=1'))
     RunCargo 'cluster-units' (@('test') + $common + @('-p', 'bevy_pbr', '--lib', 'aestra_reuse_tests', '--', '--test-threads=1'))
     RunCargo 'shader-composition' (@('test') + $common + @('--test', 'shader_composition', '--', '--test-threads=1'))
@@ -395,7 +452,8 @@ try {
             'stateful_native::native_020_delayed_shader_recovers_stateful_simulation_and_draws',
             'stateful_native::native_020_outer_graph_recovers_delayed_stateful_readiness',
             'host_stage_native::native_020_pipelined_project_outputs_survive_restart_seek_and_teardown',
-            'pipelined_installers_native::native_020_pipelined_installers_share_nested_clock_outputs_and_lights'
+            'pipelined_installers_native::native_020_pipelined_installers_share_nested_clock_outputs_and_lights',
+            'pipelined_coupled_native::native_020_full_plugins_hold_and_resume_coupled_particles_fluid_and_trails'
         )) {
             $log = Join-Path $reports (($test -replace '::', '-') + '.log')
             & $asyncBinary $test --exact --ignored --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath $log | Out-Host

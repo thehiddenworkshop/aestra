@@ -3,6 +3,7 @@
 //! This module owns presentation only: canvas styling, node chrome, socket hit targets, and the
 //! anti-aliased wire material. Domain panels retain their semantic graph model and commands.
 
+use super::number_input::EditorNumberInput;
 use super::{
     button::{FeathersActionButton, PendingFeathersActivation},
     icon::load_svg_icon,
@@ -15,7 +16,7 @@ use bevy::{
     asset::embedded_asset,
     ecs::query::{QueryData, QueryFilter},
     feathers::{
-        controls::{FeathersCheckbox, FeathersNumberInput, FeathersTextInputContainer},
+        controls::{FeathersCheckbox, FeathersTextInputContainer},
         cursor::{EntityCursor, OverrideCursor},
     },
     input::mouse::{MouseScrollUnit, MouseWheel},
@@ -59,7 +60,7 @@ const GRID_SPACING: f32 = 32.0;
 type GraphNodeControlFilter = Or<(
     With<FeathersGraphSocket>,
     With<GraphCollapseAction>,
-    With<FeathersNumberInput>,
+    With<EditorNumberInput>,
     With<FeathersCheckbox>,
     With<FeathersTextInputContainer>,
     With<FeathersActionButton>,

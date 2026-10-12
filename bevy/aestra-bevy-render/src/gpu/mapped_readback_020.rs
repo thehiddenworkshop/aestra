@@ -16,3 +16,23 @@ pub(crate) fn with_mapped_range<T>(
 pub(super) fn render_device(device: wgpu::Device) -> bevy::render::renderer::RenderDevice {
     bevy::render::renderer::RenderDevice::new(device)
 }
+
+#[cfg(test)]
+pub(super) fn test_shader_buffer(
+    buffer: bevy::render::render_resource::Buffer,
+) -> bevy::render::storage::GpuShaderBuffer {
+    bevy::render::storage::GpuShaderBuffer {
+        label: "geometry regression commands".into(),
+        buffer_usage: buffer.usage(),
+        buffer,
+        had_data: true,
+    }
+}
+
+#[cfg(test)]
+pub(super) fn pending_commands(
+    pending: &mut bevy::render::renderer::PendingCommandBuffers,
+) -> Vec<wgpu::CommandBuffer> {
+    bevy::tasks::ComputeTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    pending.finish().collect()
+}

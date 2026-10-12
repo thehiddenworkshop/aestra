@@ -274,7 +274,7 @@ fn simulate(
     }
 }
 
-fn source(
+pub(super) fn source(
     registry: &aestra_extension::ExtensionRegistry,
     capacity: u32,
 ) -> aestra_core::EffectAsset {

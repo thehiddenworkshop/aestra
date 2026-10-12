@@ -306,6 +306,7 @@ pub(crate) fn layout_app(scale: f32) -> (App, Entity) {
     .init_asset::<Image>()
     .init_asset::<crate::feathers::icon::SvgFile>()
     .init_resource::<UiScale>()
+    .init_resource::<bevy::input_focus::InputFocus>()
     .init_resource::<UiSurface>()
     .init_resource::<GraphViewportMemory>()
     .add_systems(

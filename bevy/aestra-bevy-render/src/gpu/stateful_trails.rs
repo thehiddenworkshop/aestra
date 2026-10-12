@@ -5,7 +5,7 @@ use super::{
     coupled_simulation::CoupledHistory,
     effect_inputs::GpuEffectBuffers,
     paged_trails,
-    stateful_simulation::{STATEFUL_TICK_DT, StatefulPersistentState},
+    stateful_simulation::{STATEFUL_TICK_DT, StatefulPersistentState, stateful_tick_time},
     trail_checkpoints, trail_context,
 };
 use bevy::{
@@ -146,7 +146,7 @@ impl Observer<'_> {
     /// Reset analytic counts and present analytic emitters at the same canonical
     /// time as stateful heads. The caller presents stateful heads next, then records.
     pub fn prepare(&self, device: &RenderDevice, encoder: &mut CommandEncoder, tick: u32) {
-        let time = tick as f32 * STATEFUL_TICK_DT;
+        let time = stateful_tick_time(tick);
         let placement = Mat4::from_cols_array(&std::array::from_fn(|i| {
             f32::from_bits(self.effect.checkpoint_context.key[6 + i])
         }));

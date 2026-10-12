@@ -1,6 +1,8 @@
 use super::*;
+use crate::host_plugin::{bevy_profile, record_presented_profile};
 use aestra_runtime::{ProjectInstanceProfile, ProjectProfile};
 use bevy::prelude::*;
+use std::collections::BTreeMap;
 
 /// Active root + child costs. `EffectProfiler` remains the root-only API.
 #[derive(Component, Debug, Clone, Default)]
@@ -168,6 +170,11 @@ pub(super) fn update_project_profiles(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        host_plugin::prepare_effect_profiles,
+        playback::{prepare_player_presentations, sync_player_presentations},
+    };
+    use std::sync::Arc;
     #[test]
     fn active_profiles_follow_nested_lifecycle_and_isolate_roots() {
         let compiler = EffectCompiler::default();

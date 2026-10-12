@@ -2,11 +2,14 @@
 
 use super::{button::FeathersActionButton, scenes, text_input::spawn_text_input};
 use crate::theme;
+#[cfg(test)]
+use bevy::ui_widgets::ValueChange;
 use bevy::{
     feathers::{controls::FeathersTextInput, theme::ThemedText},
     prelude::*,
     text::{EditableText, TextEdit},
-    ui_widgets::{Activate, ValueChange},
+    ui::InteractionDisabled,
+    ui_widgets::Activate,
 };
 
 #[derive(Component)]
@@ -88,12 +91,21 @@ pub(crate) fn clear_search_field(
     activate: On<Activate>,
     mut clears: Query<(&SearchFieldClear, &mut Node)>,
     children: Query<&Children>,
+    parents: Query<&ChildOf>,
+    disabled: Query<(), With<InteractionDisabled>>,
     mut inputs: Query<&mut EditableText, With<FeathersTextInput>>,
-    mut commands: Commands,
 ) {
     let Ok((clear, mut node)) = clears.get_mut(activate.entity) else {
         return;
     };
+    if disabled.contains(activate.entity)
+        || parents
+            .iter_ancestors(activate.entity)
+            .any(|entity| disabled.contains(entity))
+        || disabled.contains(clear.input)
+    {
+        return;
+    }
     let Ok(children) = children.get(clear.input) else {
         return;
     };
@@ -101,14 +113,14 @@ pub(crate) fn clear_search_field(
         let Ok(mut input) = inputs.get_mut(child) else {
             continue;
         };
+        if disabled.contains(child) || input.value().to_string().is_empty() {
+            break;
+        }
         input.editor_mut().set_text("");
         input.queue_edit(TextEdit::TextEnd(false));
         node.display = Display::None;
-        commands.trigger(ValueChange {
-            source: clear.input,
-            value: String::new(),
-            is_final: false,
-        });
+        // The native edit pass emits TextEditChange; the shared text-input bridge
+        // forwards its one live container value. A manual ValueChange duplicates it.
         break;
     }
 }
@@ -201,27 +213,26 @@ mod tests {
 
     #[test]
     fn clear_activation_empties_the_input_and_emits_a_live_change() {
-        let mut app = App::new();
-        app.init_resource::<CapturedChange>()
-            .add_observer(clear_search_field)
-            .add_observer(capture_change);
-        let input = app.world_mut().spawn_empty().id();
-        let editable = app
+        let mut app = crate::feathers::text_input::tests::app_with(|app| {
+            app.init_resource::<CapturedChange>()
+                .add_observer(clear_search_field)
+                .add_observer(capture_change)
+                .add_systems(Startup, spawn_test_search);
+        });
+        for _ in 0..3 {
+            app.update();
+        }
+        let input = app
             .world_mut()
-            .spawn((
-                ChildOf(input),
-                EditableText::new("spark"),
-                FeathersTextInput,
-            ))
-            .id();
+            .query_filtered::<Entity, With<SearchFieldInput>>()
+            .single(app.world())
+            .unwrap();
+        let editable = app.world().get::<Children>(input).unwrap()[0];
         let clear = app
             .world_mut()
-            .spawn((
-                SearchFieldClear { input },
-                AccessibleLabel("Clear search".into()),
-                Node::default(),
-            ))
-            .id();
+            .query_filtered::<Entity, With<SearchFieldClear>>()
+            .single(app.world())
+            .unwrap();
 
         app.world_mut().trigger(Activate { entity: clear });
         app.update();
@@ -243,7 +254,7 @@ mod tests {
         assert!(captured.value.is_empty());
         assert_eq!(
             app.world().get::<AccessibleLabel>(clear).unwrap().0,
-            "Clear search"
+            "Clear effect search"
         );
     }
 
@@ -283,3 +294,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "search_field/interaction_tests.rs"]
+mod interaction_tests;

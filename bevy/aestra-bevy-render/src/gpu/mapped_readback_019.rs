@@ -16,3 +16,26 @@ pub(crate) fn with_mapped_range<T>(
 pub(super) fn render_device(device: wgpu::Device) -> bevy::render::renderer::RenderDevice {
     bevy::render::renderer::RenderDevice::new(bevy::render::renderer::WgpuWrapper::new(device))
 }
+
+#[cfg(test)]
+pub(super) fn test_shader_buffer(
+    buffer: bevy::render::render_resource::Buffer,
+) -> bevy::render::storage::GpuShaderBuffer {
+    bevy::render::storage::GpuShaderBuffer {
+        buffer_descriptor: wgpu::BufferDescriptor {
+            label: None,
+            size: buffer.size(),
+            usage: buffer.usage(),
+            mapped_at_creation: false,
+        },
+        buffer,
+        had_data: true,
+    }
+}
+
+#[cfg(test)]
+pub(super) fn pending_commands(
+    pending: &mut bevy::render::renderer::PendingCommandBuffers,
+) -> Vec<wgpu::CommandBuffer> {
+    pending.take()
+}

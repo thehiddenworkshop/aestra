@@ -7,8 +7,12 @@
 pub(crate) mod automation_curve;
 pub(crate) mod breadcrumb;
 pub(crate) mod button;
+#[path = "button/activation_019.rs"]
+mod button_activation;
 pub(crate) mod code_editor;
 pub(crate) mod color_picker;
+#[path = "color_picker/pointer_019.rs"]
+mod color_pointer;
 pub(crate) mod combo_box;
 pub(crate) mod context_menu;
 pub(crate) mod field_row;
@@ -19,6 +23,8 @@ pub(crate) mod node_graph;
 pub(crate) mod number_input;
 pub(crate) mod panel;
 pub(crate) mod panel_card;
+#[path = "pointer_019.rs"]
+mod pointer;
 pub(crate) mod scenes;
 pub(crate) mod scroll;
 pub(crate) mod search_field;
@@ -50,26 +56,32 @@ impl Plugin for AestraFeathersPlugin {
         app.add_plugins(FeathersPlugins)
             .add_plugins(code_editor::CodeEditorPlugin)
             .add_plugins(number_input::arrows::NumberArrowsPlugin)
+            .add_plugins(text_input::EditorTextInputPlugin)
             .add_plugins(node_graph::FeathersNodeGraphPlugin)
             .insert_resource(theme::feathers_theme())
             .init_resource::<automation_curve::AutomationCurveImageCache>()
             .init_resource::<tooltip::TooltipState>()
-            .init_resource::<number_input::NumberScrubState>()
             .add_observer(button::queue_action_activation)
             .add_observer(color_picker::handle_color_plane_change)
+            .add_observer(color_picker::begin_color_plane)
+            .add_observer(color_picker::track_color_plane_drag)
+            .add_observer(color_picker::cancel_color_plane)
             .add_observer(color_picker::handle_color_lightness_change)
             .add_observer(color_picker::handle_color_alpha_change)
             .add_observer(color_picker::handle_color_channel_change)
             .add_observer(color_picker::handle_color_hex_change)
-            .add_observer(number_input::begin_number_scrub)
-            .add_observer(number_input::update_number_scrub)
-            .add_observer(number_input::finish_number_scrub)
-            .add_observer(text_input::emit_text_change)
-            .add_observer(text_input::submit_text_on_enter)
-            .add_observer(text_input::submit_text_on_focus_loss)
+            .add_plugins(number_input::NumberScrubPlugin)
             .add_observer(search_field::clear_search_field)
             .add_observer(tooltip::begin_tooltip)
             .add_observer(tooltip::dismiss_tooltip_on_drag)
+            .configure_sets(
+                Update,
+                number_input::NumberScrubSet.in_set(AestraFeathersSet::Sync),
+            )
+            .configure_sets(
+                Update,
+                number_input::arrows::NumberArrowsSet.in_set(AestraFeathersSet::Sync),
+            )
             .add_systems(
                 Update,
                 button::audit_action_controls.in_set(AestraFeathersSet::Input),
@@ -80,7 +92,6 @@ impl Plugin for AestraFeathersPlugin {
                     automation_curve::rasterize_automation_curves,
                     list_row::update_keyboard_list_focus_visuals,
                     color_picker::sync_color_picker_visuals,
-                    number_input::decorate_scrubbable_numbers,
                     scroll::update_scrollbar_visibility,
                     search_field::sync_search_clear_visibility,
                     tooltip::update_tooltip,

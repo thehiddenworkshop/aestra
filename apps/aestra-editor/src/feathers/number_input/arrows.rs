@@ -1,12 +1,11 @@
 //! Hover-only numeric steppers. Reserve their space so hovering never shifts the value.
 
+use super::pointer::EntityCursor;
+use super::widget::{EditorNumberInput, NumberFormat};
 use super::{ScrubbableNumber, decimal_places, formatted, replace_number_text, scrub_multiplier};
 use crate::feathers::icon::UiSvg;
 use bevy::{
-    feathers::{
-        controls::{FeathersNumberInput, FeathersTextInput, NumberFormat},
-        cursor::EntityCursor,
-    },
+    feathers::controls::FeathersTextInput,
     input_focus::InputFocus,
     picking::hover::HoverMap,
     prelude::*,
@@ -17,6 +16,8 @@ use bevy::{
 };
 
 pub(crate) struct NumberArrowsPlugin;
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct NumberArrowsSet;
 
 impl Plugin for NumberArrowsPlugin {
     fn build(&self, app: &mut App) {
@@ -24,15 +25,21 @@ impl Plugin for NumberArrowsPlugin {
             .add_observer(step_number)
             .add_systems(
                 Update,
-                (decorate, sync_visibility)
+                (
+                    decorate,
+                    sync_visibility,
+                    super::widget::sync_numeric_surfaces,
+                )
                     .chain()
-                    .in_set(super::super::AestraFeathersSet::Sync),
+                    .in_set(NumberArrowsSet),
             );
     }
 }
 
 #[derive(Component)]
 struct NumberArrowsDecorated;
+
+type UndecoratedNumbers = (With<EditorNumberInput>, Without<NumberArrowsDecorated>);
 
 /// Panels with semantic constraints and command history handle their own step requests.
 #[derive(Component)]
@@ -54,7 +61,7 @@ fn decorate(
     mut commands: Commands,
     assets: Res<AssetServer>,
     localizer: Res<crate::Localizer>,
-    inputs: Query<(Entity, &Children), (With<FeathersNumberInput>, Without<NumberArrowsDecorated>)>,
+    inputs: Query<(Entity, &Children), UndecoratedNumbers>,
     texts: Query<(), With<FeathersTextInput>>,
 ) {
     for (owner, children) in &inputs {
@@ -280,7 +287,7 @@ mod tests {
         let owner = app
             .world_mut()
             .spawn((
-                FeathersNumberInput,
+                EditorNumberInput,
                 NumberFormat::F32,
                 ScrubbableNumber::new(0.5, 0.0, 1.0, 0.1),
             ))

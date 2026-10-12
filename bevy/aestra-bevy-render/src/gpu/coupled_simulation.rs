@@ -196,7 +196,7 @@ pub(super) fn run_coupled_stateful(
                 persistent,
                 dispatch,
                 render,
-                now as f32 * STATEFUL_TICK_DT,
+                stateful_tick_time(now),
             );
         }
         trails.record(encoder, now);
@@ -434,7 +434,7 @@ pub(super) fn run_coupled_stateful(
                     persistent,
                     dispatch,
                     render,
-                    next as f32 * STATEFUL_TICK_DT,
+                    stateful_tick_time(next),
                 );
             }
             trails.record(encoder, next);
@@ -461,7 +461,7 @@ pub(super) fn run_coupled_stateful(
                 persistent,
                 dispatch,
                 render,
-                now as f32 * STATEFUL_TICK_DT,
+                stateful_tick_time(now),
             );
         }
         trails.record(encoder, now);

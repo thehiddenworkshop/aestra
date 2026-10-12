@@ -1,19 +1,18 @@
 //! Reusable color-picker composition built from Bevy Feathers color controls.
 
+use super::color_pointer::{PointerCancel, PointerClick, PointerDragStart, PointerPress};
 use super::{scenes, text_input};
-use crate::{EditorNativeControl, feathers::number_input, theme, ui_shell};
+use crate::{EditorNativeControl, feathers::number_input, theme};
 use bevy::{
     color::{Hsla, Srgba},
-    feathers::controls::{
-        ButtonVariant, ColorChannel, ColorPlaneValue, NumberInputValue, SliderBaseColor,
-        UpdateNumberInput,
-    },
+    feathers::controls::{ButtonVariant, ColorChannel, ColorPlaneValue, SliderBaseColor},
     input_focus::InputFocus,
     prelude::*,
     text::{EditableText, TextEdit},
-    ui::Selected,
+    ui::{InteractionDisabled, Selected},
     ui_widgets::{Activate, SliderValue, ValueChange},
 };
+use number_input::{NumberInputValue, UpdateNumberInput};
 
 #[derive(Clone)]
 pub(crate) struct ColorPickerLabels {
@@ -74,7 +73,15 @@ impl ColorPickerState {
 }
 
 #[derive(Component)]
+#[require(ColorPlaneEdit)]
 pub(crate) struct ColorPickerPlane;
+
+/// Native drag end owns drag commits; Aestra only supplies the missing click commit.
+#[derive(Component, Default)]
+pub(crate) struct ColorPlaneEdit {
+    pending: bool,
+    dragging: bool,
+}
 
 #[derive(Component)]
 pub(crate) struct ColorPickerLightness;
@@ -416,7 +423,7 @@ fn spawn_color_channel_input(
             .with_children(|input| {
                 input
                     .spawn_empty()
-                    .apply_scene(ui_shell::feathers_scalar_input())
+                    .apply_scene(number_input::feathers_scalar_input())
                     .insert((
                         channel,
                         number_input::ScrubbableNumber::new(
@@ -465,13 +472,21 @@ fn color_plane_frame_node() -> Node {
 
 pub(crate) fn handle_color_plane_change(
     change: On<ValueChange<Vec2>>,
-    planes: Query<(), With<ColorPickerPlane>>,
+    mut planes: Query<&mut ColorPlaneEdit, With<ColorPickerPlane>>,
+    disabled: Query<(), With<InteractionDisabled>>,
     parents: Query<&ChildOf>,
     roots: Query<(), With<ColorPickerRoot>>,
     mut pickers: Query<&mut ColorPickerState>,
     mut commands: Commands,
 ) {
-    if !planes.contains(change.source) {
+    let Ok(mut edit) = planes.get_mut(change.source) else {
+        return;
+    };
+    if plane_disabled(change.source, &parents, &disabled) {
+        *edit = ColorPlaneEdit::default();
+        return;
+    }
+    if !change.value.is_finite() {
         return;
     }
     let Some(root) = find_picker_root(change.source, &parents, &roots) else {
@@ -482,6 +497,12 @@ pub(crate) fn handle_color_plane_change(
     };
     picker.hsla.hue = change.value.x.clamp(0.0, 1.0) * 360.0;
     picker.hsla.saturation = change.value.y.clamp(0.0, 1.0);
+    // ColorPlaneValue and ValueChange both contain channel values, not screen
+    // coordinates. Bevy 0.20 fixes the upstream y mapping; do not invert it here.
+    edit.pending = !change.is_final;
+    if change.is_final {
+        edit.dragging = false;
+    }
     picker.automatic = false;
     emit_picker_change(&mut commands, root, *picker, change.is_final);
 }
@@ -586,6 +607,7 @@ pub(crate) fn handle_color_hex_change(
     mut pickers: Query<&mut ColorPickerState>,
     children: Query<&Children>,
     mut texts: Query<&mut EditableText>,
+    focus: Option<Res<InputFocus>>,
     mut commands: Commands,
 ) {
     let source = change.event_target();
@@ -604,6 +626,17 @@ pub(crate) fn handle_color_hex_change(
         }
         return;
     };
+    // Display synchronization queues TextEdit too. Only focused user edits may
+    // produce live color changes; selection-only notifications are also silent.
+    if !change.is_final
+        && (!children.iter_descendants(source).any(|entity| {
+            focus
+                .as_ref()
+                .is_some_and(|focus| focus.get() == Some(entity))
+        }) || format_hex(color) == format_hex(picker.srgba()))
+    {
+        return;
+    }
     picker.hsla = Hsla::from(Srgba::new(color[0], color[1], color[2], color[3]));
     picker.automatic = false;
     emit_picker_change(&mut commands, root, *picker, change.is_final);
@@ -642,17 +675,29 @@ fn emit_picker_change(
 }
 
 fn finalize_color_plane(
-    release: On<Pointer<Release>>,
-    planes: Query<(), With<ColorPickerPlane>>,
+    click: On<PointerClick>,
+    mut planes: Query<&mut ColorPlaneEdit, With<ColorPickerPlane>>,
+    disabled: Query<(), With<InteractionDisabled>>,
     parents: Query<&ChildOf>,
     roots: Query<(), With<ColorPickerRoot>>,
     pickers: Query<&ColorPickerState>,
     mut commands: Commands,
 ) {
-    if !planes.contains(release.event_target()) {
+    let source = click.event_target();
+    let Ok(mut edit) = planes.get_mut(source) else {
+        return;
+    };
+    if plane_disabled(source, &parents, &disabled) {
+        *edit = ColorPlaneEdit::default();
         return;
     }
-    let Some(root) = find_picker_root(release.event_target(), &parents, &roots) else {
+    // Picking emits Click before DragEnd, including when a drag ends over its
+    // starting entity. Leave that commit to the native plane observer.
+    if !edit.pending || edit.dragging {
+        return;
+    }
+    edit.pending = false;
+    let Some(root) = find_picker_root(source, &parents, &roots) else {
         return;
     };
     let Ok(picker) = pickers.get(root) else {
@@ -663,6 +708,77 @@ fn finalize_color_plane(
         value: Some(picker.srgba()),
         is_final: true,
     });
+}
+
+pub(crate) fn begin_color_plane(
+    press: On<PointerPress>,
+    parents: Query<&ChildOf>,
+    mut planes: Query<&mut ColorPlaneEdit, With<ColorPickerPlane>>,
+) {
+    let mut source = press.event_target();
+    loop {
+        if let Ok(mut edit) = planes.get_mut(source) {
+            *edit = ColorPlaneEdit::default();
+            return;
+        }
+        let Ok(parent) = parents.get(source) else {
+            return;
+        };
+        source = parent.parent();
+    }
+}
+
+pub(crate) fn track_color_plane_drag(
+    start: On<PointerDragStart>,
+    parents: Query<&ChildOf>,
+    mut planes: Query<&mut ColorPlaneEdit, With<ColorPickerPlane>>,
+    disabled: Query<(), With<InteractionDisabled>>,
+) {
+    let mut source = start.event_target();
+    loop {
+        if let Ok(mut edit) = planes.get_mut(source) {
+            edit.dragging = edit.pending && !plane_disabled(source, &parents, &disabled);
+            return;
+        }
+        let Ok(parent) = parents.get(source) else {
+            return;
+        };
+        source = parent.parent();
+    }
+}
+
+pub(crate) fn cancel_color_plane(
+    cancel: On<PointerCancel>,
+    parents: Query<&ChildOf>,
+    mut planes: Query<&mut ColorPlaneEdit, With<ColorPickerPlane>>,
+) {
+    let mut source = cancel.event_target();
+    loop {
+        if let Ok(mut edit) = planes.get_mut(source) {
+            *edit = ColorPlaneEdit::default();
+            return;
+        }
+        let Ok(parent) = parents.get(source) else {
+            return;
+        };
+        source = parent.parent();
+    }
+}
+
+fn plane_disabled(
+    mut entity: Entity,
+    parents: &Query<&ChildOf>,
+    disabled: &Query<(), With<InteractionDisabled>>,
+) -> bool {
+    loop {
+        if disabled.contains(entity) {
+            return true;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return false;
+        };
+        entity = parent.parent();
+    }
 }
 
 fn reset_to_automatic(
@@ -868,6 +984,9 @@ fn format_hex(color: [f32; 4]) -> String {
 
 fn parse_hex(value: &str) -> Option<[f32; 4]> {
     let digits = value.trim().strip_prefix('#').unwrap_or(value.trim());
+    if !digits.is_ascii() {
+        return None;
+    }
     let expanded;
     let digits = match digits.len() {
         3 | 4 => {
@@ -893,6 +1012,10 @@ fn parse_hex(value: &str) -> Option<[f32; 4]> {
         normalized(alpha),
     ])
 }
+
+#[cfg(test)]
+#[path = "color_picker/interaction_tests.rs"]
+mod interaction_tests;
 
 #[cfg(test)]
 mod tests {

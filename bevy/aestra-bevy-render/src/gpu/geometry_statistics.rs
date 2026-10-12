@@ -1,9 +1,25 @@
 //! Actual render-pass submissions, including per-view repetition and culling.
 //! Only indirect command headers and their simulation context are copied.
-use super::*;
-use bevy::render::{renderer::WgpuWrapper, sync_world::MainEntity};
+use super::{
+    effect_inputs::GpuEffectBuffers, mapped_readback, particle_statistics::GpuParticleStatistics,
+};
+use crate::PresentedEffect;
+#[cfg(test)]
+use bevy::render::{
+    render_resource::{BufferInitDescriptor, BufferUsages},
+    storage::ShaderBuffer,
+};
+use bevy::{
+    prelude::*,
+    render::{
+        render_asset::RenderAssets,
+        renderer::{RenderContext, RenderDevice},
+        storage::GpuShaderBuffer,
+        sync_world::MainEntity,
+    },
+};
 use std::sync::{
-    Mutex,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -82,7 +98,7 @@ pub(super) fn receive(
 
 #[derive(Clone)]
 struct Slot {
-    buffer: WgpuWrapper<wgpu::Buffer>,
+    buffer: mapped_readback::Wrapped<wgpu::Buffer>,
     busy: Arc<AtomicBool>,
 }
 #[derive(Default)]
@@ -121,12 +137,14 @@ pub(super) fn finish(
             return None;
         }
         readbacks.slots.push(Slot {
-            buffer: WgpuWrapper::new(device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-                label: Some("aestra submitted geometry readback"),
-                size: BUFFER_SIZE,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            })),
+            buffer: mapped_readback::wrap(device.wgpu_device().create_buffer(
+                &wgpu::BufferDescriptor {
+                    label: Some("aestra submitted geometry readback"),
+                    size: BUFFER_SIZE,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                },
+            )),
             busy: Arc::new(AtomicBool::new(false)),
         });
         Some(readbacks.slots.len() - 1)
@@ -177,33 +195,36 @@ pub(super) fn finish(
     let mailbox = mailbox.clone();
     encoder.map_buffer_on_submit(&slot.buffer, wgpu::MapMode::Read, 0..size, move |result| {
         let samples = if result.is_ok() {
-            let bytes = readback.slice(0..size).get_mapped_range();
-            let word =
-                |offset: usize| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
-            for (i, sample) in samples.iter_mut().enumerate() {
-                let offset = i * 16;
-                sample.time = f32::from_bits(word(offset + 12));
-                if word(offset) != aestra_gpu::PARTICLE_STATISTICS_MAGIC
-                    || word(offset + 4) != sample.token
-                {
-                    sample.owner = None;
+            let decoded = mapped_readback::with_mapped_range(&readback, 0..size, |bytes| {
+                let word = |offset: usize| {
+                    u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
+                };
+                for (i, sample) in samples.iter_mut().enumerate() {
+                    let offset = i * 16;
+                    sample.time = f32::from_bits(word(offset + 12));
+                    if word(offset) != aestra_gpu::PARTICLE_STATISTICS_MAGIC
+                        || word(offset + 4) != sample.token
+                    {
+                        sample.owner = None;
+                    }
                 }
-            }
-            for (i, draw) in frame.draws.iter().enumerate() {
-                let Some(sample) = samples.iter_mut().find(|s| s.owner == Some(draw.owner)) else {
-                    continue;
-                };
-                let [vertices, instances] = if draw.command.is_some() {
-                    let offset = draw_offset as usize + i * 8;
-                    [word(offset), word(offset + 4)]
-                } else {
-                    draw.direct
-                };
-                sample.add(vertices, instances, draw.topology);
-            }
-            drop(bytes);
+                for (i, draw) in frame.draws.iter().enumerate() {
+                    let Some(sample) = samples.iter_mut().find(|s| s.owner == Some(draw.owner))
+                    else {
+                        continue;
+                    };
+                    let [vertices, instances] = if draw.command.is_some() {
+                        let offset = draw_offset as usize + i * 8;
+                        [word(offset), word(offset + 4)]
+                    } else {
+                        draw.direct
+                    };
+                    sample.add(vertices, instances, draw.topology);
+                }
+                samples
+            });
             readback.unmap();
-            samples
+            decoded.unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -229,7 +250,7 @@ mod tests {
         };
         let (device, queue) =
             pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-        let device = RenderDevice::new(WgpuWrapper::new(device));
+        let device = mapped_readback::render_device(device);
         let words: [u32; 13] = [
             4,
             7,
@@ -257,16 +278,7 @@ mod tests {
         let mut assets = RenderAssets::<GpuShaderBuffer>::default();
         assets.insert(
             handle.id(),
-            GpuShaderBuffer {
-                buffer: buffer.clone(),
-                buffer_descriptor: wgpu::BufferDescriptor {
-                    label: None,
-                    size: 52,
-                    usage: BufferUsages::COPY_SRC,
-                    mapped_at_creation: false,
-                },
-                had_data: true,
-            },
+            mapped_readback::test_shader_buffer(buffer.clone()),
         );
         let mailbox = GeometryMailbox::default();
         let mut app = App::new();
@@ -325,10 +337,9 @@ mod tests {
             submissions.record(owner, None, [4, 6], Topology::Strip);
             app.update();
         }
-        let commands = app
-            .world_mut()
-            .resource_mut::<PendingCommandBuffers>()
-            .take();
+        let commands = mapped_readback::pending_commands(
+            &mut app.world_mut().resource_mut::<PendingCommandBuffers>(),
+        );
         assert_eq!(
             commands.len(),
             MAX_IN_FLIGHT,
@@ -355,10 +366,9 @@ mod tests {
         );
         // No draw calls in this view/frame: recycle a slot and report an observed zero.
         app.update();
-        let commands = app
-            .world_mut()
-            .resource_mut::<PendingCommandBuffers>()
-            .take();
+        let commands = mapped_readback::pending_commands(
+            &mut app.world_mut().resource_mut::<PendingCommandBuffers>(),
+        );
         assert_eq!(commands.len(), 1);
         submit(commands);
         let samples = mailbox.0.lock().unwrap().pending.take().unwrap();
@@ -373,11 +383,9 @@ mod tests {
             .unwrap()
             .statistics_token = 43;
         app.update();
-        submit(
-            app.world_mut()
-                .resource_mut::<PendingCommandBuffers>()
-                .take(),
-        );
+        submit(mapped_readback::pending_commands(
+            &mut app.world_mut().resource_mut::<PendingCommandBuffers>(),
+        ));
         assert_eq!(
             mailbox.0.lock().unwrap().pending.take().unwrap()[0].owner,
             None
