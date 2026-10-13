@@ -5,11 +5,11 @@ use std::path::Path;
 pub(super) const MATERIAL_GRAPH_OUTPUT_NODE_KEY: &str = "output";
 
 /// Document layout identity; multiple views share node placement, not their camera.
-pub(super) fn material_graph_view_key(program: MaterialProgramId) -> String {
+pub(crate) fn material_graph_view_key(program: MaterialProgramId) -> String {
     format!("material:{program}")
 }
 
-pub(super) fn material_graph_expression_node_key(expression: MaterialExpressionId) -> String {
+pub(crate) fn material_graph_expression_node_key(expression: MaterialExpressionId) -> String {
     format!("expression:{expression}")
 }
 

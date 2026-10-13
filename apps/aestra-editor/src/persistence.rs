@@ -68,32 +68,8 @@ impl Plugin for EditorPersistencePlugin {
     }
 }
 
-#[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DocumentAction {
-    New,
-    NewInFolder(
-        aestra_project::ProjectSourceId,
-        aestra_project::ProjectContentVersion,
-    ),
-    NewProject,
-    Open,
-    OpenProject,
-    OpenRecentProject(usize),
-    ExploreExamples,
-    ShowProjectLauncher,
-    OpenCatalog(EffectAssetRef),
-    OpenCatalogClip(EffectAssetRef, EffectClipId),
-    OpenSource(EffectAssetRef),
-    OpenSourceEmitter(EffectAssetRef, EmitterId),
-    BackToSource,
-    ForwardToSource,
-    NavigateSourceAncestor(usize),
-    Save,
-    SaveAs,
-    SaveAll,
-    ReloadMaterial,
-    Exit,
-}
+mod state;
+pub(crate) use state::{DocumentAction, DocumentProtectionState};
 
 #[cfg(test)]
 pub(crate) fn install_document_open_test_runtime(app: &mut App, recovery_path: PathBuf) {
@@ -158,21 +134,6 @@ impl SourceNavigationState {
     }
 }
 
-#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct DocumentProtectionState {
-    recovery_open: bool,
-    pub(crate) asset_recovery_open: bool,
-    pub(crate) asset_delete_open: bool,
-    pub(crate) asset_create_open: bool,
-    pub(crate) transaction_open: bool,
-    pub(crate) creation_open: bool,
-    pub(crate) project_launcher_open: bool,
-    pending: Option<DocumentAction>,
-    reload_target: Option<crate::material_document::MaterialEditingTarget>,
-    /// The editor view awaiting a dirty-close decision (Save / Discard / Cancel), if any.
-    pub(crate) pending_editor_close: Option<crate::docking::EditorViewId>,
-}
-
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DocumentProtectionAction {
     Save,
@@ -185,20 +146,6 @@ struct DocumentProtectionOverlay;
 
 #[derive(Component)]
 struct DocumentProtectionDescription;
-
-impl DocumentProtectionState {
-    pub(crate) fn is_open(&self) -> bool {
-        self.pending.is_some()
-            || self.pending_editor_close.is_some()
-            || self.recovery_open
-            || self.asset_recovery_open
-            || self.asset_delete_open
-            || self.asset_create_open
-            || self.transaction_open
-            || self.creation_open
-            || self.project_launcher_open
-    }
-}
 
 pub(crate) fn spawn_document_protection_overlay(
     parent: &mut ChildSpawnerCommands,

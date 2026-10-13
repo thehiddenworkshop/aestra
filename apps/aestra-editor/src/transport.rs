@@ -1,52 +1,52 @@
 //! Preview transport controls, shortcuts, playback advancement, and icon synchronization.
 
-use crate::feathers::icon::load_svg_icon;
-use crate::feathers::icon::{SvgColor, UiSvg};
-use crate::*;
+use crate::{
+    feathers::{
+        action_activation::{EditorNativeControl, FeathersActionButton, dispatch_action},
+        icon::{SvgColor, UiSvg, load_svg_icon},
+        scenes as ui_shell,
+        tooltip::EditorTooltip,
+    },
+    localization::Localizer,
+    menus::MenuState,
+    session::EditorSession,
+    theme,
+};
+use aestra_core::EffectPlaybackMode;
 use bevy::ecs::query::QueryFilter;
+use bevy::prelude::*;
 use bevy::ui_widgets::Activate;
 use bevy::{
-    feathers::controls::ButtonVariant,
-    input::{ButtonState, keyboard::KeyboardInput},
-    input_focus::InputFocus,
+    feathers::{
+        controls::ButtonVariant,
+        theme::{ThemeBackgroundColor, ThemeBorderColor},
+        tokens,
+    },
     ui::Selected,
 };
 
 pub(crate) struct EditorTransportPlugin;
 
-#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum TransportSet {
-    Input,
-    Actions,
-    Playback,
-    Sync,
-}
+#[path = "transport/playback.rs"]
+pub(crate) mod playback;
+#[cfg(test)]
+use playback::execute_transport_action;
+pub(crate) use playback::{TransportAction, TransportSet};
 
 impl Plugin for EditorTransportPlugin {
     fn build(&self, app: &mut App) {
+        playback::register(app);
         app.add_observer(queue_transport_action_activation)
-            .add_observer(execute_transport_action)
             .add_systems(
                 Update,
                 (
-                    transport_keyboard_input.in_set(TransportSet::Input),
                     (handle_transport_buttons, audit_transport_controls)
                         .chain()
                         .in_set(TransportSet::Actions),
-                    advance_playback.in_set(TransportSet::Playback),
                     update_transport_icons.in_set(TransportSet::Sync),
                 ),
             );
     }
-}
-
-#[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TransportAction {
-    TogglePlayback,
-    Stop,
-    TogglePlaybackMode(EffectPlaybackMode),
-    Restart,
-    StepFrame(i8),
 }
 
 #[derive(Component)]
@@ -61,59 +61,67 @@ struct PlaybackRestartLoopButton;
 #[derive(Component)]
 struct PlaybackContinuousLoopButton;
 
-fn queue_transport_action_activation(
-    activate: On<Activate>,
-    actions: Query<(), (With<TransportAction>, With<FeathersActionButton>)>,
-    mut commands: Commands,
-) {
-    if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Phase {
+    None,
+    Hovered,
+    Pressed,
 }
 
-#[allow(clippy::type_complexity)]
+pub(crate) struct Control<'a> {
+    pub(crate) entity: Entity,
+    pub(crate) phase: Phase,
+    pub(crate) action: TransportAction,
+    pub(crate) feathers: bool,
+    pub(crate) pending: bool,
+    pub(crate) disabled: bool,
+    pub(crate) background: Mut<'a, BackgroundColor>,
+}
+
+fn queue_transport_action_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<FeathersActionButton>, With<TransportAction>)>,
+    commands: Commands,
+) {
+    crate::feathers::action_activation::queue_activation(activate, actions, commands);
+}
+
 fn handle_transport_buttons(
     mut commands: Commands,
-    mut buttons: Query<
-        (
-            Entity,
-            &Interaction,
-            &TransportAction,
-            Option<&FeathersActionButton>,
-            Option<&PendingFeathersActivation>,
-            Option<&InteractionDisabled>,
-            &mut BackgroundColor,
-        ),
-        (
-            Changed<Interaction>,
-            Or<(With<Button>, With<FeathersActionButton>)>,
-        ),
-    >,
+    mut buttons: crate::transport_input::Controls,
     mut menu: ResMut<MenuState>,
     mut session: ResMut<EditorSession>,
 ) {
-    for (entity, interaction, action, feathers, pending, disabled, mut background) in &mut buttons {
-        if disabled.is_some() {
-            if feathers.is_none() {
+    for Control {
+        entity,
+        phase,
+        action,
+        feathers,
+        pending,
+        disabled,
+        mut background,
+    } in buttons.iter()
+    {
+        if disabled {
+            if !feathers {
                 background.0 = theme::PANEL_DARK;
             }
             continue;
         }
-        match *interaction {
-            Interaction::Hovered if feathers.is_none() => background.0 = theme::BUTTON_HOVER,
-            Interaction::None if feathers.is_none() => background.0 = theme::BUTTON,
-            Interaction::Pressed => {
-                if feathers.is_some() {
-                    if pending.is_none() {
-                        continue;
-                    }
-                    commands
-                        .entity(entity)
-                        .remove::<PendingFeathersActivation>()
-                        .insert(Interaction::None);
-                } else {
+        // Activate is the action contract; a subsequent visual release must not discard it.
+        let phase = if feathers && pending {
+            Phase::Pressed
+        } else {
+            phase
+        };
+        match phase {
+            Phase::Hovered if !feathers => background.0 = theme::BUTTON_HOVER,
+            Phase::None if !feathers => background.0 = theme::BUTTON,
+            Phase::Pressed => {
+                if feathers && !pending {
+                    continue;
+                }
+                if !feathers {
                     background.0 = theme::ACCENT_DIM;
                 }
                 menu.open = None;
@@ -121,109 +129,21 @@ fn handle_transport_buttons(
                 if menu.tab_context.take().is_some() {
                     session.ui_revision += 1;
                 }
-                commands.trigger(*action);
+                dispatch_action(&mut commands, entity, action, feathers, pending, disabled);
             }
             _ => {}
         }
     }
 }
 
-fn execute_transport_action(action: On<TransportAction>, mut session: ResMut<EditorSession>) {
-    match *action {
-        TransportAction::TogglePlayback => {
-            if session.playing {
-                session.playing = false;
-            } else if session.effect.playback_mode.is_looping() {
-                session.playing = true;
-            } else {
-                session.restart();
-            }
-        }
-        TransportAction::Stop => session.stop(),
-        TransportAction::TogglePlaybackMode(mode) => {
-            let mode = if session.effect.playback_mode == mode {
-                EffectPlaybackMode::Once
-            } else {
-                mode
-            };
-            session.set_effect_playback_mode(mode);
-        }
-        TransportAction::Restart => session.restart(),
-        TransportAction::StepFrame(direction) => session.step_frame(direction),
-    }
-}
-
-fn transport_keyboard_input(
-    mut commands: Commands,
-    mut keyboard_events: MessageReader<KeyboardInput>,
-    input: crate::input::ShortcutKeys,
-    palette: Res<ModulePaletteState>,
-    focus: Option<Res<InputFocus>>,
-    menu_items: Query<(), With<bevy::ui_widgets::MenuItem>>,
-    shortcuts: crate::input::ShortcutContext,
-) {
-    let repeated_steps = if let Some(events) = input.repeats() {
-        keyboard_events.clear();
-        events
-            .iter()
-            .filter_map(|event| {
-                repeated_frame_step(
-                    &event.input,
-                    event.key_codes.pressed(KeyCode::AltLeft)
-                        || event.key_codes.pressed(KeyCode::AltRight),
-                )
-            })
-            .collect::<Vec<_>>()
-    } else {
-        let alt = input
-            .iter()
-            .any(|keys| keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight));
-        keyboard_events
-            .read()
-            .filter_map(|event| repeated_frame_step(event, alt))
-            .collect::<Vec<_>>()
-    };
-    let menu_item_focused = focus
-        .as_deref()
-        .and_then(InputFocus::get)
-        .is_some_and(|entity| menu_items.contains(entity));
-    if palette.open || menu_item_focused || shortcuts.blocked() {
-        return;
-    }
-    for keys in input.iter() {
-        let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
-        if keys.just_pressed(KeyCode::Space) {
-            commands.trigger(TransportAction::TogglePlayback);
-        }
-        if keys.just_pressed(KeyCode::KeyR) {
-            commands.trigger(TransportAction::Restart);
-        }
-        if !alt && keys.just_pressed(KeyCode::ArrowLeft) {
-            commands.trigger(TransportAction::StepFrame(-1));
-        }
-        if !alt && keys.just_pressed(KeyCode::ArrowRight) {
-            commands.trigger(TransportAction::StepFrame(1));
-        }
-    }
-    for direction in repeated_steps {
-        commands.trigger(TransportAction::StepFrame(direction));
-    }
-}
-
-fn repeated_frame_step(event: &KeyboardInput, alt: bool) -> Option<i8> {
-    if alt || !event.repeat || event.state != ButtonState::Pressed {
-        return None;
-    }
-    match event.key_code {
-        KeyCode::ArrowLeft => Some(-1),
-        KeyCode::ArrowRight => Some(1),
-        _ => None,
-    }
-}
-
-fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
-    session.advance_playback(time.delta_secs());
-}
+type RestartLoopFilter = (
+    With<PlaybackRestartLoopButton>,
+    Without<PlaybackContinuousLoopButton>,
+);
+type ContinuousLoopFilter = (
+    With<PlaybackContinuousLoopButton>,
+    Without<PlaybackRestartLoopButton>,
+);
 
 fn update_transport_icons(
     mut commands: Commands,
@@ -231,19 +151,10 @@ fn update_transport_icons(
     localizer: Res<Localizer>,
     mut play_icons: Query<&mut Node, (With<PlaybackPlayIcon>, Without<PlaybackPauseIcon>)>,
     mut pause_icons: Query<&mut Node, (With<PlaybackPauseIcon>, Without<PlaybackPlayIcon>)>,
-    mut restart_buttons: Query<
-        (Entity, &mut ButtonVariant, Has<Selected>),
-        (
-            With<PlaybackRestartLoopButton>,
-            Without<PlaybackContinuousLoopButton>,
-        ),
-    >,
+    mut restart_buttons: Query<(Entity, &mut ButtonVariant, Has<Selected>), RestartLoopFilter>,
     mut continuous_buttons: Query<
         (Entity, &mut ButtonVariant, Has<Selected>),
-        (
-            With<PlaybackContinuousLoopButton>,
-            Without<PlaybackRestartLoopButton>,
-        ),
+        ContinuousLoopFilter,
     >,
 ) {
     if !session.is_changed() {
@@ -309,7 +220,7 @@ fn sync_playback_mode_button<F: QueryFilter>(
 
 type UnclassifiedTransportControl = (
     Added<TransportAction>,
-    With<Button>,
+    With<crate::transport_input::AuditedButton>,
     Without<FeathersActionButton>,
     Without<EditorNativeControl>,
 );
@@ -456,6 +367,8 @@ fn spawn_transport_icon<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feathers::action_activation::PendingFeathersActivation;
+    use crate::feathers::icon::SvgPlugin;
     use crate::test_support;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
@@ -472,77 +385,6 @@ mod tests {
 
     fn sample_session_with_playback_mode(mode: EffectPlaybackMode) -> EditorSession {
         test_support::session_with_playback_mode(mode)
-    }
-
-    #[test]
-    fn transport_actions_own_playback_mutations() {
-        let mut app = App::new();
-        let session = sample_session_with_playback_mode(EffectPlaybackMode::LoopRestart);
-        assert!(session.playing);
-        app.insert_resource(session)
-            .add_observer(execute_transport_action);
-
-        app.world_mut().trigger(TransportAction::TogglePlayback);
-        app.update();
-        assert!(!app.world().resource::<EditorSession>().playing);
-
-        app.world_mut().trigger(TransportAction::Restart);
-        app.update();
-        let session = app.world().resource::<EditorSession>();
-        assert!(session.playing);
-        assert_eq!(session.frame(), 0);
-
-        let original_mode = session.effect.playback_mode;
-        app.world_mut().trigger(TransportAction::TogglePlaybackMode(
-            EffectPlaybackMode::LoopContinuous,
-        ));
-        app.update();
-        let session = app.world().resource::<EditorSession>();
-        assert_eq!(
-            session.effect.playback_mode,
-            EffectPlaybackMode::LoopContinuous
-        );
-        assert!(session.can_undo());
-        app.world_mut().resource_mut::<EditorSession>().undo();
-        assert_eq!(
-            app.world().resource::<EditorSession>().effect.playback_mode,
-            original_mode
-        );
-
-        {
-            let mut session = app.world_mut().resource_mut::<EditorSession>();
-            assert!(session.set_effect_playback_mode(EffectPlaybackMode::Once));
-            session.step_frame(1);
-            assert_eq!(session.frame(), 1);
-            assert!(!session.playing);
-        }
-        app.world_mut().trigger(TransportAction::TogglePlayback);
-        app.update();
-        let session = app.world().resource::<EditorSession>();
-        assert!(session.playing);
-        assert_eq!(session.frame(), 0);
-    }
-
-    #[test]
-    fn changing_playback_mode_preserves_playback_position_and_running_state() {
-        let mut app = App::new();
-        let mut session = sample_session_with_playback_mode(EffectPlaybackMode::LoopRestart);
-        session.advance_playback(0.1);
-        let frame = session.frame();
-        assert!(frame > 0);
-        assert!(session.playing);
-        app.insert_resource(session)
-            .add_observer(execute_transport_action);
-
-        app.world_mut().trigger(TransportAction::TogglePlaybackMode(
-            EffectPlaybackMode::LoopRestart,
-        ));
-        app.update();
-
-        let session = app.world().resource::<EditorSession>();
-        assert_eq!(session.effect.playback_mode, EffectPlaybackMode::Once);
-        assert!(session.playing);
-        assert_eq!(session.frame(), frame);
     }
 
     #[test]
@@ -624,174 +466,19 @@ mod tests {
         app.add_observer(queue_transport_action_activation);
         let action = app
             .world_mut()
-            .spawn((
-                TransportAction::Stop,
-                FeathersActionButton,
-                Interaction::None,
-            ))
+            .spawn((TransportAction::Stop, FeathersActionButton))
             .id();
+        crate::transport_input::set_phase(app.world_mut(), action, Phase::None);
 
         app.world_mut().trigger(Activate { entity: action });
         app.update();
 
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
-        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
-    }
-
-    #[test]
-    fn keyboard_input_routes_through_the_transport_action_contract() {
-        let mut app = App::new();
-        app.insert_resource(test_support::session_with_timing_slack())
-            .insert_resource(ButtonInput::<KeyCode>::default())
-            .init_resource::<ModulePaletteState>()
-            .add_message::<KeyboardInput>()
-            .add_observer(execute_transport_action)
-            .add_systems(Update, transport_keyboard_input);
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::Space);
-
-        app.update();
-
-        assert!(!app.world().resource::<EditorSession>().playing);
-    }
-
-    #[test]
-    fn focused_menu_item_reserves_transport_shortcuts_for_menu_navigation() {
-        let session = test_support::session_with_timing_slack();
-        let initially_playing = session.playing;
-        let mut app = App::new();
-        app.insert_resource(session)
-            .insert_resource(ButtonInput::<KeyCode>::default())
-            .init_resource::<ModulePaletteState>()
-            .add_message::<KeyboardInput>()
-            .add_observer(execute_transport_action)
-            .add_systems(Update, transport_keyboard_input);
-        let item = app.world_mut().spawn(bevy::ui_widgets::MenuItem).id();
-        app.insert_resource(InputFocus::from_entity(item));
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::Space);
-
-        app.update();
-
-        assert_eq!(
-            app.world().resource::<EditorSession>().playing,
-            initially_playing
-        );
-    }
-
-    #[test]
-    fn held_arrow_repeat_events_continue_stepping_frames() {
-        let repeat = KeyboardInput {
-            key_code: KeyCode::ArrowRight,
-            logical_key: bevy::input::keyboard::Key::ArrowRight,
-            state: ButtonState::Pressed,
-            text: None,
-            repeat: true,
-            window: Entity::PLACEHOLDER,
-        };
-
-        assert_eq!(repeated_frame_step(&repeat, false), Some(1));
-        assert_eq!(repeated_frame_step(&repeat, true), None);
-
-        let mut released = repeat.clone();
-        released.state = ButtonState::Released;
-        assert_eq!(repeated_frame_step(&released, false), None);
-
-        let mut ordinary = repeat;
-        ordinary.repeat = false;
-        assert_eq!(repeated_frame_step(&ordinary, false), None);
-    }
-
-    #[test]
-    fn fast_alt_navigation_does_not_step_transport_and_plain_repeats_still_do() {
-        use crate::input::tests::{key, keyboard_app, tap};
-        use bevy::input::keyboard::Key;
-        #[derive(Resource, Default)]
-        struct Actions(Vec<TransportAction>);
-        let (mut app, window, _) = keyboard_app();
-        app.world_mut().resource_mut::<InputFocus>().clear();
-        app.init_resource::<ModulePaletteState>()
-            .init_resource::<Actions>()
-            .add_observer(|event: On<TransportAction>, mut actions: ResMut<Actions>| {
-                actions.0.push(*event.event())
-            })
-            .add_systems(Update, transport_keyboard_input);
-        key(
-            &mut app,
-            window,
-            KeyCode::AltLeft,
-            Key::Alt,
-            ButtonState::Pressed,
-        );
-        tap(&mut app, window, KeyCode::ArrowLeft, Key::ArrowLeft);
-        app.world_mut().write_message(KeyboardInput {
-            key_code: KeyCode::ArrowLeft,
-            logical_key: Key::ArrowLeft,
-            state: ButtonState::Pressed,
-            text: None,
-            repeat: true,
-            window,
-        });
-        key(
-            &mut app,
-            window,
-            KeyCode::AltLeft,
-            Key::Alt,
-            ButtonState::Released,
-        );
-        key(
-            &mut app,
-            window,
-            KeyCode::ArrowRight,
-            Key::ArrowRight,
-            ButtonState::Pressed,
-        );
-        app.world_mut().write_message(KeyboardInput {
-            key_code: KeyCode::ArrowRight,
-            logical_key: Key::ArrowRight,
-            state: ButtonState::Pressed,
-            text: None,
-            repeat: true,
-            window,
-        });
-        app.world_mut().run_schedule(PreUpdate);
-        app.world_mut().run_schedule(Update);
-        assert_eq!(
-            app.world().resource::<Actions>().0,
-            [TransportAction::StepFrame(1), TransportAction::StepFrame(1)]
-        );
-    }
-
-    #[test]
-    fn editing_text_reserves_playback_and_frame_shortcuts() {
-        let mut app = App::new();
-        let mut session = test_support::session_with_timing_slack();
-        session.seek_time(0.5);
-        let frame = session.frame();
-        let playing = session.playing;
-        app.insert_resource(session)
-            .init_resource::<ButtonInput<KeyCode>>()
-            .init_resource::<ModulePaletteState>()
-            .add_message::<KeyboardInput>()
-            .add_observer(execute_transport_action)
-            .add_systems(Update, transport_keyboard_input);
-        let text = app
-            .world_mut()
-            .spawn(bevy::text::EditableText::new("typing R and spaces"))
-            .id();
-        let child = app.world_mut().spawn(ChildOf(text)).id();
-        app.insert_resource(InputFocus::from_entity(child));
-        for key in [KeyCode::Space, KeyCode::KeyR, KeyCode::ArrowRight] {
-            app.world_mut()
-                .resource_mut::<ButtonInput<KeyCode>>()
-                .press(key);
-        }
-        app.update();
-        let session = app.world().resource::<EditorSession>();
-        assert_eq!(session.frame(), frame);
-        assert_eq!(session.playing, playing);
+        assert!(crate::transport_input::is_pressed(app.world(), action.id()));
     }
 }
+
+#[cfg(test)]
+#[path = "transport/toolbar_tests.rs"]
+mod toolbar_tests;

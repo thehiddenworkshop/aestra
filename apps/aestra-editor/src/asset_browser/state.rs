@@ -4,12 +4,15 @@ use aestra_project::{
     ProjectContent, ProjectContentVersion, ProjectFileClassification, ProjectSourceEntry,
     ProjectSourceId, ProjectSourceKind,
 };
-use bevy::prelude::Resource;
+use bevy::prelude::{Component, Resource};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::PathBuf};
 
 pub(super) const PAGE_SIZE: usize = 96;
 pub(super) const HISTORY_LIMIT: usize = 64;
+
+#[derive(Component)]
+pub(crate) struct BrowserSurface;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum SourceScope {

@@ -9024,46 +9024,8 @@ struct PropertiesToggleControl {
 #[derive(Component, Debug, Clone, Copy)]
 struct ModuleEnabledControl(ModuleId);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StackStage {
-    EmitterSpawn,
-    EmitterUpdate,
-    ParticleSpawn,
-    ParticleUpdate,
-    Render,
-}
-
-impl StackStage {
-    /// The fixed lifecycle stages shown as stack sections, in execution order (§28.3, §31.2). Empty
-    /// sections are still shown so the stack has a stable structure. Authored simulation stages render
-    /// as their own sections between `ParticleUpdate` and `Render`; they are not part of this list.
-    const LIFECYCLE: [Self; 4] = [
-        Self::EmitterSpawn,
-        Self::EmitterUpdate,
-        Self::ParticleSpawn,
-        Self::ParticleUpdate,
-    ];
-
-    fn title(self) -> &'static str {
-        match self {
-            Self::EmitterSpawn => "EMITTER SPAWN",
-            Self::EmitterUpdate => "EMITTER UPDATE",
-            Self::ParticleSpawn => "PARTICLE SPAWN",
-            Self::ParticleUpdate => "PARTICLE UPDATE",
-            Self::Render => "RENDER",
-        }
-    }
-
-    fn semantic(self) -> Option<StageKind> {
-        match self {
-            Self::EmitterSpawn => Some(StageKind::EmitterSpawn),
-            Self::EmitterUpdate => Some(StageKind::EmitterUpdate),
-            Self::ParticleSpawn => Some(StageKind::ParticleSpawn),
-            Self::ParticleUpdate => Some(StageKind::ParticleUpdate),
-            Self::Render => None,
-        }
-    }
-}
+mod palette_state;
+pub(crate) use palette_state::{ModulePaletteState, StackStage};
 
 #[derive(Resource)]
 pub(crate) struct EditorModuleRegistry(pub(crate) ModuleRegistry);
@@ -9072,23 +9034,6 @@ impl Default for EditorModuleRegistry {
     /// The built-in modules plus those of every linked extension (extensible-stages M10).
     fn default() -> Self {
         Self(aestra_compiler::ExtensionRegistry::linked().modules)
-    }
-}
-
-#[derive(Resource)]
-pub(crate) struct ModulePaletteState {
-    pub(crate) open: bool,
-    pub(crate) stage: StackStage,
-    pub(crate) query: String,
-}
-
-impl Default for ModulePaletteState {
-    fn default() -> Self {
-        Self {
-            open: false,
-            stage: StackStage::EmitterUpdate,
-            query: String::new(),
-        }
     }
 }
 

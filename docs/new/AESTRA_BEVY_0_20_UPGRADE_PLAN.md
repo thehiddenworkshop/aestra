@@ -1367,6 +1367,214 @@ with ten existing ignores unchanged. Strict workspace all-target Clippy, all-tar
 checking with `aestra-bench/gpu`, formatting and whitespace validation pass.
 Root manifest/toolchain/lockfile diffs remain empty.
 
+Implemented slice 19 (2026-10-13): **focus/modal/code-editor history ownership**.
+The shipping action observer and menu availability share the actual early ownership
+gate with the 0.20 candidate. Pointer/keyboard focus policy, the real bounded code
+buffer history and complete modal protection resource are shared production sources.
+Small 0.19/0.20 pointer-event boundaries preserve native dispatch without translating
+behavior. Sixteen new regressions cover Unicode/bounded/coalesced buffer history,
+focus traversal/neutral ownership, active/stale/empty code histories, every modal
+branch and busy-until-applied I/O. One existing focus regression also now runs on
+0.20, and the real code-widget gate retains its existing interaction coverage.
+See the [history ownership report](../../benchmarks/bevy-upgrade/editor-history-ownership-2026-10-13.md).
+Filesystem/presentation-aware history, complete shortcut dispatch and native workflow
+acceptance remain open; this does not mark the complete action observer qualified.
+
+The accepted frozen headless run executes **667 checks**, including **248
+graph/session/history checks** and **43 code/search/context-menu widget checks**,
+with all **690 input hashes** unchanged. Strict candidate all-target Clippy with
+the editor/asynchronous feature combination and both formatting checks pass.
+No new native editor acceptance is claimed.
+
+Shipping regression for slice 19: **1,381 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict workspace all-target Clippy, all-target
+checking with `aestra-bench/gpu`, formatting and whitespace validation pass.
+Root manifest/toolchain/lockfile diffs remain empty.
+
+Implemented slice 20 (2026-10-13): **filesystem chronology and redo synchronization**.
+The candidate imports the complete production `AssetOrder` bridge and its real
+session-backed context types, plus existing effect-ledger synchronization, scoped
+presentation-redo clearing and document-order retirement. Shipping calls the same
+code. Seventeen new regressions use real temporary-project deletion/recovery journals
+and actual material/function edits to check ordering, retryable conflicts, stale
+revisions, project/document resets, bounded history and scoped/global redo forks.
+Recovery records remain independent of the bounded session-local undo history.
+See the [filesystem history report](../../benchmarks/bevy-upgrade/editor-filesystem-history-2026-10-13.md).
+Complete GUI deletion composition and compound presentation-aware action execution
+remain open; this slice does not claim full observer or native workflow parity.
+
+The accepted frozen headless run executes **684 checks**, including **265
+graph/session/history checks**, with all **693 input hashes** unchanged. Strict
+candidate all-target Clippy with the editor/asynchronous feature combination and
+both formatting checks pass. No new native editor acceptance is claimed.
+
+Shipping regression for slice 20: **1,398 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict workspace all-target Clippy, all-target
+checking with `aestra-bench/gpu`, formatting and whitespace validation pass.
+Root manifest/toolchain/lockfile diffs remain empty.
+
+Implemented slice 21 (2026-10-13): **compound semantic/presentation history execution**.
+The shipping action observer and 0.20 candidate share the actual validation-first
+undo/redo block, project/session snapshot resolution and optional ECS presentation
+state. Real preview visibility/cache data and project-wide graph inventory are
+shared with the existing raster and placement consumers. Fourteen new regressions
+cover exact node/visibility restoration, layout-only state preservation, missing or
+stale state rejection, no-op attachment, and retry after semantic failure.
+Effect/material/function history uses actual publication and session resources.
+See the [compound history report](../../benchmarks/bevy-upgrade/editor-compound-history-2026-10-13.md).
+The complete application action observer, filesystem/UI composition, shortcut
+dispatch and native acceptance remain open; no native parity is claimed here.
+
+The accepted frozen headless run executes **698 checks**, including **279
+graph/session/history checks**, with all **700 input hashes** unchanged. Strict
+candidate all-target Clippy with the editor/asynchronous feature combination and
+both formatting checks pass. No new native editor acceptance is claimed.
+
+Shipping regression for slice 21: **1,412 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict workspace all-target Clippy, all-target
+checking with `aestra-bench/gpu`, formatting and whitespace validation pass.
+Root manifest/toolchain/lockfile diffs remain empty.
+
+Implemented slice 22 (2026-10-13): **application undo/redo routing**.
+The real application router and ECS borrows are now shared with the 0.20 candidate.
+Shipping keeps its existing observer contract and supplies the unchanged guarded
+filesystem recovery callback through deferred commands. Fourteen new regressions
+combine ownership, actual focused view/document registries, global ordering,
+effect/material/function history, compound validation and failure-safe retry.
+Filesystem dispatch is checked without pretending that a callback recorder
+qualifies the complete native recovery worker/UI lifecycle. See the
+[application history routing report](../../benchmarks/bevy-upgrade/editor-history-routing-2026-10-13.md).
+
+The accepted frozen headless run executes **712 checks**, including **293
+graph/session/history checks**, with all **702 input hashes** unchanged. Strict
+candidate all-target Clippy with the editor/asynchronous feature combination and
+both formatting checks pass. No new native editor acceptance is claimed.
+Shipping regression for slice 22: **1,426 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict workspace all-target Clippy, all-target
+checking with `aestra-bench/gpu`, formatting and whitespace validation pass.
+Root manifest/toolchain/lockfile diffs remain empty.
+
+Implemented slice 23 (2026-10-13): **guarded filesystem history execution**.
+The shipping worker and 0.20 candidate now share real serialized restore/redo,
+closed-document recovery, draft/reference checks and catalog publication. Existing
+browser/dialog callbacks retain their implementation and publication ordering.
+Seventeen new regressions perform actual filesystem operations, test cancellation
+and conflict guards, restore exact drafts/targets/source paths, and connect the real
+application router to the real worker. The candidate adds only its already-transitive
+`ron 0.12` development dependency; root dependency inputs remain unchanged.
+See the [filesystem execution report](../../benchmarks/bevy-upgrade/editor-filesystem-execution-2026-10-13.md).
+The accepted frozen headless run executes **729 checks**, including **310
+graph/session/history checks**, with all **708 input hashes** unchanged. Strict
+candidate all-target Clippy and both formatting checks pass.
+Shipping regression for slice 23: **1,443 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict workspace all-target Clippy, all-target
+checking with `aestra-bench/gpu`, formatting and whitespace validation pass.
+Root manifest/toolchain/lockfile diffs remain empty.
+Initial delete/restore modal and browser UI composition remain open; no new native
+editor acceptance is claimed.
+
+Implemented slice 24 (2026-10-13): **complete delete/restore dialog and browser publication**.
+Shipping and the 0.20 candidate share the complete action coordinator, actual
+Feathers dialog, focus return, localized controls and real browser/bookmark
+publication callbacks. The browser snapshot model, bounded bookmark model and
+scrollbar composition/visibility are production sources, not substitutes.
+Fifteen new shared regressions cover guarded initial deletion/bin restoration,
+retry and stale actions, pagination, real layout/scrolling at two DPI/locale
+combinations, Escape/Close focus restoration, busy controls, idle entity stability,
+bookmark revival through history and exact unsaved-material recovery.
+See the [deletion dialog report](../../benchmarks/bevy-upgrade/editor-deletion-dialog-2026-10-13.md).
+The accepted final frozen headless run executes **744 checks**, including **325
+graph/session/history checks**, with all **715 input hashes** unchanged. One existing
+graph timing probe remains ignored. Shipping regression: **1,458 editor unit + 3
+architecture tests pass**, with ten existing ignores unchanged. Strict all-target
+Clippy passes on both engines, as do workspace checking with `aestra-bench/gpu`,
+both formatting checks and whitespace validation. Root dependency inputs remain unchanged.
+This is real headless dialog composition/layout qualification, not new interactive
+native-window acceptance or full asset-browser/plugin parity.
+
+Implemented slice 25 (2026-10-13): **history controls, availability and keyboard ingress**.
+Shipping and the candidate share actual button handling, availability, control
+classification, event-time key collection and history shortcut dispatch. Shipping
+retains its original Interaction query; the 0.20 adapter uses real Pressed/Hovered
+markers and removal transitions. Actual menu state/markers and panel identities
+are shared production sources, with existing defaults and serialization preserved.
+Twenty-two new regressions cover focused histories/code ownership, global chronology,
+layout-only undo, modal/I/O blocking, one-shot activation, native hover/release,
+transient menus and real layout-aware keyboard snapshots/chords.
+See the [history controls report](../../benchmarks/bevy-upgrade/editor-history-controls-2026-10-13.md).
+The final frozen headless run executes **766 checks**, including **347 graph/session/
+history checks**, with all **725 input hashes** unchanged. One existing graph timing
+probe remains ignored. Shipping: **1,480 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict all-target Clippy passes on both engines,
+as do workspace checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency inputs remain unchanged.
+The native wrapper still supplies actual ShortcutContext/palette ownership; candidate
+dispatcher tests use an explicit blocking signal and do not qualify that complete
+context. Full modal/window/focus shortcut ownership, tab-navigation and other
+application keyboard consumers remain open, as does native workflow acceptance.
+
+Implemented slice 26 (2026-10-13): **actual shortcut ownership and tab navigation**.
+The candidate imports the complete production keyboard plugin/ShortcutContext,
+including real modal, extraction-dialog, graph-menu, browser-surface, window and
+focus state. Actual module-palette state and the application history keyboard wrapper
+replace the previous explicit blocking-signal boundary. State-model extraction
+preserves payloads/defaults and existing native consumers; it does not qualify their
+complete UI handlers. The actual retained-popup tab eligibility/restoration observer,
+root scene and window floor constants are shared. Tiny version adapters select
+lifecycle observer and upstream text-input API spellings without changing policy.
+Twenty-two new shared tests plus eight existing input/tab regressions cover all
+30 input cases on both engines, including real keyboard history dispatch, modal/
+menu/window/focus guards, browser isolation, no stale-chord replay, ancestor changes
+and real Tab/Shift+Tab with same-frame eligibility restoration.
+See the [shortcut ownership report](../../benchmarks/bevy-upgrade/editor-shortcut-ownership-2026-10-13.md).
+The final frozen headless run executes **796 checks**, including **377 graph/session/
+history checks**, with all **740 input hashes** unchanged. One existing graph timing
+probe remains ignored. Shipping: **1,502 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict all-target Clippy passes on both engines,
+as do workspace checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency inputs remain unchanged.
+Remaining keyboard/action consumers, full panel/plugin composition and native
+workflow acceptance remain open; this is not complete editor parity or a root switch.
+
+Implemented slice 27 (2026-10-13): **transport keyboard, actions and playback**.
+Shipping and the candidate share actual keyboard/repeat dispatch, action execution,
+playback advancement and registration in the existing transport sets. Native toolbar
+activation/handlers/icons/composition and main application's ordering stay unchanged.
+Nineteen new real-input/session integration regressions plus seven existing transport
+tests cover all 26 shared transport cases, including event-time Alt, repeat suppression,
+actual ownership states, fresh-chord recovery, stop/restart/loop semantics and real
+Bevy-time advancement. The port adds no checkpoint/replay work to live playback.
+See the [transport playback report](../../benchmarks/bevy-upgrade/editor-transport-playback-2026-10-13.md).
+The final frozen headless run executes **822 checks**, including **403 graph/session/
+history checks**, with all **744 input hashes** unchanged. One existing graph timing
+probe remains ignored. Shipping: **1,521 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict all-target Clippy passes on both engines,
+as do workspace checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency inputs remain unchanged.
+Transport toolbar composition, remaining keyboard/action
+consumers, full panel composition and native workflows remain open.
+
+Implemented slice 28 (2026-10-14): **complete transport toolbar composition**.
+The candidate imports the complete production transport plugin: real Feathers
+controls, SVG loader, tooltip/accessibility content, button activation/handling,
+icons and exclusive loop-mode selection. Version adapters preserve shipping's
+Interaction filter and read actual Pressed/Hovered transitions/removals on 0.20.
+Layout, scene composition and icon/mode synchronization remain unchanged.
+Nineteen new shared regressions plus existing toolbar/playback tests provide all
+47 passing transport checks, including localized 1x/2x DPI layout, real keyboard/
+headless click activation, disabled behavior, idle focus/image identity, shared SVG
+raster teardown and selection following undo. The tests exposed and fixed duplicate
+Space activation and accepted actions lost during visual release on both engines.
+See the [transport toolbar report](../../benchmarks/bevy-upgrade/editor-transport-toolbar-2026-10-14.md).
+The final frozen headless run executes **864 checks**, including **445 graph/session/
+history checks**, with all **747 input hashes** unchanged. One existing graph timing
+probe remains ignored. Shipping: **1,540 editor unit + 3 architecture tests pass**,
+with ten existing ignores unchanged. Strict all-target Clippy passes on both engines,
+as do workspace checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency inputs remain unchanged.
+Full headless toolbar composition is qualified, not native
+OS/window/GPU acceptance or complete editor parity.
+
 B20-2 remains in progress: remaining pointer consumers, application action
 dispatch and full workflow acceptance are not yet ported. The merged
 0.20 group body tokens do not
@@ -1509,8 +1717,8 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** continue B20-2 with the complete
-focus/modal/code-editor/filesystem/presentation-aware history/action integration,
+**Next action:** continue B20-2 with remaining keyboard consumers
+(timeline/viewport/material clipboard),
 remaining application action handlers,
 full panel composition and complete
 editor workflow acceptance, keeping current controls, geometry and interaction

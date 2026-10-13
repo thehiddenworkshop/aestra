@@ -51,6 +51,7 @@ dependencies = [
  "naga",
  "pollster",
  "resvg",
+ "ron",
  "serde",
  "serde_json",
  "tempfile",

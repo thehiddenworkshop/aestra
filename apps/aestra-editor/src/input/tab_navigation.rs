@@ -35,7 +35,7 @@ fn eligible(entity: Entity, ancestors: &Query<EligibilityAncestors>) -> bool {
 /// synchronously with that transition, before Bevy's Update menu focus acquisition can reject
 /// their suppressed indices and close the popup. Still respect disabled/hidden ancestors.
 pub(super) fn restore_opening_menu_tab_indices(
-    event: On<Insert, MenuFocusState>,
+    event: crate::input_api::MenuFocusInsert,
     menus: Query<&MenuFocusState, With<bevy::ui_widgets::MenuPopup>>,
     children: Query<&Children>,
     mut controls: Query<(&mut TabIndex, &SuppressedTabIndex)>,
@@ -187,5 +187,179 @@ mod tests {
         app.world_mut().entity_mut(panel).insert(Visibility::Hidden);
         app.update();
         assert_eq!(app.world().get::<TabIndex>(hidden).unwrap().0, -1);
+    }
+
+    #[test]
+    fn nested_ancestors_and_reparenting_restore_exact_indices_without_changing_opt_out() {
+        let mut app = App::new();
+        app.add_systems(Update, sync_tab_eligibility);
+        // The intermediate node deliberately has no Node or Visibility component.
+        let hidden = app.world_mut().spawn(Visibility::Hidden).id();
+        let middle = app.world_mut().spawn(ChildOf(hidden)).id();
+        let positive = app.world_mut().spawn((TabIndex(7), ChildOf(middle))).id();
+        let zero = app.world_mut().spawn((TabIndex(0), ChildOf(middle))).id();
+        let opt_out = app.world_mut().spawn((TabIndex(-1), ChildOf(middle))).id();
+        app.update();
+        for entity in [positive, zero, opt_out] {
+            assert_eq!(app.world().get::<TabIndex>(entity).unwrap().0, -1);
+        }
+        assert!(!app.world().entity(opt_out).contains::<SuppressedTabIndex>());
+        let neutral = app.world_mut().spawn_empty().id();
+        app.world_mut().entity_mut(middle).insert(ChildOf(neutral));
+        app.update();
+        assert_eq!(app.world().get::<TabIndex>(positive).unwrap().0, 7);
+        assert_eq!(app.world().get::<TabIndex>(zero).unwrap().0, 0);
+        assert_eq!(app.world().get::<TabIndex>(opt_out).unwrap().0, -1);
+        assert!(
+            !app.world()
+                .entity(positive)
+                .contains::<SuppressedTabIndex>()
+        );
+        assert!(!app.world().entity(zero).contains::<SuppressedTabIndex>());
+    }
+
+    #[test]
+    fn reopening_does_not_overwrite_an_explicit_tab_order_change_while_suppressed() {
+        let mut app = App::new();
+        app.add_systems(Update, sync_tab_eligibility);
+        let owner = app.world_mut().spawn(InteractionDisabled).id();
+        let control = app.world_mut().spawn((TabIndex(4), ChildOf(owner))).id();
+        app.update();
+        assert_eq!(app.world().get::<TabIndex>(control).unwrap().0, -1);
+        app.world_mut().get_mut::<TabIndex>(control).unwrap().0 = 9;
+        app.world_mut()
+            .entity_mut(owner)
+            .remove::<InteractionDisabled>();
+        app.update();
+        assert_eq!(app.world().get::<TabIndex>(control).unwrap().0, 9);
+        assert!(!app.world().entity(control).contains::<SuppressedTabIndex>());
+    }
+
+    #[test]
+    fn closing_popup_does_not_restore_indices_and_open_transition_still_respects_ancestors() {
+        let mut app = App::new();
+        app.add_systems(Update, sync_tab_eligibility)
+            .add_observer(restore_opening_menu_tab_indices);
+        let ancestor = app
+            .world_mut()
+            .spawn(Node {
+                display: Display::None,
+                ..default()
+            })
+            .id();
+        let popup = app
+            .world_mut()
+            .spawn((bevy::ui_widgets::MenuPopup::default(), ChildOf(ancestor)))
+            .id();
+        let item = app.world_mut().spawn((TabIndex(6), ChildOf(popup))).id();
+        app.update();
+        for state in [
+            MenuFocusState::Closed,
+            MenuFocusState::Opening(NavAction::First),
+        ] {
+            app.world_mut().entity_mut(popup).insert(state);
+            app.world_mut().flush();
+            assert_eq!(app.world().get::<TabIndex>(item).unwrap().0, -1);
+            assert!(app.world().entity(item).contains::<SuppressedTabIndex>());
+        }
+        app.world_mut().get_mut::<Node>(ancestor).unwrap().display = Display::Flex;
+        app.world_mut()
+            .entity_mut(popup)
+            .insert(MenuFocusState::Open);
+        app.world_mut().flush();
+        assert_eq!(
+            app.world().get::<TabIndex>(item).unwrap().0,
+            6,
+            "opening restoration must be synchronous, before the next PreUpdate"
+        );
+    }
+
+    #[test]
+    fn real_tab_and_shift_tab_dispatch_observe_same_frame_eligibility_changes() {
+        use bevy::{
+            input::{ButtonState, InputPlugin, keyboard::Key},
+            input_focus::{
+                InputDispatchPlugin, InputFocusPlugin, tab_navigation::TabNavigationPlugin,
+            },
+            window::PrimaryWindow,
+        };
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            InputPlugin,
+            InputFocusPlugin,
+            InputDispatchPlugin,
+            TabNavigationPlugin,
+            super::super::EditorKeyboardPlugin,
+        ));
+        // Use actual visibility propagation; Node's required visibility starts hidden until
+        // that production plugin runs, even in this headless keyboard fixture.
+        app.add_plugins((
+            bevy::asset::AssetPlugin::default(),
+            bevy::mesh::MeshPlugin,
+            bevy::transform::TransformPlugin,
+            bevy::camera::visibility::VisibilityPlugin,
+        ));
+        let window = app
+            .world_mut()
+            .spawn((Window::default(), PrimaryWindow))
+            .id();
+        let root = app
+            .world_mut()
+            .spawn((TabGroup::new(0), ChildOf(window)))
+            .id();
+        let first = app.world_mut().spawn((TabIndex(0), ChildOf(root))).id();
+        let disabled = app
+            .world_mut()
+            .spawn((TabIndex(1), InteractionDisabled, ChildOf(root)))
+            .id();
+        let hidden_panel = app
+            .world_mut()
+            .spawn((
+                Node {
+                    display: Display::None,
+                    ..default()
+                },
+                ChildOf(root),
+            ))
+            .id();
+        let hidden = app
+            .world_mut()
+            .spawn((TabIndex(2), ChildOf(hidden_panel)))
+            .id();
+        let last = app.world_mut().spawn((TabIndex(3), ChildOf(root))).id();
+        app.update();
+        app.insert_resource(InputFocus::from_entity(first));
+        super::super::tests::tap(&mut app, window, KeyCode::Tab, Key::Tab);
+        app.update();
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(last));
+        assert_eq!(app.world().get::<TabIndex>(disabled).unwrap().0, -1);
+        assert_eq!(app.world().get::<TabIndex>(hidden).unwrap().0, -1);
+
+        // Restoration must precede keyboard dispatch in this very PreUpdate.
+        app.world_mut()
+            .entity_mut(disabled)
+            .remove::<InteractionDisabled>();
+        app.world_mut()
+            .get_mut::<Node>(hidden_panel)
+            .unwrap()
+            .display = Display::Flex;
+        app.insert_resource(InputFocus::from_entity(first));
+        super::super::tests::tap(&mut app, window, KeyCode::Tab, Key::Tab);
+        app.update();
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(disabled));
+        super::super::tests::tap(&mut app, window, KeyCode::Tab, Key::Tab);
+        app.update();
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(hidden));
+        super::super::tests::key(
+            &mut app,
+            window,
+            KeyCode::ShiftRight,
+            Key::Shift,
+            ButtonState::Pressed,
+        );
+        super::super::tests::tap(&mut app, window, KeyCode::Tab, Key::Tab);
+        app.update();
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(disabled));
     }
 }

@@ -1,3 +1,4 @@
+use super::context::semantic;
 use super::*;
 use crate::history::{
     EditorHistoryLedger, HistoryAction, MaterialProgramEditHistory, execute_history_action,

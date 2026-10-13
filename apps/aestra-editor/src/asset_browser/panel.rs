@@ -63,8 +63,7 @@ pub(super) struct SourcesSplitter {
 }
 #[derive(Component)]
 pub(super) struct BrowserFolderButton;
-#[derive(Component)]
-pub(crate) struct BrowserSurface;
+pub(crate) use super::state::BrowserSurface;
 
 /// A menu can extend beyond the panel bounds. Include its open surface in navigation
 /// isolation, and remove the blocker when hidden (relative cursor data can stay stale).

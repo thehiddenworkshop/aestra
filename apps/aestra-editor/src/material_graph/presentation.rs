@@ -10,138 +10,10 @@ mod semantic;
 mod transaction;
 pub(crate) use transaction::{Snapshot, Transaction};
 
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct State<'w> {
-    memory: Option<ResMut<'w, GraphViewportMemory>>,
-    previews: Option<ResMut<'w, MaterialGraphPreviewState>>,
-}
-impl State<'_> {
-    pub(crate) fn validate(
-        &self,
-        transaction: &Transaction,
-        undo: bool,
-        catalog: &ProjectEffectCatalog,
-        session: &EditorSession,
-    ) -> Result<(), String> {
-        let memory = self
-            .memory
-            .as_deref()
-            .ok_or("Graph layout is unavailable")?;
-        transaction
-            .validate_previews(undo, self.previews.as_deref().map(|state| &state.visible))?;
-        transaction.validate(undo, catalog, session, memory)
-    }
-    pub(crate) fn apply(&mut self, transaction: &Transaction, undo: bool) {
-        // Canvas-less semantic hosts have no preview state. Validation only permits this for
-        // transactions without a preview delta; their placement still applies normally.
-        let mut no_previews = MaterialGraphPreviewState::default();
-        transaction.apply(
-            undo,
-            self.memory.as_deref_mut().unwrap(),
-            self.previews.as_deref_mut().unwrap_or(&mut no_previews),
-        );
-    }
-}
-
-impl Snapshot {
-    pub(crate) fn capture(
-        graph: &str,
-        catalog: &ProjectEffectCatalog,
-        session: &EditorSession,
-        memory: &GraphViewportMemory,
-    ) -> Option<Self> {
-        let (stamp, keys) = semantic(graph, catalog, session)?;
-        let mut nodes = memory.base_nodes(graph);
-        nodes.retain(|key, _| keys.contains(key));
-        let mut pinned = memory.pinned_nodes(graph);
-        pinned.retain(|key| keys.contains(key));
-        Some(Self {
-            root: catalog.root().to_owned(),
-            generation: catalog.content_revision().generation,
-            graph: graph.into(),
-            stamp,
-            keys,
-            nodes,
-            pinned,
-            order_serial: session.operation_order.edit_serial(),
-        })
-    }
-
-    /// Attach to the command that just succeeded. No second Undo item for insertion placement.
-    pub(crate) fn attach(
-        self,
-        catalog: &ProjectEffectCatalog,
-        session: &mut EditorSession,
-        memory: &mut GraphViewportMemory,
-    ) {
-        if let Some(transaction) = self.transaction(catalog, session, memory) {
-            session
-                .operation_order
-                .attach_layout(Context::current(session), transaction);
-        }
-    }
-
-    pub(crate) fn attach_with_previews(
-        self,
-        catalog: &ProjectEffectCatalog,
-        session: &mut EditorSession,
-        memory: &mut GraphViewportMemory,
-        previews: &mut MaterialGraphPreviewState,
-        program: MaterialProgramId,
-    ) {
-        if let Some(mut transaction) = self.transaction(catalog, session, memory) {
-            let before = visible(previews, program);
-            let after = before
-                .iter()
-                .filter(|target| match target {
-                    MaterialGraphPreviewTarget::Output => true,
-                    MaterialGraphPreviewTarget::Expression(id) => transaction
-                        .after
-                        .keys
-                        .contains(&material_graph_expression_node_key(*id)),
-                })
-                .copied()
-                .collect::<BTreeSet<_>>();
-            if before != after {
-                previews
-                    .visible
-                    .retain(|(id, target)| *id != program || after.contains(target));
-                transaction.previews = Some((program, before, after));
-            }
-            session
-                .operation_order
-                .attach_layout(Context::current(session), transaction);
-        }
-    }
-
-    fn transaction(
-        self,
-        catalog: &ProjectEffectCatalog,
-        session: &EditorSession,
-        memory: &mut GraphViewportMemory,
-    ) -> Option<Transaction> {
-        // A no-op semantic command must not overwrite an earlier history entry's layout.
-        if session.operation_order.edit_serial() != self.order_serial + 1 {
-            return None;
-        }
-        let mut after = Self::capture(&self.graph, catalog, session, memory)?;
-        after.nodes.retain(|node, _| after.keys.contains(node));
-        memory.retain_nodes(&self.graph, |node| after.keys.contains(node));
-        Some(Transaction {
-            before: self,
-            after,
-            previews: None,
-            invalidated: false,
-        })
-    }
-
-    fn is_current(&self, catalog: &ProjectEffectCatalog, session: &EditorSession) -> bool {
-        self.root == catalog.root()
-            && self.generation == catalog.content_revision().generation
-            && semantic(&self.graph, catalog, session)
-                .is_some_and(|(stamp, keys)| stamp == self.stamp && keys == self.keys)
-    }
-}
+mod state;
+pub(crate) use state::State;
+mod context;
+pub(super) use context::visible;
 
 /// Atomically installs a validated asynchronous arrangement and records one presentation-only
 /// history entry. Any semantic or manual-placement change since dispatch rejects the result.
@@ -206,60 +78,6 @@ pub(crate) fn arrange(
         );
     }
     Ok(())
-}
-
-fn semantic(
-    graph: &str,
-    catalog: &ProjectEffectCatalog,
-    session: &EditorSession,
-) -> Option<(u64, BTreeSet<String>)> {
-    if graph.starts_with("material:") {
-        semantic::program(graph, layout_lifecycle::programs(catalog, session), |id| {
-            catalog.material_program(id).is_ok()
-        })
-    } else {
-        semantic::function(
-            graph,
-            catalog.root(),
-            catalog.material_functions().ok()?,
-            |id| {
-                catalog
-                    .content()
-                    .cached_material_function(aestra_core::material::MaterialFunctionRef::Project(
-                        id,
-                    ))
-                    .is_ok()
-            },
-        )
-    }
-}
-
-impl Transaction {
-    /// Host semantic resolution remains authoritative; the shared core validates before mutation.
-    pub(crate) fn validate(
-        &self,
-        undo: bool,
-        catalog: &ProjectEffectCatalog,
-        session: &EditorSession,
-        memory: &GraphViewportMemory,
-    ) -> Result<(), String> {
-        self.validate_layout(
-            undo,
-            catalog.root(),
-            catalog.content_revision().generation,
-            |graph| semantic(graph, catalog, session).map(|(stamp, _)| stamp),
-            memory,
-        )
-    }
-
-    pub(crate) fn apply(
-        &self,
-        undo: bool,
-        memory: &mut GraphViewportMemory,
-        previews: &mut MaterialGraphPreviewState,
-    ) {
-        self.apply_layout(undo, memory, &mut previews.visible);
-    }
 }
 
 pub(super) fn pin_edit(event: On<GraphPinEdit>, mut commands: Commands) {
@@ -455,13 +273,6 @@ pub(super) fn preview_edit(
             },
         );
     });
-}
-
-pub(super) fn visible(
-    previews: &MaterialGraphPreviewState,
-    program: MaterialProgramId,
-) -> BTreeSet<MaterialGraphPreviewTarget> {
-    transaction::visible_targets(&previews.visible, program)
 }
 
 #[cfg(test)]

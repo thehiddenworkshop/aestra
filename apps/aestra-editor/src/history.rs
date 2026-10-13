@@ -1,37 +1,35 @@
 //! Undo/redo actions, shortcuts, menu activation, and availability synchronization.
 
+#[cfg(test)]
 use crate::{
-    EditorNativeControl, FeathersActionButton, ModulePaletteState, PendingFeathersActivation,
-    ProjectEffectCatalog,
+    FeathersActionButton, ModulePaletteState, PendingFeathersActivation, ProjectEffectCatalog,
     menus::{MenuState, RedoMenuItem, UndoMenuItem},
     session::EditorSession,
     theme,
 };
 #[cfg(test)]
 use aestra_core::material::{MaterialFunction, MaterialProgram};
+use bevy::prelude::*;
+#[cfg(test)]
+use bevy::ui::InteractionDisabled;
 #[cfg(test)]
 use bevy::ui_widgets::Activate;
-use bevy::{prelude::*, ui::InteractionDisabled};
-use std::collections::VecDeque;
-use std::path::PathBuf;
 
 mod action;
-use crate::feathers::action_activation::dispatch_action;
 pub(crate) use action::{HistoryAction, queue_history_action_activation};
 mod material_program;
+mod ownership;
 pub(crate) mod publication;
 pub(crate) use material_program::MaterialProgramEditHistory;
 pub(crate) mod asset_order;
 
 pub(crate) struct EditorHistoryPlugin;
 
-/// Neutral panels (menus, Assets, diagnostics) preserve the last editing context.
-#[derive(Component, Clone, Copy)]
-pub(crate) enum HistoryScope {
-    Effect,
-    Material,
-    Neutral,
-}
+mod focus;
+#[path = "history/focus_pointer_019.rs"]
+mod focus_pointer;
+pub(crate) use focus::HistoryScope;
+use focus::{capture_history_focus, capture_history_keyboard_focus};
 
 impl HistoryScope {
     pub(crate) fn for_panel(panel: Option<crate::docking::ToolPanel>, standalone: bool) -> Self {
@@ -47,58 +45,6 @@ impl HistoryScope {
             ) => Self::Effect,
             _ => Self::Neutral,
         }
-    }
-}
-
-fn capture_history_focus(
-    event: On<Pointer<Press>>,
-    scopes: Query<&HistoryScope>,
-    parents: Query<&ChildOf>,
-    mut session: ResMut<EditorSession>,
-) {
-    if event.entity != event.original_event_target() {
-        return;
-    }
-    apply_history_focus(event.entity, &scopes, &parents, &mut session);
-}
-
-fn capture_history_keyboard_focus(
-    focus: Option<Res<bevy::input_focus::InputFocus>>,
-    scopes: Query<&HistoryScope>,
-    parents: Query<&ChildOf>,
-    mut session: ResMut<EditorSession>,
-) {
-    if let Some(focus) = focus
-        && focus.is_changed()
-        && let Some(entity) = focus.get()
-    {
-        apply_history_focus(entity, &scopes, &parents, &mut session);
-    }
-}
-
-fn apply_history_focus(
-    target: Entity,
-    scopes: &Query<&HistoryScope>,
-    parents: &Query<&ChildOf>,
-    session: &mut EditorSession,
-) {
-    let mut entity = Some(target);
-    while let Some(current) = entity {
-        if let Ok(scope) = scopes.get(current) {
-            let active = match scope {
-                HistoryScope::Effect => false,
-                HistoryScope::Material => {
-                    session.standalone_material().is_some()
-                        || session.standalone_function().is_some()
-                }
-                HistoryScope::Neutral => return,
-            };
-            if session.material_history_active != active {
-                session.material_history_active = active;
-            }
-            return;
-        }
-        entity = parents.get(current).ok().map(ChildOf::parent);
     }
 }
 
@@ -137,431 +83,39 @@ impl Plugin for EditorHistoryPlugin {
 
 mod material_program_execution;
 
+mod compound;
 mod document_execution;
 pub(crate) use document_execution::EditorHistoryLedger;
-use document_execution::{EffectHistoryChange, execute_document_history};
 
-#[allow(clippy::type_complexity)]
-fn handle_history_buttons(
-    mut commands: Commands,
-    mut buttons: Query<
-        (
-            Entity,
-            &Interaction,
-            &HistoryAction,
-            Option<&FeathersActionButton>,
-            Option<&PendingFeathersActivation>,
-            Option<&InteractionDisabled>,
-            &mut BackgroundColor,
-        ),
-        (
-            Changed<Interaction>,
-            Or<(With<Button>, With<FeathersActionButton>)>,
-        ),
-    >,
-    mut menu: ResMut<MenuState>,
-    mut session: ResMut<EditorSession>,
-) {
-    for (entity, interaction, action, feathers, pending, disabled, mut background) in &mut buttons {
-        if disabled.is_some() {
-            if feathers.is_none() {
-                background.0 = theme::PANEL_DARK;
-            }
-            continue;
-        }
-        match *interaction {
-            Interaction::Hovered if feathers.is_none() => background.0 = theme::BUTTON_HOVER,
-            Interaction::None if feathers.is_none() => background.0 = theme::BUTTON,
-            Interaction::Pressed => {
-                if !dispatch_action(
-                    &mut commands,
-                    entity,
-                    *action,
-                    feathers.is_some(),
-                    pending.is_some(),
-                    disabled.is_some(),
-                ) {
-                    continue;
-                }
-                if feathers.is_none() {
-                    background.0 = theme::ACCENT_DIM;
-                }
-                menu.open = None;
-                menu.panels_open = false;
-                if menu.tab_context.take().is_some() {
-                    session.ui_revision += 1;
-                }
-            }
-            _ => {}
-        }
-    }
-}
+#[path = "history/control_input_019.rs"]
+mod control_input;
+mod controls;
+use controls::{audit_history_controls, handle_history_buttons, update_history_availability};
+mod keyboard;
+pub(crate) use keyboard::history_keyboard_input;
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) mod routing;
+
 pub(crate) fn execute_history_action(
     action: On<HistoryAction>,
-    mut session: ResMut<EditorSession>,
-    mut catalog: ResMut<ProjectEffectCatalog>,
-    mut material_history: ResMut<MaterialProgramEditHistory>,
-    mut ledger: ResMut<EditorHistoryLedger>,
-    mut functions: ResMut<crate::material_function_editor::FunctionEditor>,
-    mut order: Option<ResMut<asset_order::AssetOrder>>,
-    tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
-    protection: Option<Res<crate::DocumentProtectionState>>,
-    active_editor: Option<Res<crate::feathers::code_editor::ActiveCodeEditor>>,
-    active_document: Option<Res<crate::editor_view::ActiveEditorContext>>,
-    editor_views: Option<Res<crate::editor_view::EditorViewManager>>,
-    documents: Option<Res<crate::document::DocumentManager>>,
-    mut code_editors: Query<&mut crate::feathers::code_editor::CodeEditor>,
-    mut presentation: crate::material_graph::presentation::State,
+    routing: routing::Routing,
     mut commands: Commands,
 ) {
-    if !crate::project_content::io::idle(tasks) || protection.is_some_and(|state| state.is_open()) {
-        return;
-    }
-    // A focused code editor owns undo/redo while it is the active editing context.
-    if let Some(entity) = active_editor.as_deref().and_then(|active| active.0)
-        && let Ok(mut editor) = code_editors.get_mut(entity)
-    {
-        let undo = *action == HistoryAction::Undo;
-        let changed = if undo { editor.undo() } else { editor.redo() };
-        session.status = match (undo, changed) {
-            (true, true) => "Undid edit",
-            (false, true) => "Redid edit",
-            (true, false) => "Nothing to undo",
-            (false, false) => "Nothing to redo",
-        }
-        .into();
-        return;
-    }
-    if let Some(order) = order.as_deref_mut()
-        && order.sync(&session, &catalog)
-    {
-        session.clear_effect_redo();
-        session.operation_order.clear_redo();
-        ledger.redo.clear();
-        asset_order::clear_material_redo(&mut material_history);
-        functions.clear_redo();
-    }
-    let undo = *action == HistoryAction::Undo;
-    let active = order.as_deref().is_some_and(|order| order.active());
-    let next = order.as_deref().and_then(|order| order.top(undo)).cloned();
-    if let Some(asset_order::Entry::Delete(item)) = next {
-        let revision = order.as_ref().unwrap().revision;
-        commands.queue(move |world: &mut World| {
-            crate::asset_browser::deletion::history_step(world, *item, undo, revision);
-        });
-        return;
-    }
-    if active && next.is_none() {
-        session.status = if undo {
-            "Nothing to undo"
-        } else {
-            "Nothing to redo"
-        }
-        .into();
-        return;
-    }
-    let previous_target = session.material_target.clone();
-    let previous_active = session.material_history_active;
-    if let Some(asset_order::Entry::Document(context)) = &next {
-        context.select(&mut session);
-    } else if !active && session.material_history_active {
-        // Normal material Undo/Redo follows the focused editor view. A pointer focus on the
-        // viewport/timeline turns material_history_active off and intentionally keeps Effect Undo.
-        if let Some(target) = active_document
-            .as_deref()
-            .zip(editor_views.as_deref())
-            .zip(documents.as_deref())
-            .and_then(|((active, views), documents)| {
-                crate::editor_view::active_material_target(active, views, documents, catalog.root())
-            })
-        {
-            asset_order::Context::Material(target).select(&mut session);
-        }
-    }
-    let context = asset_order::Context::current(&session);
-    let layout = session
-        .operation_order
-        .layout(&context, undo)
-        .map(|(entry, semantic)| (entry.clone(), semantic));
-    if let Some((layout, _)) = &layout
-        && let Err(error) = presentation.validate(layout, undo, &catalog, &session)
-    {
-        session.status = error;
-        session.material_target = previous_target;
-        session.material_history_active = previous_active;
-        return;
-    }
-    let succeeded = if layout.as_ref().is_some_and(|(_, semantic)| !semantic) {
-        session.operation_order.step(context.clone(), undo);
-        true
-    } else {
-        execute_document_history(
-            *action,
-            &mut session,
-            &mut catalog,
-            &mut material_history,
-            &mut ledger,
-            &mut functions,
-        )
-    };
-    if succeeded && let Some((layout, _)) = &layout {
-        presentation.apply(layout, undo);
-        session.ui_revision += 1;
-        session.status = if undo {
-            "Undid graph edit"
-        } else {
-            "Redid graph edit"
-        }
-        .into();
-    }
-    if succeeded && active {
-        order.as_deref_mut().unwrap().finish_document(undo, context);
-    } else if !succeeded {
-        session.material_target = previous_target;
-        session.material_history_active = previous_active;
-    }
+    routing.execute(
+        *action,
+        &mut commands,
+        crate::asset_browser::deletion::history_step,
+    );
 }
 
-fn history_keyboard_input(
-    mut commands: Commands,
-    input: crate::input::ShortcutKeys,
-    palette: Res<ModulePaletteState>,
-    shortcuts: crate::input::ShortcutContext,
-) {
-    if palette.open || shortcuts.blocked() {
-        return;
-    }
-    for keys in input.iter() {
-        let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-        let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-        if control && keys.just_pressed(KeyCode::KeyZ) {
-            commands.trigger(if shift {
-                HistoryAction::Redo
-            } else {
-                HistoryAction::Undo
-            });
-        }
-        if control && keys.just_pressed(KeyCode::KeyY) {
-            commands.trigger(HistoryAction::Redo);
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn update_history_availability(
-    session: Res<EditorSession>,
-    catalog: Option<Res<ProjectEffectCatalog>>,
-    ledger: Res<EditorHistoryLedger>,
-    material_history: Res<MaterialProgramEditHistory>,
-    functions: Res<crate::material_function_editor::FunctionEditor>,
-    order: Option<Res<asset_order::AssetOrder>>,
-    tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
-    protection: Option<Res<crate::DocumentProtectionState>>,
-    active_editor: Option<Res<crate::feathers::code_editor::ActiveCodeEditor>>,
-    active_document: Option<Res<crate::editor_view::ActiveEditorContext>>,
-    editor_views: Option<Res<crate::editor_view::EditorViewManager>>,
-    documents: Option<Res<crate::document::DocumentManager>>,
-    code_editors: Query<&crate::feathers::code_editor::CodeEditor>,
-    mut commands: Commands,
-    items: Query<
-        (Entity, Has<UndoMenuItem>, Has<RedoMenuItem>),
-        Or<(With<UndoMenuItem>, With<RedoMenuItem>)>,
-    >,
-) {
-    let blocked =
-        !crate::project_content::io::idle(tasks) || protection.is_some_and(|state| state.is_open());
-    // While a code editor is the active editing context, the Edit menu reflects its own history.
-    let code_editor = active_editor
-        .as_deref()
-        .and_then(|active| active.0)
-        .and_then(|entity| code_editors.get(entity).ok());
-    let active_target = session
-        .material_history_active
-        .then(|| {
-            active_document
-                .as_deref()
-                .zip(editor_views.as_deref())
-                .zip(documents.as_deref())
-                .zip(catalog.as_deref())
-                .and_then(|(((active, views), documents), catalog)| {
-                    crate::editor_view::active_material_target(
-                        active,
-                        views,
-                        documents,
-                        catalog.root(),
-                    )
-                })
-        })
-        .flatten();
-    let context = active_target
-        .map(asset_order::Context::Material)
-        .unwrap_or_else(|| asset_order::Context::current(&session));
-    for (entity, undo, redo) in &items {
-        let ordered = order.as_ref().filter(|order| order.active());
-        let enabled = if blocked {
-            false
-        } else if let Some(editor) = code_editor {
-            (undo && editor.can_undo()) || (redo && editor.can_redo())
-        } else if ordered.is_some_and(|order| order.top(undo).is_some()) {
-            true
-        } else if ordered.is_some() {
-            false
-        } else if session.operation_order.layout(&context, undo).is_some() {
-            true
-        } else if let asset_order::Context::Material(
-            crate::material_document::MaterialEditingTarget::Function { root, id },
-        ) = &context
-        {
-            functions.available_for_function(root, *id, undo)
-        } else if let asset_order::Context::Material(
-            crate::material_document::MaterialEditingTarget::Program { root, id },
-        ) = &context
-        {
-            material_history.available_for_program(root, *id, undo)
-        } else {
-            (undo && (ledger.can_undo() || session.can_undo()))
-                || (redo && (ledger.can_redo() || session.can_redo()))
-        };
-        if enabled {
-            commands.entity(entity).remove::<InteractionDisabled>();
-        } else {
-            commands.entity(entity).insert(InteractionDisabled);
-        }
-    }
-}
-
-/// Fork just the editing context's semantic redo branch for a presentation edit.
-pub(crate) fn clear_presentation_redo(world: &mut World, context: &asset_order::Context) {
-    match context {
-        asset_order::Context::Effect => {
-            world.resource_mut::<EditorSession>().clear_effect_redo();
-            if let Some(mut ledger) = world.get_resource_mut::<EditorHistoryLedger>() {
-                ledger.redo.clear();
-            }
-            if let Some(mut history) = world.get_resource_mut::<MaterialProgramEditHistory>() {
-                history.redo.clear();
-            }
-        }
-        asset_order::Context::Material(
-            crate::material_document::MaterialEditingTarget::Program { root, id },
-        ) => {
-            if let Some(mut history) = world.get_resource_mut::<MaterialProgramEditHistory>()
-                && let Some(history) = history.standalone.get_mut(&(root.clone(), *id))
-            {
-                history.redo.clear();
-            }
-        }
-        asset_order::Context::Material(
-            crate::material_document::MaterialEditingTarget::Function { root, id },
-        ) => {
-            if let Some(mut history) =
-                world.get_resource_mut::<crate::material_function_editor::FunctionEditor>()
-            {
-                history.clear_function_redo(root, *id);
-            }
-        }
-        _ => {}
-    }
-}
-
-pub(crate) fn clear_document_order(
-    world: &mut World,
-    target: crate::material_document::MaterialEditingTarget,
-) {
-    let context = asset_order::Context::Material(target);
-    world
-        .resource_mut::<EditorSession>()
-        .operation_order
-        .clear_context(&context);
-    if let Some(mut order) = world.get_resource_mut::<asset_order::AssetOrder>() {
-        order.clear_context(&context);
-    }
-}
-
-fn sync_effect_history_ledger(
-    mut session: ResMut<EditorSession>,
-    mut ledger: ResMut<EditorHistoryLedger>,
-    mut material_history: ResMut<MaterialProgramEditHistory>,
-    mut order: Option<ResMut<asset_order::AssetOrder>>,
-    catalog: Res<ProjectEffectCatalog>,
-    mut functions: ResMut<crate::material_function_editor::FunctionEditor>,
-) {
-    match ledger.capture_effect_changes(&session) {
-        EffectHistoryChange::Reset => material_history.clear(),
-        EffectHistoryChange::Edited => material_history.clear_redo(),
-        EffectHistoryChange::None => {}
-    }
-    if let Some(order) = order.as_deref_mut()
-        && order.sync(&session, &catalog)
-    {
-        session.clear_effect_redo();
-        session.operation_order.clear_redo();
-        ledger.redo.clear();
-        asset_order::clear_material_redo(&mut material_history);
-        functions.clear_redo();
-    }
-}
-
-type UnclassifiedHistoryControl = (
-    Added<HistoryAction>,
-    With<Button>,
-    Without<FeathersActionButton>,
-    Without<EditorNativeControl>,
-);
-
-fn audit_history_controls(controls: Query<Entity, UnclassifiedHistoryControl>) {
-    #[cfg(debug_assertions)]
-    if let Some(entity) = controls.iter().next() {
-        panic!(
-            "history control {entity:?} must use FeathersActionButton or be explicitly marked \
-             EditorNativeControl"
-        );
-    }
-}
+mod synchronization;
+use synchronization::sync_effect_history_ledger;
+pub(crate) use synchronization::{clear_document_order, clear_presentation_redo};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support;
-
-    #[test]
-    fn keyboard_focus_routes_history_and_neutral_panels_keep_the_last_edit_scope() {
-        use bevy::{ecs::system::RunSystemOnce, input_focus::InputFocus};
-        let mut app = App::new();
-        let mut session = test_support::session_with_timing_slack();
-        session.material_target = crate::material_document::MaterialEditingTarget::Program {
-            root: PathBuf::from("project"),
-            id: aestra_core::MaterialProgramId::new(),
-        };
-        let revision = session.ui_revision;
-        app.insert_resource(session);
-        for (scope, expected) in [
-            (HistoryScope::Material, true),
-            (HistoryScope::Neutral, true),
-            (HistoryScope::Effect, false),
-            (HistoryScope::Neutral, false),
-        ] {
-            let parent = app.world_mut().spawn(scope).id();
-            let child = app.world_mut().spawn(ChildOf(parent)).id();
-            app.insert_resource(InputFocus::from_entity(child));
-            app.world_mut()
-                .run_system_once(capture_history_keyboard_focus)
-                .unwrap();
-            assert_eq!(
-                app.world()
-                    .resource::<EditorSession>()
-                    .material_history_active,
-                expected
-            );
-        }
-        assert_eq!(
-            app.world().resource::<EditorSession>().ui_revision,
-            revision,
-            "focus-only navigation must not rebuild graph panels"
-        );
-    }
 
     fn edited_session() -> EditorSession {
         let mut session = test_support::session_with_timing_slack();

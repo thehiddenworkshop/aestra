@@ -20,6 +20,8 @@ mod effect_authoring;
 mod feathers;
 mod history;
 mod input;
+#[path = "input/api_019.rs"]
+mod input_api;
 mod localization;
 mod material_document;
 mod material_drafts;
@@ -44,6 +46,8 @@ mod theme;
 mod timeline;
 mod transaction_dialog;
 mod transport;
+#[path = "transport/control_input_019.rs"]
+mod transport_input;
 mod viewport;
 mod wesl_document;
 mod wesl_editor;

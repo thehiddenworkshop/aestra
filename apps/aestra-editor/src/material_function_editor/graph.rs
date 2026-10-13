@@ -39,11 +39,6 @@ struct FunctionGraphNodeAction {
     expression: MaterialExpressionId,
     scope: crate::material_graph::MaterialSelectionScope,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Target {
-    Input(MaterialExpressionId, MaterialExpressionInput),
-    Output(MaterialFunctionOutputId),
-}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SocketKind {
     Source(MaterialExpressionId),
@@ -120,30 +115,9 @@ struct Wire {
     target: Target,
 }
 
-#[derive(Debug, Clone)]
-enum FunctionGraphMenuKind {
-    Node(MaterialExpressionId),
-    Connections(Vec<(MaterialExpressionId, Target)>),
-}
-
-#[derive(Debug, Clone)]
-struct FunctionGraphMenuOpen {
-    owner: MaterialFunctionId,
-    scope: crate::material_graph::MaterialSelectionScope,
-    position: Vec2,
-    kind: FunctionGraphMenuKind,
-}
-
-#[derive(Resource, Default)]
-pub(crate) struct FunctionGraphMenuState {
-    open: Option<FunctionGraphMenuOpen>,
-}
-
-impl FunctionGraphMenuState {
-    pub(crate) fn is_open(&self) -> bool {
-        self.open.is_some()
-    }
-}
+mod menu_state;
+pub(crate) use menu_state::FunctionGraphMenuState;
+use menu_state::{FunctionGraphMenuKind, FunctionGraphMenuOpen, Target};
 
 #[derive(Component)]
 struct FunctionGraphContextMenu;

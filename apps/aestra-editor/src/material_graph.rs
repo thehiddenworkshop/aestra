@@ -76,7 +76,7 @@ pub(crate) mod clipboard;
 mod command_preparation;
 mod function_layout;
 pub(crate) mod insertion;
-mod keys;
+pub(crate) mod keys;
 mod layout_adapter;
 mod layout_lifecycle;
 mod node_previews;
@@ -278,59 +278,12 @@ fn material_graph_target(
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct MaterialGraphNodeScope(MaterialSelectionScope);
 
-#[derive(Debug, Clone)]
-struct MaterialGraphPaletteOpen {
-    program: MaterialProgramId,
-    editing_target: crate::material_document::MaterialEditingTarget,
-    /// The selection scope (editor view / effect panel) the palette was opened in, so a created
-    /// node selects in that view only.
-    scope: MaterialSelectionScope,
-    menu_position: Vec2,
-    graph_position: Vec2,
-    graph_key: String,
-    connection: Option<MaterialGraphPaletteConnection>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum MaterialGraphPaletteConnection {
-    FromOutput(MaterialExpressionId),
-    FromInput(MaterialConnectionTarget),
-}
-
-#[derive(Debug, Clone)]
-struct MaterialGraphNodeMenuOpen {
-    program: MaterialProgramId,
-    /// The selection scope the node menu was opened in, so its edits act on that view's selection.
-    scope: MaterialSelectionScope,
-    menu_position: Vec2,
-}
-
-#[derive(Debug, Clone)]
-struct MaterialGraphConnectionMenuOpen {
-    program: MaterialProgramId,
-    scope: MaterialSelectionScope,
-    menu_position: Vec2,
-    connections: Vec<MaterialGraphConnection>,
-}
-
-#[derive(Resource, Debug, Default)]
-pub(crate) struct MaterialGraphPaletteState {
-    open: Option<MaterialGraphPaletteOpen>,
-    node_menu: Option<MaterialGraphNodeMenuOpen>,
-    connection_menu: Option<MaterialGraphConnectionMenuOpen>,
-    query: String,
-}
-
-impl MaterialGraphPaletteState {
-    pub(crate) fn is_open(&self) -> bool {
-        self.open.is_some() || self.node_menu.is_some() || self.connection_menu.is_some()
-    }
-}
-
-/// The scope a graph selection belongs to: an editor view, or the effect tool panel (`None`). Two
-/// views of one program select independently while sharing the document, so selection is keyed by
-/// scope rather than being a singleton.
-pub(crate) type MaterialSelectionScope = Option<crate::docking::EditorViewId>;
+mod palette_state;
+use palette_state::{
+    MaterialGraphConnection, MaterialGraphConnectionMenuOpen, MaterialGraphNodeMenuOpen,
+    MaterialGraphPaletteConnection, MaterialGraphPaletteOpen,
+};
+pub(crate) use palette_state::{MaterialGraphPaletteState, MaterialSelectionScope};
 
 /// One scope's selection: which program it targets, the selected expression nodes, and the selected
 /// connection.
@@ -584,11 +537,10 @@ fn arrange_seeds(
 mod preview_target;
 pub(crate) use preview_target::MaterialGraphPreviewTarget;
 
-#[derive(Resource, Debug, Default)]
-pub(crate) struct MaterialGraphPreviewState {
-    visible: BTreeSet<(MaterialProgramId, MaterialGraphPreviewTarget)>,
-    cache: BTreeMap<node_previews::Key, MaterialGraphPreviewCache>,
-}
+mod preview_state;
+use preview_state::MaterialGraphPreviewCache;
+pub(crate) use preview_state::MaterialGraphPreviewState;
+mod graph_inventory;
 
 #[derive(Debug, Clone)]
 enum MaterialPresetPreviewStatus {
@@ -664,75 +616,6 @@ pub(crate) fn spawn_material_preset_preview(
             status_label,
         });
     entity
-}
-
-impl MaterialGraphPreviewState {
-    fn is_visible(&self, program: MaterialProgramId, target: MaterialGraphPreviewTarget) -> bool {
-        self.visible.contains(&(program, target))
-    }
-
-    fn toggle(&mut self, program: MaterialProgramId, target: MaterialGraphPreviewTarget) -> bool {
-        let key = (program, target);
-        if self.visible.remove(&key) {
-            false
-        } else {
-            self.visible.insert(key);
-            true
-        }
-    }
-
-    fn set_visible(
-        &mut self,
-        program: MaterialProgramId,
-        targets: impl IntoIterator<Item = MaterialGraphPreviewTarget>,
-        visible: bool,
-    ) {
-        for target in targets {
-            let key = (program, target);
-            if visible {
-                self.visible.insert(key);
-            } else {
-                self.visible.remove(&key);
-            }
-        }
-    }
-
-    fn visible_expressions(&self, program: MaterialProgramId) -> BTreeSet<MaterialExpressionId> {
-        self.visible
-            .iter()
-            .filter_map(|(candidate, target)| {
-                (*candidate == program)
-                    .then_some(*target)
-                    .and_then(|target| match target {
-                        MaterialGraphPreviewTarget::Expression(expression) => Some(expression),
-                        MaterialGraphPreviewTarget::Output => None,
-                    })
-            })
-            .collect()
-    }
-
-    fn output_visible(&self, program: MaterialProgramId) -> bool {
-        self.is_visible(program, MaterialGraphPreviewTarget::Output)
-    }
-
-    fn restore_layout(
-        &mut self,
-        program: MaterialProgramId,
-        expressions: &BTreeSet<MaterialExpressionId>,
-        output_visible: bool,
-    ) {
-        self.visible.retain(|(candidate, _)| *candidate != program);
-        self.visible.extend(
-            expressions
-                .iter()
-                .copied()
-                .map(|expression| (program, MaterialGraphPreviewTarget::Expression(expression))),
-        );
-        if output_visible {
-            self.visible
-                .insert((program, MaterialGraphPreviewTarget::Output));
-        }
-    }
 }
 
 #[derive(Resource, Debug, Default)]
@@ -1000,12 +883,6 @@ fn update_material_graph_layout_document(
     }
 }
 
-#[derive(Debug, Clone)]
-struct MaterialGraphPreviewCache {
-    input: node_previews::Input,
-    image: Handle<Image>,
-}
-
 #[derive(Component, Debug, Clone)]
 struct MaterialGraphPreviewToggle {
     program: MaterialProgramId,
@@ -1050,13 +927,6 @@ struct MaterialGraphDefaultToggleControl {
     editing_target: crate::material_document::MaterialEditingTarget,
     expression: MaterialExpressionId,
     value: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MaterialGraphConnection {
-    program: MaterialProgramId,
-    source: MaterialExpressionId,
-    target: MaterialConnectionTarget,
 }
 
 #[derive(Component)]

@@ -36,6 +36,24 @@ pub(crate) struct Transaction {
 }
 
 impl Transaction {
+    /// Construct plain fixture data; production validation/application remain authoritative.
+    #[cfg(test)]
+    pub(crate) fn snapshots_for_test(
+        before: Snapshot,
+        after: Snapshot,
+        previews: Option<(
+            MaterialProgramId,
+            BTreeSet<MaterialGraphPreviewTarget>,
+            BTreeSet<MaterialGraphPreviewTarget>,
+        )>,
+    ) -> Self {
+        Self {
+            before,
+            after,
+            previews,
+            invalidated: false,
+        }
+    }
     pub(crate) fn invalidate(&mut self, graph: Option<&str>) {
         if graph.is_none_or(|graph| self.before.graph == graph) {
             self.invalidated = true;

@@ -3,31 +3,11 @@ mod common;
 pub(crate) use super::number_input::{
     feathers_integer_input, feathers_labeled_scalar_input, feathers_scalar_input,
 };
-use bevy::{input_focus::tab_navigation::TabGroup, prelude::*};
+use bevy::prelude::*;
 pub(crate) use common::*;
 
-pub(crate) fn editor_root() -> impl Scene {
-    bsn! {
-        TabGroup::new(0)
-        Node {
-            width: percent(100),
-            height: percent(100),
-            min_width: px(crate::dock_ui::EDITOR_MIN_SIZE.x),
-            min_height: px(crate::dock_ui::EDITOR_MIN_SIZE.y),
-            display: Display::Grid,
-            grid_template_columns: {vec![GridTrack::flex(1.0)]},
-            grid_template_rows: {vec![
-                GridTrack::px(30.0),
-                GridTrack::px(54.0),
-                GridTrack::flex(1.0),
-                GridTrack::px(24.0),
-            ]},
-        }
-        // The window clear supplies the application background. Keeping this root transparent
-        // lets the 3D preview camera show through the viewport dock's transparent cutout.
-        BackgroundColor(Color::NONE)
-    }
-}
+mod root;
+pub(crate) use root::editor_root;
 
 pub(crate) fn editor_content_host() -> impl Scene {
     bsn! {

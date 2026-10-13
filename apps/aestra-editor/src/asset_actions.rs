@@ -6,7 +6,7 @@ use crate::effect_authoring::{create_reusable_effect_from_emitters, explode_effe
 use crate::project_content::ProjectEffectWatchState;
 use crate::timeline::TimelineState;
 use crate::*;
-use aestra_core::{EffectClipId, EmitterId};
+use aestra_core::EffectClipId;
 use bevy::ui_widgets::Activate;
 
 pub(crate) struct EditorAssetActionsPlugin;
@@ -43,28 +43,9 @@ pub(crate) enum AssetAction {
     ExplodeEffectClip(EffectClipId),
 }
 
-#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct AssetOperationState {
-    extraction: Option<ReusableEffectExtractionState>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ReusableEffectExtractionState {
-    emitters: Vec<EmitterId>,
-    draft: String,
-    replace_selection: bool,
-    error: Option<String>,
-}
-
-impl AssetOperationState {
-    pub(crate) fn is_open(&self) -> bool {
-        self.extraction.is_some()
-    }
-
-    fn close_all(&mut self) {
-        self.extraction = None;
-    }
-}
+mod state;
+pub(crate) use state::AssetOperationState;
+use state::ReusableEffectExtractionState;
 
 #[derive(Component)]
 struct AssetOperationOverlay;

@@ -6,7 +6,6 @@ use bevy::{
     },
     input_focus::{InputDispatchPlugin, InputFocusPlugin},
     text::TextEdit,
-    ui_widgets::EditableTextInputPlugin,
     window::{Ime, PrimaryWindow},
 };
 
@@ -17,7 +16,7 @@ pub(crate) fn keyboard_app() -> (App, Entity, Entity) {
         InputPlugin,
         InputFocusPlugin,
         InputDispatchPlugin,
-        EditableTextInputPlugin,
+        crate::input_api::TextInputPlugin,
         EditorKeyboardPlugin,
     ))
     .add_message::<Ime>()
@@ -26,7 +25,13 @@ pub(crate) fn keyboard_app() -> (App, Entity, Entity) {
         .world_mut()
         .spawn((Window::default(), PrimaryWindow))
         .id();
-    let input = app.world_mut().spawn(EditableText::new("Original")).id();
+    let input = app
+        .world_mut()
+        .spawn((
+            EditableText::new("Original"),
+            crate::input_api::text_input_marker(),
+        ))
+        .id();
     app.world_mut()
         .get_mut::<EditableText>(input)
         .unwrap()

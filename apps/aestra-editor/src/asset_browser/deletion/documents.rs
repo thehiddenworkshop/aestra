@@ -1,7 +1,9 @@
 //! Editor state retained inside the filesystem recovery journal, never discarded on failure.
-use super::*;
+use crate::{ProjectEffectCatalog, session::EditorSession};
 use crate::{material_document::MaterialEditingTarget, material_drafts::MaterialDrafts};
 use aestra_project::ProjectAssetId;
+use aestra_project::{ProjectSourceId, content::operations::DeletedSource};
+use bevy::prelude::*;
 use std::path::{Path, PathBuf};
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]

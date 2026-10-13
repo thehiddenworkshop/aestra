@@ -8,21 +8,7 @@ use std::sync::{
 
 const WORKERS: usize = 2;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct Key {
-    pub program: MaterialProgramId,
-    pub target: MaterialGraphPreviewTarget,
-    root: PathBuf,
-    instance: Option<MaterialId>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct Input {
-    program: MaterialProgram,
-    instance: Option<MaterialInstance>,
-    functions: Vec<aestra_core::material::MaterialFunction>,
-    value_type: Option<MaterialValueType>,
-}
+pub(super) use super::preview_state::{Input, Key};
 
 impl Input {
     fn new(

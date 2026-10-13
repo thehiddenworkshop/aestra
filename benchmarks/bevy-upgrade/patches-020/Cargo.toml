@@ -28,6 +28,7 @@ bevy_ui_render = { version = "=0.20.0", default-features = false }
 aestra-core = { path = "../../../crates/aestra-core" }
 aestra-authoring = { path = "../../../crates/aestra-authoring" }
 serde = { version = "1", features = ["derive"] }
+ron = "0.12"
 aestra-compiler = { path = "../../../crates/aestra-compiler" }
 aestra-gpu = { path = "../../../crates/aestra-gpu" }
 aestra-runtime = { path = "../../../crates/aestra-runtime" }

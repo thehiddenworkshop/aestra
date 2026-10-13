@@ -1,14 +1,19 @@
 //! Ordering bridge for filesystem deletion and existing document histories.
 //! Enabled by the first deletion; existing per-document behaviour is unchanged
 //! otherwise. Recovery records outlive this bounded, session-local Undo history.
-use super::*;
+use crate::history::{EditorHistoryLedger, MaterialProgramEditHistory};
+use crate::{ProjectEffectCatalog, session::EditorSession};
 use aestra_core::EffectId;
 use aestra_project::content::operations::DeletedSource;
+use bevy::prelude::*;
+use std::{collections::VecDeque, path::PathBuf};
 
+#[path = "asset_order/model.rs"]
 mod model;
 use model::LIMIT;
 pub(crate) use model::{Context, EditOrder};
 
+#[path = "asset_order/session_context.rs"]
 mod session_context;
 
 #[derive(Clone, Debug)]
@@ -28,6 +33,18 @@ pub(crate) struct AssetOrder {
     redo: Vec<Entry>,
 }
 impl AssetOrder {
+    /// Plain data snapshot for cross-module recovery-worker regressions.
+    #[cfg(test)]
+    pub(crate) fn deletion_snapshot_for_test(
+        &self,
+    ) -> (u64, Option<DeletedSource>, Option<DeletedSource>) {
+        let deleted = |undo| match self.top(undo) {
+            Some(Entry::Delete(item)) => Some(*item.clone()),
+            _ => None,
+        };
+        (self.revision, deleted(true), deleted(false))
+    }
+
     pub(crate) fn clear_context(&mut self, context: &Context) {
         self.undo
             .retain(|entry| !matches!(entry, Entry::Document(candidate) if candidate == context));
@@ -189,3 +206,7 @@ pub(super) fn clear_material_redo(history: &mut MaterialProgramEditHistory) {
         history.redo.clear();
     }
 }
+
+#[cfg(test)]
+#[path = "asset_order/tests.rs"]
+mod tests;
