@@ -37,6 +37,19 @@ pub(crate) struct FeathersGraphViewport {
 }
 
 impl FeathersGraphViewport {
+    #[cfg(test)]
+    pub(crate) fn clipboard_fixture(key: String, pan: Vec2, zoom: f32) -> Self {
+        Self {
+            key,
+            pan,
+            zoom,
+            content_size: Vec2::splat(1000.0),
+            selection_bounds: None,
+            frame_request: None,
+            measured_frame: None,
+        }
+    }
+
     pub(crate) fn project_graph_point(&self, point: Vec2) -> Vec2 {
         self.pan + point * self.zoom
     }

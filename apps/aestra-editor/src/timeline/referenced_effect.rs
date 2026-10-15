@@ -1,265 +1,32 @@
-use super::*;
+#[cfg(test)]
+use super::clicks::referenced_emitter_click_action;
+pub(super) use super::clicks::{
+    open_referenced_emitter_source_from_header, select_timeline_referenced_emitter,
+};
+use super::gestures::stop_timeline_control_press;
+use super::interaction_state::*;
+use super::presentation::apply_timeline_bar_geometry;
+use super::timeline_pointer::TimelineButton as Button;
+use super::track_style::{effect_reference_color, emitter_timing_label, layer_color};
+use super::{ChoreographyAction, TimelineState};
+use crate::feathers::{
+    action_activation::EditorNativeControl,
+    button::spawn_tool_button as mini_button,
+    icon::{SvgColor, UiSvg, load_svg_icon},
+    list_row::KeyboardNavigableListRow,
+    tooltip::EditorTooltip,
+};
+use crate::localization::Localizer;
+use crate::theme;
+#[cfg(test)]
+use aestra_core::{EffectAssetRef, EffectClipId, EmitterId};
+use aestra_core::{EffectClip, Emitter};
+use bevy::{prelude::*, ui::Selected, ui_widgets::ListItem};
+use fluent_bundle::FluentArgs;
+#[cfg(test)]
 use std::time::Duration;
 
-const REFERENCED_EMITTER_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
-
-#[derive(Component, Clone, Copy)]
-pub(super) struct ReferencedEmitterTrackHeader;
-
-#[derive(Component, Clone, Copy)]
-pub(super) struct TimelineReferencedEmitter {
-    pub(super) clip: EffectClipId,
-    pub(super) source_start: f32,
-    pub(super) source_duration: f32,
-}
-
-#[derive(Component)]
-pub(super) struct TimelineReferencedEmitterControl;
-
-#[derive(Clone, Debug)]
-pub(super) struct ReferencedEmitterClick {
-    path: EffectClipPath,
-    emitter: EmitterId,
-    at: Duration,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct EffectClipPath(Vec<EffectClipId>);
-
-impl EffectClipPath {
-    pub(crate) fn root_path(clip: EffectClipId) -> Self {
-        Self(vec![clip])
-    }
-
-    pub(crate) fn child(&self, clip: EffectClipId) -> Self {
-        let mut path = self.0.clone();
-        path.push(clip);
-        Self(path)
-    }
-
-    pub(crate) fn root(&self) -> EffectClipId {
-        self.0[0]
-    }
-
-    pub(crate) fn ids(&self) -> &[EffectClipId] {
-        &self.0
-    }
-
-    pub(super) fn starts_with(&self, ancestor: &Self) -> bool {
-        self.0.starts_with(&ancestor.0)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum EffectClipChildSelection {
-    EffectClip {
-        path: EffectClipPath,
-    },
-    Emitter {
-        path: EffectClipPath,
-        emitter: EmitterId,
-    },
-}
-
-impl EffectClipChildSelection {
-    pub(super) fn is_descendant_of(&self, ancestor: &EffectClipPath) -> bool {
-        match self {
-            Self::EffectClip { path } | Self::Emitter { path, .. } => path.starts_with(ancestor),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct ReferencedTimingContext {
-    pub(super) root_source_start: f32,
-    pub(super) local_source_offset: f32,
-    pub(super) duration: f32,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct ReferencedTrackTiming {
-    pub(super) root_source_start: f32,
-    pub(super) duration: f32,
-}
-
-#[derive(Clone, Debug)]
-pub(super) enum ReferencedTrackKind {
-    EffectClip {
-        clip: EffectClip,
-        source_name: String,
-        child_count: usize,
-    },
-    Emitter {
-        emitter: Emitter,
-    },
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct ReferencedTrackProjection {
-    pub(super) path: EffectClipPath,
-    pub(super) depth: usize,
-    pub(super) timing: Option<ReferencedTrackTiming>,
-    pub(super) kind: ReferencedTrackKind,
-}
-
-pub(super) fn effect_clip_source_name(
-    catalog: &ProjectEffectCatalog,
-    source: EffectAssetRef,
-) -> String {
-    catalog
-        .entries()
-        .iter()
-        .find(|entry| entry.reference == Some(source))
-        .map_or_else(
-            || format!("Missing effect {}", source.id),
-            |entry| entry.display_name.clone(),
-        )
-}
-
-pub(crate) fn resolve_effect_clip_path(
-    session: &EditorSession,
-    catalog: &ProjectEffectCatalog,
-    path: &EffectClipPath,
-) -> Option<(EffectClip, EffectAsset)> {
-    let (root, descendants) = path.ids().split_first()?;
-    let mut clip = session
-        .effect
-        .effect_clips
-        .iter()
-        .find(|clip| clip.id == *root)?
-        .clone();
-    let mut source = catalog.cached_effect(clip.source).ok()?;
-    for id in descendants {
-        clip = source
-            .effect_clips
-            .iter()
-            .find(|clip| clip.id == *id)?
-            .clone();
-        source = catalog.cached_effect(clip.source).ok()?;
-    }
-    Some((clip, source))
-}
-
-pub(super) fn map_referenced_interval(
-    context: ReferencedTimingContext,
-    item_start: f32,
-    item_duration: f32,
-) -> Option<(ReferencedTrackTiming, f32)> {
-    let source_start = item_start.max(context.local_source_offset);
-    let source_end =
-        (item_start + item_duration).min(context.local_source_offset + context.duration);
-    (source_end > source_start).then_some((
-        ReferencedTrackTiming {
-            root_source_start: context.root_source_start + source_start
-                - context.local_source_offset,
-            duration: source_end - source_start,
-        },
-        source_start - item_start,
-    ))
-}
-
-fn append_referenced_track_projections(
-    rows: &mut Vec<ReferencedTrackProjection>,
-    catalog: &ProjectEffectCatalog,
-    state: &TimelineState,
-    source: &EffectAsset,
-    parent_path: &EffectClipPath,
-    context: Option<ReferencedTimingContext>,
-    depth: usize,
-) {
-    for track in normalized_choreography_order(source) {
-        match track {
-            ChoreographyTrackId::EffectClip(id) => {
-                let Some(clip) = source.effect_clips.iter().find(|clip| clip.id == id) else {
-                    continue;
-                };
-                let path = parent_path.child(clip.id);
-                let mapped = context.and_then(|context| {
-                    map_referenced_interval(context, clip.start_time, clip.duration)
-                });
-                let child_source = catalog.cached_effect(clip.source).ok();
-                let child_count = child_source.as_ref().map_or(0, |effect| {
-                    effect.effect_clips.len() + effect.emitters.len()
-                });
-                rows.push(ReferencedTrackProjection {
-                    path: path.clone(),
-                    depth,
-                    timing: mapped.map(|(timing, _)| timing),
-                    kind: ReferencedTrackKind::EffectClip {
-                        clip: clip.clone(),
-                        source_name: effect_clip_source_name(catalog, clip.source),
-                        child_count,
-                    },
-                });
-                if state.expanded_effect_clips.contains(&path)
-                    && let Some(child_source) = child_source
-                {
-                    let child_context =
-                        mapped.map(|(timing, clipped_offset)| ReferencedTimingContext {
-                            root_source_start: timing.root_source_start,
-                            local_source_offset: clip.source_offset + clipped_offset,
-                            duration: timing.duration,
-                        });
-                    append_referenced_track_projections(
-                        rows,
-                        catalog,
-                        state,
-                        &child_source,
-                        &path,
-                        child_context,
-                        depth + 1,
-                    );
-                }
-            }
-            ChoreographyTrackId::Emitter(id) => {
-                let Some(emitter) = source.emitters.iter().find(|emitter| emitter.id == id) else {
-                    continue;
-                };
-                rows.push(ReferencedTrackProjection {
-                    path: parent_path.clone(),
-                    depth,
-                    timing: context
-                        .and_then(|context| {
-                            map_referenced_interval(context, emitter.start_time, emitter.duration)
-                        })
-                        .map(|(timing, _)| timing),
-                    kind: ReferencedTrackKind::Emitter {
-                        emitter: emitter.clone(),
-                    },
-                });
-            }
-        }
-    }
-}
-
-pub(super) fn referenced_track_projections(
-    catalog: &ProjectEffectCatalog,
-    state: &TimelineState,
-    clip: &EffectClip,
-) -> Vec<ReferencedTrackProjection> {
-    let path = EffectClipPath::root_path(clip.id);
-    if !state.expanded_effect_clips.contains(&path) {
-        return Vec::new();
-    }
-    let Ok(source) = catalog.cached_effect(clip.source) else {
-        return Vec::new();
-    };
-    let mut rows = Vec::new();
-    append_referenced_track_projections(
-        &mut rows,
-        catalog,
-        state,
-        &source,
-        &path,
-        Some(ReferencedTimingContext {
-            root_source_start: clip.source_offset,
-            local_source_offset: clip.source_offset,
-            duration: clip.duration,
-        }),
-        1,
-    );
-    rows
-}
+pub(super) use super::projections::*;
 
 pub(super) fn spawn_referenced_emitter_track_header(
     parent: &mut ChildSpawnerCommands,
@@ -641,70 +408,6 @@ pub(super) fn spawn_referenced_track_row(
         });
 }
 
-pub(super) fn handle_referenced_effect_action(
-    action: &ChoreographyAction,
-    commands: &mut Commands,
-    session: &mut EditorSession,
-    curves: &mut CurvesState,
-    state: &mut TimelineState,
-    catalog: &ProjectEffectCatalog,
-    localizer: &Localizer,
-) -> bool {
-    match action.clone() {
-        ChoreographyAction::SelectEffectClipEmitter { path, emitter } => {
-            state.selected_automation_key = None;
-            let source =
-                resolve_effect_clip_path(session, catalog, &path).map(|(_, source)| source);
-            if source
-                .as_ref()
-                .is_some_and(|effect| effect.emitters.iter().any(|item| item.id == emitter))
-            {
-                state.clear_emitter_selection();
-                session.selection.select_effect_clip(path.root());
-                state.inspected_child = Some(EffectClipChildSelection::Emitter { path, emitter });
-                session.status = localizer.text("timeline-selected-referenced-emitter");
-                session.ui_revision += 1;
-                curves.clear();
-            }
-        }
-        ChoreographyAction::SelectReferencedEffectClip(path) => {
-            state.selected_automation_key = None;
-            if resolve_effect_clip_path(session, catalog, &path).is_some() {
-                state.clear_emitter_selection();
-                session.selection.select_effect_clip(path.root());
-                state.inspected_child = Some(EffectClipChildSelection::EffectClip { path });
-                session.status = localizer.text("timeline-selected-referenced-effect");
-                session.ui_revision += 1;
-                curves.clear();
-            }
-        }
-        ChoreographyAction::ToggleEffectClipExpanded(path) => {
-            if !state.expanded_effect_clips.remove(&path) {
-                state.expanded_effect_clips.insert(path);
-            } else if state
-                .inspected_child
-                .as_ref()
-                .is_some_and(|child| child.is_descendant_of(&path))
-            {
-                state.inspected_child = None;
-            }
-            session.ui_revision += 1;
-        }
-        ChoreographyAction::EditEffectClipEmitterSource { path, emitter } => {
-            if let Some((clip, source)) = resolve_effect_clip_path(session, catalog, &path)
-                && source
-                    .emitters
-                    .iter()
-                    .any(|candidate| candidate.id == emitter)
-            {
-                commands.trigger(DocumentAction::OpenSourceEmitter(clip.source, emitter));
-            }
-        }
-        _ => return false,
-    }
-    true
-}
-
 #[cfg(test)]
 pub(super) fn mapped_referenced_emitter_timing(
     clip: &EffectClip,
@@ -727,81 +430,9 @@ pub(super) fn mapped_referenced_emitter_timing(
     })
 }
 
-pub(super) fn referenced_emitter_click_action(
-    state: &mut TimelineState,
-    now: Duration,
-    click_count: u8,
-    selection: &ChoreographyAction,
-) -> ChoreographyAction {
-    let ChoreographyAction::SelectEffectClipEmitter { path, emitter } = selection else {
-        state.referenced_emitter_click = None;
-        return selection.clone();
-    };
-    let repeated = state
-        .referenced_emitter_click
-        .as_ref()
-        .is_some_and(|previous| {
-            previous.path == *path
-                && previous.emitter == *emitter
-                && now.saturating_sub(previous.at) <= REFERENCED_EMITTER_DOUBLE_CLICK_INTERVAL
-        });
-    if click_count >= 2 || repeated {
-        state.referenced_emitter_click = None;
-        ChoreographyAction::EditEffectClipEmitterSource {
-            path: path.clone(),
-            emitter: *emitter,
-        }
-    } else {
-        state.referenced_emitter_click = Some(ReferencedEmitterClick {
-            path: path.clone(),
-            emitter: *emitter,
-            at: now,
-        });
-        selection.clone()
-    }
-}
-
-pub(super) fn select_timeline_referenced_emitter(
-    click: On<Pointer<Click>>,
-    actions: Query<&ChoreographyAction, With<TimelineReferencedEmitterControl>>,
-    mut state: ResMut<TimelineState>,
-    time: Res<Time<Real>>,
-    mut commands: Commands,
-) {
-    let Ok(action) = actions.get(click.event_target()) else {
-        return;
-    };
-    if click.button == PointerButton::Primary {
-        commands.trigger(referenced_emitter_click_action(
-            &mut state,
-            time.elapsed(),
-            click.count,
-            action,
-        ));
-    }
-}
-
-pub(super) fn open_referenced_emitter_source_from_header(
-    click: On<Pointer<Click>>,
-    headers: Query<&ChoreographyAction, With<ReferencedEmitterTrackHeader>>,
-    mut state: ResMut<TimelineState>,
-    time: Res<Time<Real>>,
-    mut commands: Commands,
-) {
-    if click.button != PointerButton::Primary {
-        return;
-    }
-    let Ok(action) = headers.get(click.event_target()) else {
-        return;
-    };
-    let resolved = referenced_emitter_click_action(&mut state, time.elapsed(), click.count, action);
-    if matches!(
-        resolved,
-        ChoreographyAction::EditEffectClipEmitterSource { .. }
-    ) {
-        commands.trigger(resolved);
-    }
-}
+#[cfg(test)]
+#[path = "referenced_effect/composition_tests.rs"]
+mod composition_tests;
 
 #[cfg(test)]
 mod tests {

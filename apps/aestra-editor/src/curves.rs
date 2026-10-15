@@ -5,12 +5,14 @@ use crate::feathers::automation_curve::{
 };
 use crate::*;
 mod host_motion;
+mod state;
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use aestra_core::{ColorKey, CurveKey, ModuleId, ModuleInstance, Value};
 use bevy::{
     feathers::cursor::EntityCursor, input_focus::InputFocus, text::EditableText,
     ui::RelativeCursorPosition, ui_widgets::Activate, window::SystemCursorIcon,
 };
+pub(crate) use state::{ComplexSelection, CurvesState};
 
 pub(crate) struct EditorCurvesPlugin;
 
@@ -46,62 +48,6 @@ pub(crate) enum CurvesAction {
     AdjustTime(i8),
     AdjustCurveValue(i8),
     AdjustGradientChannel(u8, i8),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ComplexSelection {
-    pub(crate) module: ModuleId,
-    pub(crate) input: u8,
-    pub(crate) key: usize,
-}
-
-#[derive(Resource, Default)]
-pub(crate) struct CurvesState {
-    host: Option<host_motion::Selection>,
-    host_drag: Option<host_motion::DragState>,
-    host_released: Option<Entity>,
-    complex: Option<ComplexSelection>,
-    vector_channel: u8,
-}
-
-impl CurvesState {
-    pub(crate) fn clear(&mut self) {
-        self.host = None;
-        self.host_drag = None;
-        self.host_released = None;
-        self.complex = None;
-        self.vector_channel = 0;
-    }
-
-    pub(crate) fn select_key_channel(
-        &mut self,
-        module: ModuleId,
-        input: u8,
-        key: usize,
-        vector_channel: Option<u8>,
-    ) {
-        self.host = None;
-        self.complex = Some(ComplexSelection { module, input, key });
-        self.vector_channel = vector_channel.unwrap_or(0).min(2);
-    }
-
-    pub(crate) fn selected_key(&self) -> Option<ComplexSelection> {
-        self.complex
-    }
-
-    pub(crate) fn selected_vector_channel(&self) -> u8 {
-        self.vector_channel
-    }
-
-    #[cfg(test)]
-    pub(crate) fn has_selection(&self) -> bool {
-        self.complex.is_some()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn select_for_test(&mut self, module: ModuleId, input: u8, key: usize) {
-        self.complex = Some(ComplexSelection { module, input, key });
-    }
 }
 
 #[derive(Component)]

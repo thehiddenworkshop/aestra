@@ -2,6 +2,8 @@
 //! Filesystem operations deliberately retain their serialized I/O and recovery path.
 pub(crate) mod cursor;
 mod payload;
+mod transport;
+pub(crate) use transport::{active, cancelled, nearest};
 pub(crate) mod resource;
 pub(crate) mod virtual_sources;
 pub(crate) use payload::VirtualAsset;
@@ -31,17 +33,6 @@ pub(crate) fn input_row<T: Component>(
         .with_children(build);
 }
 
-/// Resolve the nearest eligible ancestor, so nested input fields win over their cards.
-pub(crate) fn nearest<T>(
-    entity: Entity,
-    parents: &Query<&ChildOf>,
-    mut resolve: impl FnMut(Entity) -> Option<T>,
-) -> Option<(Entity, T)> {
-    std::iter::once(entity)
-        .chain(parents.iter_ancestors(entity))
-        .find_map(|entity| resolve(entity).map(|target| (entity, target)))
-}
-
 /// The same source/target resolution is used on hover and release. Never fall back to
 /// a parent after the nearest target rejects a type: that would trigger another action.
 pub(crate) fn resolve<T>(
@@ -58,21 +49,6 @@ pub(crate) fn resolve<T>(
     let (_, payload) = nearest(source, parents, |entity| sources.get(entity).ok().cloned())?;
     let (entity, target) = nearest(destination, parents, target)?;
     Some((payload, entity, target))
-}
-
-pub(crate) fn cancelled(keys: Option<&ButtonInput<KeyCode>>) -> bool {
-    keys.is_some_and(|keys| keys.just_pressed(KeyCode::Escape))
-}
-
-pub(crate) fn active(
-    payload: &AssetPayload,
-    sources: &Query<&AssetPayload>,
-    catalog: Option<&ProjectEffectCatalog>,
-    keys: Option<&ButtonInput<KeyCode>>,
-) -> bool {
-    !cancelled(keys)
-        && catalog.is_some_and(|catalog| payload.resolve(catalog).is_ok())
-        && sources.iter().any(|source| source == payload)
 }
 
 /// Owner-scoped feedback prevents one consumer's cleanup from clearing another's preview.

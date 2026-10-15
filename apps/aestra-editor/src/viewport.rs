@@ -10,7 +10,7 @@ use crate::{
     localization::Localizer,
     persistence::persist_editor_settings,
     profiler::ProfilerState,
-    properties::{ModulePaletteState, module_parameter},
+    properties::module_parameter,
     session::EditorSession,
     settings::{EditorSettings, SettingsPersistence},
     theme,
@@ -51,6 +51,14 @@ use fluent_bundle::FluentArgs;
 use std::{sync::Arc, time::Instant};
 
 mod host_motion;
+mod keyboard;
+mod shortcuts;
+#[cfg(test)]
+use crate::ModulePaletteState;
+#[cfg(test)]
+use keyboard::viewport_keyboard_input;
+use shortcuts::PreviewCanvas;
+pub(crate) use shortcuts::{PreviewDisplayMode, ViewportAction, ViewportSet};
 
 const DEFAULT_PREVIEW_PITCH: f32 = -0.35;
 const PREVIEW_GRID_SHADER_PATH: &str = "shaders/preview_grid.wesl";
@@ -63,14 +71,6 @@ const PREVIEW_TRANSFORM_TRANSLATE_SNAP: f32 = 1.0;
 const PREVIEW_TRANSFORM_ROTATE_SNAP: f32 = std::f32::consts::PI / 12.0;
 const PREVIEW_TRANSFORM_SCALE_SNAP: f32 = 0.1;
 const PREVIEW_TRANSFORM_PRECISION_FACTOR: f32 = 0.1;
-
-#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ViewportSet {
-    Setup,
-    Input,
-    Actions,
-    Update,
-}
 
 pub(crate) struct ViewportPlugin;
 
@@ -102,7 +102,6 @@ impl Plugin for ViewportPlugin {
                     configure_transform_gizmo_overlay_materials,
                 ),
             )
-            .add_systems(Update, viewport_keyboard_input.in_set(ViewportSet::Input))
             .add_systems(
                 Update,
                 (handle_viewport_action_buttons, audit_viewport_controls)
@@ -153,6 +152,7 @@ impl Plugin for ViewportPlugin {
                 ),
             )
             .configure_sets(Update, AestraRenderSet::Prepare.after(apply_preview_mocks));
+        keyboard::register(app);
     }
 }
 
@@ -162,16 +162,6 @@ fn preview_transform_gizmo_settings() -> TransformGizmoSettings {
         axis_hit_distance: PREVIEW_TRANSFORM_GIZMO_HIT_DISTANCE,
         ..default()
     }
-}
-
-#[derive(Component, Event, Debug, Clone, Copy)]
-pub(crate) enum ViewportAction {
-    ToggleGrid,
-    FramePreview,
-    SetTransformGizmoMode(TransformGizmoMode),
-    SetPreviewDisplayMode(PreviewDisplayMode),
-    /// Enlarge the viewport to fill the whole editor, or restore it to its docked place.
-    ToggleMaximize,
 }
 
 fn queue_viewport_action_activation(
@@ -258,50 +248,6 @@ fn execute_viewport_action(
     }
 }
 
-fn viewport_keyboard_input(
-    mut commands: Commands,
-    input: crate::input::ShortcutKeys,
-    palette: Res<ModulePaletteState>,
-    canvases: Query<&RelativeCursorPosition, With<PreviewCanvas>>,
-    shortcuts: crate::input::ShortcutContext,
-) {
-    if palette.open || shortcuts.blocked() {
-        return;
-    }
-    for keys in input.iter() {
-        let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-        if keys.just_pressed(KeyCode::KeyG) && !control {
-            commands.trigger(ViewportAction::ToggleGrid);
-        }
-        // Enlarge/reduce works from anywhere, not just with the cursor over the canvas: once
-        // maximized the canvas fills the editor, and the shortcut is how you get back.
-        if keys.just_pressed(KeyCode::F11) {
-            commands.trigger(ViewportAction::ToggleMaximize);
-        }
-        if !canvases.iter().any(RelativeCursorPosition::cursor_over) {
-            continue;
-        }
-        if keys.just_pressed(KeyCode::KeyF) || keys.just_pressed(KeyCode::Home) {
-            commands.trigger(ViewportAction::FramePreview);
-        }
-        if keys.just_pressed(KeyCode::Digit1) {
-            commands.trigger(ViewportAction::SetTransformGizmoMode(
-                TransformGizmoMode::Translate,
-            ));
-        }
-        if keys.just_pressed(KeyCode::Digit2) {
-            commands.trigger(ViewportAction::SetTransformGizmoMode(
-                TransformGizmoMode::Rotate,
-            ));
-        }
-        if keys.just_pressed(KeyCode::Digit3) {
-            commands.trigger(ViewportAction::SetTransformGizmoMode(
-                TransformGizmoMode::Scale,
-            ));
-        }
-    }
-}
-
 type UnclassifiedViewportControl = (
     Added<ViewportAction>,
     With<Button>,
@@ -346,9 +292,6 @@ fn setup_preview_scene(
             }),
     ));
 }
-
-#[derive(Component)]
-struct PreviewCanvas;
 
 #[derive(Component)]
 pub(crate) struct PreviewRenderCamera;
@@ -471,13 +414,6 @@ struct PreviewNavigationState {
     dragging: bool,
     looking: bool,
     flight_blocked: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum PreviewDisplayMode {
-    Wireframe,
-    #[default]
-    Rendered,
 }
 
 #[derive(Default, Reflect, GizmoConfigGroup)]

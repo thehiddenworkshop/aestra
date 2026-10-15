@@ -73,6 +73,22 @@ pub(crate) struct GraphPinEdit {
 }
 
 impl FeathersGraphNode {
+    #[cfg(test)]
+    pub(crate) fn clipboard_fixture(graph_key: String, node_key: String, position: Vec2) -> Self {
+        Self {
+            graph_key,
+            node_key,
+            position,
+            selected: false,
+            pinned: false,
+            collapsed: false,
+            dragging: false,
+            drag_before: None,
+            drag_modifier: None,
+            suppress_release_click: false,
+        }
+    }
+
     pub(crate) fn position(&self) -> Vec2 {
         self.position
     }

@@ -34,7 +34,7 @@ impl TimelineView {
 
 #[derive(Resource, Debug)]
 pub(crate) struct TimelineState {
-    pub(crate) host_motion: super::host_motion::HostMotionState,
+    pub(crate) host_motion: super::motion_state::HostMotionState,
     pub(super) view: TimelineView,
     pub(super) snap: TimelineSnapMode,
     pub(super) drag: Option<TimelineDrag>,
@@ -337,6 +337,145 @@ impl TimelineState {
         let span = self.view.span().min(duration);
         self.view.start = self.view.start.clamp(0.0, (duration - span).max(0.0));
         self.view.end = self.view.start + span;
+    }
+}
+
+pub(super) fn normalized_choreography_order(effect: &EffectAsset) -> Vec<ChoreographyTrackId> {
+    let mut seen = BTreeSet::new();
+    let mut order = Vec::with_capacity(effect.effect_clips.len() + effect.emitters.len());
+    for track in &effect.choreography_order {
+        let exists = match *track {
+            ChoreographyTrackId::EffectClip(id) => {
+                effect.effect_clips.iter().any(|clip| clip.id == id)
+            }
+            ChoreographyTrackId::Emitter(id) => {
+                effect.emitters.iter().any(|emitter| emitter.id == id)
+            }
+        };
+        if exists && seen.insert(*track) {
+            order.push(*track);
+        }
+    }
+    for clip in &effect.effect_clips {
+        let track = ChoreographyTrackId::EffectClip(clip.id);
+        if seen.insert(track) {
+            order.push(track);
+        }
+    }
+    for emitter in &effect.emitters {
+        let track = ChoreographyTrackId::Emitter(emitter.id);
+        if seen.insert(track) {
+            order.push(track);
+        }
+    }
+    order
+}
+
+impl TimelineState {
+    pub(super) fn clear_emitter_region_selection(&mut self) {
+        self.selected_emitter_region = None;
+        self.selected_emitter_regions.clear();
+        self.emitter_region_selection_anchor = None;
+    }
+
+    pub(super) fn select_only_emitter_region(
+        &mut self,
+        emitter: EmitterId,
+        region: EmitterRegionId,
+    ) {
+        self.select_only_emitter(emitter);
+        self.selected_emitter_region = Some((emitter, region));
+        self.selected_emitter_regions.insert((emitter, region));
+        self.emitter_region_selection_anchor = Some((emitter, region));
+    }
+
+    pub(super) fn select_only_emitter_regions(
+        &mut self,
+        emitter: EmitterId,
+        regions: &[EmitterRegionId],
+    ) {
+        self.select_only_emitter(emitter);
+        self.selected_emitter_regions
+            .extend(regions.iter().map(|region| (emitter, *region)));
+        self.selected_emitter_region = regions.first().map(|region| (emitter, *region));
+        self.emitter_region_selection_anchor = self.selected_emitter_region;
+    }
+
+    pub(super) fn select_emitter_region(
+        &mut self,
+        emitter: &Emitter,
+        region: EmitterRegionId,
+        control: bool,
+        shift: bool,
+    ) -> Option<EmitterRegionId> {
+        let emitter_id = emitter.id;
+        let mut order = emitter.timeline_regions();
+        order.sort_by(|left, right| left.start_time.total_cmp(&right.start_time));
+        if !order.iter().any(|candidate| candidate.id == region) {
+            return self
+                .selected_emitter_region
+                .filter(|(selected, _)| *selected == emitter_id)
+                .map(|(_, region)| region);
+        }
+
+        self.selected_emitters.clear();
+        self.selected_emitters.insert(emitter_id);
+        self.emitter_selection_anchor = Some(emitter_id);
+        self.selected_emitter_regions
+            .retain(|(selected, _)| *selected == emitter_id);
+
+        if shift {
+            let anchor = self
+                .emitter_region_selection_anchor
+                .filter(|(selected, anchor)| {
+                    *selected == emitter_id && order.iter().any(|candidate| candidate.id == *anchor)
+                })
+                .map_or(region, |(_, anchor)| anchor);
+            let anchor_index = order
+                .iter()
+                .position(|candidate| candidate.id == anchor)
+                .unwrap_or_default();
+            let region_index = order
+                .iter()
+                .position(|candidate| candidate.id == region)
+                .unwrap_or(anchor_index);
+            let (start, end) = if anchor_index <= region_index {
+                (anchor_index, region_index)
+            } else {
+                (region_index, anchor_index)
+            };
+            self.selected_emitter_regions.clear();
+            self.selected_emitter_regions.extend(
+                order[start..=end]
+                    .iter()
+                    .map(|candidate| (emitter_id, candidate.id)),
+            );
+            self.selected_emitter_region = Some((emitter_id, region));
+            self.emitter_region_selection_anchor = Some((emitter_id, anchor));
+            return Some(region);
+        }
+
+        if control {
+            let selection = (emitter_id, region);
+            if !self.selected_emitter_regions.remove(&selection) {
+                self.selected_emitter_regions.insert(selection);
+                self.selected_emitter_region = Some(selection);
+            } else if self.selected_emitter_region == Some(selection) {
+                self.selected_emitter_region = order
+                    .iter()
+                    .rev()
+                    .find(|candidate| {
+                        self.selected_emitter_regions
+                            .contains(&(emitter_id, candidate.id))
+                    })
+                    .map(|candidate| (emitter_id, candidate.id));
+            }
+            self.emitter_region_selection_anchor = Some(selection);
+            return self.selected_emitter_region.map(|(_, region)| region);
+        }
+
+        self.select_only_emitter_region(emitter_id, region);
+        Some(region)
     }
 }
 

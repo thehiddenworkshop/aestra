@@ -8,13 +8,8 @@ use bevy::{
     ui_widgets::ActiveDescendant,
 };
 
-/// Marks a headless list box that uses Aestra's shared keyboard-focus treatment.
-#[derive(Component)]
-pub(crate) struct KeyboardNavigableList;
-
-/// Marks a row whose active-descendant focus should be drawn by the editor widget layer.
-#[derive(Component)]
-pub(crate) struct KeyboardNavigableListRow;
+mod state;
+pub(crate) use state::{KeyboardNavigableList, KeyboardNavigableListRow};
 
 #[derive(Component)]
 pub(crate) struct CompactListRow;

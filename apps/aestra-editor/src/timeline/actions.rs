@@ -1,19 +1,6 @@
 use super::*;
 
-#[derive(Component, Event, Debug, Clone, Copy, PartialEq)]
-pub(crate) enum TimelineAction {
-    AdjustEffectDuration(f32),
-    SetSnap(TimelineSnapMode),
-    FrameAll,
-    AddMarker,
-    SelectMarker(MarkerId),
-    DeleteMarker(MarkerId),
-    AddChoreographyEvent,
-    SelectChoreographyEvent(ChoreographyEventId),
-    DeleteChoreographyEvent(ChoreographyEventId),
-    SplitEmitterRegion,
-    JoinEmitterRegion,
-}
+pub(crate) use super::document_actions::TimelineAction;
 
 #[derive(Component, Event, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ChoreographyAction {

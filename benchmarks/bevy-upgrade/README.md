@@ -1295,3 +1295,630 @@ acceptance is claimed.
 Next: remaining timeline/viewport/material clipboard keyboard and action consumers,
 then full panel/main-plugin composition and native editor workflows. Shipping remains
 on 0.19.1 until the complete compatibility release gate passes.
+
+## Discrete viewport shortcut compatibility
+
+B20-2 slice 29 shares the actual viewport shortcut system and registration, canvas
+ownership marker, action payloads and system-set identities. Shipping calls the same
+registration; source comparison confirms the shortcut function's behavior is unchanged.
+The candidate uses the native transform-gizmo mode type, with no dependency changes.
+
+Eighteen new shared tests cover real keyboard dispatch, grid/maximize versus hovered
+framing/gizmo modes, actual modal/focus/window ownership, ordered same-frame taps,
+logical letters/AZERTY number-row keys, repeat suppression, fresh-key recovery,
+canvas teardown and non-interference with held WASD. See
+[implementation, scope and evidence](editor-viewport-shortcuts-2026-10-14.md).
+
+The accepted frozen headless run executes **882 checks**, including **463 graph/
+session/history/consumer checks**, with all **751 input hashes** unchanged. One
+existing graph timing probe remains ignored. Shipping passes **1,558 editor unit +
+3 architecture tests**, with ten existing ignores unchanged. Strict all-target
+Clippy passes on both engines, as do workspace checking with `aestra-bench/gpu`,
+both formatting checks and whitespace validation. Root dependency inputs
+remain unchanged; no native-window/GPU acceptance is claimed.
+
+Next: timeline and material/function clipboard keyboard/action consumers, followed
+by remaining viewport/application execution and full editor workflows. Continuous
+camera navigation, rendered viewport execution and toolbar composition are not
+claimed by this discrete-input gate. Shipping remains on 0.19.1 until B20-3 passes.
+
+## Shared clipboard payload and function graph consumers
+
+B20-2 slice 30 shares the immutable clipboard payload, actual per-view selection,
+function graph identity/target activation, and complete function clipboard keyboard/
+execution consumer. Shipping calls the same registration once. Production capture,
+remapping, validation, selection and edit logic is unchanged apart from visibility
+and imports; material adapters retain their current entry points.
+
+Twenty-one new regressions and two relocated existing regressions form **23 shared
+clipboard checks**. Real keyboard/session/catalog/compound-history fixtures cover
+copy/cut/paste/duplicate/delete, output-protected atomic rejection, missing external
+wires, placement, scoped targeting, focus/modal ownership, repeat suppression and
+undo/redo. See [implementation, scope and evidence](editor-function-clipboard-2026-10-14.md).
+
+The accepted frozen headless run executes **905 checks**, including **486 graph/
+session/history/consumer checks**, with all **761 input hashes** unchanged. One
+existing graph timing probe remains ignored. Shipping passes **1,579 editor unit +
+3 architecture tests**, with ten existing ignores unchanged. Strict all-target
+Clippy passes on both engines, as do workspace checking with `aestra-bench/gpu`,
+both formatting checks and whitespace validation. Dependency inputs are unchanged.
+
+Next: the complete material graph keyboard/selection-edit consumer, then timeline,
+remaining application execution and full panel/native workflow acceptance. Material/
+function menu composition and native rendering are not claimed by the shared
+function-consumer gate. Shipping remains on 0.19.1 until B20-3 passes.
+
+## Material graph keyboard and selection-edit consumers
+
+B20-2 slice 31 shares the actual material selection-edit keyboard consumer,
+clipboard adapters, semantic edit execution, view/node identities and inspector
+selection. Shipping calls the same registration once. Source audits confirm the
+keyboard, selection-edit/preparation/activation and clipboard bodies are unchanged
+apart from imports/visibility; existing native menu tests are retained.
+
+Fifteen new shared regressions cover real copy/cut/paste/duplicate/delete,
+Ctrl+Shift+E extraction, typed connection reset, compound semantic/layout/preview
+undo/redo, live-node placement, target/scope/ownership guards, logical/event-time
+shortcuts, repeats and atomic rejection. See
+[implementation, scope and evidence](editor-material-keyboard-2026-10-14.md).
+
+The accepted frozen headless run executes **920 checks**, including **501 graph/
+session/history/consumer checks**, with all **767 input hashes** unchanged. One
+existing graph timing probe remains ignored. Shipping passes **1,594 editor unit +
+3 architecture tests**, with ten existing ignores unchanged. Strict all-target
+Clippy passes on both engines, as do workspace checking with `aestra-bench/gpu`,
+both formatting checks and whitespace validation. Dependency inputs are unchanged.
+
+Next: timeline keyboard/action consumers, then remaining application handlers,
+graph menu/palette composition and complete editor workflows. This does not claim
+native input/rendering or complete editor parity. Shipping remains on 0.19.1 until
+B20-3 passes.
+
+## Timeline marker/event document actions
+
+B20-2 slice 32 shares the production timeline action/snap contracts and six
+session-backed marker/event branches. The native observer retains its original
+timeline selection cleanup and registration. Source audits confirm unchanged edit
+bodies apart from the optional-localizer boundary; duration/view/region execution
+remains native-owned.
+
+Fourteen new shared checks cover playhead creation, localized marker labels,
+identity/payload preservation, selection, dirty state, stale-ID rejection, mixed
+global undo/redo and redo forks. Three additional shipping-only checks exercise the
+actual native observer's TimelineState cleanup. See
+[implementation, scope and evidence](editor-timeline-document-actions-2026-10-14.md).
+
+The accepted frozen headless run executes **934 checks**, including **515 graph/
+session/history/consumer checks**, with all **772 input hashes** unchanged. One
+existing graph timing probe remains ignored. Shipping passes **1,611 editor unit +
+3 architecture tests**, with ten existing ignores unchanged. Strict all-target
+Clippy passes on both engines, as do workspace all-target checking with
+`aestra-bench/gpu`, both formatting checks and whitespace validation. Dependency
+inputs remain unchanged.
+
+Next: timeline state/keyboard/choreography dependencies and complete consumers,
+then remaining application handlers, graph menu/palette composition and full editor
+workflows. This narrow branch does not qualify the full timeline observer/keyboard
+or native rendering on 0.20. Shipping remains on 0.19.1 until B20-3 passes.
+
+## Production timeline state and keyboard consumer
+
+B20-2 slice 33 imports the full production TimelineState and choreography keyboard
+consumer, with real canvas/set identities, drag/automation/nested-inspection types,
+host-motion keyboard ownership, choreography action payloads and automation value
+projection. Shipping retains the same chained input registration and behavior.
+Source audits verify unchanged bodies apart from visibility/imports and replacing
+a one-line value helper with the exact method it wrapped.
+
+Nineteen new shared regressions cover ordered/logical/event-time shortcuts,
+delete precedence, nested inspection, host-motion ownership, focus/hover/modal
+guards, actual marker/event deletion/undo, curve/gradient/vector-channel insertion,
+navigation restoration and normalized track ordering. Four existing state and six
+existing automation-curve checks also enter the candidate gate. See
+[implementation, scope and evidence](editor-timeline-keyboard-2026-10-14.md).
+
+The accepted frozen headless run executes **963 checks**, including **544 graph/
+session/history/consumer checks**, with all **785 input hashes** unchanged. One
+existing graph timing probe remains ignored. Shipping passes **1,630 editor unit +
+3 architecture tests**, with ten existing ignores unchanged. Strict all-target
+Clippy passes on both engines, as do workspace all-target checking with
+`aestra-bench/gpu`, both formatting checks and whitespace validation. Dependency
+inputs remain unchanged.
+
+Next: remaining timeline/choreography action execution and panel/plugin
+composition, then remaining viewport/application and graph palette/menu consumers.
+Action routing is covered, not full choreography/pose semantic execution or native
+editor workflow acceptance. Shipping remains on 0.19.1 until B20-3 passes.
+
+## Host-motion and automation action execution
+
+B20-2 slice 34 shares the production host-motion action/numeric observers and
+complete automation action branch, command builder and stored-curve sampling.
+The candidate uses the full production CurvesState and host-curve transient types.
+Audits verify all 23 moved contracts/functions and unchanged native motion
+registration/activation; only visibility, formatting and internal type paths differ.
+
+Twenty-three new shared regressions execute real keyboard-driven edits, pose
+creation/deletion/repeat/close-loop, numeric live previews/final commits/cancellation,
+loop seams, scalar/gradient/vector automation, parameter bindings, source-offset
+insertion, rejection and mixed global undo/redo/forks. See
+[implementation, scope and evidence](editor-timeline-execution-2026-10-14.md).
+
+The accepted frozen headless run executes **986 checks**, including **567 graph/
+session/history/consumer checks**, with all **791 input hashes** unchanged. One
+existing graph timing probe remains ignored. Shipping passes **1,653 editor unit +
+3 architecture tests**, with ten existing ignores unchanged. Strict all-target
+Clippy passes on both engines, as do workspace all-target checking with
+`aestra-bench/gpu`, both formatting checks and whitespace validation. Dependency
+inputs remain unchanged.
+
+Next: remaining top-level timeline/choreography, emitter/region and referenced-
+effect actions, then complete panel/plugin composition. Native pointer/numeric
+cancellation controllers, the full Curves panel and native workflow acceptance
+remain separate. Shipping remains on 0.19.1 until B20-3 passes.
+
+## Complete timeline/choreography action observers
+
+B20-2 slice 35 imports both complete production action observers, region semantic
+edits and catalog-backed nested source resolution/selection. Native registrations
+stay unchanged. Audits verify all 13 moved contracts; an unused layout parameter
+is removed rather than providing substitute layout state in the candidate.
+
+Twenty-six new shared checks cover emitter edits and confirmation protection,
+modifier selection, split/join/duplicate/delete regions, exact undo/redo, preview
+solo/mute, nested inspection and source-opening intents, context cleanup, full
+automation delegation and real keyboard-to-observer execution. See
+[implementation, scope and evidence](editor-timeline-choreography-2026-10-14.md).
+
+The accepted frozen headless run executes **1,012 checks**, including **593 graph/
+session/history/consumer checks**, with all **795 input hashes** unchanged. One
+existing graph timing probe remains ignored. Shipping passes **1,679 editor unit +
+3 architecture tests**, with ten existing ignores unchanged. Strict all-target
+Clippy passes on both engines, as do workspace all-target checking with
+`aestra-bench/gpu`, both formatting checks and whitespace validation. Dependency
+inputs remain unchanged.
+
+Next: timeline pointer/navigation, popup/numeric cancellation controllers and full
+timeline/Curves panel/plugin composition. Native rendering and complete document-
+opening workflow acceptance are not claimed. Shipping remains on 0.19.1 until B20-3
+passes.
+
+## Timeline navigation and cancellation controllers
+
+B20-2 slice 36 runs the actual production wheel/pan, popup dismissal/focus
+restoration and host-motion drag/numeric cancellation systems on the candidate.
+Native composition keeps the real pane/header/popup identities and unchanged
+system registration/order. A tiny cursor boundary handles the 0.20 namespace move.
+Audits verify 18 moved system/helper/type contracts without behavior changes.
+
+Twenty-four new shared checks cover input units/ownership and scroll bounds,
+anchored zoom, middle-button pan, popup hover/Escape/outside dismissal, deferred
+focus restoration, timeline drag/cursor cleanup, stale host gestures, numeric
+preview cancellation and late-final suppression. See
+[implementation, scope and evidence](editor-timeline-navigation-2026-10-15.md).
+
+The accepted frozen headless run executes **1,036 checks**, including **617 graph/
+session/history/consumer checks**, with all **800 input hashes** unchanged.
+Shipping passes **1,703 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, along with workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Next: timeline pointer seeking and drag gestures, then full timeline/Curves
+panel/plugin composition. Explicit test geometry and drag state do not qualify
+native picking/layout or drag begin/move/final-commit observers. Shipping remains
+on 0.19.1 until B20-3 passes.
+
+## Timeline seeking and region/marker/event pointer gestures
+
+B20-2 slice 37 runs the actual seeking, control propagation stoppers and region,
+marker and choreography-event drag start/move/end observers on the candidate.
+Shared snap/distance/cursor helpers and real UI identities preserve production
+behavior; pointer boundaries only select equivalent upstream event names.
+Audits verify 28 moved observer/helper/type contracts, and native TimelinePlugin
+registration/order stays unchanged during this slice.
+
+Twenty-eight new shared checks cover seeking, hierarchy propagation, preview-only
+movement, one release commit, exact undo/redo, region trimming/source offsets,
+group movement/clamping and multi-selection, scaled/bounded motion, snap modes,
+stale/mismatched targets, Escape/late release and anchored marker/event edits. See
+[implementation, scope and evidence](editor-timeline-gestures-2026-10-15.md).
+
+The accepted frozen headless run executes **1,064 checks**, including **645 graph/
+session/history/consumer checks**, with all **806 input hashes** unchanged.
+Shipping passes **1,731 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, along with workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Next: remaining effect-clip, automation and host-motion pointer gestures and
+click/context-menu consumers, then complete timeline/Curves panel/plugin
+composition. Targeted real ECS pointer events do not qualify native picking,
+layout or window input. Shipping remains on 0.19.1 until B20-3 passes.
+
+## Source-aware effect-clip pointer gestures
+
+B20-2 slice 38 runs the actual effect-clip start/move/end observers, source-aware
+trimming, snapping and final timing command on the candidate. Native construction
+keeps the real control identity and unchanged attachment names. Audits verify all
+eight moved observer/helper/type contracts with only visibility, formatting and
+equivalent pointer aliases differing; TimelinePlugin registration/order is intact.
+
+Twenty-three new shared checks cover real catalog source policy and missing-source
+fallback, preview-only motion, scaled/bounded movement, one-shot source bounds,
+looping offset wrapping/expansion, minimum duration, release/selection, exact global
+undo/redo, snapping, stale/mismatched targets, Escape/late release, mid-drag deletion
+and marker-anchored clips. Referenced source bytes remain unchanged. See
+[implementation, scope and evidence](editor-effect-clip-gestures-2026-10-15.md).
+
+The accepted frozen headless run executes **1,087 checks**, including **668 graph/
+session/history/consumer checks**, with all **808 input hashes** unchanged.
+Shipping passes **1,754 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, along with workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Next: automation-key/lane and host-motion gestures, remaining click/context-menu
+consumers and complete timeline/Curves panel/plugin composition. Targeted upstream
+events do not qualify native picking/layout/window input. Shipping remains on
+0.19.1 until B20-3 passes.
+
+## Automation gestures and live presentation
+
+B20-2 slice 39 runs actual automation selection/double-click insertion, key and
+lane gestures, source/snap projection and live graph/key/raster presentation.
+Native lane discovery remains separate; real component identities and controller
+attachment names stay intact. Audits verify 19 moved function/impl/type contracts
+with only visibility, formatting and equivalent upstream pointer aliases differing.
+Native TimelinePlugin registration/order is unchanged.
+
+Twenty-seven new shared checks cover actual action/history/CurvesState consumers,
+scalar/vector/gradient and parameter-backed edits, source offsets, neighbor bounds,
+scaled motion, snapping, stale/mismatched keys, live raster/node previews, click/
+drag propagation and non-semantic lane resize. See
+[implementation, scope and evidence](editor-automation-gestures-2026-10-15.md).
+
+The accepted frozen headless run executes **1,114 checks**, including **695 graph/
+session/history/consumer checks**, with all **810 input hashes** unchanged.
+Shipping passes **1,781 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, along with workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Existing automation Escape cancellation and mismatched lane-resize release
+limitations are documented, not fixed or claimed safe by this compatibility slice.
+Next: host-motion gestures, remaining click/context-menu consumers and complete
+timeline/Curves panel/plugin composition. Native picking/layout/window input and
+GPU raster output remain separate. Shipping stays on 0.19.1 until B20-3 passes.
+
+## Host-motion gestures and in-place key visuals
+
+B20-2 slice 40 runs actual host-pose selection, start/move/end observers,
+displacement policy and key visuals on the candidate. Native composition keeps
+the real control identity and unchanged attachment names. Audits verify seven
+moved function/type contracts, allowing only visibility, formatting, equivalent
+pointer aliases and the upstream pointer-location accessor adapter. Native
+TimelinePlugin and host-motion install registration/order remain intact.
+
+Twenty-seven shared checks cover preview-only motion, one release commit, exact
+global undo/redo, sorted selection/trailing-click suppression, cancellation and
+stale canonical edits, anchor/loop constraints, snapping, floating-window/canvas
+routing, hierarchy propagation and stable live/idle visual components. See
+[implementation, scope and evidence](editor-host-motion-gestures-2026-10-15.md).
+
+The accepted frozen headless run executes **1,141 checks**, including **722 graph/
+session/history/consumer checks**, with all **812 input hashes** unchanged.
+Shipping passes **1,808 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, along with workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Existing host-motion active-drag routing does not capture pointer/target ownership;
+no new foreign-pointer guarantee is claimed. Automation cancellation/resize
+cleanup follow-ups remain separate. Next: remaining click/context-menu consumers,
+then complete timeline/Curves panel/plugin composition. Native picking/layout/
+window input and full workflow acceptance remain open. Shipping stays on 0.19.1
+until B20-3 passes.
+
+## Timeline clicks and context-menu intent
+
+B20-2 slice 41 runs actual marker/event/region/effect-clip selection, source-opening
+double clicks, referenced-emitter click timing, pointer/keyboard popup opening,
+native header action dispatch and emitter-group collapse. Native construction
+keeps controller attachment names and real identities. Audits verify 25 moved
+function/type/constant contracts; changes are limited to visibility, formatting,
+equivalent upstream event/marker aliases and the pointer-location accessor.
+Native TimelinePlugin registration/order is unchanged.
+
+Thirty-two shared checks cover real selection/catalog/source-intent/CurvesState/
+history consumers, double-click timing and row isolation, group/region selection,
+popup exclusivity/positioning, hierarchy propagation, keyboard focus/shortcut
+routing, native action classification and undo. Source bytes remain unchanged.
+See [implementation, scope and evidence](editor-timeline-clicks-2026-10-15.md).
+
+The accepted frozen headless run executes **1,173 checks**, including **754 graph/
+session/history/consumer checks**, with all **815 input hashes** unchanged.
+Shipping passes **1,840 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, along with workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Stale-header menu identities and bubbled reorder-handle group collapse retain
+their original policy; separate behavior hardening is documented. No native
+picking/layout/window-input, full popup/panel composition or filesystem document
+opening acceptance is claimed. Next: timeline action dispatch and track-color
+consumers, then drop/reorder/presentation and full timeline/Curves composition.
+Shipping stays on 0.19.1 until B20-3 passes.
+
+## Timeline action dispatch and track-color controls
+
+B20-2 slice 42 runs actual timeline/choreography activation queue/dispatch,
+list-selection routing, debug classification audit and color preview/commit.
+The shipping adapter retains Changed<Interaction>; the candidate uses native
+Changed<Pressed> queue/clear semantics. Shared action/menu/history policies,
+real component identities and native TimelinePlugin order remain intact.
+Audits verify 14 moved function/type contracts with explicit query/queue/clear
+adapter substitutions rather than claiming byte-identical input code.
+
+Twenty-six shared checks cover explicit-versus-raw activation, coalescing and
+repeated dispatch, transition gating, menu cleanup/revisions, invalid controls,
+real emitter/effect/referenced list selection, preview-only swatch/region updates,
+targeted final/default color edits, English/French status, exact global undo/redo
+and debug control audits. See
+[implementation, scope and evidence](editor-timeline-action-controls-2026-10-15.md).
+
+The accepted frozen headless run executes **1,199 checks**, including **780 graph/
+session/history/consumer checks**, with all **821 input hashes** unchanged.
+Shipping passes **1,866 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, along with workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Disabled-control gating still belongs to upstream controls; None color events do
+not themselves restore live fills. No new injected-Activate guard or color-preview
+cancellation guarantee is claimed. Native widget/panel/input acceptance remains
+separate. Next: timeline asset-drop/reorder and remaining presentation consumers,
+then complete timeline/Curves integration. Shipping stays on 0.19.1 until B20-3.
+
+## Timeline asset placement and track reorder
+
+B20-2 slice 43 runs actual asset-drop preview/enter/leave, canvas/header placement,
+compound clip/order transaction, rejection feedback/expiry and emitter/effect-clip
+reorder lifecycle. The candidate now uses the complete production AssetPayload,
+AuthoringDropGuard and shared ancestry/snapshot helpers with real catalog/session/
+history consumers. Native identities, attachment names and plugin order remain
+intact; the entire native root timeline test module compares unchanged.
+Audits verify 36 moved function/type/impl/alias contracts with only visibility,
+formatting, namespace resolution and equivalent pointer aliases differing.
+
+Twenty-five shared checks cover source ancestry, placement clamping/insertion,
+Undo routing without closing the material target, snapshot/modal/proposal/Escape
+guards, duplicate/self/cyclic/incompatible sources, preview cleanup/feedback
+expiry, mixed-track reorder/cursor transitions, exact global undo/redo and no-op/
+stale/missing targets. See
+[implementation, scope and evidence](editor-timeline-drop-reorder-2026-10-15.md).
+
+The accepted frozen headless run executes **1,224 checks**, including **805 graph/
+session/history/consumer checks**, with all **830 input hashes** unchanged.
+Shipping passes **1,891 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, along with workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Reorder retains its permissive secondary-button and uncaptured pointer/target
+ownership policy; canvas placement still rejects ambiguous canvases. These are
+documented hardening follow-ups, not silent behavior changes. Native input/layout/
+feedback rendering and full composition remain separate. Next: timeline drop-gap/
+reorder hints, remaining geometry/scroll presentation, then full timeline/Curves
+integration. Shipping stays on 0.19.1 until B20-3.
+
+## Timeline presentation and scrolling
+
+B20-2 slice 44 shares actual timeline bar/handle/marker/event/referenced-child
+geometry, ruler/playhead/guide and transport labels, synchronized scrolling,
+emitter reveal/focus, hover insertion/drop gaps/preview and reorder borders.
+Nested catalog-backed track projections and visible automation lane validation/
+height aggregation remain production implementations on both engines. Native
+identities, UI attachment names, plugin order and the entire root timeline test
+module remain intact. Audits verify 53 moved function/type contracts with only
+visibility, formatting and explicit imports differing.
+
+Twenty-seven new regressions cover live/stale/clipped geometry, scroll input and
+clamping/priority, delayed focus, insertion cleanup/grid restoration, preview
+placement/labels, reorder decoration, nested metadata and visible/custom-height
+automation lanes. See
+[implementation, scope and evidence](editor-timeline-presentation-2026-10-15.md).
+
+The accepted frozen headless run executes **1,251 checks**, including **832 graph/
+session/history/consumer checks**, with all **833 input hashes** unchanged.
+Shipping passes **1,918 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Explicit computed geometry does not qualify native layout/picking or full UI
+composition. Single-canvas/viewport queries, largest-canvas ruler spacing and
+previous interaction-hardening follow-ups retain their current policies. Next:
+timeline/Curves lane/track construction and full panel/plugin composition, then
+remaining viewport/application consumers and native workflow acceptance.
+Shipping stays on 0.19.1 until B20-3.
+
+## Automation lane composition
+
+B20-2 slice 45 builds actual automation headers, graphs, key controls and resize
+handles with real Feathers icon buttons, attached production observers and curve
+raster requests. The candidate uses registry-driven scalar/vector/gradient lane
+discovery, public binding/source-bank resolution and localized labels. Actual
+linked-extension registry/default and property value/label helpers are shared
+from properties/module_data.rs without changing existing properties exports.
+Seven extracted contracts and six newly candidate-qualified automation definitions
+retain their behavior. Native plugin order and complete existing root timeline,
+automation and properties test modules remain unchanged.
+
+Twenty new checks cover both locales, metadata/value/channel resolution,
+construction geometry and classification, selection, source offsets/offscreen
+identity, CPU raster generation/reuse, attached pointer controls, single header
+add/delete activation, globally reversible edits and non-semantic resizing.
+Two existing production metadata tests also join the candidate graph. See
+[implementation, scope and evidence](editor-timeline-lane-composition-2026-10-15.md).
+
+The accepted frozen headless run executes **1,273 checks**, including **854 graph/
+session/history/consumer checks**, with all **836 input hashes** unchanged.
+Shipping passes **1,938 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Actual scenes/observers and CPU raster generation do not qualify native UI input,
+layout/rendering, floating windows or full panel/plugin composition. Existing
+interaction-hardening follow-ups remain separate. Next: remaining emitter/effect-
+clip/referenced-track construction and complete timeline/Curves integration, then
+remaining viewport/application consumers and native workflow acceptance.
+Shipping stays on 0.19.1 until B20-3.
+
+## Referenced-track composition
+
+B20-2 slice 46 builds actual referenced-emitter/effect-clip headers and read-only
+track rows from catalog projections, retaining list/native-control identity,
+localized badges, selected/muted/disabled styling and attached production
+selection/source-opening/press observers. Existing track label/color helpers and
+generic Feathers tool-button composition are shared with shipping. Native plugin
+order, existing root timeline/referenced-effect tests and remaining button bodies
+are unchanged. Audits verify eight function contracts with only import,
+visibility, formatting and equivalent namespace differences.
+
+Twenty new shared checks cover nested/reused paths, grid/depth/trim geometry,
+missing/offscreen timing, selection and source intents, disclosure behavior, both
+locales and live root-clip trim compatibility. Four existing referenced checks
+and one additional tool-button API probe also join candidate gates. See
+[implementation, scope and evidence](editor-referenced-track-composition-2026-10-15.md).
+
+The accepted frozen headless run executes **1,298 checks**, including **878 graph/
+session/history/consumer checks**, with all **839 input hashes** unchanged.
+Shipping passes **1,958 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Dependency inputs remain unchanged.
+
+Scene/observer/intent checks do not qualify native layout/picking/rendering,
+floating windows, external source navigation or full plugin composition. Existing
+hardening and nested disclosure labeling remain separate. Next: outer emitter/
+root effect-clip headers and their actual menus/popovers, remaining track/toolbar
+construction and full timeline/Curves integration, then viewport/application
+consumers and native workflows. Shipping stays on 0.19.1 until B20-3.
+
+## Outer effect-clip headers and popup composition
+
+B20-2 slice 47 builds actual root effect-clip headers, reorder handles and their
+five-item context menus. Complete pointer-popup constructors/observers and the
+real AssetAction identity are shared with shipping. Native exports, plugin wiring
+and complete existing root timeline/context-menu tests remain unchanged. Audits
+verify fifteen function contracts and the action enum without behavior changes.
+
+Twenty new shared tests cover list/control identity and geometry, selected styling,
+localized inverse labels, native inline clicks versus Feathers activation,
+secondary-click routing, actual popup actions and propagation, single activation
+consumption, source/list intents, deletion cleanup/undo and mixed-track reorder
+history. The existing authored-order versus normalized-order deletion policy is
+explicitly preserved. See [implementation, scope and evidence](editor-effect-clip-header-composition-2026-10-15.md).
+
+The accepted frozen headless run executes **1,318 checks**, including **898 graph/
+session/history/consumer checks**, with all **843 input hashes** unchanged.
+Shipping passes **1,978 editor unit + 3 architecture tests**. Existing ignores are
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+
+These scene/observer tests use explicit geometry, not native picking/layout/
+clamping/rendering, floating windows or full timeline/Curves plugin acceptance.
+Source navigation and explode host execution are not mocked or claimed qualified.
+Next: outer emitter headers and actual color/automation/context popovers, remaining
+track/toolbar construction and full timeline/Curves integration, then viewport/
+application consumers and native workflows. Shipping stays on 0.19.1 until B20-3.
+
+## Emitter headers and their popovers
+
+B20-2 slice 48 builds actual emitter headers and their context, color and automation
+visibility popovers. The candidate uses complete production color/numeric/text
+controls and real registry-discovered lanes. Three header presentation markers
+join shared interaction state. Eight extracted function contracts, native plugin
+wiring and complete existing root timeline tests remain unchanged.
+
+Twenty new shared tests cover list/native action identity, geometry and selection,
+localized enabled/solo/diagnostic states, inline click versus Activate routing,
+region-sensitive menu actions, semantic mute/duplicate undo, actual color live
+preview/final commit/Automatic undo, lane visibility/spacers and mixed-order
+reorder history. Forty-nine existing control regressions also execute in the
+integrated graph gate. See [implementation, scope and evidence](editor-emitter-header-composition-2026-10-15.md).
+
+The accepted frozen headless run executes **1,387 checks**, including **967 graph/
+session/history/consumer checks**, with all **846 input hashes** unchanged.
+Shipping passes **1,998 editor unit + 3 architecture tests**. Existing ignores
+remain unchanged. Strict all-target Clippy passes on both engines, alongside
+workspace all-target checking with `aestra-bench/gpu`, both formatting checks
+and whitespace validation. Root dependency/toolchain inputs remain unchanged.
+
+Actual controls and explicit-geometry observer tests do not qualify native input,
+layout/clamping/rendering, floating windows, extraction/deletion workflows or full
+timeline/Curves plugin composition. Existing hardening policies stay separate.
+Next: remaining ruler/event-lane, track and toolbar construction, full timeline/
+Curves integration, then viewport/application consumers and native workflows.
+Shipping stays on 0.19.1 until B20-3.
+
+## Ruler and choreography-event lane composition
+
+B20-2 slice 49 builds actual ruler ticks, marker controls, choreography-event
+lane/controls and the hidden effect-drop spacer. Three extracted constructor
+contracts preserve their behavior; native plugin wiring and the complete existing
+root timeline tests remain unchanged. Selection, drag, presentation and history
+consumers are the actual production implementations.
+
+Eighteen new shared tests cover retained native cue/tick identities, both locales,
+selected styling and lane/spacer geometry, real presentation/zoom/offscreen and
+missing-cue policy, click versus Activate and press isolation, attached marker/
+event drag previews, payload-preserving commits, globally reversible history,
+two DPI scales, bounds and no-motion release/cursor restoration. See
+[implementation, scope and evidence](editor-ruler-cue-composition-2026-10-15.md).
+
+The accepted frozen headless run executes **1,405 checks**, including **985 graph/
+session/history/consumer checks**, with all **848 input hashes** unchanged.
+Strict all-target Clippy passes on both engines, alongside workspace all-target
+checking with `aestra-bench/gpu`, both formatting checks and whitespace validation.
+Shipping passes **2,016 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Root dependency/toolchain inputs are unchanged.
+
+These explicit-geometry scene/observer checks do not qualify native layout/picking/
+rendering, floating-window routing or full timeline/Curves plugin acceptance.
+Earlier interaction-hardening follow-ups stay separate. Next: remaining track/
+toolbar construction and full timeline/Curves integration, then viewport/
+application consumers and native workflows. Shipping stays on 0.19.1 until B20-3.
+
+## Timeline toolbar and selection-combo composition
+
+B20-2 slice 50 builds the production timeline toolbar and real selection-combo
+controls. The toolbar expression, three helpers, generic combo option type and
+default actual shell action identity retain their native contracts. Combo idle
+initialization has an explicit 0.19/0.20 boundary; no deprecated compatibility
+component or substitute dispatch is added on 0.20. Native plugin wiring, existing
+timeline/searchable-menu tests and eight remaining combo/menu helpers are unchanged.
+
+Twenty new shared toolbar tests exercise actual transport/timeline/history
+consumers, retained SVG/control geometry, localized labels, snapping and view
+state, semantic cue/duration/region edits and single activation consumption.
+Three shared combo API/composition tests and one engine-specific idle-state test
+per graph cover the remaining new contracts. See
+[implementation, scope and evidence](editor-timeline-toolbar-composition-2026-10-15.md).
+
+The accepted frozen headless run executes **1,429 checks**, including **1,009 graph/
+session/history/consumer checks**, with all **857 input hashes** unchanged.
+Shipping passes **2,040 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs are unchanged.
+
+Typed activation/scene tests do not qualify native pointer/keyboard input, menu
+focus/lifecycle, layout/rendering, floating windows or full timeline/Curves
+composition. Prior hardening and full host action-menu/shell integration stay
+separate. Next: remaining track construction and full timeline/Curves integration,
+then viewport/application consumers and native workflows. Shipping stays on
+0.19.1 until B20-3.

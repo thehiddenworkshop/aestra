@@ -53,11 +53,8 @@ impl Plugin for EditorShellPlugin {
     }
 }
 
-#[derive(Component, Clone, Copy)]
-pub(crate) enum EditorAction {
-    ShowAbout,
-    CloseAbout,
-}
+mod action;
+pub(crate) use action::EditorAction;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ScrollMemoryKey {

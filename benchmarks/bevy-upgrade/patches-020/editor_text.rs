@@ -19,6 +19,42 @@ mod theme {
 mod button;
 #[path = "../../../apps/aestra-editor/src/feathers/button/activation_020.rs"]
 mod button_activation;
+
+#[test]
+fn shared_tool_button_reexport_keeps_real_scene_and_action_classification() {
+    use bevy::{asset::AssetPlugin, prelude::*, scene::ScenePlugin, text::TextPlugin};
+    let mut app = App::new();
+    app.add_plugins((
+        MinimalPlugins,
+        AssetPlugin::default(),
+        ScenePlugin,
+        TextPlugin,
+    ))
+    .add_systems(Startup, |mut commands: Commands| {
+        commands.spawn(Node::default()).with_children(|parent| {
+            button::spawn_tool_button(parent, "Disclosure", EditorAction);
+        });
+    });
+    app.update();
+    let world = app.world_mut();
+    let (entity, node, label) = world
+        .query_filtered::<(Entity, &Node, &AccessibleLabel), With<EditorAction>>()
+        .single(world)
+        .unwrap();
+    assert_eq!(node.width, Val::Px(28.0));
+    assert_eq!(node.height, Val::Px(24.0));
+    assert_eq!(label.0, "Disclosure");
+    assert!(world.get::<bevy::ui_widgets::Button>(entity).is_some());
+    assert!(world.get::<button::FeathersActionButton>(entity).is_some());
+    assert!(world.get::<button::EditorNativeControl>(entity).is_none());
+    let text = world.get::<Children>(entity).unwrap()[0];
+    assert_eq!(world.get::<Text>(text).unwrap().0, "Disclosure");
+    assert!(
+        world
+            .get::<bevy::feathers::theme::ThemedText>(text)
+            .is_some()
+    );
+}
 #[path = "../../../apps/aestra-editor/src/feathers/code_editor.rs"]
 #[allow(
     clippy::too_many_arguments,
@@ -44,6 +80,7 @@ mod node_graph {
 }
 mod feathers {
     pub(crate) use super::{action_activation, context_menu, text_input};
+    pub(crate) use super::{node_graph, pointer, scenes};
 }
 // Host-only action/history identities. All widget behavior above is production source.
 #[derive(bevy::prelude::Component)]

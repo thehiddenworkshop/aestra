@@ -1,11 +1,14 @@
 //! Shared source actions and dialogs, independent of the Library browsing panel.
+mod action;
 mod background;
+pub(crate) use action::AssetAction;
 #[cfg(test)]
 mod tests;
 use crate::effect_authoring::{create_reusable_effect_from_emitters, explode_effect_clip};
 use crate::project_content::ProjectEffectWatchState;
 use crate::timeline::TimelineState;
 use crate::*;
+#[cfg(test)]
 use aestra_core::EffectClipId;
 use bevy::ui_widgets::Activate;
 
@@ -34,13 +37,6 @@ impl Plugin for EditorAssetActionsPlugin {
                     .in_set(AssetActionsSet::Actions),
             );
     }
-}
-
-#[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AssetAction {
-    RefreshProject,
-    CreateReusableEffectFromSelection,
-    ExplodeEffectClip(EffectClipId),
 }
 
 mod state;

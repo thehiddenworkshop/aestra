@@ -1,8 +1,11 @@
 //! Shared source identity for authoring drops and, later, compatible asset pickers.
 //! A drag is a snapshot-bound intent, never authority to mutate a file/document.
-use crate::*;
-use aestra_project::{ProjectAssetId, ProjectContentVersion, ProjectSourceId};
-use std::path::PathBuf;
+use crate::{EditorSession, ProjectEffectCatalog, persistence::DocumentProtectionState};
+use aestra_project::{ProjectAssetId, ProjectSourceId};
+use bevy::prelude::*;
+#[path = "payload/model.rs"]
+mod model;
+pub(crate) use model::{AssetPayload, VirtualAsset};
 
 /// Shared gate for typed authoring drops; filesystem operations have their own I/O guards.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -14,7 +17,7 @@ pub(crate) struct AuthoringDropGuard<'w> {
 
 impl AuthoringDropGuard<'_> {
     pub(crate) fn check_release(&self) -> Result<(), String> {
-        if super::cancelled(self.keys.as_deref()) {
+        if crate::asset_drop::cancelled(self.keys.as_deref()) {
             return Err("Asset drop cancelled".into());
         }
         self.check()
@@ -31,28 +34,6 @@ impl AuthoringDropGuard<'_> {
         }
         Ok(())
     }
-}
-
-#[derive(Component, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AssetPayload {
-    root: PathBuf,
-    version: ProjectContentVersion,
-    source: Option<ProjectSourceId>,
-    asset: Option<ProjectAssetId>,
-    virtual_asset: Option<VirtualAsset>,
-    document: Option<(aestra_core::EffectId, u64, u64)>,
-}
-
-/// Virtual resources have semantic identities, never filesystem source identities.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum VirtualAsset {
-    BuiltInPreset(aestra_core::MaterialPresetId),
-    Material(aestra_core::MaterialId),
-    Texture(aestra_core::AssetId),
-    Mesh(aestra_core::AssetId),
-    Flipbook(aestra_core::AssetId),
-    /// Legacy declaration without atlas metadata: inspectable, not assignable.
-    FlipbookDeclaration(aestra_core::AssetId),
 }
 
 impl AssetPayload {

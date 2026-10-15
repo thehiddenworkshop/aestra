@@ -1,8 +1,11 @@
 //! Target adapter for effect transform curves; uses the shared curve model and raster widget.
+use super::state::{DragState, Selection};
 use super::*;
 use crate::timeline::{TimelineState, host_motion as poses};
 use aestra_authoring::{EffectCommand, EffectTransaction};
-use aestra_core::{Curve, CurveInterpolation, EffectId, HostTransformTrack, QuaternionKey};
+#[cfg(test)]
+use aestra_core::EffectId;
+use aestra_core::{Curve, CurveInterpolation, HostTransformTrack, QuaternionKey};
 
 const LABELS: [&str; 10] = [
     "Position X",
@@ -17,18 +20,6 @@ const LABELS: [&str; 10] = [
     "Rotation W (quaternion)",
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct Selection {
-    effect: EffectId,
-    channel: u8,
-    key: usize,
-}
-pub(super) struct DragState {
-    selection: Selection,
-    original: HostTransformTrack,
-    candidate: HostTransformTrack,
-    time: f32,
-}
 #[derive(Component)]
 struct Graph;
 #[derive(Component)]

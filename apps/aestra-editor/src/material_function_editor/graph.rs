@@ -29,16 +29,8 @@ mod arrange_context_tests;
 mod clipboard;
 mod socket_palette;
 
-#[derive(Component, Clone, Copy)]
-struct View(MaterialFunctionId);
-#[derive(Component, Clone, Copy)]
-struct ViewScope(crate::material_graph::MaterialSelectionScope);
-#[derive(Component, Clone, Copy)]
-struct FunctionGraphNodeAction {
-    owner: MaterialFunctionId,
-    expression: MaterialExpressionId,
-    scope: crate::material_graph::MaterialSelectionScope,
-}
+mod clipboard_context;
+use clipboard_context::{FunctionGraphNodeAction, View, ViewScope, activate_function_graph_target};
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SocketKind {
     Source(MaterialExpressionId),
@@ -180,32 +172,12 @@ pub(super) fn register(app: &mut App) {
         .add_observer(drop_socket)
         .add_observer(constant_text)
         .add_observer(constant_number)
-        .add_systems(
-            Update,
-            (
-                attach_wires,
-                dismiss_function_graph_menu,
-                clipboard::keyboard,
-            ),
-        )
+        .add_systems(Update, (attach_wires, dismiss_function_graph_menu))
         .add_systems(
             PostUpdate,
             update_wires.after(bevy::ui::UiSystems::PostLayout),
         );
-}
-
-fn activate_function_graph_target(
-    session: &mut EditorSession,
-    catalog: &ProjectEffectCatalog,
-    owner: MaterialFunctionId,
-) -> bool {
-    match session.open_material_function(catalog, owner) {
-        Ok(()) => true,
-        Err(error) => {
-            session.status = format!("Function unavailable: {error}");
-            false
-        }
-    }
+    clipboard::register(app);
 }
 
 // Picking may target a child of the socket hit area (for example its visual dot).
