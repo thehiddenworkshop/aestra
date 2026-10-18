@@ -2077,6 +2077,102 @@ or full timeline/Curves integration; earlier hardening remains separate.
 Next: remaining track construction and full timeline/Curves panel/plugin
 integration, then viewport/application consumers and native workflows.
 
+Implemented slice 51 (2026-10-18): **choreography track assembly**.
+The candidate now assembles actual header/body lists for root and nested effect
+clips, implicit/explicit emitter regions and visible automation lanes, including
+both drop spacers. Two original assembly expressions retain their contracts;
+native timeline plugin wiring and the complete existing root tests are unchanged.
+Eighteen shared tests cover exact mixed/nested row alignment and heights, lane
+visibility, reused source paths, control identities, clipping/styling and attached
+selection/context/press consumers. Actual move/trim controls preserve exact timing
+at two DPI scales, non-mutating previews and single globally reversible commits.
+Source/project files remain byte-identical.
+See [implementation, scope and evidence](../../benchmarks/bevy-upgrade/editor-track-composition-2026-10-18.md).
+The accepted frozen headless run executes **1,447 checks**, including **1,027
+graph/session/history/consumer checks**, with all **859 hashes** unchanged.
+Shipping passes **2,058 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. Explicit-geometry
+scene/observer tests do not qualify native input/layout/rendering, menu lifecycle,
+floating windows or full plugins. Earlier interaction-hardening stays separate.
+Next: remaining full timeline/Curves panel/plugin integration, including host-motion
+construction and scrolling, then viewport/application consumers and native workflows.
+Shipping remains 0.19.1.
+
+Implemented slice 52 (2026-10-18): **host-motion lane and timeline scrollbar composition**.
+The candidate builds the production host-motion header/pose lane and horizontal/
+vertical timeline gutters with real Feathers bars. Native constructors and the
+actual host activation queue/consumer are shared through the existing input
+boundary: Interaction on 0.19; upstream Pressed insertion/removal on 0.20.
+Five constructor/helper expressions and two bridge contracts retain their behavior;
+native host installation, remaining inspector helpers, TimelinePlugin wiring and
+both complete existing timeline/host test blocks remain unchanged.
+Fourteen shared tests exercise real action classification/consumption, empty/
+existing/new keys, attached selection/retiming at two scales, global history,
+anchor protection, trailing clicks and stable visuals. Ten shared scrolling tests
+cover real bar targets/geometry, paired panes, view mapping, overflow/clamping,
+content shrink, half-pixel thresholds and attached gesture isolation.
+See [implementation, scope and evidence](../../benchmarks/bevy-upgrade/editor-host-motion-scroll-composition-2026-10-18.md).
+The accepted frozen headless run executes **1,471 checks**, including **1,051
+graph/session/history/consumer checks**, with all **863 hashes** unchanged.
+Shipping passes **2,082 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. These explicit-
+geometry scene/observer tests do not qualify native input/layout/rendering,
+scrollbar thumb input, persisted scroll memory, floating windows or full plugins.
+Earlier hardening remains separate. Next: remaining full timeline/Curves panel/
+plugin integration and host-motion inspector construction, then viewport/
+application consumers and native workflows. Shipping remains 0.19.1.
+
+Implemented slice 53 (2026-10-18): **host-motion inspector composition**.
+The candidate builds the real inspector, controlled numeric fields, motion actions,
+concrete Curves link and scroll area. Four original helpers, complete scroll-memory/
+Curves action identities, generic button composition and actual field-row/scroll
+wrappers are shared, preserving native APIs. Host installation, Timeline/Curves/
+Shell plugin wiring and all four existing root test blocks retain their contracts.
+Twenty-two shared tests cover inspector states, exact initialization/ranges/steps,
+real text editing and keyboard Enter, non-mutating previews, validation/rollback,
+time/pose edits, Escape/late release, constructed motion actions and global history,
+scroll targets and field layout. The candidate also runs the existing field-row
+contract and a new native-button-reexport API probe. Authored files stay unchanged.
+See [implementation, scope and evidence](../../benchmarks/bevy-upgrade/editor-host-motion-inspector-2026-10-18.md).
+The accepted frozen headless run executes **1,495 checks**, including **1,074
+graph/session/history/consumer checks**, with all **869 hashes** unchanged.
+Shipping passes **2,104 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. Headless Feathers/
+text/input checks do not qualify native visual/pointer acceptance, persisted scroll
+capture/restore, floating windows or complete plugins. The Curves link's dock-opening
+consumer and earlier interaction-hardening remain separate. Next: remaining full
+timeline panel composition and Curves action/panel/plugin integration, then
+viewport/application consumers and native workflows. Shipping remains 0.19.1.
+
+Implemented slice 54 (2026-10-18): **complete timeline panel composition**.
+The candidate builds the entire production timeline tree: toolbar, heading/track
+list, nested choreography rows, ruler/cue/motion lanes, scroll viewports/gutters,
+playhead/snap guide and drop feedback. The original constructor and five panel
+marker contracts are shared; native TimelinePlugin wiring and the existing root
+timeline test block remain unchanged. Twenty-two new shared tests exercise
+complete/empty/localized panels, exact paired grid rows, retained controls,
+attached seek/drop/drag observers, actual toolbar/header/transport actions,
+global history, preview/rejection cleanup, paired scrolling, idle stability and
+nested teardown. See
+[`editor-timeline-panel-composition-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-timeline-panel-composition-2026-10-18.md).
+The accepted frozen headless run executes **1,517 checks**, including **1,096
+graph/session/history/consumer checks**, with all **871 input hashes** unchanged.
+Shipping passes **2,126 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. These explicit-
+geometry checks do not qualify native layout/picking/rendering, floating windows
+or complete plugin schedules. Next: TimelinePlugin schedule integration, then
+remaining Curves action/panel/plugin integration, viewport/application consumers
+and native workflows. Earlier interaction-hardening remains separate. Shipping
+remains 0.19.1.
+
 B20-2 remains in progress: remaining pointer consumers, application action
 dispatch and full workflow acceptance are not yet ported. The merged
 0.20 group body tokens do not
@@ -2219,8 +2315,8 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** continue B20-2 with remaining track
-construction and complete timeline/Curves panel/plugin composition,
+**Next action:** continue B20-2 with TimelinePlugin schedule integration,
+then remaining Curves action/panel/plugin integration,
 preserving action routing and event propagation on the 0.20 APIs,
 remaining viewport execution/navigation and graph palette/menu handlers,
 remaining application action handlers,

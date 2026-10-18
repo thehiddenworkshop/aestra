@@ -1922,3 +1922,113 @@ composition. Prior hardening and full host action-menu/shell integration stay
 separate. Next: remaining track construction and full timeline/Curves integration,
 then viewport/application consumers and native workflows. Shipping stays on
 0.19.1 until B20-3.
+
+## Choreography track assembly
+
+B20-2 slice 51 assembles the production choreography header and body lists:
+root and nested effect clips, emitter regions, visible automation lanes and both
+drop spacers. The two original expressions retain their contracts; native plugin
+wiring and the complete existing root timeline tests remain unchanged.
+
+Eighteen new shared tests exercise exact mixed/nested grid alignment and heights,
+lane visibility, reused source paths, native controls, clipping and styling,
+attached selection/context/press observers, and actual moves/trims with exact
+timing at two DPI scales and globally reversible history. See
+[implementation, scope and evidence](editor-track-composition-2026-10-18.md).
+
+The accepted frozen headless run executes **1,447 checks**, including **1,027
+graph/session/history/consumer checks**, with all **859 input hashes** unchanged.
+Shipping passes **2,058 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+
+Explicit-geometry scene/observer checks do not qualify native picking/layout/
+rendering, menu lifecycle, floating windows or complete timeline/Curves plugins.
+Earlier interaction-hardening follow-ups remain separate. Next: remaining full
+timeline/Curves integration, including host-motion construction and scrolling,
+then viewport/application consumers and native workflows. Shipping remains
+0.19.1 until B20-3.
+
+## Host-motion lane and timeline scrollbar composition
+
+B20-2 slice 52 builds the production host-motion header/key lane and both
+timeline scrollbar gutters. The native constructors and action bridge are shared;
+the existing version-specific input boundary preserves Interaction on 0.19 and
+upstream Pressed insertion/removal on 0.20. Actual key gestures, semantic actions,
+history, Feathers bars and scrolling consumers remain the production code.
+Native plugin wiring, remaining inspector helpers and existing timeline/host
+test blocks retain their contracts.
+
+Fourteen shared tests cover real host controls, activation consumption, empty/
+existing/new keys, exact retiming at two scales, global history, anchor protection,
+trailing clicks and in-place visuals. Ten shared tests cover bar targets/geometry,
+paired-pane scroll state, view mapping, overflow/clamping and attached gesture
+isolation. See
+[implementation, scope and evidence](editor-host-motion-scroll-composition-2026-10-18.md).
+
+The accepted frozen headless run executes **1,471 checks**, including **1,051
+graph/session/history/consumer checks**, with all **863 input hashes** unchanged.
+Shipping passes **2,082 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+
+These explicit-geometry scene/observer checks do not qualify native input/layout/
+rendering, scrollbar thumb input, persisted scroll memory, floating windows or
+complete plugins. Earlier hardening remains separate. Next: remaining full
+timeline/Curves integration and host-motion inspector construction, then viewport/
+application consumers and native workflows. Shipping remains 0.19.1 until B20-3.
+
+## Host-motion inspector composition
+
+B20-2 slice 53 builds the actual host-motion inspector with controlled numeric
+fields, motion actions, the concrete Curves link and scroll area. Four original
+helpers, complete scroll-memory/Curves action identities, generic action-button
+construction and real field-row/scroll wrappers are shared. Native public APIs,
+plugin wiring and existing root test blocks retain their contracts.
+
+Twenty-two shared tests cover inspector states, initialization/ranges/steps,
+actual text editing and Enter, previews/validation/cancellation, time/pose edits,
+constructed motion actions and global history, scroll targets and field layout.
+The candidate additionally runs the existing field-row contract and a new public
+button-reexport probe. See
+[implementation, scope and evidence](editor-host-motion-inspector-2026-10-18.md).
+
+The accepted frozen headless run executes **1,495 checks**, including **1,074
+graph/session/history/consumer checks**, with all **869 input hashes** unchanged.
+Shipping passes **2,104 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+
+Headless Feathers/text/input composition does not qualify native visual/pointer
+acceptance, persisted scroll lifecycle, floating windows or complete plugins.
+The Curves link's dock-opening consumer remains separate. Next: remaining full
+timeline panel composition and Curves action/panel/plugin integration, then
+viewport/application consumers and native workflows. Shipping remains 0.19.1.
+
+## Complete timeline panel composition
+
+B20-2 slice 54 constructs the entire production timeline tree from the actual
+toolbar, track/header rows, cue/motion lanes, scroll viewports/gutters and feedback
+overlays. The original constructor and five panel marker contracts are shared;
+native TimelinePlugin wiring and the existing root test block remain unchanged.
+
+Twenty-two new shared tests cover complete/empty/localized construction, paired
+grid alignment, retained control identities, attached seeking/drop/drag observers,
+actual toolbar/header/transport actions, global history, feedback cleanup,
+scroll synchronization, idle stability and nested teardown. See
+[implementation, scope and evidence](editor-timeline-panel-composition-2026-10-18.md).
+
+The accepted frozen headless run executes **1,517 checks**, including **1,096
+graph/session/history/consumer checks**, with all **871 input hashes** unchanged.
+Shipping passes **2,126 editor unit + 3 architecture tests**, with existing ignores
+unchanged. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+
+These explicit-geometry checks do not qualify native visual layout/picking/
+rendering, floating windows or complete plugin schedules. Next: TimelinePlugin
+schedule integration, then remaining Curves action/panel/plugin integration and
+viewport/application consumers before native workflows. Shipping remains 0.19.1.

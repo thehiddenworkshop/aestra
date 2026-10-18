@@ -35,20 +35,9 @@ impl Plugin for EditorCurvesPlugin {
     }
 }
 
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CurvesAction {
-    OpenHost(u8),
-    HostAddKey,
-    HostDeleteKey,
-    OpenInput(ModuleId, u8),
-    SelectVectorChannel(u8),
-    SetInterpolation(aestra_core::CurveInterpolation),
-    AddKey,
-    DeleteKey,
-    AdjustTime(i8),
-    AdjustCurveValue(i8),
-    AdjustGradientChannel(u8, i8),
-}
+#[path = "curves/action.rs"]
+mod action;
+pub(crate) use action::CurvesAction;
 
 #[derive(Component)]
 struct CurveGraph;

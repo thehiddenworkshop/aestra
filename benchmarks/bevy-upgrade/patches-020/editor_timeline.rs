@@ -88,10 +88,19 @@ mod reorder;
 #[path = "../../../apps/aestra-editor/src/timeline/pointer_020.rs"]
 mod timeline_pointer;
 mod host_motion {
+    pub(super) use super::host_composition::{spawn_header, spawn_lane};
     pub(super) use super::motion_state::keyboard_input;
 }
 #[path = "../../../apps/aestra-editor/src/timeline/actions.rs"]
 mod actions;
+#[path = "../../../apps/aestra-editor/src/timeline/host_composition.rs"]
+mod host_composition;
+#[path = "../../../apps/aestra-editor/src/timeline/inspector_composition.rs"]
+mod inspector_composition;
+#[path = "../../../apps/aestra-editor/src/timeline/panel_composition.rs"]
+mod panel_composition;
+#[path = "../../../apps/aestra-editor/src/timeline/scroll_composition.rs"]
+mod scroll_composition;
 use actions::{ChoreographyAction, TimelineAction};
 #[path = "../../../apps/aestra-editor/src/timeline/action_controls.rs"]
 #[allow(
@@ -171,5 +180,7 @@ mod projections;
 mod referenced_effect;
 #[path = "../../../apps/aestra-editor/src/timeline/toolbar_composition.rs"]
 mod toolbar_composition;
+#[path = "../../../apps/aestra-editor/src/timeline/track_composition.rs"]
+mod track_composition;
 #[path = "../../../apps/aestra-editor/src/timeline/track_style.rs"]
 mod track_style;

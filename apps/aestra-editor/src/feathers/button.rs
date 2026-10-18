@@ -4,7 +4,10 @@ use super::{action_activation::queue_activation, button_activation::AuditedButto
 use crate::EditorAction;
 #[path = "button/tool.rs"]
 mod tool;
-use bevy::{feathers::theme::ThemedText, prelude::*, ui_widgets::Activate};
+use bevy::{prelude::*, ui_widgets::Activate};
+#[path = "button/action.rs"]
+mod action;
+pub(crate) use action::spawn_action_button;
 pub(crate) use tool::spawn_tool_button;
 
 pub(crate) use super::action_activation::{
@@ -34,27 +37,4 @@ pub(crate) fn audit_action_controls(controls: Query<Entity, UnclassifiedEditorAc
              marked EditorNativeControl"
         );
     }
-}
-
-pub(crate) fn spawn_action_button<A: Component>(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    action: A,
-    primary: bool,
-) {
-    let mut button = parent.spawn_empty();
-    if primary {
-        button.apply_scene(scenes::feathers_primary_button());
-    } else {
-        button.apply_scene(scenes::feathers_button());
-    }
-    button
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-        ))
-        .with_children(|button| {
-            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
-        });
 }

@@ -56,26 +56,9 @@ impl Plugin for EditorShellPlugin {
 mod action;
 pub(crate) use action::EditorAction;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ScrollMemoryKey {
-    AssetBrowserSources,
-    AssetBrowserBuiltInSources,
-    AssetBrowserItems,
-    AssetBrowserBuiltIns,
-    AssetBrowserDocument,
-    Properties,
-    PropertiesInspector,
-    CompilerInspector,
-    Profiler,
-    Settings,
-    Diagnostics,
-    TransactionConfirmation,
-    Curves,
-    MaterialGraphPalette,
-    MaterialFunctionInspector,
-    /// Per-view so two views of one WESL module scroll independently.
-    WeslSource(crate::docking::EditorViewId),
-}
+#[path = "shell/scroll_key.rs"]
+mod scroll_key;
+pub(crate) use scroll_key::ScrollMemoryKey;
 
 #[derive(Resource, Default)]
 struct ScrollMemoryState(HashMap<ScrollMemoryKey, Vec2>);

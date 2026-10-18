@@ -55,6 +55,47 @@ fn shared_tool_button_reexport_keeps_real_scene_and_action_classification() {
             .is_some()
     );
 }
+// Keep the native button module's public reexport exercised as well as the direct
+// production constructor used by the editor graph fixture.
+#[test]
+fn shared_action_button_reexport_preserves_real_primary_and_secondary_scenes() {
+    use bevy::{
+        asset::AssetPlugin, feathers::controls::ButtonVariant, prelude::*, scene::ScenePlugin,
+        text::TextPlugin,
+    };
+    let mut app = App::new();
+    app.add_plugins((
+        MinimalPlugins,
+        AssetPlugin::default(),
+        ScenePlugin,
+        TextPlugin,
+    ))
+    .add_systems(Startup, |mut commands: Commands| {
+        commands.spawn(Node::default()).with_children(|parent| {
+            button::spawn_action_button(parent, "Primary", EditorAction, true);
+            button::spawn_action_button(parent, "Secondary", EditorAction, false);
+        });
+    });
+    app.update();
+    let w = app.world_mut();
+    let mut query =
+        w.query_filtered::<(Entity, &AccessibleLabel, &ButtonVariant), With<EditorAction>>();
+    assert_eq!(query.iter(w).count(), 2);
+    for (e, label, variant) in query.iter(w) {
+        assert!(w.get::<button::FeathersActionButton>(e).is_some());
+        assert_eq!(
+            *variant,
+            if label.0 == "Primary" {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Normal
+            }
+        );
+        let child = w.get::<Children>(e).unwrap()[0];
+        assert_eq!(w.get::<Text>(child).unwrap().0, label.0);
+        assert!(w.get::<bevy::feathers::theme::ThemedText>(child).is_some());
+    }
+}
 #[path = "../../../apps/aestra-editor/src/feathers/code_editor.rs"]
 #[allow(
     clippy::too_many_arguments,

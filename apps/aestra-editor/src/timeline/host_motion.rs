@@ -1,33 +1,36 @@
 //! Effect-level pose keys. UI state never owns semantic motion or bypasses command history.
+use super::inspector_composition::initialize_numbers;
+pub(crate) use super::inspector_composition::spawn_inspector;
 #[cfg(test)]
 use super::motion_execution::timeline_duration;
-use super::motion_execution::{Field, NumberControl, cancel_drag, execute, number_changed};
+#[cfg(test)]
+use super::motion_execution::{Field, NumberControl};
 #[cfg(test)]
 use super::motion_execution::{add_key, edit_pose, move_key, select};
 pub(crate) use super::motion_execution::{busy, replace_pose, select_pose, selected_pose};
+use super::motion_execution::{cancel_drag, execute, number_changed};
 #[cfg(test)]
 use super::motion_gestures::drag_time;
-use super::motion_gestures::{KeyControl, begin_drag, click_key, drag_key, end_drag, update_keys};
+use super::motion_gestures::update_keys;
+#[cfg(test)]
+use super::motion_gestures::{KeyControl, click_key, end_drag};
+#[cfg(test)]
 use super::motion_state::Action;
 #[cfg(test)]
 use super::motion_state::KeyDrag;
 pub(crate) use super::motion_state::active;
 pub(super) use super::motion_state::keyboard_input;
 use super::*;
-use crate::feathers::number_input::{NumberInputValue, UpdateNumberInput};
-use crate::feathers::{
-    field_row::{FieldRowProps, spawn_field_row},
-    number_input::ScrubbableNumber,
-};
-use aestra_core::EffectId;
+#[cfg(test)]
+use crate::feathers::number_input::{NumberInputValue, ScrubbableNumber, UpdateNumberInput};
 #[cfg(test)]
 use aestra_core::{EmitterTransform, HostTransformKey, HostTransformTrack};
 #[cfg(test)]
 use bevy::camera::NormalizedRenderTarget;
 
-/// Keep the press/release target alive when switching from a selected region to motion.
-#[derive(Component)]
-pub(super) struct HostMotionControl;
+use super::host_composition::{activate, buttons};
+pub(super) use super::host_composition::{spawn_header, spawn_lane};
+pub(super) use super::interaction_state::HostMotionControl;
 
 pub(super) fn install(app: &mut App) {
     app.add_observer(activate)
@@ -43,336 +46,6 @@ pub(super) fn install(app: &mut App) {
             )
                 .in_set(TimelineSet::Visuals),
         );
-}
-
-fn activate(
-    event: On<Activate>,
-    controls: Query<(), (With<Action>, With<FeathersActionButton>)>,
-    mut commands: Commands,
-) {
-    if controls.contains(event.entity) {
-        commands
-            .entity(event.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
-}
-
-fn buttons(
-    mut commands: Commands,
-    controls: Query<(Entity, &Action), With<PendingFeathersActivation>>,
-) {
-    for (entity, action) in &controls {
-        commands
-            .entity(entity)
-            .remove::<PendingFeathersActivation>()
-            .insert(Interaction::None);
-        commands.trigger(*action);
-    }
-}
-
-fn text_action(parent: &mut ChildSpawnerCommands, label: &str, action: Action) -> Entity {
-    let entity = mini_button(parent, label, action);
-    parent.commands().entity(entity).insert(Node {
-        width: Val::Auto,
-        height: Val::Px(24.0),
-        flex_shrink: 0.0,
-        padding: UiRect::horizontal(Val::Px(8.0)),
-        align_items: AlignItems::Center,
-        justify_content: JustifyContent::Center,
-        ..default()
-    });
-    entity
-}
-
-pub(super) fn spawn_header(parent: &mut ChildSpawnerCommands) {
-    parent
-        .spawn(Node {
-            height: Val::Px(28.0),
-            flex_shrink: 0.0,
-            align_items: AlignItems::Center,
-            padding: UiRect::horizontal(Val::Px(8.0)),
-            column_gap: Val::Px(5.0),
-            ..default()
-        })
-        .with_children(|row| {
-            let inspect = text_action(row, "Host Motion", Action::Inspect);
-            let add = mini_button(row, "+", Action::Add);
-            for entity in [inspect, add] {
-                row.commands()
-                    .entity(entity)
-                    .insert((HostMotionControl, RelativeCursorPosition::default()));
-            }
-            row.commands()
-                .entity(add)
-                .insert(EditorTooltip::description(
-                    "Add a pose key at the playhead; existing keys are selected for editing",
-                ));
-        });
-}
-
-pub(super) fn spawn_lane(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
-    parent
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(53.0),
-                left: Val::Px(0.0),
-                right: Val::Px(0.0),
-                height: Val::Px(28.0),
-                border: UiRect::bottom(Val::Px(1.0)),
-                ..default()
-            },
-            BorderColor::all(theme::BORDER),
-            BackgroundColor(theme::PANEL_DARK),
-        ))
-        .with_children(|lane| {
-            for (index, key) in session
-                .effect
-                .host_transform_track
-                .iter()
-                .flat_map(|track| track.keys().into_iter().enumerate())
-            {
-                lane.spawn((
-                Button,
-                EditorNativeControl,
-                KeyControl { effect: session.effect.id, index },
-                EntityCursor::System(if index == 0 {
-                    SystemCursorIcon::Pointer
-                } else {
-                    SystemCursorIcon::EwResize
-                }),
-                AccessibleLabel(format!("Host pose key at {:.3} seconds", key.time)),
-                EditorTooltip::description(format!(
-                    "Pose at {:.3}s. Select to edit; drag to retime. The first key stays at zero.",
-                    key.time,
-                )),
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(4.0),
-                    width: Val::Px(18.0),
-                    height: Val::Px(20.0),
-                    margin: UiRect::left(Val::Px(-9.0)),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                },
-                BackgroundColor(theme::ACCENT_DIM),
-                Text::new("◆"),
-                TextFont { font_size: FontSize::Px(12.0), ..default() },
-                TextColor(theme::TEXT),
-            ))
-                .insert((HostMotionControl, RelativeCursorPosition::default()))
-                .observe(click_key)
-                .observe(stop_timeline_control_press)
-                .observe(begin_drag)
-                .observe(drag_key)
-                .observe(end_drag);
-            }
-        });
-}
-
-fn label(parent: &mut ChildSpawnerCommands, text: impl Into<String>) {
-    parent.spawn((
-        Text::new(text),
-        TextFont {
-            font_size: FontSize::Px(11.0),
-            ..default()
-        },
-        TextColor(theme::TEXT),
-        Node {
-            margin: UiRect::vertical(Val::Px(5.0)),
-            ..default()
-        },
-    ));
-}
-
-pub(crate) fn spawn_inspector(
-    parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    state: &TimelineState,
-) -> bool {
-    if !active(session, state) {
-        return false;
-    }
-    parent.spawn(Node {
-        width: Val::Percent(100.0),
-        flex_grow: 1.0,
-        min_height: Val::Px(0.0),
-        min_width: Val::Px(0.0),
-        ..default()
-    }).with_children(|body| {
-    crate::feathers::scroll::spawn_vertical_scroll_area(
-        body,
-        crate::ScrollMemoryKey::Properties,
-        Node {
-            flex_grow: 1.0,
-            min_width: Val::Px(0.0),
-            min_height: Val::Px(0.0),
-            flex_direction: FlexDirection::Column,
-            padding: UiRect::all(Val::Px(12.0)),
-            row_gap: Val::Px(4.0),
-            ..default()
-        },
-        |panel| {
-            label(panel, "Host Motion");
-            crate::spawn_feathers_action_button(panel, "Edit transform curves", crate::curves::CurvesAction::OpenHost(0), false);
-            label(panel, "Effect-level pose keys · rotation in degrees (XYZ)");
-            panel
-                .spawn(Node {
-                    flex_wrap: FlexWrap::Wrap,
-                    column_gap: Val::Px(5.0),
-                    row_gap: Val::Px(4.0),
-                    ..default()
-                })
-                .with_children(|row| {
-                    text_action(row, "Key at playhead", Action::Add);
-                    text_action(row, "Delete key", Action::Delete);
-                    text_action(row, "Clear motion", Action::Clear);
-                });
-            let Some(track) = &session.effect.host_transform_track else {
-                label(
-                    panel,
-                    "No motion track. Key at playhead creates a time-zero anchor and a pose at the current time.",
-                );
-                return;
-            };
-            panel.spawn(Node {
-                flex_wrap: FlexWrap::Wrap,
-                column_gap: Val::Px(5.0),
-                ..default()
-            }).with_children(|row| {
-                text_action(row, if track.repeat { "Hold" } else { "● Hold" }, Action::Repeat(false));
-                text_action(row, if track.repeat { "● Repeat" } else { "Repeat" }, Action::Repeat(true));
-                let close = text_action(row, "Close loop", Action::CloseLoop);
-                row.commands().entity(close).insert(EditorTooltip::description(
-                    "Copy the first pose to the final key and enable Repeat. A single-key track gains an endpoint at the effect duration."
-                ));
-            });
-            label(
-                panel,
-                format!(
-                    "{} keys · End / period {:.3}s",
-                    track.keys().len(),
-                    track.keys().last().unwrap().time
-                ),
-            );
-            if let Some(error) = &state.host_motion.error {
-                label(panel, error.clone());
-            }
-            let Some(index) = state.host_motion.selected.filter(|i| *i < track.keys().len()) else {
-                label(panel, "Select a pose key in the Host Motion lane.");
-                return;
-            };
-            let key = &track.keys()[index];
-            if index == 0 {
-                label(panel, "Time: 0 s (anchor)");
-            } else {
-                number(
-                    panel,
-                    session.effect.id,
-                    index,
-                    "Time (s)",
-                    Field::Time,
-                    key.time,
-                    0.0,
-                    0.01,
-                );
-            }
-            let (x, y, z) = Quat::from_array(key.transform.rotation).to_euler(EulerRot::XYZ);
-            for (axis, name) in ["X", "Y", "Z"].into_iter().enumerate() {
-                number(
-                    panel,
-                    session.effect.id,
-                    index,
-                    &format!("Position {name}"),
-                    Field::Position(axis),
-                    key.transform.translation[axis],
-                    -f32::MAX,
-                    0.1,
-                );
-            }
-            for (axis, angle) in [x, y, z].into_iter().enumerate() {
-                number(
-                    panel,
-                    session.effect.id,
-                    index,
-                    &format!("Rotation {} (°)", ["X", "Y", "Z"][axis]),
-                    Field::Rotation(axis),
-                    angle.to_degrees(),
-                    -360.0,
-                    0.5,
-                );
-            }
-            for (axis, name) in ["X", "Y", "Z"].into_iter().enumerate() {
-                number(
-                    panel,
-                    session.effect.id,
-                    index,
-                    &format!("Scale {name}"),
-                    Field::Scale(axis),
-                    key.transform.scale[axis],
-                    0.001,
-                    0.01,
-                );
-            }
-            if track.repeat {
-                label(
-                    panel,
-                    "First and last pose edits remain linked to keep the loop closed.",
-                );
-            }
-        },
-    );
-    });
-    true
-}
-
-#[allow(clippy::too_many_arguments)]
-fn number(
-    parent: &mut ChildSpawnerCommands,
-    effect: EffectId,
-    index: usize,
-    title: &str,
-    field: Field,
-    value: f32,
-    min: f32,
-    step: f32,
-) {
-    spawn_field_row(parent, FieldRowProps::new(title), (), |row| {
-        row.spawn_empty()
-            .apply_scene(ui_shell::feathers_scalar_input())
-            .insert((
-                NumberControl {
-                    effect,
-                    index,
-                    field,
-                    initial: value,
-                },
-                ScrubbableNumber::new(
-                    value,
-                    min,
-                    if matches!(field, Field::Rotation(_)) {
-                        360.0
-                    } else {
-                        f32::MAX
-                    },
-                    step,
-                ),
-                AccessibleLabel(title.to_owned()),
-            ));
-    });
-}
-
-fn initialize_numbers(
-    mut commands: Commands,
-    inputs: Query<(Entity, &NumberControl), Added<NumberControl>>,
-) {
-    for (entity, input) in &inputs {
-        commands.trigger(UpdateNumberInput {
-            entity,
-            value: NumberInputValue::F32(input.initial),
-        });
-    }
 }
 
 #[cfg(test)]

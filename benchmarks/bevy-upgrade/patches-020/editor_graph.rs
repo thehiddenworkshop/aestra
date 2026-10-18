@@ -14,6 +14,27 @@ pub(crate) use session::EditorSession;
 #[path = "../../../apps/aestra-editor/src/shell/action.rs"]
 mod shell_action;
 pub(crate) use shell_action::EditorAction;
+#[path = "../../../apps/aestra-editor/src/shell/scroll_key.rs"]
+#[allow(
+    dead_code,
+    reason = "Other panels consume the remaining actual scroll-memory keys"
+)]
+mod scroll_key;
+pub(crate) use scroll_key::ScrollMemoryKey;
+#[path = "../../../apps/aestra-editor/src/curves/action.rs"]
+#[allow(
+    dead_code,
+    reason = "Remaining Curves controls are qualified with that panel"
+)]
+mod curves_action;
+mod curves {
+    pub(crate) use crate::curves_action::CurvesAction;
+}
+#[path = "../../../apps/aestra-editor/src/feathers/button/action.rs"]
+mod action_button;
+#[path = "../../../apps/aestra-editor/src/feathers/field_row.rs"]
+pub(crate) mod field_row;
+pub(crate) use action_button::spawn_action_button as spawn_feathers_action_button;
 #[path = "editor_color_support.rs"]
 mod color_support;
 #[path = "../../../apps/aestra-editor/src/feathers/combo_box/selection.rs"]
@@ -189,8 +210,7 @@ pub(crate) mod reference_checks;
 #[path = "../../../apps/aestra-editor/src/feathers/scenes/common.rs"]
 #[allow(dead_code, reason = "Other widgets have separate qualification gates")]
 pub(crate) mod scenes;
-#[path = "../../../apps/aestra-editor/src/feathers/scroll/bars.rs"]
-#[allow(dead_code, reason = "Horizontal scroll consumers remain host-owned")]
+#[path = "../../../apps/aestra-editor/src/feathers/scroll.rs"]
 pub(crate) mod scrollbars;
 mod asset_browser {
     pub(crate) use crate::browser_state as state;
@@ -431,6 +451,7 @@ mod feathers {
     pub(crate) mod button {
         pub(crate) use crate::tool_button::spawn_tool_button;
     }
+    pub(crate) use crate::field_row;
     pub(crate) mod list_row {
         pub(crate) use crate::list_row_state::*;
     }
@@ -447,7 +468,7 @@ mod feathers {
         pub(crate) use crate::scenes::*;
     }
     pub(crate) mod scroll {
-        pub(crate) use crate::scrollbars::{spawn_vertical_scrollbar, update_scrollbar_visibility};
+        pub(crate) use crate::scrollbars::*;
     }
     pub(crate) mod code_editor {
         pub(crate) use crate::code_buffer::{ActiveCodeEditor, CodeEditor};

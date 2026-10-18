@@ -7,6 +7,25 @@ use bevy::prelude::*;
 use std::time::Duration;
 
 #[derive(Component)]
+pub(super) struct TimelineAssetDropTarget;
+
+#[derive(Component)]
+pub(super) struct TimelineBody;
+
+#[derive(Component)]
+pub(super) struct TimelineHeaderColumn;
+
+#[derive(Component)]
+pub(super) struct TimelineEffectHeading;
+
+#[derive(Component, Clone, Copy)]
+pub(super) struct TimelineVerticalContent;
+
+/// Keep the press/release target alive when switching from a selected region to motion.
+#[derive(Component)]
+pub(super) struct HostMotionControl;
+
+#[derive(Component)]
 pub(super) struct TimelineInvalidDropFeedback {
     pub(super) timer: Timer,
     pub(super) rejected: bool,
