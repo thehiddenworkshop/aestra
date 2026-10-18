@@ -2173,6 +2173,23 @@ remaining Curves action/panel/plugin integration, viewport/application consumers
 and native workflows. Earlier interaction-hardening remains separate. Shipping
 remains 0.19.1.
 
+Implemented slice 55 (2026-10-18): **TimelinePlugin schedule integration**.
+The candidate installs the original production plugin, with its nine timeline
+observers, three chained `Update` groups, and real host-motion observer/system
+wiring shared with shipping. Two shared tests verify one real button activation
+is consumed exactly once without dirtying history, and check the executable
+input/action/visual and host-motion ordering by registered system keys. See
+[`editor-timeline-plugin-schedule-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-timeline-plugin-schedule-2026-10-18.md).
+The accepted frozen headless run executes **1,521 checks**, including **1,100
+editor graph/session/history/consumer checks**, with all **873 input hashes**
+unchanged. Shipping passes **2,128 editor unit + 3 architecture tests**, with
+ten existing ignores; strict Clippy on shipping and candidate targets, both
+formatting checks and whitespace validation pass. Native layout, pointer
+picking, rendering and complete application workflow acceptance remain open.
+Next: Curves action/panel/plugin integration,
+then remaining viewport/application consumers and native workflows. Shipping
+remains on 0.19.1.
+
 B20-2 remains in progress: remaining pointer consumers, application action
 dispatch and full workflow acceptance are not yet ported. The merged
 0.20 group body tokens do not
@@ -2315,8 +2332,7 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** continue B20-2 with TimelinePlugin schedule integration,
-then remaining Curves action/panel/plugin integration,
+**Next action:** continue B20-2 with Curves action/panel/plugin integration,
 preserving action routing and event propagation on the 0.20 APIs,
 remaining viewport execution/navigation and graph palette/menu handlers,
 remaining application action handlers,

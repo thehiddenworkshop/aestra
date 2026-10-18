@@ -177,6 +177,8 @@ function Inputs {
         'apps/aestra-editor/src/timeline/regions.rs',
         'apps/aestra-editor/src/timeline/referenced_effect.rs',
         'apps/aestra-editor/src/timeline/host_motion.rs',
+        'apps/aestra-editor/src/timeline/host_motion_install.rs',
+        'apps/aestra-editor/src/timeline/plugin.rs',
         'apps/aestra-editor/src/asset_drop/payload.rs',
         'apps/aestra-editor/src/asset_drop/payload/model.rs',
         'apps/aestra-editor/src/feathers/automation_curve.rs',

@@ -85,6 +85,8 @@ mod inspector_composition;
 mod panel_composition;
 mod toolbar_composition;
 pub(crate) use panel_composition::spawn_timeline;
+mod plugin;
+pub(crate) use plugin::TimelinePlugin;
 mod projections;
 mod scroll_composition;
 mod track_composition;
@@ -99,6 +101,7 @@ use action_controls::*;
 #[cfg(test)]
 use reorder::*;
 mod asset_drop;
+use asset_drop::clear_cancelled_preview;
 mod automation;
 mod automation_data;
 #[path = "timeline/control_input_019.rs"]
@@ -131,6 +134,7 @@ mod region_execution;
 use execution::select_choreography_target;
 use execution::{execute_choreography_action, execute_timeline_action};
 pub(crate) mod host_motion;
+mod host_motion_install;
 mod interaction_state;
 mod keyboard;
 mod motion_execution;
@@ -186,77 +190,6 @@ use regions::{commit_timeline_drag, update_timeline_drag};
 #[cfg(test)]
 use state::TimelineView;
 pub(crate) use state::{TimelineNavigationSnapshot, TimelineState};
-
-pub(crate) struct TimelinePlugin;
-
-impl Plugin for TimelinePlugin {
-    fn build(&self, app: &mut App) {
-        host_motion::install(app);
-        let duration = app
-            .world()
-            .get_resource::<EditorSession>()
-            .map_or(1.0, EditorSession::playback_duration);
-        app.insert_resource(TimelineState::framed(duration))
-            .add_observer(queue_timeline_action_activation)
-            .add_observer(execute_timeline_action)
-            .add_observer(queue_choreography_action_activation)
-            .add_observer(activate_timeline_track_entry)
-            .add_observer(handle_timeline_track_color_change)
-            .add_observer(begin_project_effect_drag_preview)
-            .add_observer(finish_project_effect_drag_preview)
-            .add_observer(reject_project_effect_drop)
-            .add_observer(execute_choreography_action)
-            .add_systems(
-                Update,
-                (
-                    keyboard::choreography_keyboard_input,
-                    open_focused_timeline_context_menu,
-                    navigate_timeline,
-                    dismiss_timeline_popovers,
-                    dismiss_emitter_region_selection,
-                )
-                    .chain()
-                    .in_set(TimelineSet::Input),
-            )
-            .add_systems(
-                Update,
-                (
-                    handle_timeline_action_buttons,
-                    handle_choreography_action_buttons,
-                    audit_timeline_controls,
-                )
-                    .chain()
-                    .in_set(TimelineSet::Actions),
-            )
-            .add_systems(
-                Update,
-                (
-                    update_timeline_time_label,
-                    update_timeline_visuals,
-                    update_timeline_marker_visuals,
-                    update_choreography_event_visuals,
-                    update_effect_clip_visuals,
-                    update_automation_lane_graph_visuals,
-                    update_automation_key_visuals,
-                    update_automation_curve_drag_preview,
-                    update_effect_drop_insertion,
-                    asset_drop::clear_cancelled_preview,
-                    sync_effect_drop_track_gap,
-                    update_effect_drop_preview,
-                    reveal_timeline_emitter,
-                    restore_timeline_context_menu_focus,
-                    sync_timeline_vertical_scroll,
-                    sync_timeline_horizontal_scroll,
-                    sync_emitter_reorder_hints,
-                    sync_effect_clip_reorder_hints,
-                    sync_timeline_track_drop_hints,
-                    tick_invalid_timeline_drop_feedback,
-                )
-                    .chain()
-                    .in_set(TimelineSet::Visuals),
-            );
-    }
-}
 
 #[cfg(test)]
 mod tests {

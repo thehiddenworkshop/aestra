@@ -1,5 +1,4 @@
 //! Effect-level pose keys. UI state never owns semantic motion or bypasses command history.
-use super::inspector_composition::initialize_numbers;
 pub(crate) use super::inspector_composition::spawn_inspector;
 #[cfg(test)]
 use super::motion_execution::timeline_duration;
@@ -8,10 +7,8 @@ use super::motion_execution::{Field, NumberControl};
 #[cfg(test)]
 use super::motion_execution::{add_key, edit_pose, move_key, select};
 pub(crate) use super::motion_execution::{busy, replace_pose, select_pose, selected_pose};
-use super::motion_execution::{cancel_drag, execute, number_changed};
 #[cfg(test)]
 use super::motion_gestures::drag_time;
-use super::motion_gestures::update_keys;
 #[cfg(test)]
 use super::motion_gestures::{KeyControl, click_key, end_drag};
 #[cfg(test)]
@@ -20,6 +17,7 @@ use super::motion_state::Action;
 use super::motion_state::KeyDrag;
 pub(crate) use super::motion_state::active;
 pub(super) use super::motion_state::keyboard_input;
+#[cfg(test)]
 use super::*;
 #[cfg(test)]
 use crate::feathers::number_input::{NumberInputValue, ScrubbableNumber, UpdateNumberInput};
@@ -28,28 +26,12 @@ use aestra_core::{EmitterTransform, HostTransformKey, HostTransformTrack};
 #[cfg(test)]
 use bevy::camera::NormalizedRenderTarget;
 
-use super::host_composition::{activate, buttons};
 pub(super) use super::host_composition::{spawn_header, spawn_lane};
 pub(super) use super::interaction_state::HostMotionControl;
 
-pub(super) fn install(app: &mut App) {
-    app.add_observer(activate)
-        .add_observer(execute)
-        .add_observer(number_changed)
-        .add_systems(Update, buttons.in_set(TimelineSet::Actions))
-        .add_systems(
-            Update,
-            (
-                initialize_numbers,
-                cancel_drag.before(update_timeline_visuals),
-                update_keys.after(update_timeline_visuals),
-            )
-                .in_set(TimelineSet::Visuals),
-        );
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::host_motion_install::install;
     use super::*;
 
     fn track() -> HostTransformTrack {

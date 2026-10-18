@@ -16,6 +16,7 @@ mod state;
 use state::TimelineState;
 #[path = "../../../apps/aestra-editor/src/timeline/asset_drop/source.rs"]
 mod asset_drop;
+pub(super) use asset_drop::clear_cancelled_preview;
 #[path = "../../../apps/aestra-editor/src/timeline/automation.rs"]
 mod automation;
 #[path = "../../../apps/aestra-editor/src/timeline/automation_gestures.rs"]
@@ -89,6 +90,7 @@ mod reorder;
 mod timeline_pointer;
 mod host_motion {
     pub(super) use super::host_composition::{spawn_header, spawn_lane};
+    pub(super) use super::interaction_state::HostMotionControl;
     pub(super) use super::motion_state::keyboard_input;
 }
 #[path = "../../../apps/aestra-editor/src/timeline/actions.rs"]
@@ -163,6 +165,10 @@ mod effect_clip_composition;
     reason = "Production composition dependencies match shipping lint policy"
 )]
 mod emitter_composition;
+#[path = "../../../apps/aestra-editor/src/timeline/host_motion_install.rs"]
+mod host_motion_install;
+#[path = "../../../apps/aestra-editor/src/timeline/plugin.rs"]
+mod plugin;
 #[path = "../../../apps/aestra-editor/src/timeline/presentation.rs"]
 #[allow(
     clippy::type_complexity,
@@ -178,9 +184,29 @@ mod projections;
     reason = "Production composition dependencies match shipping editor lint policy"
 )]
 mod referenced_effect;
+#[path = "../../../apps/aestra-editor/src/timeline/regions.rs"]
+#[allow(
+    clippy::type_complexity,
+    unused_imports,
+    reason = "Production region query and native test reexports match shipping editor lint policy"
+)]
+mod regions;
 #[path = "../../../apps/aestra-editor/src/timeline/toolbar_composition.rs"]
 mod toolbar_composition;
 #[path = "../../../apps/aestra-editor/src/timeline/track_composition.rs"]
 mod track_composition;
 #[path = "../../../apps/aestra-editor/src/timeline/track_style.rs"]
 mod track_style;
+use action_controls::*;
+use automation_gestures::{
+    update_automation_curve_drag_preview, update_automation_key_visuals,
+    update_automation_lane_graph_visuals,
+};
+use clicks::*;
+use drop_execution::*;
+use execution::{execute_choreography_action, execute_timeline_action};
+use navigation::{
+    dismiss_timeline_popovers, navigate_timeline, restore_timeline_context_menu_focus,
+};
+use presentation::*;
+use regions::dismiss_emitter_region_selection;
