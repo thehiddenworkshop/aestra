@@ -4,9 +4,64 @@
 //! Activation/event dispatch and focused target routing use production code too.
 //! Actual catalog/session publication and scoped semantic history execute on both engines.
 //! Complete UI handlers and native panel composition remain host-qualified separately.
+extern crate self as aestra_bevy_render;
+#[path = "../../../bevy/aestra-bevy-render/src/material.rs"]
+pub mod material;
+#[path = "../../../bevy/aestra-bevy-render/src/material_layout.rs"]
+#[allow(dead_code, reason = "Other renderer layout consumers remain separate")]
+mod material_layout;
+#[path = "../../../bevy/aestra-bevy-render/src/presented_effect.rs"]
+#[allow(
+    dead_code,
+    reason = "Other renderer presentation consumers remain separate"
+)]
+mod presented_effect;
+pub use presented_effect::{EffectRenderMode, PresentedEffect};
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/event_statistics.rs"]
+#[allow(
+    dead_code,
+    reason = "Native counter producer remains in the renderer qualification gate"
+)]
+mod event_statistics;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/output_context.rs"]
+#[allow(
+    dead_code,
+    reason = "Native output production remains in the renderer qualification gate"
+)]
+mod output_context;
+mod gpu {
+    pub use crate::event_statistics::GpuEventLinkStatistics;
+    pub use crate::output_context::AestraOutputEvent;
+}
+#[path = "../../../apps/aestra-editor/src/docking/maximized.rs"]
+mod maximized;
+#[path = "../../../apps/aestra-editor/src/persistence/status.rs"]
+#[allow(
+    dead_code,
+    reason = "Other document persistence status consumers remain separate"
+)]
+mod persistence_status;
+#[path = "../../../bevy/aestra-bevy-render/src/preview.rs"]
+#[allow(
+    dead_code,
+    reason = "Other photographic presentation consumers remain separate"
+)]
+pub(crate) mod preview;
+#[path = "../../../apps/aestra-editor/src/profiler/state.rs"]
+#[allow(
+    dead_code,
+    reason = "Remaining native profiler presentation consumers remain separate"
+)]
+mod profiler;
 #[path = "../../../apps/aestra-editor/src/session.rs"]
 #[allow(dead_code, reason = "Native application consumers remain host-owned")]
 mod session;
+#[path = "../../../apps/aestra-editor/src/settings.rs"]
+#[allow(
+    dead_code,
+    reason = "Other native settings panel and startup consumers remain separate"
+)]
+mod settings;
 pub(crate) use project_catalog::EditorProjectContent as ProjectEffectCatalog;
 use project_catalog::{EditorProjectContent, PreparedProject};
 use refresh::ProjectEffectWatchState;
@@ -21,20 +76,23 @@ pub(crate) use shell_action::EditorAction;
 )]
 mod scroll_key;
 pub(crate) use scroll_key::ScrollMemoryKey;
+#[path = "../../../apps/aestra-editor/src/feathers/button/action.rs"]
+mod action_button;
+#[path = "editor_curves.rs"]
+mod curves;
 #[path = "../../../apps/aestra-editor/src/curves/action.rs"]
 #[allow(
     dead_code,
     reason = "Remaining Curves controls are qualified with that panel"
 )]
 mod curves_action;
-mod curves {
-    pub(crate) use crate::curves_action::CurvesAction;
-}
-#[path = "../../../apps/aestra-editor/src/feathers/button/action.rs"]
-mod action_button;
 #[path = "../../../apps/aestra-editor/src/feathers/field_row.rs"]
 pub(crate) mod field_row;
 pub(crate) use action_button::spawn_action_button as spawn_feathers_action_button;
+#[path = "../../../apps/aestra-editor/src/properties/stack_button.rs"]
+mod property_stack_button;
+pub(crate) use property_stack_button::stack_button;
+pub(crate) use tool_button::spawn_tool_button as mini_button;
 #[path = "editor_color_support.rs"]
 mod color_support;
 #[path = "../../../apps/aestra-editor/src/feathers/combo_box/selection.rs"]
@@ -76,12 +134,26 @@ mod refresh;
 #[path = "../../../apps/aestra-editor/src/project_content/services.rs"]
 mod services;
 mod persistence {
+    pub(crate) use crate::persistence_status::persist_editor_settings;
     pub(crate) use crate::protection_state::{DocumentAction, DocumentProtectionState};
 }
 mod docking {
+    pub(crate) use crate::dock_model::*;
     pub(crate) use crate::editor_identity::EditorViewId;
+    pub(crate) use crate::maximized::MaximizedPanel;
     pub(crate) use crate::tool_panels::ToolPanel;
 }
+#[path = "../../../apps/aestra-editor/src/docking/model.rs"]
+#[allow(
+    dead_code,
+    reason = "Other docking and persisted-layout consumers remain separate"
+)]
+mod dock_model;
+pub(crate) use dock_model::WorkspaceLayout;
+pub(crate) use tool_panels::ToolPanel;
+#[path = "../../../apps/aestra-editor/src/shell/reveal.rs"]
+mod panel_reveal;
+pub(crate) use panel_reveal::reveal_dock_panel;
 #[path = "../../../apps/aestra-editor/src/asset_actions/action.rs"]
 #[allow(
     dead_code,
@@ -122,6 +194,8 @@ mod tooltip;
 mod transport;
 #[path = "../../../apps/aestra-editor/src/transport/control_input_020.rs"]
 mod transport_input;
+#[path = "editor_viewport.rs"]
+mod viewport;
 #[path = "../../../apps/aestra-editor/src/viewport/keyboard.rs"]
 mod viewport_keyboard;
 #[path = "../../../apps/aestra-editor/src/viewport/shortcuts.rs"]
@@ -130,9 +204,6 @@ mod viewport_keyboard;
     reason = "Rendered viewport action execution remains host-qualified"
 )]
 mod viewport_shortcuts;
-mod viewport {
-    pub(crate) use crate::viewport_shortcuts::{PreviewCanvas, ViewportAction, ViewportSet};
-}
 mod asset_actions {
     pub(crate) use crate::asset_action::AssetAction;
     pub(crate) use crate::asset_operation_state::AssetOperationState;

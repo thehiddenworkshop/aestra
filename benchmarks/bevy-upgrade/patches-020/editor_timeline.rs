@@ -13,7 +13,7 @@ mod interaction_state;
 use interaction_state::*;
 #[path = "../../../apps/aestra-editor/src/timeline/state.rs"]
 mod state;
-use state::TimelineState;
+pub(crate) use state::TimelineState;
 #[path = "../../../apps/aestra-editor/src/timeline/asset_drop/source.rs"]
 mod asset_drop;
 pub(super) use asset_drop::clear_cancelled_preview;
@@ -88,9 +88,10 @@ mod region_gestures;
 mod reorder;
 #[path = "../../../apps/aestra-editor/src/timeline/pointer_020.rs"]
 mod timeline_pointer;
-mod host_motion {
+pub(crate) mod host_motion {
     pub(super) use super::host_composition::{spawn_header, spawn_lane};
     pub(super) use super::interaction_state::HostMotionControl;
+    pub(crate) use super::motion_execution::{select_pose, selected_pose};
     pub(super) use super::motion_state::keyboard_input;
 }
 #[path = "../../../apps/aestra-editor/src/timeline/actions.rs"]
@@ -101,6 +102,8 @@ mod host_composition;
 mod inspector_composition;
 #[path = "../../../apps/aestra-editor/src/timeline/panel_composition.rs"]
 mod panel_composition;
+#[path = "../../../apps/aestra-editor/src/timeline/panel_input.rs"]
+pub(crate) mod panel_input;
 #[path = "../../../apps/aestra-editor/src/timeline/scroll_composition.rs"]
 mod scroll_composition;
 use actions::{ChoreographyAction, TimelineAction};

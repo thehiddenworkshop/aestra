@@ -4,11 +4,11 @@ use bevy::picking::events::{
 };
 // Equivalent upstream marker for controls intentionally removed from button handling.
 pub(super) use bevy::prelude::Button as TimelineButton;
-pub(super) type PointerClick = Pointer<Click>;
+pub(crate) type PointerClick = Pointer<Click>;
 pub(super) type PointerPress = Pointer<Press>;
-pub(super) type PointerDragStart = Pointer<DragStart>;
-pub(super) type PointerDrag = Pointer<Drag>;
-pub(super) type PointerDragEnd = Pointer<DragEnd>;
+pub(crate) type PointerDragStart = Pointer<DragStart>;
+pub(crate) type PointerDrag = Pointer<Drag>;
+pub(crate) type PointerDragEnd = Pointer<DragEnd>;
 pub(super) type PointerDragDrop = Pointer<DragDrop>;
 pub(super) type PointerDragEnter = Pointer<DragEnter>;
 pub(super) type PointerDragLeave = Pointer<DragLeave>;
@@ -29,7 +29,7 @@ impl TimelinePointerLocation for PointerClick {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     pub(crate) fn drop_on(
         entity: Entity,
         source: Entity,
@@ -191,6 +191,19 @@ pub(super) mod tests {
                 button,
                 distance: Vec2::ZERO,
             },
+            entity,
+        )
+    }
+    pub(crate) fn end_distance(
+        entity: Entity,
+        window: Entity,
+        distance: Vec2,
+        button: PointerButton,
+    ) -> PointerDragEnd {
+        Pointer::new(
+            PointerId::Mouse,
+            location(window, Vec2::ZERO),
+            DragEnd { button, distance },
             entity,
         )
     }

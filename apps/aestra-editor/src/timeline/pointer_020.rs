@@ -1,5 +1,5 @@
 //! Bevy 0.20 candidate pointer/control names only; no behavior translation.
-pub(super) use bevy::picking::events::{
+pub(crate) use bevy::picking::events::{
     PointerClick, PointerDrag, PointerDragDrop, PointerDragEnd, PointerDragEnter, PointerDragLeave,
     PointerDragStart, PointerPress,
 };
@@ -22,7 +22,7 @@ impl TimelinePointerLocation for PointerClick {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     pub(crate) fn drop_on(
         entity: Entity,
         source: Entity,
@@ -174,6 +174,22 @@ pub(super) mod tests {
             pointer: bevy::picking::events::Pointer::new(id, location(window, position)),
             button,
             distance: Vec2::ZERO,
+        }
+    }
+    pub(crate) fn end_distance(
+        entity: Entity,
+        window: Entity,
+        distance: Vec2,
+        button: PointerButton,
+    ) -> PointerDragEnd {
+        PointerDragEnd {
+            entity,
+            pointer: bevy::picking::events::Pointer::new(
+                PointerId::Mouse,
+                location(window, Vec2::ZERO),
+            ),
+            button,
+            distance,
         }
     }
     pub(crate) fn press(

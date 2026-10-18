@@ -226,6 +226,12 @@ pub(crate) struct SettingsPersistence {
 }
 
 impl SettingsPersistence {
+    /// Isolated tests exercise the actual loader without changing process-wide config paths.
+    #[cfg(test)]
+    pub(crate) fn load_for_test(path: PathBuf) -> (EditorSettings, Self) {
+        Self::load_from(path)
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(path: PathBuf) -> Self {
         Self {

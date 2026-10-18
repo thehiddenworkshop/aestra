@@ -20,6 +20,6 @@ mod color_pointer;
 pub(crate) mod text_input;
 use crate::scenes;
 pub(crate) mod number_input {
-    pub(crate) use super::scrub::{NumberScrubPlugin, ScrubbableNumber, rounded};
+    pub(crate) use super::scrub::{NumberScrubPlugin, ScrubbableNumber, formatted, rounded};
     pub(crate) use super::widget::{NumberInputValue, UpdateNumberInput, feathers_scalar_input};
 }

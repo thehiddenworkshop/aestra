@@ -83,6 +83,7 @@ mod emitter_composition;
 mod host_composition;
 mod inspector_composition;
 mod panel_composition;
+pub(crate) mod panel_input;
 mod toolbar_composition;
 pub(crate) use panel_composition::spawn_timeline;
 mod plugin;

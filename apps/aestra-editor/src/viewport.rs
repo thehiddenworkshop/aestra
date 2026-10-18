@@ -2,30 +2,24 @@
 
 use crate::feathers::icon::{SvgColor, UiSvg};
 use crate::{
-    EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
-    ProjectEffectCatalog,
-    docking::ToolPanel,
-    feathers::icon::load_svg_icon,
-    feathers::tooltip::EditorTooltip,
-    localization::Localizer,
-    persistence::persist_editor_settings,
-    profiler::ProfilerState,
-    properties::module_parameter,
-    session::EditorSession,
+    FeathersActionButton, MenuState, feathers::icon::load_svg_icon,
+    feathers::tooltip::EditorTooltip, localization::Localizer, profiler::ProfilerState,
+    properties::module_parameter, session::EditorSession, theme, timeline::TimelineState, ui_shell,
+};
+#[cfg(test)]
+use crate::{
+    PendingFeathersActivation, ProjectEffectCatalog,
     settings::{EditorSettings, SettingsPersistence},
-    theme,
-    timeline::TimelineState,
-    ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
-use aestra_bevy_render::{
-    ActiveBackend, AestraRenderSet, EffectRenderMode, EffectRuntimeStatus, PresentedEffect,
-};
+use aestra_bevy_render::{ActiveBackend, AestraRenderSet, EffectRuntimeStatus, PresentedEffect};
 use aestra_core::{EffectClipId, EmitterId, EmitterShape, EmitterTransform, ModuleId, Value};
-use aestra_runtime::{
-    CompiledEffect, CompiledEffectProject, CompiledParameterOverride, DEFAULT_PLAYBACK_TICK_RATE,
-    SeekQuality,
-};
+#[cfg(test)]
+use aestra_runtime::CompiledEffectProject;
+#[cfg(test)]
+use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
+#[cfg(test)]
+use bevy::ui_widgets::Activate;
 use bevy::{
     app::TransformGizmoRenderStep,
     camera::{Viewport, visibility::RenderLayers},
@@ -34,35 +28,66 @@ use bevy::{
         TransformGizmoPlugin, TransformGizmoSettings, TransformGizmoSpace, TransformGizmoState,
         TransformGizmoSystems,
     },
-    input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
-    mesh::MeshVertexBufferLayoutRef,
-    pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
-    reflect::TypePath,
-    render::render_resource::{
-        AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
-    },
-    shader::ShaderRef,
     ui::{RelativeCursorPosition, UiSystems},
-    ui_widgets::Activate,
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
 use fluent_bundle::FluentArgs;
 use std::{sync::Arc, time::Instant};
 
+mod actions;
+#[path = "viewport/control_input_019.rs"]
+mod control_input;
 mod host_motion;
+pub(crate) use actions::PreviewDisplayState;
+use actions::{
+    audit_viewport_controls, execute_viewport_action, handle_viewport_action_buttons,
+    queue_viewport_action_activation,
+};
+mod feedback;
 mod keyboard;
+#[cfg(test)]
+use feedback::event_link_drops;
+use feedback::{apply_preview_mocks, record_preview_outputs, track_event_link_drops};
+mod lifecycle;
+use lifecycle::{configure_transform_gizmo_overlay_camera, sync_preview_camera_viewport};
+mod navigation;
+mod photographic;
+mod presentation;
+mod runtime_preview;
+use photographic::{sync_photographic_overlay_composition, sync_preview_photographic_response};
+#[cfg(test)]
+use presentation::adaptive_grid_spacing;
+use presentation::{
+    GizmoModeLabel, PREVIEW_GRID_Y, PreviewDisplayModeIcon, PreviewGridMaterial, PreviewGridPlane,
+    PreviewPresentedEffect, TransformGizmoModeIcon, preview_grid_uniform,
+    sync_preview_display_mode, sync_preview_grid, update_preview_display_controls,
+    update_transform_gizmo_controls,
+};
+use runtime_preview::{
+    EditorPreviewProject, PreviewEffectInstancePath, desired_preview_instances,
+    spawn_preview_effect_player, sync_project_preview, sync_rendered_preview,
+};
+#[cfg(test)]
+use runtime_preview::{
+    compiled_effects_differ_only_in_live_edits, configured_preview_instance,
+    configured_preview_player,
+};
 mod shortcuts;
 #[cfg(test)]
 use crate::ModulePaletteState;
 #[cfg(test)]
 use keyboard::viewport_keyboard_input;
+use navigation::{
+    DEFAULT_PREVIEW_PITCH, PreviewNavigationState, navigate_preview_camera,
+    preview_camera_transform,
+};
+pub(crate) use navigation::{
+    EmitterTransformGizmoProxy, PreviewCameraController, PreviewRenderCamera,
+};
 use shortcuts::PreviewCanvas;
 pub(crate) use shortcuts::{PreviewDisplayMode, ViewportAction, ViewportSet};
 
-const DEFAULT_PREVIEW_PITCH: f32 = -0.35;
-const PREVIEW_GRID_SHADER_PATH: &str = "shaders/preview_grid.wesl";
-const PREVIEW_GRID_Y: f32 = -0.05;
 const VIEWPORT_TOOL_BUTTON_SIZE: f32 = 28.0;
 const VIEWPORT_TOOL_ICON_SIZE: f32 = 20.0;
 const PREVIEW_TRANSFORM_GIZMO_SCREEN_SCALE: f32 = 0.14;
@@ -164,107 +189,6 @@ fn preview_transform_gizmo_settings() -> TransformGizmoSettings {
     }
 }
 
-fn queue_viewport_action_activation(
-    activate: On<Activate>,
-    actions: Query<(), (With<ViewportAction>, With<FeathersActionButton>)>,
-    mut commands: Commands,
-) {
-    if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
-}
-
-fn handle_viewport_action_buttons(
-    mut commands: Commands,
-    mut buttons: Query<
-        (
-            Entity,
-            &Interaction,
-            &ViewportAction,
-            Option<&PendingFeathersActivation>,
-        ),
-        (Changed<Interaction>, With<FeathersActionButton>),
-    >,
-    mut menu: ResMut<MenuState>,
-    mut session: ResMut<EditorSession>,
-) {
-    for (entity, interaction, action, pending) in &mut buttons {
-        if *interaction != Interaction::Pressed || pending.is_none() {
-            continue;
-        }
-        commands
-            .entity(entity)
-            .remove::<PendingFeathersActivation>()
-            .insert(Interaction::None);
-        menu.open = None;
-        menu.panels_open = false;
-        if menu.tab_context.take().is_some() {
-            session.ui_revision += 1;
-        }
-        commands.trigger(*action);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn execute_viewport_action(
-    action: On<ViewportAction>,
-    mut session: ResMut<EditorSession>,
-    mut menu: ResMut<MenuState>,
-    mut settings: ResMut<EditorSettings>,
-    mut settings_persistence: ResMut<SettingsPersistence>,
-    localizer: Res<Localizer>,
-    mut preview_camera: ResMut<PreviewCameraController>,
-    mut preview_display: ResMut<PreviewDisplayState>,
-    mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
-    mut maximized: ResMut<crate::docking::MaximizedPanel>,
-) {
-    match *action {
-        ViewportAction::ToggleGrid => {
-            menu.show_grid = !menu.show_grid;
-            settings.preview.show_grid = menu.show_grid;
-            session.ui_revision += 1;
-            persist_editor_settings(
-                &settings,
-                &mut settings_persistence,
-                &mut session,
-                &localizer,
-            );
-        }
-        ViewportAction::FramePreview => preview_camera.request_frame(),
-        ViewportAction::SetTransformGizmoMode(mode) => {
-            transform_gizmo_settings.mode = mode;
-        }
-        ViewportAction::SetPreviewDisplayMode(mode) => preview_display.set_mode(mode),
-        ViewportAction::ToggleMaximize => {
-            maximized.0 = if maximized.0 == Some(ToolPanel::Viewport) {
-                None
-            } else {
-                Some(ToolPanel::Viewport)
-            };
-            session.ui_revision += 1;
-        }
-    }
-}
-
-type UnclassifiedViewportControl = (
-    Added<ViewportAction>,
-    With<Button>,
-    Without<FeathersActionButton>,
-    Without<EditorNativeControl>,
-);
-
-fn audit_viewport_controls(controls: Query<Entity, UnclassifiedViewportControl>) {
-    #[cfg(debug_assertions)]
-    if let Some(entity) = controls.iter().next() {
-        panic!(
-            "viewport control {entity:?} must use FeathersActionButton or be explicitly marked \
-             EditorNativeControl"
-        );
-    }
-}
-
 fn setup_preview_scene(
     mut commands: Commands,
     session: Res<EditorSession>,
@@ -293,142 +217,8 @@ fn setup_preview_scene(
     ));
 }
 
-#[derive(Component)]
-pub(crate) struct PreviewRenderCamera;
-
-#[derive(Component)]
-struct PreviewGridPlane;
-
-#[derive(Clone, Copy, Debug, PartialEq, ShaderType)]
-struct PreviewGridUniform {
-    minor_color: Vec4,
-    major_color: Vec4,
-    x_axis_color: Vec4,
-    z_axis_color: Vec4,
-    parameters: Vec4,
-    focus: Vec4,
-}
-
-#[derive(Asset, TypePath, AsBindGroup, Clone)]
-struct PreviewGridMaterial {
-    #[uniform(0)]
-    grid: PreviewGridUniform,
-}
-
-impl Material for PreviewGridMaterial {
-    fn fragment_shader() -> ShaderRef {
-        PREVIEW_GRID_SHADER_PATH.into()
-    }
-
-    fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
-    }
-
-    fn depth_bias(&self) -> f32 {
-        100.0
-    }
-
-    fn enable_prepass() -> bool {
-        false
-    }
-
-    fn enable_shadows() -> bool {
-        false
-    }
-
-    fn specialize(
-        _pipeline: &MaterialPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: MaterialPipelineKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        descriptor.primitive.cull_mode = None;
-        Ok(())
-    }
-}
-
-#[derive(Resource)]
-pub(crate) struct PreviewCameraController {
-    focus: Vec3,
-    distance: f32,
-    yaw: f32,
-    pitch: f32,
-    frame_requested: bool,
-}
-
-impl Default for PreviewCameraController {
-    fn default() -> Self {
-        Self {
-            focus: Vec3::ZERO,
-            distance: 140.0,
-            yaw: 0.0,
-            pitch: DEFAULT_PREVIEW_PITCH,
-            frame_requested: false,
-        }
-    }
-}
-
-impl PreviewCameraController {
-    fn orbit(&mut self, delta: Vec2) {
-        self.yaw -= delta.x * 0.005;
-        self.pitch = (self.pitch - delta.y * 0.005).clamp(-1.54, 1.54);
-    }
-
-    fn fly(&mut self, keys: &ButtonInput<KeyCode>, seconds: f32) -> bool {
-        let axis = Vec2::new(
-            f32::from(keys.pressed(KeyCode::KeyD)) - f32::from(keys.pressed(KeyCode::KeyA)),
-            f32::from(keys.pressed(KeyCode::KeyW)) - f32::from(keys.pressed(KeyCode::KeyS)),
-        )
-        .normalize_or_zero();
-        if axis == Vec2::ZERO || seconds <= 0.0 {
-            return false;
-        }
-        let boost = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
-            3.0
-        } else {
-            1.0
-        };
-        let rotation = Quat::from_rotation_y(self.yaw) * Quat::from_rotation_x(self.pitch);
-        let speed = self.distance * 0.5 * boost;
-        // Real time keeps navigation independent of preview playback/pausing. Bound a stalled
-        // frame so returning to the app never causes a large camera jump.
-        self.focus += rotation * Vec3::new(axis.x, 0.0, -axis.y) * speed * seconds.min(0.1);
-        true
-    }
-
-    fn frame_effect(&mut self, position: Vec3) {
-        self.focus = position;
-        self.distance = 140.0;
-        self.yaw = 0.0;
-        self.pitch = DEFAULT_PREVIEW_PITCH;
-        self.frame_requested = false;
-    }
-
-    pub(crate) fn request_frame(&mut self) {
-        self.frame_requested = true;
-    }
-}
-
-#[derive(Resource, Default)]
-struct PreviewNavigationState {
-    dragging: bool,
-    looking: bool,
-    flight_blocked: bool,
-}
-
 #[derive(Default, Reflect, GizmoConfigGroup)]
 struct PreviewSceneGizmos;
-
-#[derive(Resource, Default)]
-pub(crate) struct PreviewDisplayState {
-    mode: PreviewDisplayMode,
-}
-
-impl PreviewDisplayState {
-    pub(crate) fn set_mode(&mut self, mode: PreviewDisplayMode) {
-        self.mode = mode;
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ShapeGizmoHandle {
@@ -453,41 +243,6 @@ struct ShapeGizmoState {
     hovered: Option<ShapeGizmoHandle>,
     active: Option<ActiveShapeGizmoDrag>,
 }
-
-#[derive(Component)]
-struct PreviewDisplayModeIcon(PreviewDisplayMode);
-
-#[derive(Component)]
-struct TransformGizmoModeIcon(TransformGizmoMode);
-
-#[derive(Component)]
-struct PreviewPresentedEffect;
-
-#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
-struct PreviewEffectInstancePath(Vec<EffectClipId>);
-
-#[derive(Resource, Default)]
-struct EditorPreviewProject {
-    source_root: Option<Arc<CompiledEffect>>,
-    project: Option<Arc<CompiledEffectProject>>,
-    error: Option<String>,
-    failed_source_revision: Option<u64>,
-    live_particle_count: usize,
-}
-
-#[derive(Clone)]
-struct DesiredPreviewInstance {
-    path: Vec<EffectClipId>,
-    effect: Arc<CompiledEffect>,
-    time: f32,
-    seed: u64,
-    transform: Transform,
-    inherited: Arc<aestra_runtime::InheritedHostTransform>,
-    parameter_overrides: Vec<CompiledParameterOverride>,
-}
-
-#[derive(Component)]
-pub(crate) struct EmitterTransformGizmoProxy;
 
 #[derive(Component)]
 struct TransformGizmoVisualRoot;
@@ -527,9 +282,6 @@ impl EmitterTransformGizmoInteraction {
 }
 
 #[derive(Component)]
-struct GizmoModeLabel;
-
-#[derive(Component)]
 struct ShapeGizmoValueLabel;
 
 #[derive(Component)]
@@ -559,94 +311,6 @@ fn spawn_preview_camera(commands: &mut Commands) -> Entity {
         .id()
 }
 
-fn sync_preview_photographic_response(
-    mut commands: Commands,
-    settings: Res<EditorSettings>,
-    cameras: Query<(Entity, Option<&AppliedPhotographicResponse>), With<PreviewRenderCamera>>,
-) {
-    let desired = settings
-        .preview
-        .photographic_enabled
-        .then_some(settings.preview.photographic.normalized());
-    for (camera, applied) in &cameras {
-        if applied.is_some_and(|applied| applied.0 == desired) {
-            continue;
-        }
-        // A new legacy camera needs no mutation: preserve Bevy's baseline required components.
-        if let Some(profile) = desired {
-            profile.apply(&mut commands.entity(camera));
-        } else if applied.is_some() {
-            aestra_bevy_render::preview::restore_legacy_3d_response(&mut commands.entity(camera));
-        }
-        commands
-            .entity(camera)
-            .insert(AppliedPhotographicResponse(desired));
-    }
-}
-
-#[derive(Component)]
-struct AppliedPhotographicResponse(Option<aestra_bevy_render::preview::PhotographicPreview>);
-
-#[allow(clippy::type_complexity)]
-fn sync_photographic_overlay_composition(
-    mut commands: Commands,
-    settings: Res<EditorSettings>,
-    mut cameras: Query<
-        (
-            Entity,
-            &mut Camera,
-            Option<&RenderLayers>,
-            Has<IsDefaultUiCamera>,
-            Option<&AppliedOverlayComposition>,
-        ),
-        Without<PreviewRenderCamera>,
-    >,
-) {
-    let enabled = settings.preview.photographic_enabled;
-    for (entity, mut camera, layers, ui, applied) in &mut cameras {
-        if !ui && !layers.is_some_and(|layers| layers == &RenderLayers::layer(15)) {
-            continue;
-        }
-        if applied.is_some_and(|applied| applied.0 == enabled) {
-            continue;
-        }
-        if enabled {
-            // HDR and LDR cameras have separate intermediate textures. Clear the overlay to
-            // transparent, not an opaque/stale LDR image that would hide the tonemapped viewport.
-            camera.clear_color = ClearColorConfig::Custom(Color::NONE);
-            camera.output_mode = bevy::camera::CameraOutputMode::Write {
-                blend_state: Some(bevy::render::render_resource::BlendState::ALPHA_BLENDING),
-                clear_color: ClearColorConfig::None,
-            };
-        } else if applied.is_some() {
-            camera.clear_color = ClearColorConfig::None;
-            camera.output_mode = Default::default();
-        }
-        commands
-            .entity(entity)
-            .insert(AppliedOverlayComposition(enabled));
-    }
-}
-
-#[derive(Component)]
-struct AppliedOverlayComposition(bool);
-
-fn configure_transform_gizmo_overlay_camera(
-    mut cameras: Query<
-        (&RenderLayers, &mut Camera),
-        (With<Camera3d>, Without<PreviewRenderCamera>),
-    >,
-) {
-    let gizmo_layers = RenderLayers::layer(15);
-    for (layers, mut camera) in &mut cameras {
-        if layers == &gizmo_layers {
-            camera.clear_color = ClearColorConfig::None;
-            camera.order = 1;
-            camera.is_active = true;
-        }
-    }
-}
-
 fn configure_transform_gizmo_overlay_materials(
     mut commands: Commands,
     gizmo_meshes: Query<(&RenderLayers, &MeshMaterial3d<StandardMaterial>, &ChildOf)>,
@@ -664,304 +328,6 @@ fn configure_transform_gizmo_overlay_materials(
             material.alpha_mode = AlphaMode::Blend;
             material.depth_bias = 10_000.0;
         }
-    }
-}
-
-fn sync_preview_camera_viewport(
-    canvas: Query<(&ComputedNode, &UiGlobalTransform), With<PreviewCanvas>>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    mut preview_camera: Single<&mut Camera, With<PreviewRenderCamera>>,
-    mut overlay_cameras: Query<
-        (&RenderLayers, &mut Camera),
-        (With<Camera3d>, Without<PreviewRenderCamera>),
-    >,
-    // Whether the viewport was valid on the previous frame. See the reactivation
-    // note below.
-    mut viewport_ready: Local<bool>,
-) {
-    let Ok((computed, transform)) = canvas.single() else {
-        set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
-        *viewport_ready = false;
-        return;
-    };
-    let size = computed.size();
-    if !size.is_finite()
-        || size.x < 16.0
-        || size.y < 16.0
-        || window.physical_width() == 0
-        || window.physical_height() == 0
-    {
-        set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
-        *viewport_ready = false;
-        return;
-    }
-    let top_left = transform.translation.trunc() - size * 0.5;
-    let target_size = UVec2::new(
-        window.physical_width().max(1),
-        window.physical_height().max(1),
-    );
-    let position = top_left.max(Vec2::ZERO).as_uvec2().min(target_size - 1);
-    let available = target_size.saturating_sub(position).max(UVec2::ONE);
-    let physical_size = size.as_uvec2().max(UVec2::ONE).min(available);
-    let viewport = Viewport {
-        physical_position: position,
-        physical_size,
-        ..default()
-    };
-    // Set the viewport on BOTH the preview camera and the gizmo overlay camera so
-    // PBR cluster assignment sees a valid (non-zero) size for each this frame.
-    preview_camera.viewport = Some(viewport.clone());
-    let gizmo_layers = RenderLayers::layer(15);
-    for (layers, mut camera) in &mut overlay_cameras {
-        if layers == &gizmo_layers {
-            camera.viewport = Some(viewport.clone());
-        }
-    }
-    // Only (re)activate once the viewport has been valid for a full frame. When
-    // the window is un-minimized, `camera_system` has clamped the explicit
-    // viewport to the (0,0) surface, and `assign_objects_to_clusters` can run
-    // before this system on the restore frame — clearing the cluster grid to zero
-    // dimensions. If we activated the same frame, the render world would extract
-    // an active view with a zero-size grid and abort building the "clustering
-    // dummy texture". Deferring activation one frame guarantees assignment has
-    // already produced a non-zero grid from the restored viewport (set above,
-    // persisted) before the camera is ever extracted active.
-    set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, *viewport_ready);
-    *viewport_ready = true;
-}
-
-fn set_preview_cameras_active(
-    preview_camera: &mut Camera,
-    overlay_cameras: &mut Query<
-        (&RenderLayers, &mut Camera),
-        (With<Camera3d>, Without<PreviewRenderCamera>),
-    >,
-    active: bool,
-) {
-    preview_camera.is_active = active;
-    let gizmo_layers = RenderLayers::layer(15);
-    for (layers, mut camera) in overlay_cameras {
-        if layers == &gizmo_layers {
-            camera.is_active = active;
-        }
-    }
-}
-
-fn navigate_preview_camera(
-    context: crate::input::ShortcutContext,
-    time: Res<Time<Real>>,
-    mut motion: MessageReader<MouseMotion>,
-    mut wheel: MessageReader<MouseWheel>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
-    browser: Query<&RelativeCursorPosition, With<crate::asset_browser::BrowserSurface>>,
-    player: Query<&GlobalTransform, With<EmitterTransformGizmoProxy>>,
-    mut navigation: ResMut<PreviewNavigationState>,
-    mut controller: ResMut<PreviewCameraController>,
-    mut camera: Single<&mut Transform, With<PreviewRenderCamera>>,
-) {
-    if context.blocked() || keys.just_pressed(KeyCode::Escape) {
-        motion.clear();
-        wheel.clear();
-        navigation.dragging = false;
-        navigation.looking = false;
-        navigation.flight_blocked = true;
-        return;
-    }
-    let cursor_over =
-        canvas.cursor_over() && !browser.iter().any(RelativeCursorPosition::cursor_over);
-    let pointer_delta = motion
-        .read()
-        .fold(Vec2::ZERO, |sum, event| sum + event.delta);
-    let scroll_delta = wheel.read().fold(0.0, |sum, event| {
-        let scale = match event.unit {
-            MouseScrollUnit::Line => 1.0,
-            MouseScrollUnit::Pixel => 0.02,
-        };
-        sum + event.y * scale
-    });
-    if buttons.just_pressed(MouseButton::Middle) && cursor_over {
-        navigation.dragging = true;
-    }
-    if !buttons.pressed(MouseButton::Middle) {
-        navigation.dragging = false;
-    }
-    if buttons.just_pressed(MouseButton::Right) && cursor_over {
-        navigation.looking = true;
-    }
-    if !buttons.pressed(MouseButton::Right) {
-        navigation.looking = false;
-    }
-    let mut changed = false;
-    if controller.frame_requested {
-        let focus = player
-            .single()
-            .map_or(Vec3::ZERO, GlobalTransform::translation);
-        controller.frame_effect(focus);
-        changed = true;
-    }
-    if navigation.looking {
-        if pointer_delta != Vec2::ZERO {
-            controller.orbit(pointer_delta);
-            changed = true;
-        }
-    } else if navigation.dragging && pointer_delta != Vec2::ZERO {
-        let right = camera.rotation * Vec3::X;
-        let up = camera.rotation * Vec3::Y;
-        let units_per_pixel = controller.distance * 0.0018;
-        controller.focus += (-right * pointer_delta.x + up * pointer_delta.y) * units_per_pixel;
-        changed = true;
-    }
-    if ![KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD]
-        .into_iter()
-        .any(|key| keys.pressed(key))
-    {
-        navigation.flight_blocked = false;
-    }
-    let shortcut_modifier = [
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::AltLeft,
-        KeyCode::AltRight,
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
-    ]
-    .into_iter()
-    .any(|key| keys.pressed(key));
-    if cursor_over && !navigation.flight_blocked && !shortcut_modifier {
-        changed |= controller.fly(&keys, time.delta_secs());
-    }
-    if cursor_over && scroll_delta != 0.0 {
-        controller.distance =
-            (controller.distance * (-scroll_delta * 0.12).exp()).clamp(1.0, 4_000.0);
-        changed = true;
-    }
-    if !changed {
-        return;
-    }
-
-    **camera = preview_camera_transform(
-        controller.focus,
-        controller.distance,
-        controller.yaw,
-        controller.pitch,
-    );
-}
-
-fn preview_camera_transform(focus: Vec3, distance: f32, yaw: f32, pitch: f32) -> Transform {
-    let orbit = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch);
-    Transform::from_translation(focus + orbit * Vec3::Z * distance).looking_at(focus, Vec3::Y)
-}
-
-fn sync_preview_grid(
-    menu: Res<MenuState>,
-    controller: Res<PreviewCameraController>,
-    camera: Single<&GlobalTransform, With<PreviewRenderCamera>>,
-    grid: Single<
-        (
-            &mut Transform,
-            &mut Visibility,
-            &MeshMaterial3d<PreviewGridMaterial>,
-        ),
-        With<PreviewGridPlane>,
-    >,
-    mut materials: ResMut<Assets<PreviewGridMaterial>>,
-) {
-    let (mut transform, mut visibility, material_handle) = grid.into_inner();
-    *visibility = if menu.show_grid {
-        Visibility::Inherited
-    } else {
-        Visibility::Hidden
-    };
-
-    let plane_radius = (controller.distance * 24.0).clamp(200.0, 100_000.0);
-    // Navigation moves the camera, not the ground reference beneath the effect.
-    transform.translation = Vec3::new(0.0, PREVIEW_GRID_Y, 0.0);
-    transform.scale = Vec3::new(plane_radius, 1.0, plane_radius);
-
-    let view_angle = camera.forward().dot(Vec3::NEG_Y).abs();
-    let angle_fade = ((view_angle - 0.015) / 0.16).clamp(0.0, 1.0);
-    if let Some(mut material) = materials.get_mut(&material_handle.0) {
-        let uniform = preview_grid_uniform(controller.distance, angle_fade);
-        if material.grid != uniform {
-            material.grid = uniform;
-        }
-    }
-}
-
-fn preview_grid_uniform(distance: f32, angle_fade: f32) -> PreviewGridUniform {
-    PreviewGridUniform {
-        minor_color: Vec4::new(0.20, 0.22, 0.29, 0.22),
-        major_color: Vec4::new(0.27, 0.30, 0.39, 0.38),
-        x_axis_color: Vec4::new(0.58, 0.20, 0.27, 0.62),
-        z_axis_color: Vec4::new(0.20, 0.40, 0.68, 0.62),
-        parameters: Vec4::new(
-            adaptive_grid_spacing(distance / 18.0),
-            (distance * 8.0).max(90.0),
-            angle_fade,
-            10.0,
-        ),
-        // Keep the fade centered on the world origin as well as the grid axes.
-        focus: Vec4::ZERO,
-    }
-}
-
-fn sync_preview_display_mode(
-    display: Res<PreviewDisplayState>,
-    mut players: Query<(&mut PresentedEffect, &mut Visibility), With<PreviewPresentedEffect>>,
-) {
-    let render_mode = match display.mode {
-        PreviewDisplayMode::Wireframe => EffectRenderMode::Wireframe,
-        PreviewDisplayMode::Rendered => EffectRenderMode::Rendered,
-    };
-    for (mut player, mut visibility) in &mut players {
-        player.set_render_mode(render_mode);
-        *visibility = Visibility::Inherited;
-    }
-}
-
-fn update_preview_display_controls(
-    display: Res<PreviewDisplayState>,
-    mut icons: Query<(&PreviewDisplayModeIcon, &mut SvgColor)>,
-) {
-    for (icon, mut color) in &mut icons {
-        let active = icon.0 == display.mode;
-        color.0 = if active { theme::ACCENT } else { theme::TEXT };
-    }
-}
-
-fn update_transform_gizmo_controls(
-    keys: Res<ButtonInput<KeyCode>>,
-    canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
-    mut settings: ResMut<TransformGizmoSettings>,
-    mut labels: Query<&mut Text, With<GizmoModeLabel>>,
-    mut icons: Query<(&TransformGizmoModeIcon, &mut SvgColor)>,
-) {
-    if canvas.cursor_over() && keys.just_pressed(KeyCode::KeyX) {
-        settings.space = match settings.space {
-            TransformGizmoSpace::World => TransformGizmoSpace::Local,
-            TransformGizmoSpace::Local => TransformGizmoSpace::World,
-        };
-    }
-    let mode = match settings.mode {
-        TransformGizmoMode::Translate => "MOVE",
-        TransformGizmoMode::Rotate => "ROTATE",
-        TransformGizmoMode::Scale => "SCALE",
-    };
-    let space = match settings.space {
-        TransformGizmoSpace::World => "WORLD",
-        TransformGizmoSpace::Local => "LOCAL",
-    };
-    for mut label in &mut labels {
-        **label = format!("{mode} · {space}");
-    }
-    for (icon, mut color) in &mut icons {
-        color.0 = if icon.0 == settings.mode {
-            theme::ACCENT
-        } else {
-            theme::TEXT
-        };
     }
 }
 
@@ -2033,24 +1399,6 @@ fn draw_preview_scene_gizmos(
     }
 }
 
-fn adaptive_grid_spacing(desired: f32) -> f32 {
-    if !desired.is_finite() || desired <= f32::EPSILON {
-        return 1.0;
-    }
-    let magnitude = 10.0_f32.powf(desired.log10().floor());
-    let normalized = desired / magnitude;
-    let multiplier = if normalized <= 1.0 {
-        1.0
-    } else if normalized <= 2.0 {
-        2.0
-    } else if normalized <= 5.0 {
-        5.0
-    } else {
-        10.0
-    };
-    magnitude * multiplier
-}
-
 fn screen_space_gizmo_radius(
     camera: &Camera,
     camera_transform: &GlobalTransform,
@@ -2266,47 +1614,6 @@ fn configure_preview_scene_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     let (config, _) = config_store.config_mut::<PreviewSceneGizmos>();
     config.render_layers = RenderLayers::layer(15);
     config.line.width = 1.5;
-}
-
-fn configured_preview_player(session: &EditorSession) -> Option<PresentedEffect> {
-    let preview = session.preview()?;
-    Some(configured_preview_instance(
-        preview.effect().clone(),
-        session.simulation_time(),
-        session.preview_seed,
-        &[],
-    ))
-}
-
-fn configured_preview_instance(
-    effect: Arc<CompiledEffect>,
-    time: f32,
-    seed: u64,
-    parameter_overrides: &[CompiledParameterOverride],
-) -> PresentedEffect {
-    let mut player = PresentedEffect::new(effect);
-    player
-        .instance
-        .apply_compiled_parameter_overrides(parameter_overrides);
-    player.instance.set_seed(seed);
-    player.instance.seek(time);
-    player
-}
-
-fn spawn_preview_effect_player(
-    commands: &mut Commands,
-    session: &EditorSession,
-    transform: Transform,
-) {
-    if let Some(player) = configured_preview_player(session) {
-        commands.spawn((
-            PreviewPresentedEffect,
-            PreviewEffectInstancePath::default(),
-            player,
-            transform,
-            RenderLayers::layer(0),
-        ));
-    }
 }
 
 pub(crate) fn spawn_preview(
@@ -2733,338 +2040,6 @@ pub(crate) fn install_project_preview_test_runtime(app: &mut App) {
     );
 }
 
-fn sync_project_preview(
-    mut session: ResMut<EditorSession>,
-    catalog: Res<ProjectEffectCatalog>,
-    mut preview: ResMut<EditorPreviewProject>,
-) {
-    let source_root = session.preview().map(|preview| preview.effect().clone());
-    if source_root.is_none()
-        && preview.failed_source_revision == Some(session.document_revision())
-        && !catalog.is_changed()
-    {
-        return;
-    }
-    if preview
-        .source_root
-        .as_ref()
-        .zip(source_root.as_ref())
-        .is_some_and(|(current, source)| Arc::ptr_eq(current, source))
-        && !catalog.is_changed()
-    {
-        return;
-    }
-
-    preview.source_root = source_root.clone();
-    match catalog.compile_project(&session.effect) {
-        Ok(mut project) => {
-            preview.failed_source_revision = None;
-            if (catalog.is_changed() || source_root.is_none())
-                && let Err(error) = session.install_compiled_project_root(project.root.clone())
-            {
-                preview.error = Some(error.to_string());
-                return;
-            }
-            // The editor may be showing a transient root preview (for example a gizmo drag or
-            // root-emitter solo). Dependencies still come from the resolved project, while the
-            // root must remain exactly the artifact owned by the session.
-            project.root = session
-                .preview()
-                .expect("preview was installed")
-                .effect()
-                .clone();
-            preview.source_root = Some(project.root.clone());
-            preview.project = Some(Arc::new(project));
-            preview.error = None;
-        }
-        Err(error) => {
-            preview.failed_source_revision = Some(session.document_revision());
-            preview.project = source_root.map(|root| {
-                Arc::new(CompiledEffectProject {
-                    root,
-                    dependencies: Default::default(),
-                })
-            });
-            preview.error = Some(error);
-            preview.live_particle_count = 0;
-        }
-    }
-}
-
-fn desired_preview_instances(
-    preview: &EditorPreviewProject,
-    timeline: &TimelineState,
-    time: f32,
-    seed: u64,
-) -> Vec<DesiredPreviewInstance> {
-    let Some(project) = preview.project.as_deref() else {
-        return Vec::new();
-    };
-    project
-        .instances_with(
-            time,
-            seed,
-            aestra_runtime::HostTransformContext {
-                motion: project.root.host_transform_track.clone(),
-                inherited: Arc::default(),
-            },
-            |path, clip| {
-                let mut clip = clip.clone();
-                if path.is_empty() {
-                    if !timeline.effect_clip_is_audible(clip.source_clip) {
-                        return None;
-                    }
-                    if let Some((start, offset, duration)) =
-                        timeline.effect_clip_preview_timing(clip.source_clip)
-                    {
-                        clip.start_time = start;
-                        clip.source_offset = offset;
-                        clip.duration = duration;
-                    }
-                }
-                Some(clip)
-            },
-        )
-        .into_iter()
-        .filter(|instance| !instance.path.is_empty() || !timeline.effect_clip_solo_active())
-        .map(|instance| DesiredPreviewInstance {
-            path: instance.path,
-            effect: instance.effect,
-            time: instance.time,
-            seed: instance.seed,
-            transform: Transform::IDENTITY,
-            inherited: instance.inherited,
-            parameter_overrides: instance.parameter_overrides,
-        })
-        .collect()
-}
-
-fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstance) {
-    let mut player = configured_preview_instance(
-        desired.effect,
-        desired.time,
-        desired.seed,
-        &desired.parameter_overrides,
-    );
-    player
-        .instance
-        .set_inherited_host_transform(desired.inherited);
-    commands.spawn((
-        PreviewPresentedEffect,
-        PreviewEffectInstancePath(desired.path),
-        player,
-        desired.transform,
-        RenderLayers::layer(0),
-    ));
-}
-
-fn sync_rendered_preview(
-    mut commands: Commands,
-    session: Res<EditorSession>,
-    preview: Res<EditorPreviewProject>,
-    timeline: Res<TimelineState>,
-    mut previous_history_epoch: Local<Option<u32>>,
-    mut players: Query<
-        (
-            Entity,
-            &PreviewEffectInstancePath,
-            &mut PresentedEffect,
-            &mut Transform,
-        ),
-        With<PreviewPresentedEffect>,
-    >,
-) {
-    let epoch = session.preview().map(|p| p.history_epoch());
-    let discontinuity = *previous_history_epoch != epoch;
-    *previous_history_epoch = epoch;
-    let mut desired = desired_preview_instances(
-        &preview,
-        &timeline,
-        session.simulation_time(),
-        session.preview_seed,
-    );
-    for (entity, path, mut player, mut transform) in &mut players {
-        let Some(index) = desired.iter().position(|item| item.path == path.0) else {
-            commands.entity(entity).despawn();
-            continue;
-        };
-        let instance = desired.swap_remove(index);
-        if *transform != instance.transform {
-            *transform = instance.transform;
-        }
-        if !Arc::ptr_eq(player.effect(), &instance.effect) {
-            if compiled_effects_differ_only_in_live_edits(player.effect(), &instance.effect) {
-                *player = configured_preview_instance(
-                    instance.effect,
-                    instance.time,
-                    instance.seed,
-                    &instance.parameter_overrides,
-                );
-            } else {
-                commands.entity(entity).despawn();
-                spawn_preview_instance(&mut commands, instance);
-                continue;
-            }
-        }
-
-        player
-            .instance
-            .set_inherited_host_transform(instance.inherited);
-        if player.instance.seed() != instance.seed {
-            player.instance.set_seed(instance.seed);
-        }
-        // Preview vs exact stateful seeking (hybrid roadmap M12): a history discontinuity is the
-        // editor's "scrubbing this frame" signal, so request a bounded preview seek to keep dragging
-        // responsive; a settled cursor (normal playback advance) refines to the authoritative exact
-        // state. Only affects stateful effects; analytic ones seek directly regardless.
-        player.set_seek_quality(if discontinuity {
-            SeekQuality::Preview
-        } else {
-            SeekQuality::Exact
-        });
-        if discontinuity {
-            player.instance.seek(instance.time);
-        } else if (player.simulation_time() - instance.time).abs()
-            > 0.5 / DEFAULT_PLAYBACK_TICK_RATE as f32
-        {
-            player.instance.set_playback_time(instance.time);
-        }
-    }
-    for instance in desired {
-        spawn_preview_instance(&mut commands, instance);
-    }
-}
-
-/// Drives the edited effect's bindings from its preview stand-ins (host bindings HB11c), and its
-/// inputs from those sent in the Interface section (event system E2): the root players and the
-/// session's own instance read the same recorded input, so seeking and scrubbing replay it exactly.
-/// Nested effects keep reading what their parents forward.
-fn apply_preview_mocks(
-    mut session: ResMut<EditorSession>,
-    mut traces: Local<crate::preview_mocks::PreviewMockTraces>,
-    mut players: Query<
-        (&PreviewEffectInstancePath, &mut PresentedEffect),
-        With<PreviewPresentedEffect>,
-    >,
-) {
-    let mocks = &session.preview_mocks;
-    for (path, mut player) in &mut players {
-        if !path.0.is_empty() {
-            continue;
-        }
-        let trace = traces.trace(player.effect(), mocks);
-        if crate::preview_mocks::needs_trace(&player.instance, trace.as_ref()) {
-            player.instance.set_binding_trace(trace);
-        }
-        // The inputs sent from the Interface section (event system E2), replayed by every seek.
-        if player.instance.received_events() != session.preview_inputs.as_slice() {
-            player
-                .instance
-                .set_received_events(session.preview_inputs.clone());
-        }
-    }
-    let Some(effect) = session.preview().map(|preview| preview.effect().clone()) else {
-        return;
-    };
-    let trace = traces.trace(&effect, &session.preview_mocks);
-    if session
-        .preview()
-        .is_some_and(|preview| crate::preview_mocks::needs_trace(preview, trace.as_ref()))
-        && let Some(preview) = session.bypass_change_detection().preview_mut()
-    {
-        preview.set_binding_trace(trace);
-    }
-    let inputs = session.preview_inputs.clone();
-    if session
-        .preview()
-        .is_some_and(|preview| preview.received_events() != inputs.as_slice())
-        && let Some(preview) = session.bypass_change_detection().preview_mut()
-    {
-        preview.set_received_events(inputs);
-    }
-}
-
-/// Children each authored event link lost, from the GPU totals of the compiled links (event system
-/// E0). Compiled links are the authored ones between enabled emitters, in order, so each maps back by
-/// its two emitters and trigger.
-fn event_link_drops(
-    effect: &aestra_core::EffectAsset,
-    compiled: &CompiledEffect,
-    statistics: &aestra_bevy_render::gpu::GpuEventLinkStatistics,
-) -> std::collections::BTreeMap<aestra_core::EventId, u64> {
-    let mut drops = std::collections::BTreeMap::new();
-    for (link, &dropped) in compiled.event_links.iter().zip(&statistics.dropped) {
-        if dropped == 0 {
-            continue;
-        }
-        let emitter = |index: usize| compiled.emitters.get(index).map(|emitter| emitter.source);
-        let (Some(source), Some(target)) = (emitter(link.source), emitter(link.target)) else {
-            continue;
-        };
-        if let Some(event) = effect.events.iter().find(|event| {
-            event.source == source && event.target == target && event.trigger == link.trigger
-        }) {
-            drops.insert(event.id, dropped);
-        }
-    }
-    drops
-}
-
-/// How many recent preview outputs the Interface section lists.
-const PREVIEW_OUTPUTS_KEPT: usize = 8;
-
-/// Keeps the latest outputs the edited effect's preview raised (event system E2b) for the Interface
-/// section. Nested clips are left out: they are not the effect being edited.
-fn record_preview_outputs(
-    mut session: ResMut<EditorSession>,
-    mut outputs: MessageReader<aestra_bevy_render::gpu::AestraOutputEvent>,
-    players: Query<&PreviewEffectInstancePath, With<PreviewPresentedEffect>>,
-) {
-    for output in outputs.read() {
-        let root = players
-            .get(output.effect)
-            .is_ok_and(|path| path.0.is_empty() && output.clip_path.is_empty());
-        if !root {
-            continue;
-        }
-        session.preview_outputs.push_back(output.event.clone());
-        while session.preview_outputs.len() > PREVIEW_OUTPUTS_KEPT {
-            session.preview_outputs.pop_front();
-        }
-        session.preview_outputs_heard += 1;
-    }
-}
-
-/// Keeps the session's per-link drop totals current for the Properties and Diagnostics panels,
-/// rebuilding them only when a link starts or stops dropping.
-fn track_event_link_drops(
-    mut session: ResMut<EditorSession>,
-    players: Query<
-        (
-            &PresentedEffect,
-            &PreviewEffectInstancePath,
-            &aestra_bevy_render::gpu::GpuEventLinkStatistics,
-        ),
-        With<PreviewPresentedEffect>,
-    >,
-) {
-    let drops = players
-        .iter()
-        .find(|(_, path, _)| path.0.is_empty())
-        .map(|(player, _, statistics)| {
-            event_link_drops(&session.effect, player.effect(), statistics)
-        })
-        .unwrap_or_default();
-    if session.event_link_drops == drops {
-        return;
-    }
-    let rebuild = !session.event_link_drops.keys().eq(drops.keys());
-    session.event_link_drops = drops;
-    if rebuild {
-        session.ui_revision += 1;
-    }
-}
-
 /// Marks where each preview stand-in is at the playhead.
 fn draw_preview_mocks(
     session: Res<EditorSession>,
@@ -3101,58 +2076,6 @@ fn presented_playhead_time(player: &PresentedEffect) -> f32 {
             .simulation_time()
             .clamp(0.0, effect.duration.max(0.0))
     }
-}
-
-fn compiled_effects_differ_only_in_live_edits(
-    current: &CompiledEffect,
-    desired: &CompiledEffect,
-) -> bool {
-    if current.emitters.len() != desired.emitters.len() {
-        return false;
-    }
-    let mut normalized = current.clone();
-    for (emitter, desired_emitter) in normalized.emitters.iter_mut().zip(&desired.emitters) {
-        emitter.transform = desired_emitter.transform;
-    }
-    for (clip, desired_clip) in normalized
-        .effect_clips
-        .iter_mut()
-        .zip(&desired.effect_clips)
-    {
-        clip.transform = desired_clip.transform;
-    }
-    // Extension stages (fluid F3): the render world takes new constants and looks in place, so a
-    // domain input edit or a dragged source keeps the simulation running. Anything that changes a
-    // stage's shape still differs here and respawns the player.
-    let live_stage = |stage: &mut aestra_runtime::CompiledExtensionStage,
-                      desired: &aestra_runtime::CompiledExtensionStage| {
-        if stage.block.constants.len() == desired.block.constants.len() {
-            stage.block.constants.clone_from(&desired.block.constants);
-        }
-        if stage.modules.len() == desired.modules.len() {
-            for (module, desired) in stage.modules.iter_mut().zip(&desired.modules) {
-                module.parameters.clone_from(&desired.parameters);
-            }
-        }
-        stage.presentations.clone_from(&desired.presentations);
-    };
-    for (stage, desired_stage) in normalized
-        .extension_stages
-        .iter_mut()
-        .zip(&desired.extension_stages)
-    {
-        live_stage(stage, desired_stage);
-    }
-    for (emitter, desired_emitter) in normalized.emitters.iter_mut().zip(&desired.emitters) {
-        for (stage, desired_stage) in emitter
-            .extension_stages
-            .iter_mut()
-            .zip(&desired_emitter.extension_stages)
-        {
-            live_stage(stage, desired_stage);
-        }
-    }
-    &normalized == desired
 }
 
 fn update_preview(

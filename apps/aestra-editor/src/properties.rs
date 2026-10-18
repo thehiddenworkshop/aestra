@@ -8717,31 +8717,8 @@ fn palette_result(
         });
 }
 
-pub(crate) fn stack_button<A: Component>(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    action: A,
-    width: f32,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_tool_button())
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-            Node {
-                width: Val::Px(width),
-                height: Val::Px(21.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-        ))
-        .with_children(|button| {
-            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
-        });
-}
+mod stack_button;
+pub(crate) use stack_button::stack_button;
 
 fn module_matches(metadata: &ModuleMetadata, query: &str) -> bool {
     query.is_empty()

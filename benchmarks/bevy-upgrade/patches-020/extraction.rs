@@ -186,6 +186,8 @@ pub use bindings::{
     AestraBindingRecorder, AestraBindingTrace, AestraBindings, AestraLinearVelocity,
 };
 pub use project::EffectClipInstance;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/event_statistics.rs"]
+mod event_statistics;
 mod host_lights_native;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/mesh_inputs.rs"]
 mod mesh_inputs;

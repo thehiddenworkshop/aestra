@@ -886,19 +886,8 @@ pub(crate) fn handle_buttons(
     }
 }
 
-pub(crate) fn reveal_dock_panel(
-    layout: &mut WorkspaceLayout,
-    session: &mut EditorSession,
-    panel: ToolPanel,
-) {
-    if !layout.show(panel) {
-        return;
-    }
-    session.ui_revision += 1;
-    if let Err(error) = layout.save() {
-        warn!("failed to save editor workspace layout: {error}");
-    }
-}
+mod reveal;
+pub(crate) use reveal::reveal_dock_panel;
 
 /// Docks (or focuses) a dynamic editor-view tab, so opening an asset places its own tab beside any
 /// already-open editors instead of replacing them.

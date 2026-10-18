@@ -145,6 +145,7 @@ pub use physics::{AestraPhysicsColliders, AestraPhysicsQuery, PhysicsPose};
 pub use alpha_sort::{AlphaSortSnapshot, GpuAlphaSortStatistics};
 pub use output_context::{EffectOutputContext, ParticleOutputContext};
 pub use particle_output_readback::{GpuEventLinkCounts, GpuEventLinkStatistics};
+mod event_statistics;
 pub use particle_statistics::GpuParticleStatistics;
 pub use preparation_timing::GpuPreparationTiming;
 pub use simulation_timing::{GpuSimulationFrame, GpuSimulationTiming, GpuSimulationWork};

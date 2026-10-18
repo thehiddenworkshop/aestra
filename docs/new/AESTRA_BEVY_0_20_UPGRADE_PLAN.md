@@ -2190,6 +2190,256 @@ Next: Curves action/panel/plugin integration,
 then remaining viewport/application consumers and native workflows. Shipping
 remains on 0.19.1.
 
+Implemented slice 56 (2026-10-18): **Curves property-editing core**.
+Nineteen original scalar/vector curve and gradient helpers and the key-edit enum
+are shared with the candidate: active/bound value resolution, key mutations,
+pointer insertion, bounds/sampling, projection, labels and preview math. Source
+audits preserve their contracts, all fourteen remaining root functions, native
+Curves plugin wiring and the complete existing root test block. Twenty-seven
+shared tests cover local/bound values, channel isolation, normalized ranges,
+gradient RGBA edits, pointer coordinates, stale/invalid inputs and minimum-key
+guards. Accepted edits use real global undo/redo with one history entry and leave
+source files byte-identical. See
+[`editor-curves-property-editing-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-curves-property-editing-2026-10-18.md).
+The accepted frozen run executes **1,548 checks**, including **1,127 editor graph/
+session/history/consumer checks**, with all **876 input hashes** unchanged.
+Shipping passes **2,155 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. This qualifies
+the editing prerequisites, not the outer activation/keyboard/dock-opening,
+host-curve consumers, full panel/plugin or native workflows. Next: those actual
+Curves consumers, then complete composition/plugin integration. Shipping remains
+on 0.19.1.
+
+Implemented slice 57 (2026-10-18): **Curves activation, keyboard and action routing**.
+The candidate executes the actual activation observer, Insert/Delete keyboard
+consumer and full Curves dispatcher. Original semantic action branches are
+unchanged; a version-specific boundary retains the shipping Interaction query
+and maps 0.20 marker transitions/removals to the same phases. Fifteen host-curve
+helpers, the complete persisted workspace model and actual panel reveal function
+are shared production dependencies. Native plugin installation, host construction
+and four root test blocks retain their contracts. Twenty-three shared tests cover
+activation consumption/idle guards, styling, property/vector/gradient commands,
+host-transform actions, keyboard focus/hover guards, production dock transitions
+and globally reversible edits. Action fixtures keep Curves active to avoid saving
+user settings; closed-panel reveal persistence and native floating windows remain
+separate. See
+[`editor-curves-action-routing-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-curves-action-routing-2026-10-18.md).
+The accepted frozen run executes **1,571 checks**, including **1,150 editor graph/
+session/history/consumer checks**, with all **884 input hashes** unchanged.
+Shipping passes **2,178 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. Next: complete
+Curves panel composition and host graph drag observers, then full plugin
+integration and native workflows. Shipping remains on 0.19.1.
+
+Implemented slice 58 (2026-10-18): **complete Curves panel and host graph composition**.
+The candidate builds the actual property/host-transform scenes and attached graph
+observers. Eleven original scene helpers, the complete host constructor, labels/
+markers and properties stack-button helper are shared. Timeline and Curves reuse
+one version-specific pointer/cursor boundary, with visibility-only changes and a
+typed test drag-end builder. Original construction/observer contracts, native
+Curves plugin wiring, host installation and existing root test blocks are retained.
+Eighteen shared tests cover scalar/vector/gradient/host controls, both locales and
+empty/error states, actual commands, temporary raster/node/label previews,
+single-edit history, quaternion retiming, Escape/late-release and secondary-button
+guards, two scales, idle identity and nested teardown. See
+[`editor-curves-panel-composition-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-curves-panel-composition-2026-10-18.md).
+Accepted frozen qualification executes **1,589 checks**, including **1,168 editor
+graph/session/history/consumer checks**, with all **889 input hashes** unchanged.
+Shipping passes **2,196 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. Explicit-geometry
+typed-event checks do not establish native layout/picking/rendering, application
+UI rebuilding, persisted scroll/floating-window lifecycle or full plugin schedules.
+Earlier interaction hardening remains separate. Next: full Curves plugin
+integration, then remaining viewport/application consumers and native workflows.
+Shipping remains on 0.19.1.
+
+Implemented slice 59 (2026-10-18): **full Curves plugin integration**.
+The candidate installs the actual production plugin, system set and host
+cancellation installer. State initialization, activation observer, keyboard/action
+chain and host cancellation ordering retain their original bodies. Native Curves
+and host root test blocks remain unchanged. All 41 existing action/panel tests now
+install the real plugin instead of duplicating its wiring. Three new shared tests
+verify missing/existing state ownership, exact executable system/set membership
+and ordering, and gated activation delivered once without idle document changes.
+All **71 focused Curves tests** pass. See
+[`editor-curves-plugin-integration-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-curves-plugin-integration-2026-10-18.md).
+Accepted frozen qualification executes **1,592 checks**, including **1,171 editor
+graph/session/history/consumer checks**, with all **892 input hashes** unchanged.
+Shipping passes **2,199 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. This establishes
+the Curves plugin's own headless schedule, not the entire application schedule,
+native layout/picking/rendering, application rebuilding, persisted scrolling or
+floating-window acceptance. Next: remaining viewport execution/navigation
+consumers, then graph palette/menu and application handlers before native
+workflows. Shipping remains on 0.19.1.
+
+Implemented slice 60 (2026-10-18): **production viewport camera navigation**.
+The candidate executes the original navigation consumer, complete camera
+controller/state, transform helper and existing camera/proxy markers. Native
+ViewportPlugin registration, all 70 remaining root functions and existing root
+test block are unchanged. Eighteen shared tests (ten mirrored native regressions
+and eight additional edge cases) preserve RMB orbit, MMB pan, WASD fly without
+RMB, wheel zoom, framing, capture/release priority, focus/modal/Assets gating,
+modifier sides, real-time motion and idle transform stability. No orbit-controller
+replacement is included. See
+[`editor-viewport-navigation-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-viewport-navigation-2026-10-18.md).
+Accepted frozen qualification executes **1,610 checks**, including **1,189 editor
+graph/session/history/consumer checks**, with all **895 input hashes** unchanged.
+Shipping passes **2,217 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs are unchanged. These real Bevy
+message/state consumer checks do not establish OS input delivery, rendered camera/
+viewport lifecycle, full plugin/application scheduling or native editor workflows.
+Next: viewport action activation/execution and camera viewport lifecycle, then
+remaining graph palette/menu and application consumers. Shipping remains 0.19.1.
+
+Implemented slice 61 (2026-10-18): **viewport action activation and execution**.
+The candidate runs the actual action queue, dispatcher, complete executor,
+display state and control audit. Native registration and Interaction filter are
+preserved; the candidate maps changed native Pressed markers without altering
+the existing pressed-plus-pending gate. Real settings persistence/localized status,
+complete settings/photographic profile sources and transient maximized-panel state
+are shared dependencies. Seventeen new shared tests cover real keyboard dispatch,
+toolbar activation/consumption, navigation framing, all action payloads, localized
+settings success/failure, malformed-file protection, set gating and audits. Effect
+and semantic history remain unchanged; all test writes use temporary paths.
+Fourteen existing settings and three photographic-profile tests also execute on
+the candidate. Native plugin wiring, existing viewport/persistence/docking root
+tests and remaining root functions are unchanged. See
+[`editor-viewport-actions-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-viewport-actions-2026-10-18.md).
+Accepted frozen qualification executes **1,644 checks**, including **1,223 editor
+graph/session/history/consumer checks**, with all **903 input hashes** unchanged.
+Shipping passes **2,234 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+These checks do not establish native toolbar composition, OS/pointer input,
+camera viewport lifecycle, full plugin/application scheduling or editor workflows.
+Next: camera viewport lifecycle, then remaining preview/render, graph palette/menu
+and application consumers. Shipping remains 0.19.1.
+
+Implemented slice 62 (2026-10-18): **camera viewport lifecycle**.
+The candidate executes the three original viewport synchronization, activation
+helper and gizmo overlay configuration functions unchanged. Native startup/
+PostUpdate wiring, all 63 remaining root functions and existing viewport root
+tests remain intact. Sixteen shared tests cover physical bounds/conversion,
+valid resize, invalid and missing/ambiguous canvases, zero-size surface restore,
+one-valid-update activation delay, exact gizmo-layer isolation, preserved camera
+composition, nine explicit scale combinations and primary-window ownership. See
+[`editor-viewport-camera-lifecycle-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-viewport-camera-lifecycle-2026-10-18.md).
+Accepted frozen qualification executes **1,660 checks**, including **1,239 editor
+graph/session/history/consumer checks**, with all **905 input hashes** unchanged.
+Shipping passes **2,250 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged. These explicit
+headless transitions do not establish native layout/DPI, surface restore, GPU
+cluster/render-stage ordering, full application scheduling or floating windows.
+Next: photographic preview/overlay composition, then remaining grid/display,
+runtime preview and gizmo consumers. Shipping remains 0.19.1.
+
+Implemented slice 63 (2026-10-18): **photographic preview and overlay composition**.
+The candidate executes the two original consumers and applied-state caches.
+Native plugin wiring, all 61 remaining viewport root functions and existing root
+tests remain unchanged. Real settings and renderer photographic profile sources
+are reused. Eighteen shared tests cover live normalized profiles, HDR/bloom/
+tonemapping and legacy restoration, exact overlay blending/ownership, camera
+recreation, idle change suppression, normalized cache equivalence, lifecycle
+cooperation and unchanged effect/history. No files are written. See
+[`editor-viewport-photographic-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-viewport-photographic-2026-10-18.md).
+Accepted frozen qualification executes **1,678 checks**, including **1,257 editor
+graph/session/history/consumer checks**, with all **907 input hashes** unchanged.
+Shipping passes **2,268 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+These checks do not establish native HDR image quality, actual surface behavior,
+GPU render-stage ordering or full viewport/application scheduling. Next:
+grid/display presentation consumers, then runtime preview/gizmo integration
+and native workflows. Shipping remains 0.19.1.
+
+Implemented slice 64 (2026-10-18): **grid/display presentation consumers**.
+The candidate executes six original grid/display/gizmo-feedback functions and the
+original grid material/uniform definitions, using the complete production
+PresentedEffect payload and real material binding/layout dependencies. Native
+plugin wiring, all 55 remaining viewport root functions and existing root tests
+remain unchanged. Twenty shared tests cover anchoring/spacing/fade, ownership,
+missing/replaced assets, actual presentation mode routing, SVG/text feedback and
+real viewport actions without authored edits. Eight existing renderer dependency
+tests also run in the editor graph gate. A new required shader test validates the
+unchanged production grid shader through Bevy 0.20's composition path and Naga,
+including its actual material binding index and 96-byte uniform layout. See
+[`editor-viewport-presentation-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-viewport-presentation-2026-10-18.md).
+Accepted frozen qualification executes **1,707 checks**, including **1,285 editor
+graph/session/history/consumer checks**, with all **910 input hashes** unchanged.
+Shipping passes **2,288 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+Native material pipeline execution, image quality, full viewport/application
+scheduling and runtime/gizmo workflows remain separate gates. Retained entity/
+material identity does not imply idle-write optimization. Next: runtime preview/
+player setup and project-instance reconciliation, then gizmo/host-motion
+integration and remaining graph/application consumers. Shipping remains 0.19.1.
+
+Implemented slice 65 (2026-10-18): **runtime preview/player reconciliation**.
+The candidate executes eight unchanged production functions for root/child player
+construction, project resolution, desired-instance collection, reconciliation and
+live-edit classification, with their three original records. Actual session,
+catalog, timeline and complete renderer payloads are used. Native plugin wiring,
+all 47 remaining viewport root functions and existing root tests remain unchanged.
+Twenty-four shared tests (nine adapted shipping regressions and fifteen additional
+tests) cover clocks, seeds, parameter overrides, nested ancestry, catalog/material
+refresh, invalid/missing source recovery, clip retirement/reentry, retained identity,
+structural/live changes, seek fidelity and half-tick tolerance. Initial project
+installation still invalidates checkpoints through the existing runtime revision;
+authored state and semantic history remain unchanged. Filesystem fixtures use
+temporary catalogs. See
+[`editor-viewport-runtime-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-viewport-runtime-2026-10-18.md).
+Accepted frozen qualification executes **1,731 checks**, including **1,309 editor
+graph/session/history/consumer checks**, with all **912 input hashes** unchanged.
+Shipping passes **2,312 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+Native simulation/rendering, full viewport scheduling, remaining mock binding/
+output/profiling consumers and gizmo/host-motion integration remain separate gates.
+Shipping remains 0.19.1.
+
+Implemented slice 66 (2026-10-18): **preview feedback and profiler ingestion**.
+Four unchanged production mock/input/output/drop consumers and complete profiler
+aggregation/history state now execute in the candidate. Actual renderer output
+messages and event-link statistics are used. Renderer statistics records and the
+accumulator move unchanged behind existing public re-exports; native readback
+production, both native plugin registrations, all 43 remaining viewport functions,
+remaining profiler functions and existing root tests remain unchanged.
+Nineteen shared feedback tests and eight shared profiler-ingestion tests (six
+adapted shipping regressions) cover recording reuse/ownership, root output
+filtering and bounds, dropped-link UI refresh policy, invalid/missing observations,
+semantic-state preservation, measurement provenance, history/project identity and
+peak reset. Two existing output-context routing tests also run in the candidate.
+See
+[`editor-viewport-feedback-2026-10-18.md`](../../benchmarks/bevy-upgrade/editor-viewport-feedback-2026-10-18.md).
+Accepted frozen qualification executes **1,760 checks**, including **1,338 editor
+graph/session/history/consumer checks**, with all **918 input hashes** unchanged.
+Shipping passes **2,339 editor unit + 3 architecture tests**, with ten existing
+ignores. Strict all-target Clippy passes on both engines, alongside workspace
+all-target checking with `aestra-bench/gpu`, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged.
+Existing output filtering remains root/path-only, without new epoch validation,
+sorting or deduplication. GPU-observation-to-profile integration, native profiler
+presentation, gizmo drawing and full application workflows remain separate gates.
+Shipping remains 0.19.1.
+
 B20-2 remains in progress: remaining pointer consumers, application action
 dispatch and full workflow acceptance are not yet ported. The merged
 0.20 group body tokens do not
@@ -2332,9 +2582,10 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** continue B20-2 with Curves action/panel/plugin integration,
-preserving action routing and event propagation on the 0.20 APIs,
-remaining viewport execution/navigation and graph palette/menu handlers,
+**Next action:** continue B20-2 with GPU-observation-to-profile integration,
+then remaining profiler presentation and gizmo/host-motion consumers, preserving
+action routing and event propagation on the 0.20 APIs,
+then graph palette/menu handlers,
 remaining application action handlers,
 full panel composition and complete
 editor workflow acceptance, keeping current controls, geometry and interaction

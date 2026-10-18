@@ -21,6 +21,50 @@ fn entry_points(compiled: &Compiled, expected: &[(&str, naga::ShaderStage)]) {
 }
 
 #[test]
+fn production_editor_preview_grid_shader_compiles_with_the_real_material_binding_contract() {
+    let compiled = compile(
+        include_str!("../../../assets/shaders/preview_grid.wesl").to_owned(),
+        &[],
+    );
+    entry_points(&compiled, &[("fragment", naga::ShaderStage::Fragment)]);
+    let bindings: Vec<_> = compiled
+        .module
+        .global_variables
+        .iter()
+        .filter_map(|(_, variable)| variable.binding.as_ref())
+        .collect();
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(
+        bindings[0].group,
+        bevy::pbr::MATERIAL_BIND_GROUP_INDEX as u32
+    );
+    assert_eq!(bindings[0].binding, 0);
+    let grid = compiled
+        .module
+        .types
+        .iter()
+        .find_map(|(_, ty)| {
+            if ty.name.as_deref() == Some("PreviewGridUniform") {
+                Some(&ty.inner)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let naga::TypeInner::Struct { members, span } = grid else {
+        panic!("grid uniform must be a struct")
+    };
+    assert_eq!(*span, 96);
+    assert_eq!(
+        members
+            .iter()
+            .map(|member| member.offset)
+            .collect::<Vec<_>>(),
+        [0, 16, 32, 48, 64, 80]
+    );
+}
+
+#[test]
 fn real_smoke_fire_and_liquid_volume_shaders_compile_for_storage_uniform_and_depth_variants() {
     // The real fire/smoke and liquid marchers, not a stand-in fragment.
     for (program, entry) in [
