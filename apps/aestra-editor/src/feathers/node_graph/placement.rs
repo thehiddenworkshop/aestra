@@ -1,7 +1,9 @@
 //! Bounded insertion placement shared by graph adapters. Existing nodes are obstacles,
 //! never writable outputs. New node extents are bootstrap estimates until first layout.
-use super::{geometry::*, *};
-use bevy::ecs::system::SystemParam;
+use crate::feathers::node_graph::{
+    FeathersGraphNode, FeathersGraphViewport, GraphViewportMemory, geometry::*,
+};
+use bevy::{ecs::system::SystemParam, prelude::*};
 use std::collections::BTreeMap;
 
 const GAP: f32 = 24.0;
@@ -21,7 +23,7 @@ pub(crate) enum Neighborhood {
 pub(crate) struct Area {
     nodes: BTreeMap<GraphNodeKey, Rect>,
     reserved: Vec<Rect>,
-    measured: bool,
+    pub(super) measured: bool,
 }
 
 pub(crate) struct Placement {
@@ -302,4 +304,5 @@ impl Context<'_, '_> {
 }
 
 #[cfg(test)]
+#[path = "placement/algorithm_tests.rs"]
 mod tests;

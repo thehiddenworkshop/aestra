@@ -89,6 +89,19 @@ impl FeathersGraphNode {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn completed_drag_fixture(
+        graph_key: String,
+        node_key: String,
+        position: Vec2,
+    ) -> Self {
+        let mut node = Self::clipboard_fixture(graph_key, node_key, position);
+        node.begin_drag();
+        node.note_drag_motion();
+        node.end_drag();
+        node
+    }
+
     pub(crate) fn position(&self) -> Vec2 {
         self.position
     }

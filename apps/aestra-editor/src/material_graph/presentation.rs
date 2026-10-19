@@ -14,6 +14,9 @@ mod state;
 pub(crate) use state::State;
 mod context;
 pub(super) use context::visible;
+mod preview;
+pub(super) use preview::preview_edit;
+use preview::record_in_context;
 
 /// Atomically installs a validated asynchronous arrangement and records one presentation-only
 /// history entry. Any semantic or manual-placement change since dispatch rejects the result.
@@ -168,16 +171,6 @@ fn record(world: &mut World, transaction: Transaction, origin: Option<Entity>) {
     record_in_context(world, context, transaction);
 }
 
-fn record_in_context(world: &mut World, context: Context, transaction: Transaction) {
-    // Fork the existing redo branch as well as the presentation branch. Layout does not execute
-    // a material command, install compiled data, or change a document content revision.
-    crate::history::clear_presentation_redo(world, &context);
-    let mut session = world.resource_mut::<EditorSession>();
-    context.select(&mut session);
-    session.operation_order.record_layout(context, transaction);
-    session.status = "Changed graph layout".into();
-}
-
 pub(super) fn node_edit(event: On<GraphPresentationEdit>, mut commands: Commands) {
     let edit = event.event().clone();
     commands.queue(move |world: &mut World| {
@@ -237,41 +230,6 @@ pub(super) fn batch_edit(event: On<GraphPresentationBatchEdit>, mut commands: Co
                 edit.origin,
             );
         }
-    });
-}
-
-pub(super) fn preview_edit(
-    commands: &mut Commands,
-    program: MaterialProgramId,
-    editing_target: MaterialEditingTarget,
-    before: BTreeSet<MaterialGraphPreviewTarget>,
-    after: BTreeSet<MaterialGraphPreviewTarget>,
-) {
-    if before == after {
-        return;
-    }
-    commands.queue(move |world: &mut World| {
-        let Some(snapshot) = Snapshot::capture(
-            &material_graph_view_key(program),
-            world.resource::<ProjectEffectCatalog>(),
-            world.resource::<EditorSession>(),
-            world.resource::<GraphViewportMemory>(),
-        ) else {
-            return;
-        };
-        record_in_context(
-            world,
-            match editing_target {
-                MaterialEditingTarget::EffectInstance => Context::Effect,
-                target => Context::Material(target),
-            },
-            Transaction {
-                before: snapshot.clone(),
-                after: snapshot,
-                previews: Some((program, before, after)),
-                invalidated: false,
-            },
-        );
     });
 }
 

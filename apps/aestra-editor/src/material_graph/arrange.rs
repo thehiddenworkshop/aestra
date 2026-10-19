@@ -14,13 +14,8 @@ use crate::feathers::{
 };
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ArrangeScope {
-    Graph,
-    Selection,
-    Upstream,
-    Downstream,
-}
+mod request;
+pub(crate) use request::{ArrangeGraph, ArrangeScope};
 
 impl ArrangeScope {
     fn label(self) -> &'static str {
@@ -40,14 +35,6 @@ impl ArrangeScope {
             Self::Downstream => Some(PartialLayoutScope::Downstream),
         }
     }
-}
-
-#[derive(Event, Debug, Clone)]
-pub(crate) struct ArrangeGraph {
-    pub view: GraphViewKey,
-    pub editing_target: crate::material_document::MaterialEditingTarget,
-    pub scope: ArrangeScope,
-    pub seeds: BTreeSet<GraphNodeKey>,
 }
 
 #[derive(Resource, Default)]

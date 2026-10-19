@@ -162,6 +162,9 @@ mod docking {
     pub(crate) use crate::maximized::MaximizedPanel;
     pub(crate) use crate::tool_panels::ToolPanel;
 }
+mod document {
+    pub(crate) use crate::editor_identity::DocumentKey;
+}
 #[path = "../../../apps/aestra-editor/src/docking/model.rs"]
 #[allow(
     dead_code,
@@ -236,6 +239,101 @@ mod function_menu_state;
 )]
 pub(crate) mod material_palette_state;
 use material_palette_state as palette_state;
+#[path = "../../../apps/aestra-editor/src/material_graph/appearance_020.rs"]
+pub(crate) mod appearance_input;
+#[path = "../../../apps/aestra-editor/src/material_graph/appearance.rs"]
+pub(crate) mod graph_appearance;
+#[path = "../../../apps/aestra-editor/src/material_graph/arrange/request.rs"]
+mod graph_arrange_request;
+#[path = "../../../apps/aestra-editor/src/material_graph/click_020.rs"]
+pub(crate) mod graph_click_input;
+#[path = "../../../apps/aestra-editor/src/material_graph/connection_drag.rs"]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "Original material connection system dependencies match shipping lint policy"
+)]
+mod graph_connection_drag;
+#[path = "../../../apps/aestra-editor/src/material_graph/connection_state.rs"]
+pub(crate) mod graph_connection_state;
+#[path = "../../../apps/aestra-editor/src/material_graph/connections.rs"]
+pub(crate) mod graph_connections;
+#[path = "../../../apps/aestra-editor/src/material_graph/control_input_020.rs"]
+pub(crate) mod graph_control_input;
+#[path = "../../../apps/aestra-editor/src/material_graph/controls.rs"]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "Original material control system dependencies match shipping lint policy"
+)]
+mod graph_controls;
+#[path = "../../../apps/aestra-editor/src/material_graph/drag_020.rs"]
+pub(crate) mod graph_drag_input;
+#[path = "../../../apps/aestra-editor/src/material_graph/header.rs"]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Original header dependencies match shipping lint policy"
+)]
+pub(crate) mod graph_header;
+#[path = "../../../apps/aestra-editor/src/asset_browser/actions/locate.rs"]
+mod graph_locate;
+#[path = "../../../apps/aestra-editor/src/material_graph/menu_actions.rs"]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "Original material action system queries match shipping lint policy"
+)]
+pub(crate) mod graph_menu_actions;
+#[path = "../../../apps/aestra-editor/src/material_graph/menu_opening.rs"]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "Original material graph pointer queries match shipping lint policy"
+)]
+mod graph_menu_opening;
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/metrics.rs"]
+mod graph_metrics;
+#[path = "../../../apps/aestra-editor/src/material_graph/node_actions.rs"]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "Original node consumer system dependencies match shipping lint policy"
+)]
+mod graph_node_actions;
+#[path = "../../../apps/aestra-editor/src/material_graph/node_controls.rs"]
+pub(crate) mod graph_node_controls;
+#[path = "../../../apps/aestra-editor/src/material_graph/node_metrics.rs"]
+pub(crate) mod graph_node_metrics;
+#[path = "../../../apps/aestra-editor/src/asset_browser/actions/open_function.rs"]
+mod graph_open_function;
+#[path = "../../../apps/aestra-editor/src/material_graph/palette.rs"]
+#[allow(
+    clippy::type_complexity,
+    reason = "Original palette ECS queries match shipping lint policy"
+)]
+pub(crate) mod graph_palette;
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/placement.rs"]
+pub(crate) mod graph_placement;
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/preview_toggle.rs"]
+mod graph_preview_toggle;
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/drag_assist/controls.rs"]
+pub(crate) mod graph_snap_controls;
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/socket.rs"]
+mod graph_socket_geometry;
+#[path = "../../../apps/aestra-editor/src/material_graph/sockets.rs"]
+pub(crate) mod graph_sockets;
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/toolbar.rs"]
+pub(crate) mod graph_toolbar;
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/wire_layer.rs"]
+mod graph_wire_layer;
+#[path = "../../../apps/aestra-editor/src/material_graph/workspace_layout.rs"]
+pub(crate) mod graph_workspace_layout;
+#[path = "../../../apps/aestra-editor/src/feathers/search_field.rs"]
+mod search_field;
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/toolbar_input_020.rs"]
+mod toolbar_input;
+use color_support::text_input;
+use feathers::button;
 #[path = "../../../apps/aestra-editor/src/properties/palette_state.rs"]
 #[allow(
     dead_code,
@@ -303,6 +401,8 @@ mod viewport_pane;
 mod asset_browser {
     pub(crate) use crate::browser_state as state;
     pub(crate) use crate::browser_state::{AssetBrowserState, BrowserSurface};
+    pub(crate) use crate::graph_locate::LocateInAssets;
+    pub(crate) use crate::graph_open_function::OpenFunction;
     pub(crate) mod deletion {
         pub(crate) use crate::{documents, filesystem_history as history, reference_checks};
     }
@@ -389,7 +489,7 @@ mod function_execution;
     dead_code,
     reason = "Remaining material panel selection consumers are host-qualified"
 )]
-mod graph_selection;
+pub(crate) mod graph_selection;
 #[path = "../../../apps/aestra-editor/src/material_graph/clipboard/execution.rs"]
 mod material_clipboard_execution;
 #[path = "../../../apps/aestra-editor/src/material_graph/edit_context.rs"]
@@ -449,6 +549,8 @@ mod graph_inventory;
     reason = "Arrangement and panel capture consumers remain host-owned"
 )]
 mod presentation_context;
+#[path = "../../../apps/aestra-editor/src/material_graph/presentation/preview.rs"]
+mod presentation_preview;
 #[path = "../../../apps/aestra-editor/src/material_graph/presentation/state.rs"]
 mod presentation_state;
 const MATERIAL_GRAPH_LAB_EFFECT_SOURCE: &str =
@@ -474,6 +576,7 @@ mod history {
     pub(crate) use crate::history_routing as routing;
     pub(crate) use crate::material_program::MaterialProgramEditHistory;
     pub(crate) use crate::publication;
+    pub(crate) use crate::synchronization::clear_presentation_redo;
     pub(crate) mod material_program {
         pub(crate) use crate::material_program::{
             MATERIAL_HISTORY_LIMIT, MaterialProgramEditHistory, MaterialProgramHistoryEntry,
@@ -506,7 +609,25 @@ pub(crate) mod publication;
 mod semantic_snapshot;
 use semantic_snapshot as semantic;
 mod material_graph {
+    pub(crate) use crate::appearance_input;
+    pub(crate) use crate::graph_appearance as appearance;
+    pub(crate) use crate::graph_click_input as click_input;
+    pub(crate) use crate::graph_connection_drag::update_wire_material;
+    pub(crate) use crate::graph_connection_state as connection_state;
+    pub(crate) use crate::graph_connections as connections;
+    pub(crate) use crate::graph_control_input as control_input;
+    pub(crate) use crate::graph_drag_input as drag_input;
+    pub(crate) use crate::graph_menu_actions as menu_actions;
+    pub(crate) use crate::graph_node_controls as node_controls;
+    pub(crate) use crate::graph_node_metrics as node_metrics;
+    pub(crate) use crate::graph_palette as palette;
+    pub(crate) use crate::graph_selection as selection;
+    pub(crate) use crate::graph_sockets as sockets;
+    pub(crate) mod arrange {
+        pub(crate) use crate::graph_arrange_request::{ArrangeGraph, ArrangeScope};
+    }
     pub(crate) use crate::command_preparation;
+    pub(crate) use crate::graph_connections::edge_target;
     pub(crate) use crate::material_edit_context::{MaterialGraphAction, MaterialGraphViewport};
     pub(crate) use crate::material_edit_execution as execution;
     pub(crate) use crate::material_palette_state as palette_state;
@@ -524,6 +645,8 @@ mod material_graph {
     pub(crate) use crate::preview_state::MaterialGraphPreviewState;
     pub(crate) use crate::preview_target::MaterialGraphPreviewTarget;
     pub(crate) mod presentation {
+        pub(crate) use crate::presentation_context::visible;
+        pub(crate) use crate::presentation_preview::preview_edit;
         pub(crate) use crate::presentation_state::State;
         pub(crate) use crate::presentation_transaction::Snapshot;
         pub(crate) use crate::presentation_transaction::Transaction;
@@ -540,6 +663,7 @@ mod feathers {
     }
     pub(crate) use crate::color_support::{color_picker, number_input, text_input};
     pub(crate) mod button {
+        pub(crate) use crate::action_activation::FeathersActionButton;
         pub(crate) use crate::tool_button::spawn_tool_button;
     }
     pub(crate) use crate::field_row;
@@ -553,6 +677,7 @@ mod feathers {
         pub(crate) use crate::context_menu_intent::*;
     }
     pub(crate) use crate::pointer;
+    pub(crate) use crate::search_field;
     pub(crate) use crate::{icon, tooltip};
     pub(crate) mod scenes {
         pub(crate) use crate::editor_root::editor_root;
@@ -567,12 +692,31 @@ mod feathers {
     }
     pub(crate) use crate::action_activation;
     pub(crate) mod node_graph {
+        pub(crate) use crate::drag_assist;
         pub(crate) use crate::geometry;
-        pub(crate) use crate::marquee::GraphSelectionMode;
+        pub(crate) use crate::graph_metrics::*;
+        pub(crate) use crate::graph_placement as placement;
+        pub(crate) use crate::graph_preview_toggle::FeathersGraphNodePreviewToggle;
+        pub(crate) use crate::graph_snap_controls::spawn_controls as spawn_graph_drag_controls;
+        pub(crate) use crate::graph_socket_geometry::{
+            GraphSocketSide, compact_graph_socket_offset,
+        };
+        pub(crate) use crate::graph_toolbar as toolbar;
+        pub(crate) use crate::graph_toolbar::{
+            GraphFrameAction, graph_toolbar_bundle, spawn_graph_frame_button,
+            spawn_graph_tool_button,
+        };
+        pub(crate) use crate::graph_wire_layer::FeathersGraphWireLayer;
+        pub(crate) use crate::insertion;
+        pub(crate) use crate::marquee::{GraphMarqueeSelection, GraphSelectionMode};
+        pub(crate) use crate::materials::GraphWireMaterial;
         pub(crate) use crate::memory::GraphViewportMemory;
         pub(crate) use crate::navigation::FeathersGraphNavigationBlocker;
-        pub(crate) use crate::navigation::FeathersGraphViewport;
-        pub(crate) use crate::node::FeathersGraphNode;
+        pub(crate) use crate::navigation::{FeathersGraphViewport, GraphFrameTarget};
+        pub(crate) use crate::node::{
+            FeathersGraphNode, GraphModifiedNodeDrag, GraphNodeDragModifier,
+            GraphPresentationBatchEdit,
+        };
     }
 }
 #[path = "../../../apps/aestra-editor/src/material_graph/command_preparation.rs"]
@@ -672,7 +816,8 @@ mod theme {
     pub(crate) use crate::palette::*;
     pub(crate) use crate::theme_boundary::feathers_theme;
 }
-mod drag_assist {
+pub(crate) mod drag_assist {
     pub(super) use crate::drag_interaction::{Context, State};
+    pub(crate) use crate::graph_snap_controls::{Toggle, spawn_controls, sync_controls, toggle};
     pub(super) use crate::snapping as model;
 }

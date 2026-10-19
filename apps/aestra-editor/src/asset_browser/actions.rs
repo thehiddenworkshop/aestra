@@ -29,11 +29,8 @@ pub(super) struct OpenMaterial {
     pub(super) new_view: bool,
 }
 
-#[derive(Event)]
-pub(crate) struct OpenFunction {
-    pub(crate) function: aestra_core::MaterialFunctionId,
-    pub(crate) new_view: bool,
-}
+mod open_function;
+pub(crate) use open_function::OpenFunction;
 
 #[derive(Event)]
 pub(super) struct OpenWeslSource {
@@ -41,9 +38,8 @@ pub(super) struct OpenWeslSource {
     pub(super) new_view: bool,
 }
 
-/// Shared semantic locate route for graph, property, and source-reference controls.
-#[derive(Component, Event, Clone, Copy)]
-pub(crate) struct LocateInAssets(pub(crate) ProjectAssetId);
+mod locate;
+pub(crate) use locate::LocateInAssets;
 
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BrowserAction {

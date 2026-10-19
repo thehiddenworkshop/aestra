@@ -6,7 +6,6 @@
 use super::number_input::EditorNumberInput;
 use super::{
     button::{FeathersActionButton, PendingFeathersActivation},
-    icon::load_svg_icon,
     scenes,
     tooltip::{EditorTooltip, EditorTooltipSide},
 };
@@ -71,12 +70,13 @@ pub(crate) mod insertion;
 mod insertion_tests;
 mod overlay;
 pub(crate) mod placement;
+#[cfg(test)]
+#[path = "node_graph/placement/tests.rs"]
+mod placement_tests;
 mod resize;
 
-pub(crate) const NODE_WIDTH: f32 = 224.0;
-pub(crate) const NODE_HEADER_HEIGHT: f32 = 30.0;
-pub(crate) const PORT_ROW_HEIGHT: f32 = 24.0;
-pub(crate) const NODE_PREVIEW_SIZE: f32 = 208.0;
+mod metrics;
+pub(crate) use metrics::{NODE_HEADER_HEIGHT, NODE_PREVIEW_SIZE, NODE_WIDTH, PORT_ROW_HEIGHT};
 pub(crate) const SOCKET_HIT_SIZE: f32 = 20.0;
 const SOCKET_SIZE: f32 = 10.0;
 const SELECTED_BORDER_WIDTH: f32 = 2.0;
@@ -92,80 +92,18 @@ type GraphNodeControlFilter = Or<(
 )>;
 
 pub(crate) struct FeathersNodeGraphPlugin;
+mod toolbar;
+pub(crate) use toolbar::{
+    GraphFrameAction, graph_toolbar_bundle, spawn_graph_frame_button, spawn_graph_tool_button,
+    spawn_graph_toolbar_summary,
+};
+use toolbar::{handle_graph_frame_buttons, queue_graph_frame_activation};
+#[path = "node_graph/toolbar_input_019.rs"]
+mod toolbar_input;
 
 /// Hosts order graph restoration/navigation after their own document lifecycle and UI rebuild.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct GraphWidgetSync;
-
-/// Shared toolbar chrome for material programs and function bodies.
-pub(crate) fn graph_toolbar_bundle() -> impl Bundle {
-    (
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Px(38.0),
-            min_height: Val::Px(38.0),
-            flex_shrink: 0.0,
-            align_items: AlignItems::Center,
-            padding: UiRect::horizontal(Val::Px(8.0)),
-            column_gap: Val::Px(4.0),
-            ..default()
-        },
-        BackgroundColor(theme::PANEL_LIGHT),
-    )
-}
-
-pub(crate) fn spawn_graph_toolbar_summary(parent: &mut ChildSpawnerCommands, text: String) {
-    parent.spawn(Node {
-        flex_grow: 1.0,
-        ..default()
-    });
-    parent.spawn((
-        Text::new(text),
-        TextFont {
-            font_size: FontSize::Px(9.0),
-            ..default()
-        },
-        TextColor(theme::TEXT_FAINT),
-    ));
-}
-
-pub(crate) fn spawn_graph_tool_button<A: Component>(
-    parent: &mut ChildSpawnerCommands,
-    assets: &AssetServer,
-    icon_path: &'static str,
-    label: String,
-    action: A,
-) -> Entity {
-    parent
-        .spawn_empty()
-        .apply_scene(scenes::feathers_tool_button())
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.clone()),
-            EditorTooltip::description(label),
-            Node {
-                width: Val::Px(28.0),
-                height: Val::Px(24.0),
-                flex_shrink: 0.0,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-        ))
-        .with_child((
-            Node {
-                width: Val::Px(15.0),
-                height: Val::Px(15.0),
-                ..default()
-            },
-            UiSvg(load_svg_icon(assets, icon_path)),
-            SvgColor(Color::WHITE),
-            Pickable::IGNORE,
-        ))
-        .id()
-}
 
 impl Plugin for FeathersNodeGraphPlugin {
     fn build(&self, app: &mut App) {
@@ -233,37 +171,19 @@ pub(crate) struct GraphViewportProps {
     pub(crate) initial_view: Option<(Vec2, f32)>,
 }
 
-#[derive(Component, Debug, Clone)]
-pub(crate) struct GraphFrameAction {
-    key: String,
-    target: GraphFrameTarget,
-}
-
-impl GraphFrameAction {
-    pub(crate) fn new(key: impl Into<String>, target: GraphFrameTarget) -> Self {
-        Self {
-            key: key.into(),
-            target,
-        }
-    }
-}
-
 /// Graph-space layer rendered below the node canvas with the exact same pan/zoom transform.
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct FeathersGraphWireLayer {
-    pub(crate) viewport: Entity,
-}
+mod wire_layer;
+pub(crate) use wire_layer::FeathersGraphWireLayer;
 
 #[derive(Component, Debug, Clone, Copy)]
 struct FeathersGraphGrid {
     viewport: Entity,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GraphSocketSide {
-    Input,
-    Output,
-}
+mod socket;
+#[cfg(test)]
+use socket::compact_graph_socket_offset_for_size;
+pub(crate) use socket::{GraphSocketSide, compact_graph_socket_offset};
 
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct FeathersGraphSocket {
@@ -298,41 +218,8 @@ pub(crate) struct GraphNodePreviewToggleProps {
     pub(crate) hide_label: String,
 }
 
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct FeathersGraphNodePreviewToggle;
-
-/// Returns the graph-local proxy anchor used by wires while a node is compact.
-///
-/// A compact node hides its body and therefore its real socket entities. Their cached UI
-/// transforms must not be used: they describe the expanded body and can lag behind the compact
-/// layout. Instead, all inputs converge on the left edge of the header and all outputs on the
-/// right edge. Expanded nodes keep using their measured socket positions.
-pub(crate) fn compact_graph_socket_offset(
-    node: &FeathersGraphNode,
-    computed: &ComputedNode,
-    side: GraphSocketSide,
-) -> Option<Vec2> {
-    let size = computed.size() * computed.inverse_scale_factor;
-    compact_graph_socket_offset_for_size(node.collapsed(), size, side)
-}
-
-fn compact_graph_socket_offset_for_size(
-    collapsed: bool,
-    size: Vec2,
-    side: GraphSocketSide,
-) -> Option<Vec2> {
-    if !collapsed || !size.is_finite() || size.min_element() <= 0.0 {
-        return None;
-    }
-
-    Some(Vec2::new(
-        match side {
-            GraphSocketSide::Input => 0.0,
-            GraphSocketSide::Output => size.x,
-        },
-        size.y * 0.5,
-    ))
-}
+mod preview_toggle;
+pub(crate) use preview_toggle::FeathersGraphNodePreviewToggle;
 
 #[derive(Component, Debug, Clone, Copy)]
 struct FeathersGraphNodeBody {
@@ -485,86 +372,6 @@ pub(crate) fn spawn_graph_viewport<B: Bundle>(
             .with_children(content);
     });
     entity
-}
-
-pub(crate) fn spawn_graph_frame_button(
-    parent: &mut ChildSpawnerCommands,
-    asset_server: &AssetServer,
-    icon_path: &'static str,
-    label: String,
-    action: GraphFrameAction,
-) -> Entity {
-    let mut button = parent.spawn_empty();
-    button.apply_scene(scenes::feathers_tool_button());
-    let entity = button.id();
-    button
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.clone()),
-            EditorTooltip::description(label),
-            Node {
-                width: Val::Px(28.0),
-                height: Val::Px(24.0),
-                flex_shrink: 0.0,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-        ))
-        .with_child((
-            Node {
-                width: Val::Px(15.0),
-                height: Val::Px(15.0),
-                ..default()
-            },
-            UiSvg(load_svg_icon(asset_server, icon_path)),
-            SvgColor(Color::WHITE),
-            Pickable::IGNORE,
-        ));
-    entity
-}
-
-fn queue_graph_frame_activation(
-    activate: On<Activate>,
-    actions: Query<(), (With<GraphFrameAction>, With<FeathersActionButton>)>,
-    mut commands: Commands,
-) {
-    if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
-}
-
-fn handle_graph_frame_buttons(
-    mut commands: Commands,
-    actions: Query<
-        (
-            Entity,
-            &Interaction,
-            &GraphFrameAction,
-            Option<&PendingFeathersActivation>,
-        ),
-        (Changed<Interaction>, With<FeathersActionButton>),
-    >,
-    mut viewports: Query<&mut FeathersGraphViewport>,
-) {
-    for (entity, interaction, action, pending) in &actions {
-        if *interaction != Interaction::Pressed || pending.is_none() {
-            continue;
-        }
-        commands
-            .entity(entity)
-            .remove::<PendingFeathersActivation>()
-            .insert(Interaction::None);
-        for mut viewport in &mut viewports {
-            if viewport.key == action.key {
-                viewport.frame_request = Some(action.target);
-            }
-        }
-    }
 }
 
 fn remember_graph_viewports(

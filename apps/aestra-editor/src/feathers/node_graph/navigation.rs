@@ -38,6 +38,10 @@ pub(crate) struct FeathersGraphViewport {
 
 impl FeathersGraphViewport {
     #[cfg(test)]
+    pub(crate) fn frame_request_for_test(&self) -> Option<GraphFrameTarget> {
+        self.frame_request
+    }
+    #[cfg(test)]
     pub(crate) fn clipboard_fixture(key: String, pan: Vec2, zoom: f32) -> Self {
         Self {
             key,
