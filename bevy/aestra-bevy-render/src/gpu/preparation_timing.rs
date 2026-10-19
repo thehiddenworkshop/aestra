@@ -1,36 +1,14 @@
 //! Separate per-owner render-preparation windows. No CPU waits or particle readbacks.
 use super::particle_statistics::GpuParticleStatistics;
 pub(super) use super::preparation_context::PreparationMailboxes;
-use super::simulation_timing::GpuSimulationTiming;
 use crate::PresentedEffect;
+#[cfg(test)]
 use aestra_runtime::{EffectInstance, EffectProfile, ProfileValue};
 use bevy::prelude::*;
 #[cfg(test)]
 use std::sync::Arc;
 
-/// GPU trail compaction and per-view culling, excluding simulation and drawing.
-#[derive(Component, Debug, Default)]
-pub struct GpuPreparationTiming {
-    compaction: GpuSimulationTiming,
-    culling: GpuSimulationTiming,
-}
-
-impl GpuPreparationTiming {
-    pub fn record_profile(
-        &self,
-        instance: &EffectInstance,
-        context: &GpuParticleStatistics,
-        profile: &mut EffectProfile,
-    ) {
-        if profile.trail_capacity.value() == Some(0) {
-            profile.gpu_trail_compaction_time_ns = ProfileValue::Measured(0);
-            profile.gpu_trail_culling_time_ns = ProfileValue::Measured(0);
-        } else {
-            profile.gpu_trail_compaction_time_ns = self.compaction.time_ns(instance, context);
-            profile.gpu_trail_culling_time_ns = self.culling.time_ns(instance, context);
-        }
-    }
-}
+pub use super::preparation_observation::GpuPreparationTiming;
 
 pub(super) fn receive(
     mailboxes: Res<PreparationMailboxes>,

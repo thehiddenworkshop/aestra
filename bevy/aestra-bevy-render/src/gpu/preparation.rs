@@ -1177,21 +1177,7 @@ const fn gpu_blend(blend: aestra_core::BlendMode) -> GpuBlend {
     }
 }
 
-/// Asynchronously observed owner-pool counters, invalidated by history discontinuities.
-#[derive(Component, Debug, Default)]
-pub struct GpuTrailStatistics {
-    pub(super) epoch: Option<u32>,
-    pub(super) usage: aestra_runtime::TrailUsage,
-}
-
-impl GpuTrailStatistics {
-    pub fn usage(
-        &self,
-        instance: &aestra_runtime::EffectInstance,
-    ) -> Option<aestra_runtime::TrailUsage> {
-        (self.epoch == Some(instance.history_epoch())).then_some(self.usage)
-    }
-}
+pub use super::field_observations::GpuTrailStatistics;
 
 #[derive(Component)]
 struct GpuTrailReadbackOwner(Entity);

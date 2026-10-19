@@ -1,7 +1,24 @@
 //! Document host poses share selection with the timeline and the standard TRS gizmo.
-use super::*;
+use super::{
+    gizmo_state::PreviewSceneGizmos, navigation::PreviewRenderCamera, shortcuts::PreviewCanvas,
+    transform_gizmo::screen_space_gizmo_radius,
+};
+#[cfg(test)]
+use super::{gizmo_state::*, navigation::EmitterTransformGizmoProxy, transform_gizmo::*};
 use crate::timeline::host_motion as timeline_motion;
+use crate::{
+    feathers::action_activation::FeathersActionButton, menus::MenuState, session::EditorSession,
+    timeline::TimelineState,
+};
+#[cfg(test)]
+use aestra_authoring::SemanticTarget;
+#[cfg(test)]
+use aestra_core::EmitterTransform;
 use aestra_core::HostTransformTrack;
+use bevy::{
+    gizmos::transform_gizmo::TransformGizmoState, prelude::*, ui::RelativeCursorPosition,
+    window::PrimaryWindow,
+};
 
 const MAX_PATH_KEYS: usize = 512;
 const PICK_RADIUS: f32 = 9.0;
@@ -412,3 +429,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "host_motion/tests.rs"]
+mod consumer_tests;

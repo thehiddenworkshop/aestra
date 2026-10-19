@@ -91,7 +91,8 @@ mod timeline_pointer;
 pub(crate) mod host_motion {
     pub(super) use super::host_composition::{spawn_header, spawn_lane};
     pub(super) use super::interaction_state::HostMotionControl;
-    pub(crate) use super::motion_execution::{select_pose, selected_pose};
+    pub(crate) use super::motion_execution::{busy, replace_pose, select_pose, selected_pose};
+    pub(crate) use super::motion_state::active;
     pub(super) use super::motion_state::keyboard_input;
 }
 #[path = "../../../apps/aestra-editor/src/timeline/actions.rs"]

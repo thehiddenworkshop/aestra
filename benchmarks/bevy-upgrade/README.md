@@ -2330,3 +2330,179 @@ does not introduce consumer epoch validation, sorting or deduplication. Next:
 GPU-observation-to-profile integration, then remaining profiler presentation and
 gizmo/host-motion/graph/application consumers. Native delivery/rendering and full
 viewport workflows remain separate gates. Shipping remains on 0.19.1.
+
+## GPU observations to preview profiles
+
+B20-2 slice 67 shares the original `update_preview` consumer unchanged, with actual
+session/project/timeline/presentation/profiler inputs. Five small production renderer
+modules isolate existing observation records/read methods from device setup while
+retaining public re-export paths. All eight record layouts, four model implementations,
+remaining producer functions, native viewport plugin registration, 42 remaining root
+functions and existing viewport test body remain unchanged after required parent
+visibility normalization. No new public renderer test/constructor API is shipped.
+
+Ten shared tests and nine candidate-only observation tests cover reference/GPU/readback
+provenance, decoded counts, geometry/timing/field/trail validity, stale contexts,
+nested aggregation, unknown versus known-zero metrics, estimated peaks and unchanged
+semantic history/clock/seed. Candidate fixtures use actual production components and
+readback decoding. Sixteen existing capability/statistics tests also execute in the
+editor candidate. See
+[implementation, scope and evidence](editor-viewport-telemetry-2026-10-19.md).
+
+The accepted frozen qualification executes **1,795 checks**, including **1,373
+editor graph/session/history/consumer checks**, with all **927 input hashes**
+unchanged. Shipping passes **2,349 editor unit + 3 architecture tests**, with ten
+existing ignores, plus eight focused renderer timing regressions. Strict all-target
+Clippy passes on both engines, alongside workspace all-target checking with
+`aestra-bench/gpu`, both formatting checks and whitespace validation. Root dependency/
+toolchain inputs remain unchanged and post-documentation input drift is zero.
+
+These are consumer/model checks, not native readback latency, GPU-workload or
+visual/performance acceptance. The next slice covers profiler presentation,
+actions and plugin wiring; remaining gizmo/host-motion and graph/application
+workflows stay separate. Shipping remains on 0.19.1.
+
+## Profiler workspace, actions and plugin
+
+B20-2 slice 68 shares the actual Profiler workspace, metric formatting and live
+labels, reset consumer and plugin. All 20 presentation function bodies, the plugin
+implementation and existing root tests remain unchanged. A narrow native input
+boundary preserves the original Interaction/pending contract on 0.19 and uses
+Pressed on 0.20; shared panel chrome and real Feathers scenes remain in use.
+
+23 shared tests (two mirrored existing regressions and 21 new cases) cover both
+locales, metric provenance, history bars, retained updates, nested project details,
+invalid pending previews, accessible composition, native activation and plugin/set
+registration. Eight existing state cases also run in the focused candidate gate.
+See [implementation, limits and evidence](editor-profiler-workspace-2026-10-19.md).
+
+The accepted frozen qualification executes **1,818 checks**, including **1,396
+editor graph/session/history/consumer checks**, with all **935 input hashes**
+unchanged. This is headless consumer/composition/schedule evidence, not native
+visual, GPU-measurement or full application acceptance.
+
+Shipping passes **2,372 editor unit + 3 architecture tests**, with ten existing
+ignores unchanged. Strict all-target Clippy passes on both engines, together with
+workspace GPU-feature all-target checking, both formatting checks and whitespace
+validation. Root dependency/toolchain inputs remain unchanged; post-documentation
+input drift is zero.
+
+Next: remaining viewport gizmo/host-motion consumers, followed by graph/application
+workflows and full native acceptance. Shipping remains on 0.19.1.
+
+## Transform gizmos and host-motion viewport consumers
+
+B20-2 slice 69 shares 20 actual transform-gizmo functions and the complete
+host-motion viewport module, using original state records and real session,
+timeline, registry, modal, camera and command/history implementations. Extracted
+and remaining root function bodies, native plugin registration, existing root/
+host-motion tests and eleven record definitions remain unchanged after required
+parent visibility normalization. Public crate re-export paths are retained.
+
+36 shared cases include 13 mirrored regressions and 23 new tests; six existing
+host-motion cases also execute unchanged in the candidate. Coverage includes
+TRS previews and single-step undo, precision/snap transitions, cancellation/
+modal/focus ownership, fluid handles, cursor readouts and tagged-root feedback,
+projected pose picking, dense paths and actual CPU gizmo-asset output. Pose
+selection preserves the existing playback clock. See
+[implementation, limits and evidence](editor-viewport-transform-gizmo-2026-10-19.md).
+
+Accepted frozen qualification executes **1,860 checks**, including **1,438 editor
+graph/session/history/consumer checks**, with all **940 input hashes** unchanged.
+Shipping passes **2,408 editor unit + 3 architecture tests**, with ten existing
+ignores. Both strict all-target Clippy gates, workspace GPU-feature all-target
+checking, both formatting checks and whitespace validation pass. Root dependency/
+toolchain inputs remain unchanged; post-documentation input drift is zero.
+
+This is headless consumer/projection/gizmo-asset evidence, not native rendering,
+complete viewport plugin scheduling, visual or performance acceptance. Next:
+shape-gizmo interaction/visualization, then preview composition/full-plugin and
+graph/application workflows. Shipping remains on 0.19.1.
+
+## Shape-gizmo interaction and visualization
+
+B20-2 slice 70 shares the actual shape consumer module: 13 functions for target
+selection, projected handles, locks, transactional drag editing, cursor/readout
+behavior, geometry and overlay configuration. Function bodies, native plugin
+registration, existing root tests and two extracted record definitions are
+unchanged after parent visibility normalization. The candidate uses the actual
+module-parameter projection helper and no longer needs its shape-state dead-code
+allowance. No semantic, cancellation or playback policy changes are introduced.
+
+22 shared cases include three mirrored regressions and nineteen new tests for
+all eight shapes, dimension preservation, picking/transformed drag values,
+preview/commit/undo and Escape, lock/menu/selection gates, both locales and real
+GizmoAsset buffers. Scene tests inspect both line-list outlines and line-strip
+handles, live-shape geometry, highlighting and handle retirement. See
+[implementation, limits and evidence](editor-viewport-shape-gizmo-2026-10-19.md).
+
+Accepted frozen qualification executes **1,882 checks**, including **1,460 editor
+graph/session/history/consumer checks**, with all **942 input hashes** unchanged.
+Shipping passes **2,430 editor unit + 3 architecture tests**, with ten existing
+ignores. Both strict all-target Clippy gates, workspace GPU-feature all-target
+checking, both formatting gates and whitespace validation pass. Root dependency/
+toolchain inputs remain unchanged; post-documentation input drift is zero.
+
+This is headless consumer/projection/CPU geometry evidence, not native visual,
+rendering, full picking or complete plugin/application acceptance. Next: remaining
+preview setup/composition/status/stand-in consumers and full viewport-plugin
+integration, then graph/application workflows. Shipping remains on 0.19.1.
+
+## Preview scene, workspace and status consumers
+
+B20-2 slice 71 shares eight actual functions through scene/workspace modules:
+camera/grid/player/proxy startup, stand-in drawing, panel and seven-control
+Feathers toolbar construction, SVG children and runtime status synchronization.
+The original viewport-pane scene has its own shared module. Extracted bodies,
+remaining root test helpers, native plugin registration, original root tests and
+the pane body remain unchanged. Existing crate re-export paths and status change
+gates are preserved; no semantic, format or playback policy changes are added.
+
+24 new shared tests cover startup assets and player payload, empty effects,
+nonduplicating updates, actual stand-in GizmoAsset buffers, panel layout,
+accessible/localized controls, SVG handles and drag readouts, real Activate
+delivery to retained mode/display/frame/maximize consumers, all runtime backends,
+errors and the original status change gate. See
+[implementation, limits and evidence](editor-viewport-workspace-2026-10-19.md).
+
+Accepted frozen qualification executes **1,906 checks**, including **1,484 editor
+graph/session/history/consumer checks**, with all **947 input hashes** unchanged.
+Shipping passes **2,454 editor unit + 3 architecture tests**, with ten existing
+ignores. Both strict all-target Clippy gates, workspace GPU-feature all-target
+checking, both formatting gates and whitespace validation pass. Root dependency/
+toolchain inputs remain unchanged; post-documentation input drift is zero.
+
+This is headless scene/composition/consumer/CPU geometry evidence, not native
+rendering, asset-load completion in the new panel fixtures or complete plugin/
+application acceptance. Next: complete viewport-plugin integration, then graph/
+application workflows. Shipping remains on 0.19.1.
+
+## Installed viewport-plugin integration
+
+B20-2 slice 72 shares and installs the actual complete main-world ViewportPlugin:
+upstream plugins, resources, observers, startup/post-startup setup, ordered Update
+consumers, PostUpdate layout/gizmo/feedback ordering and preparation boundary.
+The original plugin body, remaining root helpers and root tests are unchanged.
+The candidate uses the actual renderer AestraRenderSet, retains native re-export
+paths and removes obsolete runtime-preview/shortcut dead-code exemptions. No
+semantic, run-condition, scheduling, dependency or playback policy is changed.
+
+15 new shared integration cases execute the real Feathers panel and upstream
+gizmo logic/mesh plugins, covering initialization and retained identities,
+overlay/material setup, keyboard/toolbar delivery, modal/application-set gating,
+layout-to-gizmo ordering and camera readiness, seek/seed/live-edit/undo behavior,
+empty documents and mock/preparation/telemetry ordering. See
+[implementation, limits and evidence](editor-viewport-plugin-2026-10-19.md).
+
+Accepted frozen qualification executes **1,921 checks**, including **1,499 editor
+graph/session/history/consumer checks**, with all **949 input hashes** unchanged.
+Shipping passes **2,469 editor unit + 3 architecture tests**, with ten existing
+ignores. Both strict all-target Clippy gates, workspace GPU-feature all-target
+checking, both formatting gates and whitespace validation pass. Root dependency/
+toolchain inputs remain unchanged; post-documentation input drift is zero.
+
+This is headless installed main-world plugin evidence: layout output and
+preparation observations are supplied by tests. It does not establish native UI
+layout, GPU dispatch, joint renderer/extraction/pipelining, full application,
+visual/DPI or performance acceptance. Next: graph palette/menu handlers and
+remaining application actions/workflows. Shipping remains on 0.19.1.

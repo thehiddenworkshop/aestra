@@ -6,17 +6,7 @@ use bevy::{
 use std::{collections::BTreeMap, sync::Mutex};
 pub(super) const MAX_DRAWS: usize = 2048;
 
-/// CPU-side observation payload, independent from the readback transport.
-#[derive(Clone, Debug, Default)]
-pub(super) struct GeometrySample {
-    pub owner: Option<Entity>,
-    pub token: u32,
-    pub time: f32,
-    pub instances: u32,
-    pub vertices: u64,
-    pub primitives: u64,
-    pub draws: u32,
-}
+pub(super) use super::geometry_sample::GeometrySample;
 
 /// Producer ordering shared with effect-bind-group preparation.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]

@@ -54,11 +54,9 @@ use aestra_core::ResourceTypeId;
 #[cfg(test)]
 use aestra_gpu::GpuHostBindings;
 use aestra_gpu::GpuWorldSdf;
-use aestra_runtime::{
-    CompiledEffect, CompiledExtensionStage, EffectInstance, FieldLayout, ProfileValue,
-};
+use aestra_runtime::{CompiledEffect, CompiledExtensionStage, EffectInstance, FieldLayout};
 #[cfg(test)]
-use aestra_runtime::{PlaybackHistoryPolicy, SeekQuality};
+use aestra_runtime::{PlaybackHistoryPolicy, ProfileValue, SeekQuality};
 use bevy::{
     asset::RenderAssetUsages,
     camera::visibility::RenderLayers,
@@ -163,23 +161,7 @@ impl Default for AestraFieldView {
     }
 }
 
-/// The latest measured GPU time of an instance's extension stages (fluid F1): every tick simulated in
-/// the most recent frame that advanced them, catch-up and replay included.
-#[derive(Component, Debug, Default, Clone)]
-pub struct GpuStageTiming {
-    sample: Option<(f32, u64)>,
-}
-
-impl GpuStageTiming {
-    /// The measured time, when it was taken at or before the instance's current time.
-    pub fn time_ns(&self, instance: &EffectInstance) -> ProfileValue<u64> {
-        self.sample
-            .filter(|(time, _)| *time <= instance.time())
-            .map_or(ProfileValue::Unavailable, |(_, nanoseconds)| {
-                ProfileValue::Measured(nanoseconds)
-            })
-    }
-}
+pub use super::field_observations::GpuStageTiming;
 
 use super::stage_coupling::init_field_follow;
 

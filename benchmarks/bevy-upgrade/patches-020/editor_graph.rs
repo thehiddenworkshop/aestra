@@ -5,6 +5,9 @@
 //! Actual catalog/session publication and scoped semantic history execute on both engines.
 //! Complete UI handlers and native panel composition remain host-qualified separately.
 extern crate self as aestra_bevy_render;
+#[path = "../../../bevy/aestra-bevy-render/src/render_set.rs"]
+mod render_set;
+pub use render_set::AestraRenderSet;
 #[path = "../../../bevy/aestra-bevy-render/src/material.rs"]
 pub mod material;
 #[path = "../../../bevy/aestra-bevy-render/src/material_layout.rs"]
@@ -23,16 +26,36 @@ pub use presented_effect::{EffectRenderMode, PresentedEffect};
     reason = "Native counter producer remains in the renderer qualification gate"
 )]
 mod event_statistics;
+#[path = "editor_telemetry.rs"]
+#[allow(
+    dead_code,
+    reason = "GPU device producers remain in the separate renderer gate"
+)]
+mod gpu;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/output_context.rs"]
 #[allow(
     dead_code,
     reason = "Native output production remains in the renderer qualification gate"
 )]
 mod output_context;
-mod gpu {
-    pub use crate::event_statistics::GpuEventLinkStatistics;
-    pub use crate::output_context::AestraOutputEvent;
-}
+pub use aestra_runtime::{
+    BackendCapabilities, CompatibilityIssueCode, CompatibilityReport, CompatibilityTarget,
+    EffectRequirements, RendererCapability,
+};
+#[path = "../../../bevy/aestra-bevy-render/src/capabilities.rs"]
+#[allow(
+    dead_code,
+    reason = "Other device capability consumers remain renderer-owned"
+)]
+mod capabilities;
+pub use capabilities::{ActiveBackend, EffectRuntimeStatus};
+#[path = "../../../bevy/aestra-bevy-render/src/render_settings.rs"]
+#[allow(
+    dead_code,
+    reason = "Other presentation settings consumers remain renderer-owned"
+)]
+mod render_settings;
+pub use render_settings::PresentationMode;
 #[path = "../../../apps/aestra-editor/src/docking/maximized.rs"]
 mod maximized;
 #[path = "../../../apps/aestra-editor/src/persistence/status.rs"]
@@ -47,11 +70,7 @@ mod persistence_status;
     reason = "Other photographic presentation consumers remain separate"
 )]
 pub(crate) mod preview;
-#[path = "../../../apps/aestra-editor/src/profiler/state.rs"]
-#[allow(
-    dead_code,
-    reason = "Remaining native profiler presentation consumers remain separate"
-)]
+#[path = "editor_profiler.rs"]
 mod profiler;
 #[path = "../../../apps/aestra-editor/src/session.rs"]
 #[allow(dead_code, reason = "Native application consumers remain host-owned")]
@@ -199,10 +218,6 @@ mod viewport;
 #[path = "../../../apps/aestra-editor/src/viewport/keyboard.rs"]
 mod viewport_keyboard;
 #[path = "../../../apps/aestra-editor/src/viewport/shortcuts.rs"]
-#[allow(
-    dead_code,
-    reason = "Rendered viewport action execution remains host-qualified"
-)]
 mod viewport_shortcuts;
 mod asset_actions {
     pub(crate) use crate::asset_action::AssetAction;
@@ -283,6 +298,8 @@ pub(crate) mod reference_checks;
 pub(crate) mod scenes;
 #[path = "../../../apps/aestra-editor/src/feathers/scroll.rs"]
 pub(crate) mod scrollbars;
+#[path = "../../../apps/aestra-editor/src/feathers/scenes/viewport.rs"]
+mod viewport_pane;
 mod asset_browser {
     pub(crate) use crate::browser_state as state;
     pub(crate) use crate::browser_state::{AssetBrowserState, BrowserSurface};
@@ -406,6 +423,8 @@ mod asset_drop {
 pub(crate) mod automation_curve;
 mod properties {
     pub(crate) use crate::material_inspector_state::MaterialStackInspectorState;
+    pub(crate) use crate::module_data::EditorModuleRegistry;
+    pub(crate) use crate::module_data::module_parameter;
 }
 #[path = "../../../apps/aestra-editor/src/history/material_program_execution.rs"]
 #[allow(
@@ -515,6 +534,7 @@ mod editor_target;
 #[path = "../../../apps/aestra-editor/src/material_target.rs"]
 mod material_target;
 mod feathers {
+    pub(crate) use crate::panel_chrome as panel;
     pub(crate) mod combo_box {
         pub(crate) use crate::combo_selection::{ComboOption, spawn_combo_control};
     }
@@ -537,6 +557,7 @@ mod feathers {
     pub(crate) mod scenes {
         pub(crate) use crate::editor_root::editor_root;
         pub(crate) use crate::scenes::*;
+        pub(crate) use crate::viewport_pane::viewport_pane;
     }
     pub(crate) mod scroll {
         pub(crate) use crate::scrollbars::*;
@@ -635,6 +656,12 @@ mod node;
     reason = "Other panels consume the remaining palette entries"
 )]
 mod palette;
+#[path = "../../../apps/aestra-editor/src/feathers/panel.rs"]
+#[allow(
+    dead_code,
+    reason = "Other shared panel chrome consumers remain separate"
+)]
+pub(crate) mod panel_chrome;
 #[path = "../../../apps/aestra-editor/src/feathers/node_graph/resize.rs"]
 mod resize;
 #[path = "../../../apps/aestra-editor/src/feathers/node_graph/drag_assist/model.rs"]

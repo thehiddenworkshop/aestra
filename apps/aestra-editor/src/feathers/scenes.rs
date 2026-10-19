@@ -8,6 +8,8 @@ pub(crate) use common::*;
 
 mod root;
 pub(crate) use root::editor_root;
+mod viewport;
+pub(crate) use viewport::viewport_pane;
 
 pub(crate) fn editor_content_host() -> impl Scene {
     bsn! {
@@ -50,22 +52,6 @@ pub(crate) fn dock_pane() -> impl Scene {
         }
         BackgroundColor(theme::PANEL_DARK)
         BorderColor::all(theme::BORDER)
-    }
-}
-
-pub(crate) fn viewport_pane() -> impl Scene {
-    bsn! {
-        Node {
-            flex_grow: 1.0,
-            height: percent(100),
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Stretch,
-            justify_content: JustifyContent::Center,
-            row_gap: px(8),
-            padding: px(12),
-            min_width: px(0),
-        }
-        BackgroundColor(Color::NONE)
     }
 }
 

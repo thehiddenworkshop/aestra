@@ -54,8 +54,18 @@ pub use render_plugin::AestraRenderPlugin;
 mod bootstrap;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/bounds_test_types_020.rs"]
 mod bounds_test_types;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/field_observations.rs"]
+mod field_observations;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/geometry_sample.rs"]
+mod geometry_sample;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/geometry_statistics.rs"]
 mod geometry_statistics;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/preparation_observation.rs"]
+mod preparation_observation;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/simulation_observation.rs"]
+mod simulation_observation;
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/timestamp_observation.rs"]
+mod timestamp_observation;
 #[derive(bevy::prelude::Component)]
 pub(crate) struct GpuPresentationPrepared;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/alpha_sort.rs"]
