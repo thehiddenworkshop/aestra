@@ -51,6 +51,8 @@ mod renderer_controls;
 mod scene_lights;
 mod stack_panel;
 mod texture_drop;
+#[cfg(test)]
+mod transform_layout_tests;
 mod virtual_drop;
 pub(crate) mod wesl;
 
@@ -7086,6 +7088,11 @@ fn spawn_effect_clip_transform_controls(parent: &mut ChildSpawnerCommands, clip:
         });
 }
 
+// Label, two reserved steppers and five ordinary numeric characters must fit
+// even when the inspector is narrow. Match both transform owners, not only one.
+const TRANSFORM_AXIS_MIN_WIDTH: f32 = 96.0;
+const TRANSFORM_GROUP_WIDTH: f32 = 3.0 * TRANSFORM_AXIS_MIN_WIDTH + 2.0 * 4.0;
+
 fn spawn_effect_clip_transform_row(
     parent: &mut ChildSpawnerCommands,
     clip: EffectClipId,
@@ -7097,7 +7104,7 @@ fn spawn_effect_clip_transform_row(
         parent,
         crate::feathers::field_row::FieldRowProps::new(title)
             .indented(0)
-            .with_control_min_width(150.0),
+            .with_wrapping_controls(TRANSFORM_GROUP_WIDTH),
         // The inspector scrolls. Keep the tooltip outside its layout tree so hovering
         // a narrow transform input cannot change the scroll extent or shift the row.
         EditorTooltip::description(description).anchored_to_cursor(),
@@ -7111,7 +7118,7 @@ fn spawn_effect_clip_transform_row(
                     .spawn(Node {
                         flex_grow: 1.0,
                         flex_basis: Val::Px(0.0),
-                        min_width: Val::Px(44.0),
+                        min_width: Val::Px(TRANSFORM_AXIS_MIN_WIDTH),
                         ..default()
                     })
                     .with_children(|wrapper| {
@@ -7141,7 +7148,7 @@ fn spawn_emitter_transform_row(
         parent,
         crate::feathers::field_row::FieldRowProps::new(title)
             .indented(0)
-            .with_control_min_width(150.0),
+            .with_wrapping_controls(TRANSFORM_GROUP_WIDTH),
         // The inspector scrolls. Keep the tooltip outside its layout tree so hovering
         // a narrow transform input cannot change the scroll extent or shift the row.
         EditorTooltip::description(description).anchored_to_cursor(),
@@ -7155,7 +7162,7 @@ fn spawn_emitter_transform_row(
                     .spawn(Node {
                         flex_grow: 1.0,
                         flex_basis: Val::Px(0.0),
-                        min_width: Val::Px(44.0),
+                        min_width: Val::Px(TRANSFORM_AXIS_MIN_WIDTH),
                         ..default()
                     })
                     .with_children(|wrapper| {

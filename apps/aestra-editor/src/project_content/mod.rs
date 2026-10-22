@@ -17,8 +17,11 @@ pub(crate) use refresh::ProjectEffectWatchState;
 pub(crate) use refresh::{apply_project_effect_catalog_refresh, poll_project_effect_catalog};
 #[cfg(test)]
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 mod model;
+mod paths;
 pub(crate) use model::EditorProjectContent;
 use model::PreparedProject;
 
@@ -29,9 +32,10 @@ impl Default for EditorProjectContent {
     }
 }
 
-/// The project the editor opens by default: the curated sample project at the repo root. Editor UI
-/// assets live under `assets/`; workspace test fixtures live under `assets/test/`.
+/// Bundled examples, relative to the executable rather than the build checkout.
 pub(crate) fn default_project_root() -> PathBuf {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    let executable = std::env::current_exe().expect("editor executable location unavailable");
+    let manifest = std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from);
+    let root = paths::project_root(&executable, manifest.as_deref());
     root.canonicalize().unwrap_or(root)
 }

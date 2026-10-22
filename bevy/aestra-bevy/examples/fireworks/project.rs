@@ -7,6 +7,9 @@ use aestra_project::ProjectAssetIndex;
 use bevy::prelude::Resource;
 use std::{path::PathBuf, sync::Arc};
 
+#[path = "paths.rs"]
+mod paths;
+
 pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
 pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-art-show | --persistent-smoke-show | --smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-art-show plays the separate F8.1C4 smaller distributed wisp draft; --persistent-smoke-show plays the opt-in F8.1C3 authored show candidate, not final art approval. --smoke-lighting plays F8.3B fluid; --particle-smoke-lighting plays F8.3C sprites; --smoke-persistence plays F8.1A billows; --smoke-cohorts plays F8.1B death-linked shell smoke (these labs are not the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
 
@@ -45,6 +48,18 @@ impl Options {
     }
 
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
+        let executable =
+            std::env::current_exe().map_err(|e| format!("Executable location: {e}"))?;
+        let manifest = std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from);
+        let (project, audio) = paths::default_paths(&executable, manifest.as_deref());
+        Self::parse_with_paths(args, project, audio)
+    }
+
+    fn parse_with_paths(
+        args: impl IntoIterator<Item = String>,
+        project_root: PathBuf,
+        audio_root: PathBuf,
+    ) -> Result<Self, String> {
         let mut options = Self {
             tier: "high".into(),
             smoke_lighting: false,
@@ -54,10 +69,10 @@ impl Options {
             persistent_smoke_show: false,
             smoke_art_show: false,
             history: PlaybackHistoryPolicy::PlaybackOnly,
-            project_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
+            project_root,
             effect_path: "effects/fireworks_show.aestra.ron".into(),
             audio_root: if cfg!(feature = "fireworks-audio") {
-                Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/audio/fireworks"))
+                Some(audio_root)
             } else {
                 None
             },
@@ -161,13 +176,18 @@ impl Options {
         options.project_root = options
             .project_root
             .canonicalize()
-            .map_err(|e| format!("Project root: {e}"))?;
+            .map_err(|e| format!("Project root {}: {e}", options.project_root.display()))?;
         if !options.project_root.is_dir() {
             return Err("Project root must be a directory".into());
         }
         if !options.effect_path.is_absolute() {
             options.effect_path = options.project_root.join(&options.effect_path);
         }
+        // File discovery and Bevy's asset source must use the same absolute folder.
+        // An absent optional WAV pack remains allowed and is reported by the audio host.
+        options.audio_root = options
+            .audio_root
+            .map(|root| root.canonicalize().unwrap_or(root));
         Ok(options)
     }
 
@@ -208,6 +228,43 @@ mod persistent_smoke_show_tests;
 mod tests {
     use super::*;
     use aestra_bevy::{EffectPlaybackMode, EffectPlayer};
+
+    #[test]
+    fn missing_package_project_does_not_fall_back_to_source_checkout() {
+        let missing = std::env::current_exe()
+            .unwrap()
+            .join("missing-package/assets/test");
+        let error = Options::parse_with_paths([], missing.clone(), missing.join("audio"))
+            .err()
+            .expect("missing packaged data must fail");
+        assert!(error.contains(&missing.display().to_string()));
+    }
+
+    #[test]
+    fn explicit_paths_and_silence_override_missing_package_defaults() {
+        let source = Options::parse([]).unwrap().project_root;
+        let missing = std::env::current_exe().unwrap().join("missing-package");
+        let mut args = vec![
+            "--project".into(),
+            source.display().to_string(),
+            "--effect".into(),
+            "effects/custom.aestra.ron".into(),
+        ];
+        if cfg!(feature = "fireworks-audio") {
+            args.extend(["--audio-root".into(), source.display().to_string()]);
+            let options =
+                Options::parse_with_paths(args.clone(), missing.clone(), missing.clone()).unwrap();
+            assert_eq!(options.audio_root, Some(source.clone()));
+        }
+        args.push("--no-audio".into());
+        let options = Options::parse_with_paths(args, missing.clone(), missing).unwrap();
+        assert_eq!(options.project_root, source);
+        assert_eq!(
+            options.effect_path,
+            source.join("effects/custom.aestra.ron")
+        );
+        assert!(options.audio_root.is_none());
+    }
 
     #[test]
     fn smoke_persistence_keeps_births_bounded_and_tails_move_then_drain() {

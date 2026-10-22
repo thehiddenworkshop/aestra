@@ -14,6 +14,7 @@ pub(crate) struct FieldRowProps {
     pub(crate) label: String,
     pub(crate) indent: u8,
     pub(crate) control_min_width: Option<f32>,
+    pub(crate) wrap_controls: bool,
 }
 
 impl FieldRowProps {
@@ -31,6 +32,14 @@ impl FieldRowProps {
 
     pub(crate) fn with_control_min_width(mut self, width: f32) -> Self {
         self.control_min_width = Some(width.max(FIELD_CONTROL_MIN_WIDTH));
+        self
+    }
+
+    /// Prefer a complete control group beside the label, but let its children
+    /// wrap below it instead of shrinking or overflowing a narrow inspector.
+    pub(crate) fn with_wrapping_controls(mut self, preferred_width: f32) -> Self {
+        self.control_min_width = Some(preferred_width.max(FIELD_CONTROL_MIN_WIDTH));
+        self.wrap_controls = true;
         self
     }
 }
@@ -77,9 +86,19 @@ pub(crate) fn spawn_field_row(
                 flex_grow: 1.0,
                 flex_shrink: 1.0,
                 flex_basis: Val::Px(control_min),
-                min_width: Val::Px(control_min),
+                min_width: Val::Px(if props.wrap_controls {
+                    FIELD_CONTROL_MIN_WIDTH
+                } else {
+                    control_min
+                }),
+                flex_wrap: if props.wrap_controls {
+                    FlexWrap::Wrap
+                } else {
+                    FlexWrap::NoWrap
+                },
                 align_items: AlignItems::Center,
                 column_gap: Val::Px(4.0),
+                row_gap: Val::Px(4.0),
                 ..default()
             })
             .with_children(controls);

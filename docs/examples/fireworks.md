@@ -132,6 +132,34 @@ through `ProjectAssetIndex`. Shipping hosts can compile offline and load an arti
 No per-particle CPU polling, effect duplication or direct render-backend ownership is required.
 The original procedural three-emitter teaching demo is retained as `fireworks_event_chain`.
 
+## Running a relocated package
+
+Keep the following content layout when copying the executables outside the checkout:
+
+```text
+package/
+  apps/aestra-editor/aestra-editor.exe
+  apps/fireworks/fireworks.exe
+  assets/          # repository assets, including test/ for the showcase
+  sample-project/  # curated editor examples; exclude local .aestra/ state
+  audio/           # optional, separately licensed fireworks WAVs
+```
+
+The editor resolves its bundled sample project/extensions and the showcase resolves
+`assets/test` and optional `audio` relative to the executable, not the working directory
+or the compile-time checkout. Missing package content does not fall back to source files.
+No Cargo environment variables or `--project`/`--audio-root` flags are required.
+The editor's saved/recent project selection still takes precedence over its examples.
+
+`cargo run` uses Cargo's **runtime** `CARGO_MANIFEST_DIR` for development, including
+custom target directories. Direct execution from the standard `target/{profile}`
+layout also works without that variable. For nonstandard standalone example layouts,
+use explicit `--project` and `--audio-root` paths. Relative CLI paths remain relative
+to the launch working directory; existing audio folders are made absolute before
+registering the Bevy asset source. Release builds omit `dev-dynamic-linking`; see
+the separate Windows linkage report for development DLL requirements. This is a
+content-layout contract, not a clean-machine installer certification.
+
 ## Optional host sound
 
 Audio is outside the portable VFX runtime. Enable the example's WAV decoder explicitly:
@@ -141,7 +169,8 @@ cargo run --release --locked -p aestra-bevy --example fireworks --features firew
 cargo run --release --locked -p aestra-bevy --example fireworks --features fireworks-audio -- --audio-root C:/MySounds/fireworks
 ```
 
-The default local folder is `bevy/aestra-bevy/assets/audio/fireworks`. Expected files:
+The development default is `bevy/aestra-bevy/assets/audio/fireworks`; a relocated
+package uses its `audio/` folder as described above. Expected files:
 `Firework_Large_01.wav` through `05`, likewise `Medium` and `Small`. Missing groups are
 reported and remain silent; `--no-audio` bypasses loading. The local pack's existing
 `assets/CREDITS` names Joel Summers. Those user-provided files are not added or modified
@@ -193,6 +222,14 @@ This verifies decoding/binding/cleanup, not subjective sound quality. Raw images
 warnings; captures completed and processes exited successfully. An initial warm-up run
 incorrectly treated a retryable unloaded shader as fatal; the corrected retry policy has
 a regression test and all subsequent native runs passed.
+
+Bevy 0.20 native recheck (2026-10-22): the complete default and wispy shows finish
+successfully with the same 134 admitted/89 dropped sound voices, zero pending cues
+and 24 peak spatial sinks. Seven native captures cover rocket smoke, overlapping
+colored lighting and the quiet tail. All 18 audio-enabled tests and strict scoped
+Clippy pass. This is compatibility evidence, not a release-performance or final
+smoke/mix approval; see the
+[native showcase report](../../benchmarks/bevy-upgrade/native-showcase-2026-10-22.md).
 
 ## Smoke lighting qualification fixture (F8.3B)
 

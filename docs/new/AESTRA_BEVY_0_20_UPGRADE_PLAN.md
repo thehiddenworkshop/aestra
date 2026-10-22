@@ -2,8 +2,9 @@
 
 Date: 2026-10-10. Updated: 2026-10-22. Status: the real workspace now selects
 Bevy 0.20.0 and its qualified patches. Native editor build/launch, ordinary workspace
-tests, feature/release checks and native cluster/particle-light proofs pass on Windows.
-Final editor/showcase acceptance, executable packaging and Linux CI remain open;
+tests, native cluster/particle-light proofs, executable linkage/startup checks and
+the matched release GPU matrix and relocated package defaults pass on Windows.
+Final UI/showcase approval, clean-machine installer checks and Linux CI remain open;
 compatibility is not yet declared complete.
 Repository baseline inspected: `e8191982`, Bevy 0.19.1.
 
@@ -136,13 +137,143 @@ from 128 to 2; Enter marked the effect unsaved, and Ctrl+S restored Saved status
 The resulting effect file contains `max_particles: 2`.
 
 The saved editor session was closed and relaunched, but Computer Use was stopped
-before restoration could be inspected. Reopen acceptance is therefore still open.
-Narrow transform fields also need a final legibility check; the workflow spot-check
-does not approve every numeric layout or the full showcase.
+before restoration could be inspected. The user subsequently confirmed that
+reopening restores the project, effect and saved edits; reopen acceptance is met
+by that manual check, not by the interrupted automation.
+The workflow spot-check does not approve every numeric layout or the full showcase.
 
-Remaining merge gates are native reopen and final UI legibility checks, plus full
-showcase visual/audio/performance acceptance,
-release/development executable packaging checks, and Linux CI validation.
+### Narrow transform layout correction — 2026-10-22
+
+The production-row regression reproduced clipped text: at a 220 px inspector width,
+an editable cell was only 13 px wide while `-12.5` needed 26.156 px. Emitter and
+effect-clip transform rows now reserve 96 px per axis. The group prefers its full
+three-axis width beside the label, wraps below the label when necessary, and can
+wrap individual axes in smaller inspectors instead of overflowing them. Stepper
+sizes and numeric editing/command semantics are unchanged; other field rows retain
+their existing non-wrapping control layout.
+
+The regression measures the actual production rows at 220/320/440 px, verifies that
+all value glyphs fit and each axis stays inside the inspector, and checks unchanged
+geometry during hover, focus and blur with the expected stepper visibility.
+It passes (`target/bevy-020-transform-layout.log`). This is headless Bevy layout
+evidence, not a new native-window screenshot approval.
+The complete editor unit suite also passes: **2,846 passed, zero failed, 10 existing
+opt-in tests ignored** (`target/bevy-020-transform-editor-tests.log`). Strict editor
+Clippy including tests passes (`target/bevy-020-transform-clippy.log`), as do
+workspace formatting and scoped diff checks.
+
+### Public fireworks host native compatibility — 2026-10-22
+
+The audio-enabled `aestra-bevy` example now has seven successful native capture
+runs on Bevy 0.20 / RTX 4070 SUPER / Vulkan, including the complete 26-second
+default and 37-second wispy shows, high quality and PlaybackOnly. Both complete
+runs admitted all 13 authored flashes (peak three, zero invalid/stale bindings).
+Each admitted 134 sound voices with 24 actual spatial sinks at peak, 89 bounded
+drops and zero pending cues at completion, matching the earlier default-show
+baseline. All 18 audio-enabled example tests and strict scoped Clippy pass.
+
+Inspected images show rocket-path smoke, star trails, colored relighting of older
+clouds, a visible quiet tail and a clear finished frame. No runtime/assets changes
+were needed. This qualifies native showcase compatibility, not photographic smoke
+approval, a listening test or lossless audio admission. Development HUD samples
+include vsync and the late captures have different window dimensions; matched
+release performance remains unqualified. See
+[`native-showcase-2026-10-22.md`](../../benchmarks/bevy-upgrade/native-showcase-2026-10-22.md)
+for commands, raw artifact locations, exact results, hashes and limitations.
+
+### Windows executable linkage and matched release costs — 2026-10-22
+
+Actual optimized editor, viewer and WAV-enabled fireworks executables build, as
+does the opt-in dynamic development editor. PE imports confirm release binaries
+need neither the Bevy DLL nor Rust std DLL; development needs both matching DLLs.
+Both copied editors start on a system-only PATH with isolated settings, cleared
+Cargo asset environment variables and adjacent development DLLs. The copied
+release fireworks host completes its full audio-enabled show with explicit staged
+project/audio paths. These are real executable checks, not another `cargo check`.
+
+The existing release cost matrix also passes all 18 native runs, unchanged input/
+workload/resource gates and `-RequireRetirement`: high tier, fixed 960×540 headless
+target, three alternating enabled/control repetitions for hero, volley and show.
+Show outer-render GPU p95 spans 4.584–4.981 ms with the selected-light fixture
+enabled; all 8413 event children are admitted and the final 60 cluster-demand
+acknowledgments match control at one. This is not whole-game FPS, the public wispy
+show's cost, total VRAM or a comparison against a matched Bevy 0.19 release build.
+
+That pass exposed a packaging limitation: default sample-project/extension paths
+in the editor and default example asset paths still pointed to compile-time
+checkout locations. Staged editor logs confirmed the checkout extension was used.
+The executable-relative follow-up below closes this specific limitation; the
+earlier pass alone is not relocation evidence.
+See [`release-packaging-performance-2026-10-22.md`](../../benchmarks/bevy-upgrade/release-packaging-performance-2026-10-22.md)
+for exact commands, import lists, startup scope, full results and artifact hashes.
+
+### Executable-relative packaged defaults — 2026-10-22
+
+Editor bundled examples/extensions and showcase project/audio defaults now resolve
+from the executable's content layout, without embedded checkout paths or fallback
+to source assets. Runtime Cargo manifests preserve development/custom target
+directories; empty values are ignored. CLI overrides, saved/recent projects and
+optional/silent audio behavior remain supported. The package layout is documented
+in `docs/examples/fireworks.md`; local `.aestra` state is excluded from staging.
+
+The full editor suite passes **2849 tests**, the audio-enabled example **23**, and
+the audio-disabled example **19**. After the empty-environment correction, all
+three path tests and 23 audio-enabled tests pass again, as does strict all-target
+Clippy. Both optimized executables were rebuilt. With Cargo asset environment
+keys verified absent and a system-only PATH, the copied show completes with its
+own project/audio defaults (13 flashes, 134 voices, existing 89 audio-budget drops),
+and the copied editor registers its own packaged sample extension on native GPU.
+An incomplete example package fails locally instead of opening checkout assets.
+
+The first native attempt caught an empty-environment edge case and is retained as
+failed evidence, not counted as acceptance. See
+[`relocatable-defaults-2026-10-22.md`](../../benchmarks/bevy-upgrade/relocatable-defaults-2026-10-22.md)
+for the correction, commands, exact startup scope, logs and accepted binary hashes.
+
+### Linux application CI gate prepared — 2026-10-22
+
+The latest inspected remote CI run,
+[`39333178735`](https://github.com/thehiddenworkshop/aestra/actions/runs/39333178735),
+targets pre-migration `84a1b38d`, not local cutover `32575f76`. Its Ubuntu
+engine-neutral portability job passed; the Windows workspace-test job failed.
+That green Linux job is not Bevy 0.20 application acceptance. The local cutover is
+still unpublished, and this Windows host has neither an installed WSL runtime nor
+Docker, so it cannot execute the Linux gate locally.
+
+`.github/workflows/ci.yml` now adds `Linux workspace and showcase`, without
+removing or weakening the existing portable job or Windows checks:
+
+- Ubuntu native build libraries follow the pinned Bevy 0.20 dependency guidance:
+  X11/Wayland, ALSA, udev, xkbcommon, C++ and pkg-config. The editor uses rfd's
+  default XDG portal backend, not GTK3.
+- Repository-pinned Rust, sccache and the shared `ci-cargo-linux` registry/git
+  cache, without target-directory caching. The new job has a 120-minute cold-build
+  allowance and two Cargo build jobs to bound concurrent compiler/linker memory.
+- Check, strict all-target Clippy and tests use the same
+  `aestra-bench/gpu,aestra-bevy/fireworks-audio` feature set. `--all-targets` runs
+  example test harnesses, including fireworks, not their windowed mains; a separate
+  `--doc` invocation retains doctests excluded by Cargo's `--all-targets` flag.
+  Ignored hardware probes remain opt-in. No software/hosted GPU result is claimed.
+
+Validation passes: YAML parsing and job/cache/feature invariants; checksum-verified
+official **actionlint 1.7.12**; locked Linux-filtered Cargo metadata selecting Bevy/
+render/UI 0.20.0, wgpu 30.0.1 and the expected ALSA/udev/Wayland dependencies, with
+no Bevy dylib or suspended physics backend. Strict workspace/all-target Clippy
+also passes on **Windows** using the new job's exact feature set; log:
+`target/bevy-020-linux-gate-host-clippy.log`. Linux metadata is retained at
+`target/bevy-020-linux-gate-metadata.json`.
+
+**Linux execution is pending, not passed.** Publish the intended upgrade/follow-up
+commits and inspect this new job on that exact revision before closing the gate.
+No commits, pushes, remote workflow dispatches or system Linux installation were
+performed for this preparation step. The extra job adds hosted compute/cold-build
+cost; registry and compiler caches should reduce repeated work but do not remove
+linking, test execution or platform-specific compiler output costs.
+
+Remaining acceptance work is final native UI legibility and showcase art/listening
+approval, clean-machine installer checks, and Linux CI
+validation. The fixed release cost fixture and Windows linkage/startup gates above
+are now met within their stated scope; no universal performance promise is made.
 Do not restart isolated compatibility slices or count optional widget adoption as a
 prerequisite to merging the engine upgrade.
 

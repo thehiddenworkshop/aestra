@@ -122,6 +122,10 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    info!("Fireworks project: {}", options.project_root.display());
+    if let Some(root) = &options.audio_root {
+        info!("Fireworks audio: {}", root.display());
+    }
     let camera_transform = if options.smoke_lighting {
         Transform::from_xyz(0.0, 4.0, 16.0).looking_at(Vec3::new(0.0, 3.0, 0.0), Vec3::Y)
     } else {
