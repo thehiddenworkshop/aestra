@@ -80,5 +80,5 @@ impl GraphDropTarget {
 }
 
 #[cfg(test)]
-#[path = "target/tests.rs"]
+#[path = "target_tests.rs"]
 mod tests;

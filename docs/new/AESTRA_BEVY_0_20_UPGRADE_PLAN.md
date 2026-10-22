@@ -3606,6 +3606,58 @@ needed. Early development PR TODOs are not the final API contract. Avoid dependi
 on private upstream child hierarchy. Roll out from a simple settings field to
 transforms, timeline and material properties, then remove redundant code.
 
+### B20-4A — Autosave interval adoption pilot, 2026-10-22
+
+The General settings recovery-autosave interval is the only migrated field in
+this pilot. It composes the released `FeathersNumberInput` with typed I32 values,
+5–600 second hard/soft limits, native text entry/scrubbing and Shift precision.
+The existing seconds label and application preference constraints are retained.
+All transforms, timeline/material controls and other settings numbers still use
+the qualified Aestra composition; do not attach both interaction owners to a field.
+
+The application adapter echoes draft values through `NumberInputValue` without
+changing recovery settings, writing preferences or rebuilding the settings panel.
+Only changed final values persist. Cancellation, invalid-text rollback and stale
+final rejection remain application transaction policy. External model changes
+defer display replacement while a text draft has focus. This settings control has
+no document undo operation; document-gesture undo parity remains a later gate.
+
+Two released-widget details prevent simply deleting all application decoration:
+
+- Upstream chevrons are **decorative scrub hints**, not clickable steppers.
+  Accessible, localized app step buttons remain as siblings around the native
+  widget, with fixed overlay geometry, contrasting hover backgrounds and 10×12
+  icons. They do not inspect/reparent private upstream children or duplicate drag
+  arithmetic. Existing Ctrl/Shift step policy is retained; native scrubbing uses
+  upstream Shift sensitivity, not a claim of all legacy scrub-modifier parity.
+- Picking dispatches target-level pointer cancellation to the currently hovered
+  node, which need not be the original field. The app tracks pointer transaction
+  ownership and handles raw cancellation/Escape without implementing another drag
+  controller. A subsequent release must not persist a cancelled draft.
+
+Qualification uses the production settings row, public widget components and
+coordinate-based UI picking, not private upstream scrubber/chevron markers.
+Windows qualification passes with pinned Rust 1.98.1:
+
+- **10 new production-row tests**: deferred initial values, real click-to-edit,
+  typing/Enter/blur, invalid input, Escape, real native scrubbing and Shift
+  precision, pointer cancellation, stale external-model protection, disabled
+  ancestors, clickable step buttons, no-op limits and stable measured hover/focus
+  geometry. Log: `target/bevy-020-native-autosave-tests.log`.
+- Full editor package: **2859 unit tests passed, zero failed, 10 existing opt-in
+  tests ignored**, plus all **three architecture tests**. The standalone editor
+  binary is also rebuilt. Command: `cargo test -p aestra-editor --locked --offline
+  -- --test-threads=1 --format terse`; log:
+  `target/bevy-020-native-autosave-editor-tests.log`.
+- Strict all-target editor Clippy (`-D warnings`), workspace formatting and
+  `git diff --check` pass. Log: `target/bevy-020-native-autosave-clippy.log`.
+
+This is **B20-4A implemented**, not complete B20-4 or Linux acceptance. Native
+desktop visual approval of the General settings field is still required before
+expanding to a transform field. f32/f64/unit conversion, document-gesture undo,
+timeline/material semantics and removal of the legacy numeric composition remain
+explicit later parity/rollout gates. No Bevy widget hierarchy patch is introduced.
+
 ## B20-5 — Menus, dropdowns and color controls
 
 | Current boundary | Proposed upstream reuse | Aestra policy to retain |

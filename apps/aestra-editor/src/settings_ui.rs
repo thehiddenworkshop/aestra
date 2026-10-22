@@ -6,11 +6,13 @@ use bevy::{ecs::system::SystemParam, ui_widgets::Activate};
 use fluent_bundle::FluentArgs;
 
 const MAX_PREVIEW_PARTICLE_LIMIT: usize = 384;
+mod native_number;
 
 pub(crate) struct EditorSettingsUiPlugin;
 
 impl Plugin for EditorSettingsUiPlugin {
     fn build(&self, app: &mut App) {
+        native_number::install(app);
         app.init_resource::<SettingsPanelState>()
             .add_observer(queue_settings_action_activation)
             .add_observer(handle_settings_toggle_change)
@@ -697,6 +699,13 @@ fn spawn_settings_integer(
                 ..default()
             })
             .with_children(|input| {
+                if setting == SettingsNumber::AutosaveInterval {
+                    input
+                        .spawn_empty()
+                        .apply_scene(native_number::scene(title.to_owned()))
+                        .insert(AccessibleLabel(title.to_owned()));
+                    return;
+                }
                 input
                     .spawn_empty()
                     .apply_scene(ui_shell::feathers_integer_input())
