@@ -1,14 +1,42 @@
 //! Function socket-to-canvas creation. Semantic plans are function-native and transactional.
-use super::*;
+use crate::feathers::{
+    combo_box::ComboOption,
+    node_graph::{
+        FeathersGraphNavigationBlocker, FeathersGraphNode, FeathersGraphViewport,
+        GraphViewportMemory, NODE_HEADER_HEIGHT, NODE_WIDTH,
+        geometry::{GraphGeometryView, GraphNodeKey, GraphViewKey},
+        placement,
+    },
+};
 use crate::feathers::{
     combo_box::spawn_searchable_action_list, context_menu::spawn_pointer_context_menu_sized,
     search_field::spawn_search_field,
 };
+use crate::material_function_editor::FunctionEditor;
+use crate::material_function_editor::graph::{
+    body_input::create_edits,
+    clipboard_context::View,
+    composition::target,
+    connection::{ConnectionPreview, connection_edit},
+    estimated_size,
+    menu_state::Target,
+    model::{BodyActionKind, Socket, SocketKind},
+};
 use crate::theme;
+use crate::{EditorSession, ProjectEffectCatalog};
+use aestra_authoring::{MaterialAuthoringDocument, MaterialFunctionBodyCommand as Edit};
+use aestra_compiler::{
+    MaterialCompiler, MaterialFunctionBodyProjection, MaterialFunctionGraphTarget,
+};
+use aestra_core::{
+    MaterialExpressionId, MaterialFunctionId,
+    material::{MaterialExpressionKind, MaterialFunction},
+};
 use bevy::{
     input_focus::{FocusCause, InputFocus},
     ui::RelativeCursorPosition,
 };
+use bevy::{prelude::*, ui_widgets::Activate};
 
 #[derive(Clone)]
 struct Choice {
@@ -569,4 +597,5 @@ fn choose(
 }
 
 #[cfg(test)]
-mod tests;
+#[path = "socket_palette/tests.rs"]
+pub(super) mod tests;

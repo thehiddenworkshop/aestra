@@ -1191,6 +1191,7 @@ impl GpuHarness {
                 power_preference: wgpu::PowerPreference::LowPower,
                 force_fallback_adapter: false,
                 compatible_surface: None,
+                ..Default::default()
             })) {
                 Ok(adapter) => adapter,
                 Err(_) => return Ok(None),
@@ -1355,7 +1356,10 @@ impl GpuHarness {
                 )
             })?
             .map_err(|error| error.to_string())?;
-        let bytes = slice.get_mapped_range().to_vec();
+        let bytes = slice
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped")
+            .to_vec();
         staging.unmap();
         let particles: Vec<GpuParticle> = StorageBuffer::new(&bytes[..particles_bytes.len()])
             .create()

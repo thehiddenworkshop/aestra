@@ -6,7 +6,9 @@ use bevy::feathers::theme::{ThemeBackgroundColor, ThemedText};
 use bevy::input::{ButtonState, keyboard::KeyboardInput};
 use bevy::input_focus::FocusedInput;
 use bevy::input_focus::{FocusCause, InputFocus, tab_navigation::TabGroup};
-use bevy::text::{EditableText, TextEdit};
+use bevy::text::EditableText;
+#[cfg(test)]
+use bevy::text::TextEdit;
 use bevy::ui_widgets::ValueChange;
 
 #[derive(Event)]
@@ -512,7 +514,7 @@ fn update_location_text(text: &mut EditableText, location: &str) {
     // component resets them, but unchanged TextFont won't apply them a second time.
     text.clear();
     text.editor_mut().set_text(location);
-    text.queue_edit(TextEdit::TextStart(false));
+    // Bevy 0.20 clear() already queues TextStart, including stale-selection reset.
 }
 
 fn keyboard(

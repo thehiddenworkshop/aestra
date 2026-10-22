@@ -1,5 +1,17 @@
 //! Saved material thumbnails using the same deterministic evaluator as graph previews.
-use super::*;
+use crate::material_graph::{
+    MaterialGraphPreviewTarget,
+    preview_pixels::{preview_dependencies, render_material_preview_pixels},
+};
+use aestra_core::{
+    MaterialExpressionId,
+    material::{MaterialExpression, MaterialExpressionKind, MaterialProgram},
+};
+use std::collections::{BTreeMap, BTreeSet};
+
+#[cfg(test)]
+#[path = "asset_preview/qualification_tests.rs"]
+mod qualification_tests;
 
 pub(crate) fn render_material_asset_preview(
     program: &MaterialProgram,
@@ -100,6 +112,8 @@ pub(crate) fn render_material_asset_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::material_graph::preset_previews::material_preset_base;
+    use aestra_core::material::MaterialDomain;
 
     fn material() -> MaterialProgram {
         material_preset_base("Preview", MaterialDomain::Sprite)

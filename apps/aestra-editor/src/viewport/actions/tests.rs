@@ -255,21 +255,12 @@ fn pressed_without_activation_neither_dispatches_nor_closes_menus() {
 }
 
 #[test]
-fn pending_without_pressed_preserves_the_original_gate_until_a_new_press() {
+fn queued_activation_survives_release_and_dispatches_only_once() {
     let mut f = Fixture::new("en-US");
     let button = f.button(ViewportAction::ToggleMaximize);
     f.activate(button);
     f.app.world_mut().flush();
     control_input::set_pressed(f.app.world_mut(), button, false);
-    f.app.update();
-    assert!(f.app.world().resource::<Delivered>().0.is_empty());
-    assert!(
-        f.app
-            .world()
-            .get::<PendingFeathersActivation>(button)
-            .is_some()
-    );
-    control_input::set_pressed(f.app.world_mut(), button, true);
     f.app.update();
     assert_eq!(
         f.app.world().resource::<Delivered>().0,
@@ -281,6 +272,14 @@ fn pending_without_pressed_preserves_the_original_gate_until_a_new_press() {
             .get::<PendingFeathersActivation>(button)
             .is_none()
     );
+    for _ in 0..3 {
+        f.app.update();
+    }
+    assert_eq!(
+        f.app.world().resource::<Delivered>().0,
+        [ViewportAction::ToggleMaximize]
+    );
+    f.unchanged_document();
 }
 
 #[test]

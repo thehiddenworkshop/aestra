@@ -83,6 +83,8 @@ fn decorate(
                     Visibility::Hidden,
                     BackgroundColor(crate::theme::MENU_ITEM_HOVER),
                     Node {
+                        grid_column: GridPlacement::start(if direction < 0 { 2 } else { 4 }),
+                        grid_row: GridPlacement::start(1),
                         width: Val::Px(12.0),
                         min_width: Val::Px(12.0),
                         height: Val::Percent(100.0),

@@ -318,7 +318,10 @@ impl Harness {
                 })
                 .unwrap();
             receiver.recv().unwrap().unwrap();
-            let bytes = readback.slice(..).get_mapped_range();
+            let bytes = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("completed test readback must remain mapped");
             if !expected.is_empty() {
                 assert_eq!(&bytes[..expected.len() * 48], encode(&expected));
             }
@@ -666,7 +669,10 @@ impl Harness {
                 })
                 .unwrap();
             receiver.recv().unwrap().unwrap();
-            let bytes = readback.slice(..).get_mapped_range();
+            let bytes = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("completed test readback must remain mapped");
             let words: Vec<_> = bytes
                 .as_chunks::<4>()
                 .0

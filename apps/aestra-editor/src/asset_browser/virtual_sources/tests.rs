@@ -257,21 +257,23 @@ fn legacy_flipbook_declarations_are_visible_but_do_not_start_assignment_drags() 
         app.world().resource::<Selection>().asset,
         Some(VirtualAsset::FlipbookDeclaration(id))
     );
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target: bevy::camera::NormalizedRenderTarget::None {
-                width: 800,
-                height: 600,
-            },
-            position: Vec2::new(100.0, 120.0),
-        },
-        DragStart {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragStart {
+            entity,
+            pointer: bevy::picking::events::Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::new(100.0, 120.0),
+                },
+            ),
+
             button: PointerButton::Primary,
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        entity,
-    ));
+        });
     app.world_mut().flush();
     assert!(app.world().resource::<Drag>().origin.is_none());
     assert!(app.world().get::<AssetPayload>(entity).is_none());
@@ -499,15 +501,17 @@ fn virtual_drag_has_a_nonblocking_copy_and_cancel_restores_the_row() {
                 },
                 position: Vec2::new(100.0, 120.0),
             };
-            app.world_mut().trigger(Pointer::new(
-                PointerId::Mouse,
-                location.clone(),
-                DragStart {
+            app.world_mut()
+                .trigger(bevy::picking::events::PointerDragStart {
+                    entity: row,
+                    pointer: bevy::picking::events::Pointer::new(
+                        PointerId::Mouse,
+                        location.clone(),
+                    ),
+
                     button: PointerButton::Primary,
                     hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                },
-                row,
-            ));
+                });
             app.world_mut().flush();
             let preview = app
                 .world()
@@ -547,26 +551,24 @@ fn virtual_drag_has_a_nonblocking_copy_and_cancel_restores_the_row() {
                     .resource_mut::<ButtonInput<KeyCode>>()
                     .press(KeyCode::Escape);
             } else if cancel == 2 {
-                app.world_mut().trigger(Pointer::new(
-                    PointerId::Mouse,
-                    location,
-                    bevy::picking::events::Cancel {
+                app.world_mut()
+                    .trigger(bevy::picking::events::PointerCancel {
+                        entity: row,
+                        pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location),
+
                         hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                    },
-                    row,
-                ));
+                    });
             } else if cancel == 3 {
                 app.world_mut().despawn(row);
             } else {
-                app.world_mut().trigger(Pointer::new(
-                    PointerId::Mouse,
-                    location,
-                    DragEnd {
+                app.world_mut()
+                    .trigger(bevy::picking::events::PointerDragEnd {
+                        entity: row,
+                        pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location),
+
                         button: PointerButton::Primary,
                         distance: Vec2::new(20.0, 10.0),
-                    },
-                    row,
-                ));
+                    });
             }
             app.update();
             assert!(app.world().resource::<OverrideCursor>().0.is_none());

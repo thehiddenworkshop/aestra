@@ -274,22 +274,23 @@ fn pointer_drag_uses_own_view_zoom_and_inverse_ui_scale_without_semantic_edits()
                 gesture.members.insert(entity);
             }
             let delta = Vec2::new(35.0, -21.0);
-            app.world_mut().trigger(Pointer::new(
-                PointerId::Mouse,
-                Location {
-                    target: bevy::camera::NormalizedRenderTarget::None {
-                        width: 800,
-                        height: 600,
-                    },
-                    position: Vec2::new(100.0, 120.0),
-                },
-                Drag {
-                    button: PointerButton::Primary,
-                    distance: delta,
-                    delta,
-                },
+            app.world_mut().trigger(bevy::picking::events::PointerDrag {
                 entity,
-            ));
+                pointer: bevy::picking::events::Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: bevy::camera::NormalizedRenderTarget::None {
+                            width: 800,
+                            height: 600,
+                        },
+                        position: Vec2::new(100.0, 120.0),
+                    },
+                ),
+
+                button: PointerButton::Primary,
+                distance: delta,
+                delta,
+            });
             let expected = Vec2::new(90.0, 30.0) + delta * inverse_scale / zoom;
             assert!(
                 app.world()
@@ -341,21 +342,23 @@ fn drag_release_through_a_header_control_clears_the_node_and_cursor_gesture() {
     app.world_mut().resource_mut::<OverrideCursor>().0 =
         Some(EntityCursor::System(SystemCursorIcon::Grabbing));
 
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target: bevy::camera::NormalizedRenderTarget::None {
-                width: 800,
-                height: 600,
-            },
-            position: Vec2::new(100.0, 120.0),
-        },
-        DragEnd {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragEnd {
+            entity: control,
+            pointer: bevy::picking::events::Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::new(100.0, 120.0),
+                },
+            ),
+
             button: PointerButton::Primary,
             distance: Vec2::new(30.0, 12.0),
-        },
-        control,
-    ));
+        });
     app.world_mut().flush();
 
     assert!(
@@ -428,37 +431,33 @@ fn drag_emits_one_base_placement_transaction_and_sibling_views_follow_undo() {
         },
         position: Vec2::ZERO,
     };
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location.clone(),
-        DragStart {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragStart {
+            entity,
+            pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location.clone()),
+
             button: PointerButton::Primary,
             hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        entity,
-    ));
+        });
     for _ in 0..20 {
-        app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            location.clone(),
-            Drag {
-                button: PointerButton::Primary,
-                distance: Vec2::splat(10.0),
-                delta: Vec2::splat(10.0),
-            },
+        app.world_mut().trigger(bevy::picking::events::PointerDrag {
             entity,
-        ));
+            pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location.clone()),
+
+            button: PointerButton::Primary,
+            distance: Vec2::splat(10.0),
+            delta: Vec2::splat(10.0),
+        });
     }
     assert!(app.world().resource::<Edits>().0.is_empty());
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location,
-        DragEnd {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragEnd {
+            entity,
+            pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location),
+
             button: PointerButton::Primary,
             distance: Vec2::splat(200.0),
-        },
-        entity,
-    ));
+        });
     app.world_mut().flush();
     let edits = &app.world().resource::<Edits>().0;
     assert_eq!(edits.len(), 1);

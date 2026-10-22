@@ -8,10 +8,13 @@ use bevy::{
     prelude::*,
     render::{
         Render, RenderApp, RenderSystems,
-        render_resource::{BindingResource, BufferId, TextureFormat},
-        renderer::{RenderDevice, RenderQueue},
+        render_resource::{
+            BindingResource, BufferId, CachedPipelineState, PipelineCache, TextureFormat,
+        },
+        renderer::{RenderAdapterInfo, RenderDevice, RenderQueue},
         sync_world::MainEntity,
     },
+    shader::ShaderCacheError,
 };
 use std::{
     collections::{BTreeMap, HashSet},
@@ -110,6 +113,50 @@ fn demand(app: &App, view: Entity) -> usize {
         .expect("Unavailable native asynchronous index demand")
 }
 
+fn wait_for_native_pipelines_and_statistics(app: &mut App, view: Entity) {
+    let deadline = Instant::now() + Duration::from_secs(45);
+    loop {
+        app.update();
+        let render = app.sub_app(RenderApp).world();
+        let cache = render.resource::<PipelineCache>();
+        let mut pipelines = cache.pipelines().peekable();
+        // Metadata readback may already contain zero while clustering's asynchronous pipelines
+        // are still compiling. That is not an empty-scene baseline. Keep the fixed observation
+        // windows below, but start them only after real native pipelines can execute.
+        let mut ready = pipelines.peek().is_some();
+        for pipeline in pipelines {
+            match &pipeline.state {
+                CachedPipelineState::Ok(_) => {}
+                CachedPipelineState::Err(
+                    ShaderCacheError::ShaderNotLoaded(_)
+                    | ShaderCacheError::ShaderImportNotYetAvailable,
+                ) => ready = false,
+                CachedPipelineState::Err(error) => panic!("Native pipeline failed: {error}"),
+                _ => ready = false,
+            }
+        }
+        if ready
+            && app
+                .world()
+                .get::<Clusters>(view)
+                .and_then(|clusters| clusters.last_frame_total_cluster_index_count)
+                .is_some()
+        {
+            let adapter = render.resource::<RenderAdapterInfo>();
+            println!(
+                "cluster_native adapter={:?} backend={:?} pipelines_ready=true",
+                adapter.name, adapter.backend
+            );
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Native pipelines/statistics did not become ready"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[test]
 #[ignore = "native GPU buffer lifetime/growth/mode/view regression; run explicitly, alone"]
 fn native_cluster_buffers_reuse_grow_reset_and_retire_per_view() {
@@ -121,6 +168,7 @@ fn native_cluster_buffers_reuse_grow_reset_and_retire_per_view() {
                 exit_condition: bevy::window::ExitCondition::DontExit,
                 ..default()
             })
+            .disable::<bevy::log::LogPlugin>()
             .disable::<bevy::winit::WinitPlugin>()
             .disable::<bevy::render::pipelined_rendering::PipelinedRenderingPlugin>(),
     );
@@ -136,20 +184,7 @@ fn native_cluster_buffers_reuse_grow_reset_and_retire_per_view() {
         .insert_resource(observations.clone())
         .add_systems(Render, observe.after(RenderSystems::PrepareBindGroups));
     let first = camera(&mut app, 0);
-    let deadline = Instant::now() + Duration::from_secs(45);
-    while app
-        .world()
-        .get::<Clusters>(first)
-        .and_then(|c| c.last_frame_total_cluster_index_count)
-        .is_none()
-    {
-        assert!(
-            Instant::now() < deadline,
-            "Native pipelines/statistics did not become ready"
-        );
-        app.update();
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_for_native_pipelines_and_statistics(&mut app, first);
     let baseline = window(&mut app, &observations);
     let empty_demand = demand(&app, first);
     assert_eq!(baseline.len(), 1);
@@ -405,6 +440,7 @@ fn native_private_generations_overflow_recover_and_retire() {
                 exit_condition: bevy::window::ExitCondition::DontExit,
                 ..default()
             })
+            .disable::<bevy::log::LogPlugin>()
             .disable::<bevy::winit::WinitPlugin>()
             .disable::<bevy::render::pipelined_rendering::PipelinedRenderingPlugin>(),
     );
@@ -430,20 +466,7 @@ fn native_private_generations_overflow_recover_and_retire() {
         );
     let first = camera(&mut app, 0);
     app.world_mut().entity_mut(first).insert(grid(4, 4, 8));
-    let deadline = Instant::now() + Duration::from_secs(45);
-    while app
-        .world()
-        .get::<Clusters>(first)
-        .and_then(|c| c.last_frame_total_cluster_index_count)
-        .is_none()
-    {
-        assert!(
-            Instant::now() < deadline,
-            "Native pipelines/statistics not ready"
-        );
-        app.update();
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_for_native_pipelines_and_statistics(&mut app, first);
     let baseline = private_window(&mut app, &observations, 12);
     let empty = demand(&app, first);
     assert_eq!(baseline[&first].z_capacity, 32);

@@ -4,12 +4,16 @@ mod alpha_sort;
 // Test-only wgpu-version boundary; playback never maps sort buffers.
 #[cfg(test)]
 fn alpha_sort_test_readback(buffer: &wgpu::Buffer) -> Vec<u8> {
-    buffer.slice(..).get_mapped_range().to_vec()
+    buffer
+        .slice(..)
+        .get_mapped_range()
+        .expect("completed test readback must remain mapped")
+        .to_vec()
 }
 mod bootstrap;
 mod bounds;
 #[cfg(test)]
-#[path = "gpu/bounds_test_types_019.rs"]
+#[path = "gpu/bounds_test_types_020.rs"]
 mod bounds_test_types;
 mod capability_publication;
 mod catchup_pacing;
@@ -21,16 +25,18 @@ mod draw_preparation;
 mod draw_resources;
 mod effect_inputs;
 mod extension_stages;
+#[path = "gpu/extraction_020.rs"]
 mod extraction;
 mod extraction_cleanup;
 mod extraction_systems;
 mod field_observations;
 mod geometry_sample;
 mod geometry_statistics;
-#[path = "gpu/mapped_readback_019.rs"]
+#[path = "gpu/mapped_readback_020.rs"]
 mod mapped_readback;
+#[cfg(test)]
 mod material_lighting;
-#[path = "gpu/material_shader_019.rs"]
+#[path = "gpu/material_shader_020.rs"]
 mod material_shader;
 mod mesh_inputs;
 mod output_context;
@@ -51,7 +57,7 @@ mod preparation_timing;
 mod presentation_readiness;
 mod render;
 mod ribbon_bounds;
-#[path = "gpu/scene_depth_019.rs"]
+#[path = "gpu/scene_depth_020.rs"]
 mod scene_depth;
 mod shader_composition;
 mod simulation_graph;
@@ -65,6 +71,7 @@ mod stage_output_delivery;
 mod stage_runtimes;
 mod stateful_simulation;
 mod stateful_trails;
+#[path = "gpu/storage_buffers_020.rs"]
 mod storage_buffers;
 mod storage_encoding;
 mod timestamp_observation;
@@ -78,7 +85,7 @@ mod transform_sync;
 mod view_phases;
 mod visibility_updates;
 mod volume;
-#[path = "gpu/volume_shader_019.rs"]
+#[path = "gpu/volume_shader_020.rs"]
 mod volume_shader;
 mod wireframe;
 mod world_sdf;
@@ -836,7 +843,6 @@ mod coupled_tests {
     };
     use aestra_extension::ExtensionRegistry;
     use bevy::render::render_resource::{PipelineLayoutDescriptor, RawComputePipelineDescriptor};
-    use bevy::render::renderer::WgpuWrapper;
 
     const CAPACITY: u32 = 256;
     const STRIDE: u32 = aestra_gpu::STATEFUL_STATE_STRIDE;
@@ -868,6 +874,7 @@ mod coupled_tests {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: None,
+            ..Default::default()
         }))
         .ok()?;
         // Hosted Windows runners can expose WARP even when no hardware GPU is available.
@@ -880,7 +887,7 @@ mod coupled_tests {
             ..Default::default()
         }))
         .ok()?;
-        let device = RenderDevice::new(WgpuWrapper::new(device));
+        let device = RenderDevice::new(device);
 
         // The fluid domain, lowered by the real plugin and run on a StageTimeline.
         let mut registry = ExtensionRegistry::builtin();
@@ -1240,6 +1247,7 @@ mod coupled_tests {
         let words: Vec<u32> = staging
             .slice(..)
             .get_mapped_range()
+            .expect("completed test readback must remain mapped")
             .as_chunks::<4>()
             .0
             .iter()
@@ -1912,6 +1920,7 @@ mod coupled_tests {
             let words: Vec<u32> = staging
                 .slice(..)
                 .get_mapped_range()
+                .expect("completed test readback must remain mapped")
                 .as_chunks::<4>()
                 .0
                 .iter()
@@ -2050,7 +2059,10 @@ mod coupled_tests {
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("coupled simulation mapping callback should run")
             .expect("coupled simulation buffer should map successfully");
-        let bytes = slice.get_mapped_range().to_vec();
+        let bytes = slice
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped")
+            .to_vec();
         readback.unmap();
         bytes
     }

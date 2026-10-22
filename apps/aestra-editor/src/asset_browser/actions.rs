@@ -383,7 +383,7 @@ pub(super) fn select_row(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn click_row(
-    mut event: On<Pointer<Click>>,
+    mut event: On<PointerClick>,
     rows: Query<&BrowserRow, With<ListItem>>,
     parents: Query<&ChildOf>,
     lists: Query<(), With<BrowserItems>>,
@@ -435,9 +435,9 @@ pub(super) fn click_row(
         let double = event.count == 2
             || clicks.0.is_some_and(|(id, at, position, pointer)| {
                 id == row.0
-                    && pointer == event.pointer_id
+                    && pointer == event.pointer.id
                     && now - at <= 0.5
-                    && position.distance(event.pointer_location.position) <= 6.0
+                    && position.distance(event.pointer.location().position) <= 6.0
             });
         clicks.0 = if double {
             None
@@ -445,8 +445,8 @@ pub(super) fn click_row(
             Some((
                 row.0,
                 now,
-                event.pointer_location.position,
-                event.pointer_id,
+                event.pointer.location().position,
+                event.pointer.id,
             ))
         };
         let effect = matches!(
@@ -716,7 +716,7 @@ pub(super) fn keyboard(
 }
 
 pub(super) fn begin_resize_sources(
-    mut event: On<Pointer<DragStart>>,
+    mut event: On<PointerDragStart>,
     mut splitters: Query<(&ChildOf, &mut SourcesSplitter)>,
     sources: Query<(&ChildOf, &ComputedNode), With<SourcesPane>>,
 ) {
@@ -734,7 +734,7 @@ pub(super) fn begin_resize_sources(
 }
 
 pub(super) fn resize_sources(
-    mut event: On<Pointer<Drag>>,
+    mut event: On<PointerDrag>,
     splitters: Query<&SourcesSplitter>,
     ui_scale: Res<UiScale>,
     mut state: ResMut<AssetBrowserState>,
@@ -751,7 +751,7 @@ pub(super) fn resize_sources(
 }
 
 pub(super) fn end_resize_sources(
-    mut event: On<Pointer<DragEnd>>,
+    mut event: On<PointerDragEnd>,
     mut splitters: Query<&mut SourcesSplitter>,
 ) {
     if event.button == PointerButton::Primary

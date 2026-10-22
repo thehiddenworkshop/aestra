@@ -10,17 +10,20 @@ pub(super) struct Controls<'w, 's, A: Component> {
         (
             Entity,
             &'static A,
-            &'static Pressed,
+            Option<&'static Pressed>,
             Has<PendingFeathersActivation>,
         ),
-        (Changed<Pressed>, With<FeathersActionButton>),
+        (
+            Or<(Changed<Pressed>, Added<PendingFeathersActivation>)>,
+            With<FeathersActionButton>,
+        ),
     >,
 }
 impl<A: Component> Controls<'_, '_, A> {
     pub(super) fn iter(&self) -> impl Iterator<Item = (Entity, &A, bool, bool)> {
-        self.query
-            .iter()
-            .map(|(entity, action, _pressed, pending)| (entity, action, true, pending))
+        self.query.iter().map(|(entity, action, pressed, pending)| {
+            (entity, action, pending || pressed.is_some(), pending)
+        })
     }
 }
 pub(super) fn queue_pressed(commands: &mut Commands, entity: Entity) {

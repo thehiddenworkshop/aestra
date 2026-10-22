@@ -518,7 +518,7 @@ fn close(commands: &mut Commands, prompt: &mut Prompt) {
 }
 
 fn submit_inline_on_outside_press(
-    event: On<Pointer<Press>>,
+    event: On<PointerPress>,
     parents: Query<&ChildOf>,
     mut prompt: ResMut<Prompt>,
 ) {

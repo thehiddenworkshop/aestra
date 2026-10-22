@@ -599,7 +599,7 @@ fn module_row_entity(
 /// moves by the cursor's travel, so the row is picked up where it is instead of jumping to the pointer.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn begin_module_drag(
-    mut event: On<Pointer<DragStart>>,
+    mut event: On<PointerDragStart>,
     rows: Query<&ModuleRowDrag>,
     parents: Query<&ChildOf>,
     row_geometry: Query<(Entity, &ModuleRowDrag, &ComputedNode, &UiGlobalTransform)>,
@@ -808,7 +808,7 @@ fn module_drag_slide_target(index: usize, from: usize, to: usize, pitch: f32) ->
 /// Moves the dragged copy with the cursor (vertically, keeping the grab offset) and slides the other
 /// rows of the stage aside to open a space where it would land (§28.4).
 pub(super) fn move_module_drag(
-    mut event: On<Pointer<Drag>>,
+    mut event: On<PointerDrag>,
     ui_scale: Res<UiScale>,
     mut state: ResMut<ModuleDragState>,
     mut ghosts: Query<&mut Node, With<ModuleDragGhost>>,
@@ -865,7 +865,7 @@ pub(super) fn animate_module_row_slides(
 /// Deciding here from the tracked insertion point — not from whatever is under the pointer at
 /// release — is what makes the drop land reliably.
 pub(super) fn end_module_drag(
-    mut event: On<Pointer<DragEnd>>,
+    mut event: On<PointerDragEnd>,
     mut state: ResMut<ModuleDragState>,
     mut slides: Query<&mut ModuleRowSlide>,
     mut session: ResMut<EditorSession>,

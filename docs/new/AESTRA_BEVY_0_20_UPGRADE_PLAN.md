@@ -1,9 +1,150 @@
 # Bevy 0.20 upgrade and adoption plan
 
-Date: 2026-10-10. Status: dependencies isolated, 0.20 patches qualified; portable
-compiler implemented and shader, storage, extraction, draw-binding and queue boundaries qualified;
-shipping engine migration pending.
+Date: 2026-10-10. Updated: 2026-10-22. Status: the real workspace now selects
+Bevy 0.20.0 and its qualified patches. Native editor build/launch, ordinary workspace
+tests, feature/release checks and native cluster/particle-light proofs pass on Windows.
+Final editor/showcase acceptance, executable packaging and Linux CI remain open;
+compatibility is not yet declared complete.
 Repository baseline inspected: `e8191982`, Bevy 0.19.1.
+
+### Application cutover — 2026-10-21
+
+Stop extending the isolated slice sequence as the upgrade's critical path. Finish
+the real application cutover, then merge compatibility before adopting new widgets.
+Earlier slice reports are historical boundary evidence, not proof that the editor
+has launched or that the workspace has passed on 0.20.
+
+- Root manifests/lockfile select Bevy 0.20.0, wgpu 30.0.1 and glam 0.33.12, with
+  `vendor/bevy_input_focus_020` and `vendor/bevy_pbr_020`. Windows-filtered Cargo
+  metadata confirms a single active Bevy engine graph. Physics remains explicitly
+  suspended; the Aestra-owned SVG bridge remains active.
+- The actual renderer/editor select the qualified 0.20 input, storage, extraction,
+  material and volume boundaries. Production graph/grid shaders use WESL imports.
+- Remaining application observers use native `PointerClick`/`PointerDrag*` events,
+  typed component lifecycle events, relocated cursors and native headless buttons.
+  A narrow read-only control-state bridge preserves existing application handlers
+  from native Pressed/Hovered markers and queued Activate actions. It does not
+  synthesize picking or dispatch actions. Replacing control compositions is deferred.
+- Actual editor check passed with Rust 1.98.1:
+  `cargo check -p aestra-editor --locked --offline`.
+- Native build/launch has reached the editor and sample effects on NVIDIA RTX 4070
+  SUPER / Vulkan, including semantic mesh materials and graph shaders. This is not
+  final visual acceptance of every workflow or the later menu/numeric corrections.
+
+### Current application acceptance — 2026-10-22
+
+- Complete editor unit suite passes: **2,845 passed, zero failed, 10 existing opt-in
+  tests ignored**. Command: `cargo test -p aestra-editor --bin aestra-editor --locked
+  --offline -- --test-threads=1 --format terse`; local log:
+  `target/bevy-020-editor-acceptance.log`.
+- All three editor architecture integration tests pass, and the normal editor
+  executable was rebuilt with the menu/numeric corrections. Local log:
+  `target/bevy-020-editor-architecture.log`. The rebuilt executable still needs
+  the final native interaction/visual pass; a successful build is not that pass.
+- Workspace-wide all-target check and strict Clippy pass with the common
+  `--features aestra-bench/gpu --locked --offline` configuration. Local logs:
+  `target/bevy-020-workspace-check.log` and `target/bevy-020-workspace-clippy.log`.
+- The full CI workspace test command passes with default parallel execution:
+  `cargo test --workspace --features aestra-bench/gpu --locked --offline`.
+  **4,149 passed, zero failed, 58 existing opt-in tests ignored**, across 117 unit,
+  integration and documentation suite results. Local log:
+  `target/bevy-020-workspace-tests-final.log`. Ignored tests are not counted as
+  native lifetime/performance acceptance.
+- The parallel run exposed a test-fixture readiness race after asynchronous
+  arrangement: placement memory was installed before the next canvas measurement.
+  The fixture now waits for stable measured geometry matching current node placement
+  before making another request. Production stale-result rejection and all undo/no-op
+  assertions remain unchanged. All eight arrangement qualifications also pass in
+  five consecutive 16-thread runs (`target/bevy-020-arrange-parallel-stress.log`).
+- Audio-enabled showcase examples type-check, and all **18 fireworks example tests**
+  pass with `fireworks-audio`, including cue timing, duplicate suppression, bounded
+  admission and restart/despawn cleanup. Local logs: `target/bevy-020-audio-check.log`
+  and `target/bevy-020-fireworks-audio-tests.log`. These host tests do not require an
+  audio device and do not constitute listening/visual acceptance of the show.
+- `cargo check -p aestra-editor --features dev-dynamic-linking --locked --offline`
+  and `cargo check --release -p aestra-editor --locked --offline` both pass. The
+  release check is warning-free after retaining the existing debug-only control
+  audits behind constant conditions rather than leaving unused release parameters.
+  Local logs: `target/bevy-020-dynamic-check.log` and `target/bevy-020-release-check.log`.
+  Dependency-tree inspection selects `bevy_dylib 0.20.0` only for the explicit dev
+  feature, not the default editor graph. These are type-checks, not DLL deployment
+  or packaged/static release-executable validation.
+- Top-level menus now mirror native menu events instead of independently toggling
+  on the same activation. Opening restores focus eligibility after restoring display;
+  native-widget tests cover all four menus, release, idle frames, reopening, hover
+  switching, focus loss and Escape.
+- Numeric editable text remains a measured leaf with a sibling picking surface.
+  Both fill the same grid cell, with centered text padding; real UI layout tests
+  verify shaped glyphs and matching text/picking bounds at ordinary and narrow widths.
+- Timeline/choreography activation survives native pointer release before Update.
+  The regression sends a real native release, checks exactly one semantic edit and
+  consumed activation, then exercises undo/redo. Press without Activate still cannot edit.
+
+### Native cluster and particle-light acceptance — 2026-10-22
+
+Nine opt-in native GPU tests pass, explicitly and sequentially, rather than being
+inferred from the ordinary workspace suite's ignored tests:
+
+- Two `cluster_buffer_reuse` tests verify public/private buffer generations,
+  independent views, growth, CPU/GPU mode switches, overflow recovery and teardown.
+  The undersized fixture recovers Z/index capacities from 32/64 to 512/8192 and
+  retains generations over 240 updates. Observed staging peak is two per view
+  against the eight-slot limit; all named cluster and staging allocations retire
+  to zero, and weak readback owners expire. Log:
+  `target/bevy-020-native-cluster-lifetime-final.log`.
+- The cold first run exposed a probe-readiness problem: metadata could report zero
+  before asynchronous clustering pipelines were usable. Both fixtures now wait for
+  real pipeline readiness before their unchanged observation windows. Retryable
+  shader loading/import states remain bounded by the deadline; actual shader errors
+  fail immediately. Retirement is still compared with the measured empty baseline,
+  not an invented zero or a relaxed allocation assertion. Production code is unchanged.
+- One `particle_light_realization` test verifies moving stars illuminate a real
+  StandardMaterial receiver and obey pooled-light restart/despawn cleanup without
+  replay. Its captured receiver response moves and returns to the dark baseline.
+  Log: `target/bevy-020-native-light-realization.log`.
+- Three paced `particle_light_latency` tests pass for the asynchronous adapter,
+  comparison-only direct GPU proof and production bounded GPU adapter. They retain
+  the existing final-image registration limits at 25/75/150 m/s, require zero stale
+  green light after disable/owner removal, and exercise production cluster retirement.
+  Log: `target/bevy-020-native-light-latency-final.log`; CSV/image evidence remains
+  under `target/fireworks-f7/particle-light-{latency,gpu-proof,gpu-adapter}/`.
+  The previously unported comparison shader now uses WESL and Bevy's native
+  clustered-light import. An ordinary, non-ignored shader parse/loader regression
+  was added; that test and the existing image-analysis guard also pass.
+- Two `particle_light_playback` tests cover forward PlaybackOnly selection,
+  world transforms, global caps, nested/event-born identities and cleanup. The
+  overlapping shell fixture admits 48 of 512 candidates; the multi-instance fixture
+  admits five of 48. Log: `target/bevy-020-native-light-playback.log`.
+- The timestamp selection profile passes four workloads, from 512 candidates/16
+  selected slots to 262,144 candidates/64 slots. Log:
+  `target/bevy-020-native-light-profile.log`. The Bevy-hosted probes use RTX 4070
+  SUPER / Vulkan; the standalone profile selected AMD Radeon integrated graphics /
+  Vulkan. Do not compare those timings or claim a same-hardware performance gain.
+
+Strict workspace all-target Clippy and formatting pass after the test corrections
+(`target/bevy-020-native-proof-clippy.log`). The qualified patch documentation now
+correctly identifies both 0.20 patches as selected by the actual root workspace.
+
+### Native editor workflow spot-check — 2026-10-22
+
+The rebuilt editor was exercised with an isolated `AESTRA_CONFIG_DIR` and a scratch
+project under `target/bevy-020-editor-workflow-77d96507893d45cab79d6bc0b309b44b/`.
+The File menu remains open after pointer release and idle frames. New Project opens
+the created workspace, Browse preserves the selected parent path, and New Effect
+creates and selects a saved effect. Native numeric keyboard entry changed Capacity
+from 128 to 2; Enter marked the effect unsaved, and Ctrl+S restored Saved status.
+The resulting effect file contains `max_particles: 2`.
+
+The saved editor session was closed and relaunched, but Computer Use was stopped
+before restoration could be inspected. Reopen acceptance is therefore still open.
+Narrow transform fields also need a final legibility check; the workflow spot-check
+does not approve every numeric layout or the full showcase.
+
+Remaining merge gates are native reopen and final UI legibility checks, plus full
+showcase visual/audio/performance acceptance,
+release/development executable packaging checks, and Linux CI validation.
+Do not restart isolated compatibility slices or count optional widget adoption as a
+prerequisite to merging the engine upgrade.
 
 ## Decision
 
@@ -2777,7 +2918,502 @@ Clippy gates, workspace GPU-feature all-target checking, both formatting gates
 and whitespace validation pass. Root dependencies/toolchain remain unchanged;
 post-documentation input drift is zero. Shipping remains 0.19.1.
 
-B20-2 remains in progress: remaining pointer consumers, application action
+Implemented slice 80 (2026-10-20): **Material canvas, nodes, sockets and wires**.
+The shipping material workspace now delegates to the shared production canvas
+builder. Generic viewport/node/socket/preview chrome, material node/output/wire
+assembly, typed port presentation and immediate completed-preview cache mounting
+are compiled directly by both engines. Narrow native Button aliases preserve
+the original hit targets. Raster worker scheduling remains separate; function/
+code-inspector branches, asset-drop and popup mounting stay native-host-owned.
+
+16 shared real-Feathers/SVG cases cover layer geometry/order, document/view and
+semantic identity, camera fallback/priority, scoped selection and shared pins,
+wire endpoints/insertion metadata, typed sockets and hit dimensions, previews
+and cache isolation, constant/inline controls, warning styling and empty graphs.
+Both native graph plugin registrations and original root tests remain unchanged.
+See [`editor-material-canvas-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-material-canvas-2026-10-20.md).
+Frozen qualification passes **2,105 checks**, including **1,683 editor checks**,
+with all **1,003 input hashes** unchanged. This is headless canvas composition,
+not full plugin scheduling, native picking/rendering or rendered zoom/DPI
+acceptance; no visual reference is approved. Shipping remains 0.19.1.
+Shipping passes **2,642 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, workspace GPU-feature
+all-target checking, both formatting gates and whitespace validation pass;
+post-documentation input drift is zero. Root dependencies/toolchain are unchanged.
+
+Implemented slice 81 (2026-10-20): **Generic graph pin/collapse and socket visuals**.
+Nine actual production restoration/memory-sync, pin/collapse activation/action,
+body/icon and socket visual functions now run on both engines. Existing Feathers
+activation classification preserves Activate-required, one-shot edits; native
+pressed/hover boundaries include explicit marker-removal handling on 0.20.
+Authored bases, temporary offsets, edit payloads, labels and colors are unchanged.
+
+15 shared real-Feathers/SVG cases cover pin/collapse round trips and exact events,
+bootstrap anchors, temporary displacement, activation gates/coalescing and stale
+nodes, rebuilds, split-view/document isolation, idle change ticks and socket
+hover/press/release/leave behavior, marker removal and unrelated entities.
+Controlled socket states run the retained Update schedule, without claiming OS
+pointer delivery. All six remaining generic graph functions, original root tests
+and native graph plugin registration remain unchanged. See
+[`editor-graph-node-controls-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-graph-node-controls-2026-10-20.md).
+Frozen qualification passes **2,120 checks**, including **1,698 editor checks**,
+with all **1,007 input hashes** unchanged. Both strict all-target Clippy gates
+pass. Shipping passes **2,657 editor unit + 3 architecture tests**, with the same
+ten existing ignores. Workspace GPU-feature all-target checking, both formatting
+gates and whitespace validation pass; post-documentation input drift is zero.
+Root dependencies/toolchain remain unchanged; shipping remains 0.19.1.
+
+Implemented slice 82 (2026-10-20): **Viewport camera, grid and selection presentation**.
+The six actual camera remembrance/restoration, grid attachment/uniform and
+selection-outline functions now share unchanged production bodies on both
+engines. Original graph plugin registration/order and root tests remain unchanged;
+no top-level generic graph presentation functions remain in the native root.
+The candidate composition's previous grid/material dead-code allowance is removed.
+
+16 shared cases use actual Feathers/SVG graph composition and material assets to
+cover Added-only restoration/order, seeded/uncached/split/rebuilt cameras, idle
+memory, per-grid asset reuse and uniforms, missing owners/assets, same-frame
+canvas/grid updates, outline zoom/ancestor policy, geometry isolation and idle
+outlines. Existing per-frame grid writes and deselection-width policy are
+preserved. See
+[`editor-graph-viewport-presentation-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-graph-viewport-presentation-2026-10-20.md).
+Frozen qualification passes **2,136 checks**, including **1,714 editor checks**,
+with all **1,009 input hashes** unchanged. Both strict all-target Clippy gates
+pass. Shipping passes **2,673 editor unit + 3 architecture tests**, with the same
+ten existing ignores. Workspace GPU-feature all-target checking, both formatting
+gates and whitespace validation pass; post-documentation input drift is zero.
+Root dependencies/toolchain remain unchanged; shipping remains 0.19.1.
+This is headless asset/component/schedule-subset evidence, not native material
+shader rendering, zoom/DPI visuals or complete graph-plugin acceptance.
+
+Implemented slice 83 (2026-10-20): **Generic graph registration and scheduling**.
+The shipping plugin and isolated candidate now share the production resources,
+observers, embedded-control filter and exact Update/PostUpdate chain through
+`feathers/node_graph/integration.rs`. Geometry collection, measured framing,
+session overlays and drag guides now use the complete native modules on 0.20,
+including 24 previously unqualified existing cases. Shader embedding stays in
+the native wrapper to preserve its asset namespace; the old geometry facade is removed.
+
+Ten new integration cases cover deferred host rebuild/readback, real material
+registration and canvas/grid ordering, action consumption, split-view cameras,
+drag teardown, pending and measured framing, and embedded controls through native
+event propagation. Composition exposed and fixes a real bug on both engines:
+node press/drag-start and marquee classification retain the original pointer
+target, so bubbling cannot reinterpret an excluded control as a parent-node drag.
+The registration pipeline and original root test bodies are preserved. See
+[`editor-graph-integration-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-graph-integration-2026-10-20.md).
+Frozen qualification passes **2,185 checks**, including **1,753 editor graph
+checks**, with all **1,011 input hashes** unchanged. Shipping passes **2,688
+editor unit + 3 architecture tests** with default parallel execution and the
+same ten existing ignores. Both strict all-target Clippy gates, workspace GPU-feature
+all-target checking, both formatting gates and whitespace validation pass.
+Root dependencies/toolchain remain unchanged; shipping remains 0.19.1.
+This is generic graph headless integration, not full MaterialGraphPlugin,
+native picking/shader rendering or complete editor workflow acceptance.
+
+Implemented slice 84 (2026-10-20): **Material graph host lifecycle and wire scheduling**.
+`material_graph/host_integration.rs` now shares the native gesture/palette/selection/
+function-menu resource setup, document-transient cleanup, four connection observers
+and post-layout wire chain. The shipping plugin delegates this setup. The 22
+existing connection cases use the real registrar instead of a selected test-only
+chain, with their assertions unchanged. EditorSet's unchanged identity is shared
+from `shell/sets.rs`.
+
+Ten new cases cover initial/stable/changed identities, project and effect-history
+boundaries, optional-resource cleanup, placement/history preservation, queued
+cleanup, same-frame identity/rebuild/graph ordering, and deferred wire attachment
+after transform and UI layout. A missing ordering edge is fixed: cleanup now
+observes MainUpdate's target changes before UiRebuild. The cleanup bodies and
+original material-root/connection assertions are unchanged. See
+[`editor-material-host-lifecycle-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-material-host-lifecycle-2026-10-20.md).
+Frozen qualification passes **2,195 checks**, including **1,763 editor graph
+checks**, with all **1,014 input hashes** unchanged. The full candidate graph
+suite passes with default parallel execution too. Shipping passes **2,698 editor
+unit + 3 architecture tests**, also parallel, with the same ten existing ignores.
+Both strict all-target Clippy gates, both formatting gates and whitespace checks
+pass. Root dependencies/toolchain remain unchanged; shipping remains 0.19.1.
+This remains headless host-lifecycle/connection evidence, not full material-plugin
+or native editor acceptance.
+Workspace GPU-feature all-target checking passes; post-documentation source drift is zero.
+
+Implemented slice 85 (2026-10-20): **Project-bound material graph layout persistence**.
+`material_graph/layout_persistence.rs` shares production loading/restoration,
+debounced writing, exit flush and registration. The native plugin delegates
+this setup. PersistenceSet's unchanged identity is shared from `persistence/sets.rs`.
+The candidate directly imports the real layout lifecycle and function-layout
+modules, retaining the disk schema, 300 ms delay, corruption protection,
+project namespaces, base placements and focused visible camera ownership.
+
+Nine new complete-registrar cases cover startup, delayed/exit writes, corruption,
+unsupported files, idle ticks, clean-exit byte preservation, late catalog changes
+and queued project-switch cleanup before rebuild. Six existing lifecycle and five
+function-layout cases now run on both engines. The existing full function-canvas
+restart test remains unchanged in the shipping suite until the complete function
+panel is ported; no assertion is replaced or ignored. All extracted persistence,
+lifecycle and camera bodies and original material-root tests are unchanged. See
+[`editor-material-layout-persistence-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-material-layout-persistence-2026-10-20.md).
+Frozen qualification passes **2,215 checks**, including **1,783 editor graph
+checks**, with all **1,021 input hashes** unchanged. The candidate graph suite
+also passes in parallel. Both strict all-target Clippy gates, both formatting
+gates and whitespace validation pass. Root dependencies/toolchain remain unchanged;
+shipping remains 0.19.1. This is headless persistence/scheduling evidence, not
+complete material-plugin or native editor acceptance.
+Shipping passes **2,707 editor unit + 3 architecture tests** with default parallel
+execution and the same ten existing ignores. Workspace GPU-feature all-target
+checking passes; post-documentation input drift is zero.
+
+Implemented slice 86 (2026-10-20): **Material preview-worker orchestration**.
+The native plugin now delegates the actual `node_previews::register` setup.
+The candidate imports the real worker and shared `preview_pixels.rs` evaluator,
+not a replacement raster implementation. Worker limits, dependency-closure
+matching, project/target/instance keys, cached-image reuse, cancellation and retry
+behavior remain unchanged, as do all 25 extracted evaluator/helper bodies.
+
+Nine new orchestration cases exercise the actual registrar, duplicate views,
+independent instance/target keys, bounded slots and refilling, close/drop
+cancellation, stale completed results, cached replacement, same-ID project switches,
+failed-job retry and preserved semantic state. Two further pixel cases check
+scanline cancellation and strict-versus-permissive fallback. Three existing worker
+cases and three unchanged pixel/basis tests now execute on both engines. Remaining
+native material-root tests are unchanged. See
+[`editor-material-preview-workers-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-material-preview-workers-2026-10-20.md).
+This is headless CPU worker/image-publication evidence, not native GPU preview or
+complete material-plugin/editor acceptance. Preset and asset-thumbnail orchestration
+remain separate candidate integration work. Shipping remains 0.19.1.
+Frozen qualification passes **2,232 checks**, including **1,800 editor graph
+checks**, with all **1,024 input hashes** unchanged. The graph suite also passes
+in parallel. Both strict all-target Clippy gates, both formatting gates and
+whitespace validation pass. Root dependencies/toolchain remain unchanged.
+Shipping passes **2,718 editor unit + 3 architecture tests** with default parallel
+execution and the same ten existing ignores. Workspace GPU-feature all-target
+checking passes; post-documentation input drift is zero.
+
+Implemented slice 87 (2026-10-20): **Material-preset preview pipeline**.
+`material_graph/preset_previews.rs` shares actual composition, cache/status state,
+Update registration, rasterization, recipe fingerprinting, program resolution and
+material seed. The native plugin delegates registration. All seven extracted
+function bodies, recipe-only caching, publication-version observation, fallback,
+status presentation and synchronous raster behavior remain unchanged.
+
+Eleven new cases cover real composition and registration, deduplication, idle ticks,
+late-added views, metadata/recipe publication, removal/recovery, same-ID project
+switches, malformed-file indexing, actual catalog-error fallback, status transitions,
+missing labels and resolved-program pixel parity. Three existing preset checks
+now run on both engines with unchanged assertions; the bundled fixture locator
+finds the same assets from both manifests. Frozen inputs include all bundled
+preset recipes. Remaining native material-root tests are unchanged. See
+[`editor-material-preset-previews-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-material-preset-previews-2026-10-20.md).
+This is headless CPU preset/image/status evidence, not browser GPU thumbnail
+or full material-plugin/editor acceptance. Shipping remains 0.19.1.
+Frozen qualification passes **2,246 checks**, including **1,814 editor graph
+checks**, with all **1,035 input hashes** unchanged. The graph suite also passes
+in parallel. Both strict all-target Clippy gates, both formatting gates and
+whitespace checks pass. Root dependencies/toolchain remain unchanged.
+Shipping passes **2,729 editor unit + 3 architecture tests** with default parallel
+execution and the same ten existing ignores. Workspace GPU-feature all-target
+checking passes; post-documentation input drift is zero.
+
+Implemented slice 88 (2026-10-20): **Saved-material asset-preview validation**.
+The candidate imports the actual `material_graph/asset_preview.rs` entry point,
+with explicit production dependencies and canonical preset/evaluator paths.
+The validator and recursive traversal bodies, all three original tests and
+remaining native material-root tests are unchanged. Eleven new cases qualify
+exact/one-over bounds, memoized shared-subgraph depth, scene displacement,
+disconnected duplicate IDs, every unsupported form, unselected branches,
+disabled-node bypass, saved defaults, project function libraries, nonfinite
+outputs and cancellation precedence. The existing thumbnail limits and strict
+CPU fallback policy are not runtime limits and are not changed by this port.
+See
+[`editor-material-asset-previews-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-material-asset-previews-2026-10-20.md).
+This is headless saved-material CPU validation, not browser GPU thumbnail
+or full editor acceptance. Function-library validation and remaining browser/
+workspace/plugin integration are separate responsibilities. Shipping remains 0.19.1.
+Frozen qualification passes **2,260 checks**, including **1,828 editor graph
+checks**, with all **1,037 input hashes** unchanged. The graph suite also passes
+in parallel. Both strict all-target Clippy gates, both formatting gates and
+whitespace checks pass. Root dependencies/toolchain remain unchanged.
+Shipping passes **2,740 editor unit + 3 architecture tests** with default parallel
+execution and the same ten existing ignores. Workspace GPU-feature all-target
+checking passes; post-documentation input drift is zero.
+
+Implemented slice 89 (2026-10-20): **Material/effect workspace host composition**.
+The native material/effect branch now delegates to the same `workspace.rs` imported
+by the 0.20 candidate, using actual header/canvas/palette/drop components. Explicit
+target projection and drop identity/checks are shared. The native function-editor
+branch and complete drop execution stay unchanged and are not claimed as ported.
+Seven workspace and three drop-identity cases cover restored targets before focus,
+instance binding, split cameras/shared placement, English/French empty states,
+invalid drafts, palette routing and stale identity. A regression reproduced
+cross-view node-menu leakage; node and connection menus now require their owning
+view as well as program. No action or semantic edit policy changes.
+Projection/drop methods, menu constructors, native function composition, original
+material-root tests and remaining drop business logic pass unchanged-source audits.
+See
+[`editor-material-workspace-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-material-workspace-2026-10-20.md).
+Frozen qualification passes **2,270 checks**, including **1,838 editor graph checks**,
+with all **1,044 input hashes** unchanged; the parallel graph suite also passes.
+Both strict all-target Clippy gates, both formatting gates and whitespace validation
+pass. Shipping passes **2,750 editor unit + 3 architecture tests**, with the same
+ten existing ignores. Workspace GPU-feature all-target checking passes;
+post-documentation input drift is zero.
+This is headless material/effect composition, not function-graph composition,
+browser drop/GPU capture, full material-plugin or complete editor acceptance.
+Shipping remains 0.19.1; dependencies/toolchain and visual references are unchanged.
+
+Implemented slice 90 (2026-10-20): **Function-native canvas composition**.
+Both engines now compile the actual function toolbar/canvas/context menus from
+`material_function_editor/graph/composition.rs`, with shared real component types.
+No surrogate material program or test-only canvas is created. The native input
+and wire-handler bodies (31), remaining insertion business logic and original
+function tests are unchanged. Actual compact/icon/searchable action menus and
+function-wire identity are shared as dependencies, with their behavior preserved.
+Eight new cases cover explicit unfocused targets, socket/wire/output identities,
+split cameras and scoped toolbar actions, missing/custom-WESL targets, view-owned
+menus, typed constant controls, actual search filtering, invalid drafts and
+bootstrap/semantic target mapping. The three original menu tests also run on 0.20;
+all 12 assertions remain, with complete headless UI/visibility/window prerequisites
+and PostUpdate focus acquisition added to their fixtures.
+See
+[`editor-function-canvas-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-function-canvas-2026-10-20.md).
+Frozen qualification passes **2,281 checks**, including **1,849 editor graph checks**,
+with all **1,050 input hashes** unchanged. The graph suite also passes in parallel.
+Shipping passes **2,758 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace and workspace GPU-feature all-target checks pass. Post-documentation
+input drift is zero. Function signature fallback,
+complete workspace host composition and action/input registration remain separate
+qualification boundaries. Shipping remains 0.19.1; no visual reference is approved.
+
+Implemented slice 91 (2026-10-20): **Complete graph workspace host and function signatures**.
+The candidate and shipping host now compose the same full material/effect/function
+workspace dispatch from `workspace_host.rs`, including real inspection header and
+scroll fallback. The shipping entry point remains a canonical re-export with its
+original signature. Actual function signature controls/formatting and component
+identities are shared; custom-WESL signatures remain read-only. All four composition/
+formatting bodies, eight native signature handler/helper bodies and original
+signature/material-root tests are unchanged.
+Two real-host regressions reproduced fallback reads of the active graph function
+inside an unfocused code-function tab and unavailable/wrong-project tab. Both
+inspection text and signature controls now resolve the explicit tab target.
+With no override, the tool still follows the current session target. Five host
+and four signature cases cover routing, source/control isolation, scroll/drop/canvas
+identity, localized Back/empty states, typed port/actions and saved/required defaults.
+See
+[`editor-graph-workspace-host-2026-10-20.md`](../../benchmarks/bevy-upgrade/editor-graph-workspace-host-2026-10-20.md).
+Frozen qualification passes **2,290 checks**, including **1,858 editor graph checks**,
+with all **1,055 input hashes** unchanged; the parallel graph suite also passes.
+Shipping passes **2,767 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace and workspace GPU-feature all-target checks pass. Post-documentation
+input drift is zero. This is complete workspace
+composition, not native signature/function observer dispatch, rendered wires or
+full editor acceptance. Shipping remains 0.19.1; no visual reference is approved.
+
+Implemented slice 92 (2026-10-21): **Function signature events and semantic placement**.
+The candidate now registers the actual signature text/number/action observers and
+uses production publication, semantic placement and the global history observer.
+The immutable layout contract and native/partial engines are shared directly;
+all signature handler/helper, placement, node-size and history observer bodies are
+unchanged. Shipping registration order and existing validation policy are retained.
+Only the private qualification manifest/lockfile adds the already-pinned
+`elkrs = "=0.1.1"` dev dependency for unchanged reference layout tests; shipping
+dependencies, lockfile, toolchain and CI are unchanged.
+Ten new composed-control cases cover final/live edits, typed defaults, no-op/error
+history, stale owners, real indexed caller validation, Add Input/Output placement,
+pin preservation, keyboard Enter and global compound undo/redo. Another 52 existing
+placement/layout checks now run on the candidate without substitute engines.
+See
+[`editor-function-signature-events-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-function-signature-events-2026-10-21.md).
+Frozen qualification passes **2,352 checks**, including **1,920 editor graph checks**,
+with all **1,069 input hashes** unchanged; the parallel graph suite also passes.
+Shipping passes **2,777 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace and workspace GPU-feature all-target checks pass. Post-documentation
+input drift is zero. This qualifies headless signature event integration, not
+function-graph pointer consumers, rendered wires or complete native acceptance.
+Shipping remains 0.19.1; no visual reference is approved.
+
+Implemented slice 93 (2026-10-21): **Function body actions and constant editing**.
+The candidate now uses the production node-create/remove, input and Boolean action
+observer plus constant text/number observers and their actual semantic helpers.
+Native and candidate controls retain the same component identities, target
+activation, publication, placement and global compound history. All six moved
+bodies and 29 remaining graph handler/helper/test bodies are unchanged; all 16
+native graph observers preserve their order through shared subregistrars.
+Ten real-composition cases cover creation, removal, typed and live/final/no-op/error
+edits, pinned placement, explicit owner activation, scoped toolbar requests, stale
+project controls, keyboard Enter and creation without viewport memory.
+See
+[`editor-function-body-actions-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-function-body-actions-2026-10-21.md).
+Frozen qualification passes **2,362 checks**, including **1,930 editor graph checks**,
+with all **1,071 input hashes** unchanged; the parallel graph suite also passes.
+Shipping passes **2,787 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace and workspace GPU-feature all-target checks pass. Post-documentation
+input drift is zero.
+This is headless semantic action/value integration, not function-graph pointer,
+context-menu/wire or full native acceptance. Shipping remains 0.19.1; dependencies,
+toolchain and visual references are unchanged.
+
+Implemented slice 94 (2026-10-21): **Function socket and selection pointer events**.
+Actual function socket drag/drop lifecycle, preview state, node/canvas/marquee
+selection and nested-call navigation are shared with the candidate. The existing
+native drag/click boundaries are reused within the crate, with native DragDrop
+aliases/test construction added. All 16 graph observers keep their order.
+The real compatible-node palette is compiled directly; all 12 production bodies,
+eight existing tests and 35 assertions are preserved. Ten new native-event cases
+exercise composed descendants, view/owner guards, release-time snapping at three
+DPI/zoom combinations, single commit/undo, cancellation and scoped selection.
+A real constant-field regression reproduced selection changes during bubbling.
+Click handlers now resolve from the originally picked descendant, retaining
+control/socket guards as the current event target walks ancestors on both engines.
+See
+[`editor-function-pointer-events-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-function-pointer-events-2026-10-21.md).
+The candidate graph suite passes **1,948 checks** in parallel, with the existing
+ignored timing probe. Shipping passes **2,797 editor unit + 3 architecture tests**,
+with the same ten existing ignores. Both strict all-target Clippy gates, both
+formatting gates, whitespace and workspace GPU-feature all-target checks pass.
+Frozen qualification passes **2,380 checks**, including **1,948 editor graph checks**,
+with all **1,076 input hashes** unchanged. Post-documentation input drift is zero.
+This is headless native-event/UI-layout
+qualification, not OS picking, GPU wire or complete native acceptance. Shipping
+remains 0.19.1; dependencies, toolchain and visual references are unchanged.
+
+Implemented slice 95 (2026-10-21): **Function context menus and modified drags**.
+The candidate compiles actual node/pin/canvas context-menu hit testing, opening,
+action dispatch and dismissal, together with duplication and modified-node drags.
+The real presentation batch observer/context resolver is shared so branch movement
+reaches actual global history. Seven context and three modified-drag bodies, four
+batch/context bodies, eight remaining graph wire/test bodies and the original
+arrangement-context test are preserved apart from native location/module access.
+All 16 graph observers keep their order. Ten new real-composition cases exercise
+grouped duplicate/delete, clipboard paste, required-source rejection, scoped
+arrangement requests, hover/Escape, unknown targets and positioned-graph drag
+undo/redo. Explicit placement fixtures retain the existing bootstrap-only policy.
+See
+[`editor-function-context-drags-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-function-context-drags-2026-10-21.md).
+Frozen qualification passes **2,391 checks**, including **1,959 editor graph checks**,
+with all **1,081 input hashes** unchanged; the parallel graph suite also passes.
+Both strict all-target Clippy gates, both formatting gates and whitespace checks pass.
+Shipping passes **2,807 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Workspace GPU-feature all-target checking passes;
+post-documentation input drift is zero. This is headless menu/event
+and positioned-graph history qualification, not OS picking, GPU wire or complete
+native acceptance. Shipping remains 0.19.1; dependencies, toolchain and visual
+references are unchanged.
+
+Implemented slice 96 (2026-10-21): **Function wires and complete registration**.
+Both original wire systems and the complete graph/function-editor registrars now
+compile on the candidate. Shipping uses re-exported entry points; all 16 graph
+observers retain their order, root graph-before-signature registration is unchanged,
+and wire updates remain after PostLayout. Source comparison preserves both wire
+bodies, the expanded registrar and all six original graph test bodies. Eight new
+shared cases use actual composition, assets, layout, native events and the complete
+production registrar: resource ownership, optional-asset recovery, stable handles,
+saved-camera rebuilds at multiple pans/zooms/DPI, split-view endpoints/ghosts,
+logical snapping/release undo, input-direction ghosts, stale-origin cleanup and
+simultaneous signature/body/selection/clipboard/context consumers. No production
+policy or dependency changes. See
+[`editor-function-wires-registration-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-function-wires-registration-2026-10-21.md).
+The parallel candidate graph suite passes **1,967 tests**, with one existing ignore.
+Frozen qualification passes **2,399 checks**, including **1,967 editor graph checks**,
+with all **1,085 input hashes** unchanged; post-documentation input drift is zero.
+Shipping passes **2,815 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace checks and workspace GPU-feature all-target checking pass. This remains
+headless layout/event/wire-uniform qualification, not OS picking, GPU wire
+appearance or full native acceptance. Shipping stays 0.19.1.
+
+Implemented slice 97 (2026-10-21): **Material presentation consumers and arrangement
+installation**. The original node/pin observers and atomic arrangement-result
+installer now compile on the candidate through a shared production source. A shared
+node/batch/pin registrar preserves the shipping plugin's exact registration point
+and observer order. Source comparison preserves all three production bodies and the
+expanded plugin build. All 16 existing history cases run on the candidate, retaining
+all 65 assertions; two pressed fixtures use the existing native input boundary.
+Eight new shared cases cover scoped program/function move-pin-batch chronology,
+unfocused origin routing, no-op/unknown-event redo preservation, malformed/nonfinite
+arrangement rejection, semantic/pin/project staleness, function arrangement
+undo/redo, temporary-offset handling and preservation of camera, other graphs and
+saved bytes.
+See
+[`editor-material-presentation-edits-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-material-presentation-edits-2026-10-21.md).
+The parallel candidate graph suite passes **1,991 tests**, with one existing ignore.
+Frozen qualification passes **2,423 checks**, including **1,991 editor graph checks**,
+with all **1,087 input hashes** unchanged; post-documentation input drift is zero.
+Shipping passes **2,823 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace checks and workspace GPU-feature all-target checking pass. This remains
+CPU ECS event/history and arrangement-result qualification, not asynchronous
+solver completion or full native acceptance. Shipping stays 0.19.1.
+
+Implemented slice 98 (2026-10-21): **Asynchronous arrangement coordinator and layout
+adapter**. The candidate now compiles the actual complete coordinator and adapter,
+using one canonical request type and unchanged registration, preparation, task,
+polling, stale-result and installation bodies. Source comparison preserves nine
+production coordinator/helper bodies, the existing restored-tab test and all five
+adapter method bodies. The three original adapter cases also run on the candidate.
+Eight new shared cases use actual composed/measured canvases, production geometry,
+real CPU tasks and global undo: unfocused full layout, partial scope/frozen nodes,
+pinned anchors, busy/idle behavior, invalid requests, stale movement/pinning/drafts,
+and retired/remeasured views. The fixture uses the production vertical function
+panel layout; it does not manufacture measurements or bypass readiness.
+See
+[`editor-material-async-arrangement-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-material-async-arrangement-2026-10-21.md).
+Frozen qualification passes **2,435 checks**, including **2,003 editor graph checks**,
+with all **1,090 input hashes** unchanged; the parallel graph suite also passes.
+Post-documentation input drift is zero. Shipping passes **2,831 editor unit + 3
+architecture tests**, with the same ten existing ignores. Both strict all-target
+Clippy gates, both formatting gates, whitespace checks and workspace GPU-feature
+all-target checking pass. This is real CPU task/geometry/history qualification,
+not full native editor acceptance. Shipping stays 0.19.1.
+
+Implemented slice 99 (2026-10-21): **Semantic drag-on-wire insertion adapter**.
+The candidate compiles the complete production adapter and exposes it through the
+canonical material-graph facade; the function-wire helper now comes from its actual
+child module, not a standalone qualification module. All six production handler
+bodies and all five original test bodies with their 30 assertions are unchanged.
+Five new shared cases exercise actual registration/probes/drop/global history:
+unfocused source routing, feedback rejection, retired/retargeted views, rollback
+after a missing optional function editor, and literal-input replacement with
+deduplicated choices while retaining the sixteen-choice bound. Native root imports
+are cleaned up without changing production policy; the widget's obsolete candidate
+dead-code allowance is removed.
+See
+[`editor-material-insertion-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-material-insertion-2026-10-21.md).
+Frozen qualification passes **2,445 checks**, including **2,013 editor graph checks**,
+with all **1,092 input hashes** unchanged; the parallel graph suite also passes.
+Post-documentation input drift is zero. Shipping passes **2,836 editor unit + 3
+architecture tests**, with the same ten existing ignores. Both strict all-target
+Clippy gates, both formatting gates, whitespace checks and workspace GPU-feature
+all-target checking pass. Candidate events/viewport metadata qualify semantic
+consumption, placement and history, not full rendered picking or native acceptance.
+Shipping stays 0.19.1.
+
+Implemented slice 100 (2026-10-21): **Complete material graph plugin registration**.
+Both roots compile the actual plugin build from `material_graph/registration.rs`,
+with its registrar/observer order, Update consumers and keyboard registration
+unchanged. The candidate now compiles the complete browser function-drop adapter
+and common owner-scoped feedback, not only target identity. Native pointer event
+types/location accessors are the only engine boundary; routing, validation, history
+and edit policy stay shared. Existing browser-drop and feedback regressions run on
+the candidate; all 26 browser-drop assertions remain. Three new shared cases run
+the actual material and function registrations together with real input, workspace
+composition and measured layout: idle/source preservation, scoped node click/menu
+and Escape, and single-commit browser drop with global undo/redo and unchanged files.
+See
+[`editor-material-plugin-registration-2026-10-21.md`](../../benchmarks/bevy-upgrade/editor-material-plugin-registration-2026-10-21.md).
+Frozen qualification passes **2,459 checks**, including **2,027 editor graph checks**,
+with all **1,098 input hashes** unchanged; the parallel graph suite also passes.
+Post-documentation input drift is zero. Shipping passes **2,839 editor unit + 3
+architecture tests**, with the same ten existing ignores. Both strict all-target
+Clippy gates, both formatting gates, whitespace checks and workspace GPU-feature
+all-target checking pass. The existing modal-state test factory keeps the older
+protection fixture lint-clean without exposing native private fields.
+This is combined headless ECS/UI qualification, not OS picking or native GPU/editor
+acceptance. Shipping stays 0.19.1.
+
+B20-2 remains in progress: remaining application action
 dispatch and full workflow acceptance are not yet ported. The merged
 0.20 group body tokens do not
 by themselves preserve the legacy darker settings header; retain that styling
@@ -2919,21 +3555,10 @@ native evidence, unresolved limitations and removed custom code. No milestone is
 complete solely because it compiles. Do not bundle unrelated fireworks art changes,
 new host features or an authored-format redesign into this engine upgrade.
 
-**Next action:** continue B20-2 with material canvas/node/socket/wire composition,
-then full graph plugin integration/scheduling and application handlers,
-preserving action routing and event propagation
-on the 0.20 APIs, then full panel composition and complete
-editor workflow acceptance, keeping current controls, geometry and interaction
-behavior. Shared scene wrappers and single-line editing now have a required
-real-Feathers regression gate, extended with the shared numeric scrub core and
-full controlled numeric composition/value/arrow, complete color-picker and
-custom code/search/context-menu gates.
-Theme storage now has a shared production
-palette and a required real-Feathers regression gate. Full-plugin stateful
-particle/fluid/trail readiness now has an explicit native regression gate.
-Activate the qualified storage adapter, WESL composition paths
-and graph imports as the engine graph switches coherently to 0.20. Select the
-qualified 0.20 patches when the root graph switches; retire the 0.19 copies only
-after the full regression gate passes. Refresh visual/performance evidence rather
-than approving changed references. Do not delete Feathers or adopt new controls
-as part of the compatibility port.
+**Next action:** build and launch the actual 0.20 editor, fix startup/runtime errors,
+then run complete workspace tests/lints and native editor workflow acceptance.
+The root graph and qualified adapters are now switched; do not add more isolated
+slices or make optional widget adoption a prerequisite for the compatibility merge.
+Keep current controls, geometry, action routing and undo behavior. Retire retained
+0.19 boundary copies only after the full regression gate passes. Refresh visual and
+performance evidence rather than approving changed references.

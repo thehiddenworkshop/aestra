@@ -1,4 +1,4 @@
-//! Native frame-control pressed-state query and consumption only.
+//! Native frame-control input. Queued Activate survives Button removing Pressed on release.
 use crate::feathers::action_activation::{FeathersActionButton, PendingFeathersActivation};
 use crate::feathers::node_graph::toolbar::GraphFrameAction;
 use bevy::{ecs::system::SystemParam, prelude::*, ui::Pressed};
@@ -16,7 +16,10 @@ pub(super) struct Controls<'w, 's> {
             &'static GraphFrameAction,
             Option<&'static PendingFeathersActivation>,
         ),
-        (Changed<Pressed>, With<FeathersActionButton>),
+        (
+            Or<(Changed<Pressed>, Added<PendingFeathersActivation>)>,
+            With<FeathersActionButton>,
+        ),
     >,
 }
 impl Controls<'_, '_> {

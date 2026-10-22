@@ -1,14 +1,18 @@
 use super::*;
+use crate::asset_drop::input::tests as pointer_input;
+use crate::feathers::node_graph::{GraphViewportProps, spawn_graph_viewport};
+use crate::persistence::DocumentProtectionState;
+use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_core::{
-    MaterialFunctionOutputId,
-    material::{MaterialFunctionOutput, MaterialSchemaVersion},
+    MaterialFunctionId, MaterialFunctionOutputId, MaterialId,
+    material::{
+        MaterialExpression, MaterialExpressionDomain, MaterialFunctionOutput, MaterialInstance,
+        MaterialSchemaVersion, MaterialValue, MaterialValueType,
+    },
 };
 use bevy::{
     camera::NormalizedRenderTarget,
-    picking::{
-        backend::HitData,
-        pointer::{Location, PointerId},
-    },
+    picking::pointer::{Location, PointerButton},
 };
 
 fn function(name: &str) -> MaterialFunction {
@@ -141,15 +145,11 @@ impl Fixture {
     fn drop(&mut self) {
         let source = self.app.world_mut().spawn(ChildOf(self.source)).id();
         let target = self.app.world_mut().spawn(ChildOf(self.target)).id();
-        self.app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            location(),
-            DragDrop {
-                button: PointerButton::Primary,
-                dropped: source,
-                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            },
+        self.app.world_mut().trigger(pointer_input::drop(
             target,
+            source,
+            location(),
+            PointerButton::Primary,
         ));
         self.app.world_mut().flush();
     }
@@ -452,8 +452,10 @@ fn stale_wrong_type_pending_and_guarded_drops_do_not_edit() {
                     ));
             }
             4 => {
-                let mut protection = DocumentProtectionState::default();
-                protection.asset_create_open = true;
+                let protection = DocumentProtectionState::blocking_states_for_test()
+                    .into_iter()
+                    .find(|state| state.asset_create_open)
+                    .unwrap();
                 fixture.app.insert_resource(protection);
             }
             _ => {
@@ -532,15 +534,11 @@ fn direct_and_indirect_recursion_are_rejected() {
 fn hover_feedback_is_non_mutating_and_clears_on_leave_and_escape() {
     let mut fixture = Fixture::new(false, false);
     for escape in [false, true] {
-        fixture.app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            location(),
-            DragEnter {
-                button: PointerButton::Primary,
-                dragged: fixture.source,
-                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            },
+        fixture.app.world_mut().trigger(pointer_input::enter(
             fixture.target,
+            fixture.source,
+            location(),
+            PointerButton::Primary,
         ));
         fixture.app.world_mut().flush();
         assert_eq!(
@@ -559,15 +557,11 @@ fn hover_feedback_is_non_mutating_and_clears_on_leave_and_escape() {
             fixture.app.insert_resource(keys);
             fixture.app.update();
         } else {
-            fixture.app.world_mut().trigger(Pointer::new(
-                PointerId::Mouse,
-                location(),
-                DragLeave {
-                    button: PointerButton::Primary,
-                    dragged: fixture.source,
-                    hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                },
+            fixture.app.world_mut().trigger(pointer_input::leave(
                 fixture.target,
+                fixture.source,
+                location(),
+                PointerButton::Primary,
             ));
             fixture.app.world_mut().flush();
         }

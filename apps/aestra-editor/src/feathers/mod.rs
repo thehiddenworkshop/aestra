@@ -8,14 +8,15 @@ pub(crate) mod action_activation;
 pub(crate) mod automation_curve;
 pub(crate) mod breadcrumb;
 pub(crate) mod button;
-#[path = "button/activation_019.rs"]
+#[path = "button/activation_020.rs"]
 mod button_activation;
 pub(crate) mod code_editor;
 pub(crate) mod color_picker;
-#[path = "color_picker/pointer_019.rs"]
+#[path = "color_picker/pointer_020.rs"]
 mod color_pointer;
 pub(crate) mod combo_box;
 pub(crate) mod context_menu;
+pub(crate) mod control_state;
 pub(crate) mod field_row;
 pub(crate) mod graph_layout;
 pub(crate) mod icon;
@@ -24,7 +25,7 @@ pub(crate) mod node_graph;
 pub(crate) mod number_input;
 pub(crate) mod panel;
 pub(crate) mod panel_card;
-#[path = "pointer_019.rs"]
+#[path = "pointer_020.rs"]
 mod pointer;
 pub(crate) mod scenes;
 pub(crate) mod scroll;
@@ -54,6 +55,7 @@ pub(crate) struct AestraFeathersPlugin;
 
 impl Plugin for AestraFeathersPlugin {
     fn build(&self, app: &mut App) {
+        control_state::register(app);
         app.add_plugins(FeathersPlugins)
             .add_plugins(code_editor::CodeEditorPlugin)
             .add_plugins(number_input::arrows::NumberArrowsPlugin)

@@ -1,4 +1,12 @@
 use super::*;
+use crate::feathers::node_graph::geometry;
+use crate::material_function_editor::graph::menu_state::FunctionGraphMenuState;
+use aestra_authoring::MaterialExpressionInput;
+use aestra_core::{
+    MaterialFunctionOutputId,
+    material::{MaterialExpression, MaterialFunctionOutput, MaterialValue, MaterialValueType},
+};
+use bevy::ui_widgets::ValueChange;
 
 #[test]
 fn function_socket_palette_choices_are_transactional() {
@@ -108,10 +116,8 @@ fn target_menu_supports_ordinary_function_inputs() {
 
 #[test]
 fn socket_drag_release_opens_palette_without_snapping_into_another_view() {
-    use bevy::picking::{
-        backend::HitData,
-        pointer::{Location, PointerButton, PointerId},
-    };
+    use crate::material_graph::drag_input::tests as drag;
+    use bevy::picking::pointer::PointerButton;
     let (mut app, _root, viewport, source, target) = setup(1.0, 1.0);
     let socket = *app.world().get::<Socket>(target).unwrap();
     let foreign = app.world_mut().spawn(View(socket.owner)).id();
@@ -127,33 +133,20 @@ fn socket_drag_release_opens_palette_without_snapping_into_another_view() {
         ))
         .id();
     let (screen, _) = pointer(app.world(), viewport);
-    let location = Location {
-        target: bevy::camera::NormalizedRenderTarget::None {
-            width: 960,
-            height: 640,
-        },
-        position: screen,
-    };
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location.clone(),
-        DragStart {
-            button: PointerButton::Primary,
-            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
+    app.world_mut().trigger(drag::start(
         source,
+        Entity::PLACEHOLDER,
+        screen,
+        PointerButton::Primary,
     ));
     let preview = app.world().resource::<ConnectionPreview>();
     assert!(preview.1.contains(&target));
     assert!(!preview.1.contains(&foreign_socket));
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location,
-        DragEnd {
-            button: PointerButton::Primary,
-            distance: Vec2::splat(100.0),
-        },
+    app.world_mut().trigger(drag::end(
         source,
+        Entity::PLACEHOLDER,
+        screen,
+        PointerButton::Primary,
     ));
     app.world_mut().flush();
     assert!(app.world().resource::<Palette>().0.is_some());
@@ -233,10 +226,31 @@ fn restored_function_view_opens_and_chooses_socket_node_from_its_own_target() {
     );
 }
 
-fn setup(scale: f32, zoom: f32) -> (App, tempfile::TempDir, Entity, Entity, Entity) {
+pub(crate) fn setup(scale: f32, zoom: f32) -> (App, tempfile::TempDir, Entity, Entity, Entity) {
+    setup_with_function(scale, zoom, fixture())
+}
+pub(crate) fn setup_with_function(
+    scale: f32,
+    zoom: f32,
+    function: MaterialFunction,
+) -> (App, tempfile::TempDir, Entity, Entity, Entity) {
+    setup_with_registration(scale, zoom, function, |app| {
+        register(app);
+        crate::material_function_editor::graph::connection::register_drag(app);
+        crate::material_function_editor::graph::connection::register_drop(app);
+        crate::material_function_editor::graph::selection_input::register(app);
+    })
+}
+
+/// Compose the same saved canvas with either focused observers or the complete production registrar.
+pub(crate) fn setup_with_registration(
+    scale: f32,
+    zoom: f32,
+    function: MaterialFunction,
+    registration: fn(&mut App),
+) -> (App, tempfile::TempDir, Entity, Entity, Entity) {
     use bevy::ecs::system::RunSystemOnce;
     let root = tempfile::tempdir().unwrap();
-    let function = fixture();
     function
         .save_ron(root.path().join("body.aestra.material-function.ron"))
         .unwrap();
@@ -255,7 +269,10 @@ fn setup(scale: f32, zoom: f32) -> (App, tempfile::TempDir, Entity, Entity, Enti
         .init_resource::<crate::history::EditorHistoryLedger>()
         .init_resource::<FunctionEditor>()
         .add_observer(crate::history::execute_history_action);
-    super::super::register(&mut app);
+    app.init_resource::<ConnectionPreview>()
+        .init_resource::<GraphViewportMemory>()
+        .init_resource::<crate::material_graph::MaterialGraphSelectionState>();
+    registration(&mut app);
     let graph_key = crate::material_graph::function_graph_memory_key(root.path(), function.id);
     app.world_mut()
         .resource_mut::<GraphViewportMemory>()
@@ -268,7 +285,7 @@ fn setup(scale: f32, zoom: f32) -> (App, tempfile::TempDir, Entity, Entity, Enti
                   assets: Res<AssetServer>,
                   memory: Res<GraphViewportMemory>| {
                 commands.entity(host).with_children(|parent| {
-                    super::super::spawn(
+                    crate::material_function_editor::spawn_graph(
                         parent,
                         &session,
                         &catalog,
@@ -308,7 +325,7 @@ fn setup(scale: f32, zoom: f32) -> (App, tempfile::TempDir, Entity, Entity, Enti
     (app, root, viewport, source, target)
 }
 
-fn pointer(world: &World, viewport: Entity) -> (Vec2, Vec2) {
+pub(crate) fn pointer(world: &World, viewport: Entity) -> (Vec2, Vec2) {
     let computed = world.get::<ComputedNode>(viewport).unwrap();
     let transform = world.get::<UiGlobalTransform>(viewport).unwrap();
     let local = computed.size() * computed.inverse_scale_factor * Vec2::new(0.8, 0.85);

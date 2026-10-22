@@ -36,12 +36,12 @@ authors = ["The Hidden Workshop"]
 repository = "https://github.com/TheHiddenWorkshop/aestra"
 
 [workspace.dependencies]
-bevy = { version = "0.19.1", features = ["bevy_feathers", "shader_format_wesl"] }
+bevy = { version = "=0.20.0", features = ["bevy_feathers"] }
 resvg = { version = "0.47", default-features = false }
 tiny-skia = "0.12"
 fluent-bundle = "0.16"
 encase = "0.12.1"
-glam = { version = "0.32.1", features = ["encase"] }
+glam = { version = "0.33.2", features = ["encase"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 elkrs = "=0.1.1"
 # Keep compiler pins aligned with aestra_gpu::shader::SHADER_COMPILER_ID.
@@ -56,7 +56,7 @@ tempfile = "3.27"
 unic-langid = "0.9"
 uuid = { version = "1", features = ["serde", "v4"] }
 wesl = "=0.6.0"
-wgpu = "29.0.4"
+wgpu = "=30.0.1"
 
 [profile.dev]
 opt-level = 1
@@ -65,7 +65,6 @@ opt-level = 1
 opt-level = 3
 
 [patch.crates-io]
-# Bevy 0.19.1 dispatches keyboard events with end-of-frame modifiers; see vendor README.
-bevy_input_focus = { path = "vendor/bevy_input_focus" }
-# Bevy 0.19.1 recreates GPU cluster buffers every frame; see vendor patch notes.
-bevy_pbr = { path = "vendor/bevy_pbr" }
+# Preserve the qualified event-time keyboard and retained-cluster fixes on Bevy 0.20.
+bevy_input_focus = { path = "vendor/bevy_input_focus_020" }
+bevy_pbr = { path = "vendor/bevy_pbr_020" }

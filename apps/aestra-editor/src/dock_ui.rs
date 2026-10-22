@@ -13,9 +13,9 @@ use crate::timeline::TimelineState;
 use crate::*;
 use bevy::{
     ecs::system::SystemParam,
-    feathers::cursor::{EntityCursor, OverrideCursor},
     input::mouse::MouseScrollUnit,
-    picking::events::Scroll,
+    picking::cursor::{EntityCursor, OverrideCursor},
+    picking::events::PointerScroll,
     ui::{Overflow, ScrollPosition},
 };
 use fluent_bundle::FluentArgs;
@@ -906,7 +906,7 @@ pub(crate) struct DockTabScroll;
 /// strip only overflows on X, so the built-in `ScrollArea` (which maps wheel-X to scroll-X) would
 /// not respond to a vertical wheel.
 pub(crate) fn scroll_dock_tabs(
-    mut scroll: On<Pointer<Scroll>>,
+    mut scroll: On<PointerScroll>,
     mut strips: Query<(&ComputedNode, &mut ScrollPosition), With<DockTabScroll>>,
 ) {
     let Ok((computed, mut position)) = strips.get_mut(scroll.entity) else {
@@ -1137,15 +1137,12 @@ fn spawn_dock_tab(
                         dock_close_button_node(),
                         BackgroundColor(Color::NONE),
                     ))
-                    .observe(
-                        move |mut click: On<Pointer<Click>>, mut commands: Commands| {
-                            if click.button == PointerButton::Primary {
-                                click.propagate(false);
-                                commands
-                                    .trigger(crate::editor_view::CloseEditorView::requested(view));
-                            }
-                        },
-                    )
+                    .observe(move |mut click: On<PointerClick>, mut commands: Commands| {
+                        if click.button == PointerButton::Primary {
+                            click.propagate(false);
+                            commands.trigger(crate::editor_view::CloseEditorView::requested(view));
+                        }
+                    })
                     .observe(hover_dock_close_button)
                     .observe(unhover_dock_close_button)
                     .with_children(spawn_dock_close_glyph);
@@ -1166,7 +1163,7 @@ fn dock_close_button_node() -> Node {
 }
 
 fn hover_dock_close_button(
-    over: On<Pointer<Over>>,
+    over: On<PointerOver>,
     mut backgrounds: Query<&mut BackgroundColor, With<DockCloseButton>>,
 ) {
     if let Ok(mut background) = backgrounds.get_mut(over.event_target()) {
@@ -1175,7 +1172,7 @@ fn hover_dock_close_button(
 }
 
 fn unhover_dock_close_button(
-    out: On<Pointer<Out>>,
+    out: On<PointerOut>,
     mut backgrounds: Query<&mut BackgroundColor, With<DockCloseButton>>,
 ) {
     if let Ok(mut background) = backgrounds.get_mut(out.event_target()) {
@@ -1196,7 +1193,7 @@ fn spawn_dock_close_glyph(close: &mut ChildSpawnerCommands) {
 }
 
 fn resize_workspace_pane(
-    drag: On<Pointer<Drag>>,
+    drag: On<PointerDrag>,
     mut queries: DockResizeQueries,
     window: Single<&Window, With<PrimaryWindow>>,
     mut layout: ResMut<WorkspaceLayout>,
@@ -1260,7 +1257,7 @@ fn find_dock_node(node: &DockNode, target: DockNodeId) -> Option<&DockNode> {
 }
 
 fn begin_workspace_resize(
-    drag: On<Pointer<DragStart>>,
+    drag: On<PointerDragStart>,
     splitters: Query<&DockSplitter>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
@@ -1276,7 +1273,7 @@ fn begin_workspace_resize(
 }
 
 fn finish_workspace_resize(
-    drag: On<Pointer<DragEnd>>,
+    drag: On<PointerDragEnd>,
     splitters: Query<&DockSplitter>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
@@ -1320,7 +1317,7 @@ fn deactivate_workspace_resize_cursor(
 }
 
 fn show_resize_cursor(
-    over: On<Pointer<Over>>,
+    over: On<PointerOver>,
     splitters: Query<&DockSplitter>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
 ) {
@@ -1333,7 +1330,7 @@ fn show_resize_cursor(
 }
 
 fn reset_cursor(
-    out: On<Pointer<Out>>,
+    out: On<PointerOut>,
     splitters: Query<&DockSplitter>,
     state: Res<ResizeState>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
@@ -1346,14 +1343,14 @@ fn reset_cursor(
     }
 }
 
-fn move_dock_tab(drag: On<Pointer<Drag>>, mut tabs: Query<&mut UiTransform, With<DockTabButton>>) {
+fn move_dock_tab(drag: On<PointerDrag>, mut tabs: Query<&mut UiTransform, With<DockTabButton>>) {
     if let Ok(mut transform) = tabs.get_mut(drag.event_target()) {
         transform.translation = Val2::px(drag.distance.x, drag.distance.y);
     }
 }
 
 fn begin_dock_tab_drag(
-    drag: On<Pointer<DragStart>>,
+    drag: On<PointerDragStart>,
     tabs: Query<&DockTabButton>,
     mut commands: Commands,
     mut state: ResMut<DockDragState>,
@@ -1367,7 +1364,7 @@ fn begin_dock_tab_drag(
 }
 
 fn reset_dock_tab(
-    drag: On<Pointer<DragEnd>>,
+    drag: On<PointerDragEnd>,
     mut tabs: Query<&mut UiTransform, With<DockTabButton>>,
     mut commands: Commands,
     mut state: ResMut<DockDragState>,
@@ -1402,7 +1399,7 @@ pub(crate) fn clear_finished_dock_drag(
 /// tab entity alive long enough for the drag gesture to start.
 #[allow(clippy::too_many_arguments)]
 fn select_dock_tab(
-    mut click: On<Pointer<Click>>,
+    mut click: On<PointerClick>,
     tabs: Query<&DockTabButton>,
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
@@ -1475,7 +1472,7 @@ fn select_dock_tab(
 }
 
 fn open_dock_tab_context_menu(
-    mut click: On<Pointer<Click>>,
+    mut click: On<PointerClick>,
     tabs: Query<&DockTabButton>,
     parents: Query<&ChildOf>,
     layout: Res<WorkspaceLayout>,
@@ -1514,8 +1511,8 @@ fn open_dock_tab_context_menu(
     menu.tab_context = Some(TabContextMenu {
         panel,
         position: [
-            click.pointer_location.position.x.clamp(0.0, maximum_x),
-            (click.pointer_location.position.y - 84.0).clamp(0.0, maximum_y),
+            click.pointer.location().position.x.clamp(0.0, maximum_x),
+            (click.pointer.location().position.y - 84.0).clamp(0.0, maximum_y),
         ],
     });
     session.ui_revision += 1;
@@ -1523,7 +1520,7 @@ fn open_dock_tab_context_menu(
 }
 
 fn dock_panel_drop(
-    mut drop: On<Pointer<DragDrop>>,
+    mut drop: On<PointerDragDrop>,
     queries: DockDropQueries,
     mut drag_state: ResMut<DockDragState>,
     mut layout: ResMut<WorkspaceLayout>,
@@ -1564,7 +1561,7 @@ fn dock_panel_drop(
 }
 
 fn reorder_dock_tab(
-    mut drop: On<Pointer<DragDrop>>,
+    mut drop: On<PointerDragDrop>,
     tabs: Query<(&DockTabButton, &RelativeCursorPosition)>,
     parents: Query<&ChildOf>,
     mut drag_state: ResMut<DockDragState>,
@@ -1619,7 +1616,7 @@ fn reorder_dock_tab(
 }
 
 fn append_dock_tab(
-    mut drop: On<Pointer<DragDrop>>,
+    mut drop: On<PointerDragDrop>,
     append_zones: Query<&DockTabAppendZone>,
     tabs: Query<&DockTabButton>,
     parents: Query<&ChildOf>,

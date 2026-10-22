@@ -104,22 +104,25 @@ impl Fixture {
             .world_mut()
             .spawn(ChildOf(if card { self.card } else { self.input }))
             .id();
-        self.app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: bevy::camera::NormalizedRenderTarget::None {
-                    width: 800,
-                    height: 600,
-                },
-                position: Vec2::ZERO,
-            },
-            DragDrop {
+        self.app
+            .world_mut()
+            .trigger(bevy::picking::events::PointerDragDrop {
+                entity: target,
+                pointer: bevy::picking::events::Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: bevy::camera::NormalizedRenderTarget::None {
+                            width: 800,
+                            height: 600,
+                        },
+                        position: Vec2::ZERO,
+                    },
+                ),
+
                 button: PointerButton::Primary,
                 dropped: source,
                 hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            },
-            target,
-        ));
+            });
         self.app.world_mut().flush();
     }
     fn finish(&mut self) {

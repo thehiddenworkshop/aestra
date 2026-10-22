@@ -44,22 +44,24 @@ fn fixture() -> (tempfile::TempDir, App, RendererDropTarget) {
     let source_label = app.world_mut().spawn(ChildOf(source)).id();
     let card = app.world_mut().spawn(target).id();
     let card_label = app.world_mut().spawn(ChildOf(card)).id();
-    app.world_mut().trigger(Pointer::new(
-        bevy::picking::pointer::PointerId::Mouse,
-        bevy::picking::pointer::Location {
-            target: bevy::camera::NormalizedRenderTarget::None {
-                width: 800,
-                height: 600,
-            },
-            position: Vec2::ZERO,
-        },
-        DragDrop {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragDrop {
+            entity: card_label,
+            pointer: bevy::picking::events::Pointer::new(
+                bevy::picking::pointer::PointerId::Mouse,
+                bevy::picking::pointer::Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::ZERO,
+                },
+            ),
+
             button: PointerButton::Primary,
             dropped: source_label,
             hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        card_label,
-    ));
+        });
     app.world_mut().flush();
     assert!(
         app.world().resource::<Prompt>().0.is_some(),

@@ -159,8 +159,9 @@ type UnclassifiedHistoryControl = (
 );
 
 pub(super) fn audit_history_controls(controls: Query<Entity, UnclassifiedHistoryControl>) {
-    #[cfg(debug_assertions)]
-    if let Some(entity) = controls.iter().next() {
+    if cfg!(debug_assertions)
+        && let Some(entity) = controls.iter().next()
+    {
         panic!(
             "history control {entity:?} must use FeathersActionButton or be explicitly marked \
              EditorNativeControl"

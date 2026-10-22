@@ -28,12 +28,8 @@ const RECOVERY_CLEANUP_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 pub(crate) struct EditorPersistencePlugin;
 
-#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum PersistenceSet {
-    Startup,
-    Actions,
-    Lifecycle,
-}
+mod sets;
+pub(crate) use sets::PersistenceSet;
 
 impl Plugin for EditorPersistencePlugin {
     fn build(&self, app: &mut App) {

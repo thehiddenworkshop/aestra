@@ -143,7 +143,7 @@ fn queue_diagnostics_action_activation(
 /// Opens a right-click "Copy" menu on the diagnostic row under the cursor, offering to copy the
 /// diagnostic's full text (severity, message, path) to the clipboard.
 fn open_diagnostics_context_menu(
-    mut click: On<Pointer<Click>>,
+    mut click: On<PointerClick>,
     rows: Query<&DiagnosticCopyText>,
     content: Query<(&ComputedNode, &UiGlobalTransform), With<DiagnosticsPanelContent>>,
     parents: Query<&ChildOf>,
@@ -171,7 +171,7 @@ fn open_diagnostics_context_menu(
         return;
     };
     let (node, transform) = content.get(host).unwrap();
-    let position = pointer_position_in_node(click.pointer_location.position, node, transform)
+    let position = pointer_position_in_node(click.pointer.location().position, node, transform)
         * node.inverse_scale_factor();
     for menu in &menus {
         commands.entity(menu).despawn();

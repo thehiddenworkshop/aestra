@@ -41,7 +41,7 @@ use bevy::{camera::visibility::RenderLayers, ui::RelativeCursorPosition};
 use std::sync::Arc;
 
 mod actions;
-#[path = "viewport/control_input_019.rs"]
+#[path = "viewport/control_input_020.rs"]
 mod control_input;
 mod gizmo_state;
 mod host_motion;
@@ -781,11 +781,7 @@ mod tests {
         app.add_observer(queue_viewport_action_activation);
         let action = app
             .world_mut()
-            .spawn((
-                ViewportAction::FramePreview,
-                FeathersActionButton,
-                Interaction::None,
-            ))
+            .spawn((ViewportAction::FramePreview, FeathersActionButton))
             .id();
 
         app.world_mut().trigger(Activate { entity: action });
@@ -793,7 +789,7 @@ mod tests {
 
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
-        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+        assert!(action.contains::<bevy::ui::Pressed>());
     }
 
     #[test]

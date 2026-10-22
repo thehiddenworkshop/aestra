@@ -84,7 +84,7 @@ toolbar-save = Save
 toolbar-source-back = Back to parent source
 toolbar-source-forward = Forward to nested source
 toolbar-source-hidden-ancestors = Hidden source ancestors
-toolbar-runtime = BEVY 0.19  |  LIVE PREVIEW
+toolbar-runtime = BEVY 0.20  |  LIVE PREVIEW
 
 panel-viewport = VIEWPORT
 panel-assets = ASSETS

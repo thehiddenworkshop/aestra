@@ -111,6 +111,45 @@ fn descendant_drag_updates_real_text_and_submits_once_on_release() {
 }
 
 #[test]
+fn model_text_replacement_does_not_require_layout_and_supersedes_queued_edits() {
+    // No text/font plugin or shaped layout: exactly the cold-start condition that
+    // made SelectAll + Insert append a new value to the old buffer in CI.
+    let mut editable = EditableText::new("0.5");
+    editable.queue_edit(TextEdit::Insert("stale".into()));
+    set_number_text(&mut editable, "0.51");
+    assert_eq!(editable.value().to_string(), "0.51");
+    assert!(
+        !editable
+            .pending_edits
+            .iter()
+            .any(|edit| matches!(edit, TextEdit::Insert(_)))
+    );
+    set_number_text(&mut editable, "0.52");
+    assert_eq!(editable.value().to_string(), "0.52");
+}
+
+#[test]
+fn multiple_drag_updates_before_layout_leave_only_the_latest_value() {
+    let (mut app, owner, input, window) = fixture(0.5, 0.0, 1.0, 0.01);
+    app.world_mut()
+        .trigger(start(input, window, PointerButton::Primary));
+    for _ in 0..2 {
+        app.world_mut().trigger(drag(
+            input,
+            window,
+            PointerButton::Primary,
+            Vec2::new(8.0, 0.0),
+        ));
+    }
+    assert_eq!(value(&app, input), "0.52");
+    app.update();
+    assert_eq!(value(&app, input), "0.52");
+    assert_eq!(changes(&app), [(owner, 0.51, false), (owner, 0.52, false)]);
+    finish(&mut app, input, window, PointerButton::Primary);
+    assert_eq!(changes(&app).last(), Some(&(owner, 0.52, true)));
+}
+
+#[test]
 fn shift_and_control_keep_precision_and_shift_precedence() {
     for (shift, control, expected, text) in [
         (true, false, 0.501, "0.501"),

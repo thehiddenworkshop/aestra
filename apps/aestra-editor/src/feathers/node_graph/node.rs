@@ -146,7 +146,7 @@ pub(super) fn begin_graph_node_press<F: QueryFilter>(
         return;
     }
     let Some(entity) = graph_node_from_target(
-        press.event_target(),
+        press.original_event_target(),
         &nodes.as_readonly(),
         &parents,
         &controls,

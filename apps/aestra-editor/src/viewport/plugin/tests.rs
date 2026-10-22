@@ -502,11 +502,17 @@ fn with_layout() -> Fixture {
             size: Vec2::new(400.0, 300.0),
         })
         .init_resource::<GizmoViews>()
+        // Mirror the real 0.20 ordering even without a native UI surface. A
+        // Layout -> whole gizmo-set edge would cycle through propagation.
+        .configure_sets(
+            PostUpdate,
+            UiSystems::Layout.after(bevy::transform::TransformSystems::Propagate),
+        )
         // Supply layout output without a native UI/render surface. Production consumers are unmodified.
         .add_systems(PostUpdate, layout.in_set(UiSystems::Layout))
         .add_systems(
             PostUpdate,
-            observe_gizmo_views.in_set(TransformGizmoSystems),
+            observe_gizmo_views.in_set(TransformGizmoRenderStep),
         );
     f
 }
@@ -524,7 +530,7 @@ fn assert_views(f: &mut Fixture, active: bool, origin: UVec2, size: UVec2) {
 }
 
 #[test]
-fn installed_postupdate_assigns_layout_before_gizmos_and_delays_both_camera_activations() {
+fn installed_postupdate_assigns_layout_before_gizmo_render_and_delays_both_camera_activations() {
     let mut f = with_layout();
     f.tick();
     assert_views(&mut f, false, UVec2::new(100, 60), UVec2::new(400, 300));

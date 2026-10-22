@@ -139,16 +139,15 @@ fn effects_are_rejected_by_renderer_targets_without_authoring_changes() {
 }
 
 fn drop_on(app: &mut App, source: Entity, target: Entity) {
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        pointer_location(),
-        DragDrop {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragDrop {
+            entity: target,
+            pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, pointer_location()),
+
             button: PointerButton::Primary,
             dropped: source,
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        target,
-    ));
+        });
     app.world_mut().flush();
 }
 
@@ -304,16 +303,15 @@ fn hover_is_non_mutating_feedback_and_escape_or_drag_end_cleans_up() {
             .init_resource::<ButtonInput<KeyCode>>();
         let source = app.world_mut().spawn(payload).id();
         let card = app.world_mut().spawn(target).id();
-        app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            pointer_location(),
-            DragEnter {
+        app.world_mut()
+            .trigger(bevy::picking::events::PointerDragEnter {
+                entity: card,
+                pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, pointer_location()),
+
                 button: PointerButton::Primary,
                 dragged: source,
                 hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            },
-            card,
-        ));
+            });
         app.world_mut().flush();
         assert_eq!(
             app.world_mut()

@@ -82,7 +82,7 @@ impl Plugin for AssetDragCursorPlugin {
 }
 
 fn begin(
-    event: On<Add, AssetPayload>,
+    event: On<Add<AssetPayload>>,
     mut drag: ResMut<DragCursor>,
     mut cursor: ResMut<OverrideCursor>,
     mut hand: ResMut<ClosedHandCursor>,
@@ -115,7 +115,7 @@ fn restore(drag: &mut DragCursor, cursor: &mut OverrideCursor, origin: Entity) {
 }
 
 fn remove(
-    event: On<Remove, AssetPayload>,
+    event: On<Remove<AssetPayload>>,
     mut drag: ResMut<DragCursor>,
     mut cursor: ResMut<OverrideCursor>,
 ) {
@@ -123,7 +123,7 @@ fn remove(
 }
 
 fn end(
-    event: On<Pointer<DragEnd>>,
+    event: On<PointerDragEnd>,
     mut drag: ResMut<DragCursor>,
     mut cursor: ResMut<OverrideCursor>,
 ) {
@@ -133,7 +133,7 @@ fn end(
 }
 
 fn cancel(
-    event: On<Pointer<bevy::picking::events::Cancel>>,
+    event: On<bevy::picking::events::PointerCancel>,
     mut drag: ResMut<DragCursor>,
     mut cursor: ResMut<OverrideCursor>,
 ) {
@@ -175,23 +175,23 @@ mod tests {
                 position: Vec2::ZERO,
             };
             match finish {
-                0 => app.world_mut().trigger(Pointer::new(
-                    PointerId::Mouse,
-                    location,
-                    DragEnd {
+                0 => app
+                    .world_mut()
+                    .trigger(bevy::picking::events::PointerDragEnd {
+                        entity: origin,
+                        pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location),
+
                         button: PointerButton::Primary,
                         distance: Vec2::ONE,
-                    },
-                    origin,
-                )),
-                1 => app.world_mut().trigger(Pointer::new(
-                    PointerId::Mouse,
-                    location,
-                    bevy::picking::events::Cancel {
+                    }),
+                1 => app
+                    .world_mut()
+                    .trigger(bevy::picking::events::PointerCancel {
+                        entity: origin,
+                        pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location),
+
                         hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                    },
-                    origin,
-                )),
+                    }),
                 2 => {
                     app.world_mut().entity_mut(origin).remove::<AssetPayload>();
                 }

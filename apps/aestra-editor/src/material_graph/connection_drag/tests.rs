@@ -73,26 +73,16 @@ impl Fixture {
             .init_resource::<Assets<GraphWireMaterial>>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<Bubbled>()
-            .add_observer(begin_material_connection_drag)
-            .add_observer(update_material_connection_drag)
-            .add_observer(finish_material_connection_drag)
-            .add_observer(stop_material_socket_click)
             .add_observer(
                 |event: On<HistoryAction>, routing: Routing, mut commands: Commands| {
                     routing.execute(*event, &mut commands, |_, _, _, _| {
                         panic!("No filesystem history")
                     });
                 },
-            )
-            .add_systems(
-                Update,
-                (
-                    attach_material_graph_wire_materials,
-                    ApplyDeferred,
-                    update_material_graph_wires,
-                )
-                    .chain(),
             );
+        crate::material_graph::host_integration::register(&mut app);
+        // Run the initial document-identity observation before synthesizing user input.
+        app.update();
         let window = app.world_mut().spawn(Window::default()).id();
         let parent = app
             .world_mut()

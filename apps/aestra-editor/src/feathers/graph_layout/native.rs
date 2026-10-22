@@ -11,7 +11,9 @@ use super::{
 use bevy::prelude::{Rect, Vec2};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[path = "native/coordinates.rs"]
 mod coordinates;
+#[path = "native/crossings.rs"]
 mod crossings;
 pub(crate) use crossings::CrossingMetrics;
 

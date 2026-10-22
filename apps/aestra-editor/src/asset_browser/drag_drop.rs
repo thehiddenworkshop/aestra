@@ -14,7 +14,7 @@ use aestra_project::{
     content::operations::OperationRequest,
 };
 use bevy::{
-    picking::events::{DragEnter, DragLeave, Press},
+    picking::events::{PointerDragEnter, PointerDragLeave, PointerPress},
     ui_widgets::Activate,
 };
 
@@ -110,7 +110,7 @@ fn recover_on_project_open(
 
 #[allow(clippy::too_many_arguments)]
 fn begin(
-    event: On<Pointer<DragStart>>,
+    event: On<PointerDragStart>,
     rows: Query<&BrowserRow>,
     folders: Query<&BrowserAction, With<BrowserFolderButton>>,
     editors: Query<(), With<super::operations::InlineRenameEditor>>,
@@ -164,8 +164,8 @@ fn begin(
                 &mut commands,
                 root,
                 event.entity,
-                event.pointer_id,
-                pointer_position_in_node(event.pointer_location.position, node, transform)
+                event.pointer.id,
+                pointer_position_in_node(event.pointer.location().position, node, transform)
                     * node.inverse_scale_factor(),
                 entry,
                 &assets,
@@ -187,7 +187,7 @@ fn begin(
     }
 }
 
-fn press(event: On<Pointer<Press>>, mut drag: ResMut<AssetDrag>) {
+fn press(event: On<PointerPress>, mut drag: ResMut<AssetDrag>) {
     if event.button == PointerButton::Primary {
         drag.suppress_click = false;
     }
@@ -259,7 +259,7 @@ fn eligible(
 
 #[allow(clippy::too_many_arguments)]
 fn enter(
-    mut event: On<Pointer<DragEnter>>,
+    mut event: On<PointerDragEnter>,
     rows: Query<&BrowserRow>,
     folders: Query<&BrowserAction, With<BrowserFolderButton>>,
     parents: Query<&ChildOf>,
@@ -316,7 +316,7 @@ fn enter(
 }
 
 fn leave(
-    event: On<Pointer<DragLeave>>,
+    event: On<PointerDragLeave>,
     parents: Query<&ChildOf>,
     highlights: Query<(Entity, &ChildOf), With<DropHighlight>>,
     mut commands: Commands,
@@ -334,7 +334,7 @@ fn leave(
 
 #[allow(clippy::too_many_arguments)]
 fn drop_asset(
-    mut event: On<Pointer<DragDrop>>,
+    mut event: On<PointerDragDrop>,
     rows: Query<&BrowserRow>,
     folders: Query<&BrowserAction, With<BrowserFolderButton>>,
     parents: Query<&ChildOf>,
@@ -374,7 +374,7 @@ fn drop_asset(
     let Ok((node, transform)) = geometry.get(entity) else {
         return;
     };
-    let position = pointer_position_in_node(event.pointer_location.position, node, transform)
+    let position = pointer_position_in_node(event.pointer.location().position, node, transform)
         * node.inverse_scale_factor();
     for menu in &menus {
         commands.entity(menu).despawn();
@@ -400,13 +400,13 @@ fn drop_asset(
     });
 }
 
-fn end(event: On<Pointer<DragEnd>>, mut drag: ResMut<AssetDrag>) {
+fn end(event: On<PointerDragEnd>, mut drag: ResMut<AssetDrag>) {
     if event.button == PointerButton::Primary {
         drag.ended = true;
     }
 }
 
-fn cancel(event: On<Pointer<bevy::picking::events::Cancel>>, mut drag: ResMut<AssetDrag>) {
+fn cancel(event: On<bevy::picking::events::PointerCancel>, mut drag: ResMut<AssetDrag>) {
     if drag.origin == Some(event.original_event_target()) {
         drag.ended = true;
     }
@@ -760,15 +760,17 @@ mod tests {
                     } else {
                         rows[&destination]
                     };
-                    app.world_mut().trigger(Pointer::new(
-                        PointerId::Mouse,
-                        location(),
-                        DragStart {
+                    app.world_mut()
+                        .trigger(bevy::picking::events::PointerDragStart {
+                            entity: source_row,
+                            pointer: bevy::picking::events::Pointer::new(
+                                PointerId::Mouse,
+                                location(),
+                            ),
+
                             button: PointerButton::Primary,
                             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                        },
-                        source_row,
-                    ));
+                        });
                     app.world_mut().flush();
                     assert_eq!(
                         app.world().resource::<AssetDrag>().source.map(|v| v.0),
@@ -788,16 +790,18 @@ mod tests {
                             .resolve(app.world().resource::<ProjectEffectCatalog>())
                             .is_ok()
                     );
-                    app.world_mut().trigger(Pointer::new(
-                        PointerId::Mouse,
-                        location(),
-                        DragEnter {
+                    app.world_mut()
+                        .trigger(bevy::picking::events::PointerDragEnter {
+                            entity: target,
+                            pointer: bevy::picking::events::Pointer::new(
+                                PointerId::Mouse,
+                                location(),
+                            ),
+
                             button: PointerButton::Primary,
                             dragged: source_row,
                             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                        },
-                        target,
-                    ));
+                        });
                     app.world_mut().flush();
                     assert_eq!(
                         app.world_mut()
@@ -807,16 +811,18 @@ mod tests {
                         1,
                         "highlight kind={kind}, tree={tree}"
                     );
-                    app.world_mut().trigger(Pointer::new(
-                        PointerId::Mouse,
-                        location(),
-                        DragDrop {
+                    app.world_mut()
+                        .trigger(bevy::picking::events::PointerDragDrop {
+                            entity: target,
+                            pointer: bevy::picking::events::Pointer::new(
+                                PointerId::Mouse,
+                                location(),
+                            ),
+
                             button: PointerButton::Primary,
                             dropped: source_row,
                             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                        },
-                        target,
-                    ));
+                        });
                     app.world_mut().flush();
                     let choices: Vec<_> = app
                         .world_mut()

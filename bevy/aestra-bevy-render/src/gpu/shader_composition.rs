@@ -1,15 +1,15 @@
 //! Engine-boundary shader composition. The shader bodies are shared verbatim.
-//! The 0.20 dialect is qualified against real Bevy modules in patches-020, but is
-//! test-only until the renderer/editor engine switch selects Shader::from_wesl.
+//! The active renderer uses the qualified 0.20 WESL dialect; legacy fixtures retain 0.19 parity checks.
 use aestra_gpu::volume::volume_interface_wgsl_with_scene_lighting;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Dialect {
-    Bevy019,
     #[cfg(test)]
+    Bevy019,
     Bevy020,
 }
 
+#[cfg(test)]
 const VOLUME_IMPORTS_019: &str = r#"#import bevy_pbr::mesh_functions
 #import bevy_pbr::mesh_view_bindings::view
 #import bevy_pbr::mesh_view_bindings as volume_scene
@@ -19,7 +19,6 @@ const VOLUME_IMPORTS_019: &str = r#"#import bevy_pbr::mesh_functions
 #import bevy_pbr::prepass_utils
 #endif"#;
 
-#[cfg(test)]
 const VOLUME_IMPORTS_020: &str = r#"import bevy_pbr::render::{
     mesh_functions,
     mesh_view_bindings::{view},
@@ -30,7 +29,6 @@ const VOLUME_IMPORTS_020: &str = r#"import bevy_pbr::render::{
 @if(DEPTH_PREPASS)
 import bevy_pbr::prepass::utils as prepass_utils;"#;
 
-#[cfg(test)]
 const MATERIAL_IMPORTS_020: &str = r#"@if(AESTRA_SCENE_POINT_LIGHTING)
 import bevy_pbr::render::mesh_view_bindings::view;
 @if(AESTRA_SCENE_POINT_LIGHTING)
@@ -41,13 +39,13 @@ import bevy_pbr::render::clustered_forward as aestra_sprite_clusters;
 
 pub(crate) fn compose_volume(program_wgsl: &str, entry_point: &str, dialect: Dialect) -> String {
     let (imports, depth_start, depth_end, group) = match dialect {
+        #[cfg(test)]
         Dialect::Bevy019 => (
             VOLUME_IMPORTS_019,
             "#ifdef DEPTH_PREPASS",
             "#endif",
             "#{MATERIAL_BIND_GROUP}",
         ),
-        #[cfg(test)]
         Dialect::Bevy020 => (
             VOLUME_IMPORTS_020,
             "@if(DEPTH_PREPASS) {",
@@ -139,26 +137,26 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool, dialect: Dialect) -> S
         + 1;
     let mut source = String::with_capacity(wgsl.len() + 3000);
     source.push_str(match dialect {
-        Dialect::Bevy019 => "#ifdef AESTRA_SCENE_POINT_LIGHTING\n#import bevy_pbr::mesh_view_bindings::view\n#import bevy_pbr::mesh_view_bindings as aestra_sprite_scene\n#import bevy_pbr::clustered_forward as aestra_sprite_clusters\n#endif\n",
         #[cfg(test)]
+        Dialect::Bevy019 => "#ifdef AESTRA_SCENE_POINT_LIGHTING\n#import bevy_pbr::mesh_view_bindings::view\n#import bevy_pbr::mesh_view_bindings as aestra_sprite_scene\n#import bevy_pbr::clustered_forward as aestra_sprite_clusters\n#endif\n",
         Dialect::Bevy020 => MATERIAL_IMPORTS_020,
     });
     source.push_str(&wgsl[..body]);
     source.push_str(match dialect {
-        Dialect::Bevy019 => "{\n#ifdef AESTRA_SCENE_POINT_LIGHTING\n    return aestra_bevy_point_irradiance(world, pixel);\n#else\n    return vec3<f32>(0.0);\n#endif\n}",
         #[cfg(test)]
+        Dialect::Bevy019 => "{\n#ifdef AESTRA_SCENE_POINT_LIGHTING\n    return aestra_bevy_point_irradiance(world, pixel);\n#else\n    return vec3<f32>(0.0);\n#endif\n}",
         Dialect::Bevy020 => "{\n    @if(AESTRA_SCENE_POINT_LIGHTING) { return aestra_bevy_point_irradiance(world, pixel); }\n    @else { return vec3<f32>(0.0); }\n}",
     });
     source.push_str(&wgsl[end..]);
     source.push_str(match dialect {
-        Dialect::Bevy019 => "\n#ifdef AESTRA_SCENE_POINT_LIGHTING\n",
         #[cfg(test)]
+        Dialect::Bevy019 => "\n#ifdef AESTRA_SCENE_POINT_LIGHTING\n",
         Dialect::Bevy020 => "\n@if(AESTRA_SCENE_POINT_LIGHTING) {\n",
     });
     source.push_str(include_str!("material_lighting.wgsl"));
     source.push_str(match dialect {
-        Dialect::Bevy019 => "\n#endif\n",
         #[cfg(test)]
+        Dialect::Bevy019 => "\n#endif\n",
         Dialect::Bevy020 => "\n}\n",
     });
     // Cluster helpers also read the native view. Keep one binding-0 declaration in 3D;
@@ -172,10 +170,10 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool, dialect: Dialect) -> S
     source.replace(
         declaration,
         &match dialect {
+            #[cfg(test)]
             Dialect::Bevy019 => {
                 format!("#ifndef AESTRA_SCENE_POINT_LIGHTING\n{declaration}\n#endif")
             }
-            #[cfg(test)]
             Dialect::Bevy020 => format!("@if(!AESTRA_SCENE_POINT_LIGHTING)\n{declaration}"),
         },
     )

@@ -6,13 +6,15 @@ use aestra_bevy::gpu::particle_lights::{
 };
 use bevy::{
     camera::visibility::RenderLayers,
+    extract::{
+        extract_component::{ExtractComponent, ExtractComponentPlugin},
+        extract_resource::{ExtractResource, ExtractResourcePlugin},
+    },
     light::cluster::GlobalClusterSettings,
     pbr::{GlobalClusterableObjectMeta, GpuClusteredLight},
     prelude::*,
     render::{
         Render, RenderApp, RenderSystems,
-        extract_component::{ExtractComponent, ExtractComponentPlugin},
-        extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_resource::*,
         renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems, RenderQueue},
         sync_world::MainEntity,
@@ -22,9 +24,11 @@ use bevy::{
 use std::sync::{Arc, Mutex};
 
 #[derive(Component, Clone, ExtractComponent)]
+#[extract_app(RenderApp)]
 pub struct ProofSlot;
 
 #[derive(Resource, Clone, Default, ExtractResource)]
+#[extract_app(RenderApp)]
 pub struct ProofSettings {
     pub enabled: bool,
     pub owner: Option<Entity>,
@@ -38,9 +42,11 @@ pub struct Observation {
 }
 
 #[derive(Resource, Clone, Default, ExtractResource)]
+#[extract_app(RenderApp)]
 pub struct ProofStatistics(pub Arc<Mutex<Observation>>);
 
 #[derive(Resource, Clone, ExtractResource)]
+#[extract_app(RenderApp)]
 struct ProofShader(Handle<Shader>);
 #[derive(Resource)]
 struct ProofPipeline {
@@ -54,23 +60,35 @@ struct Params {
 }
 
 pub struct ProofPlugin;
+fn proof_shader() -> Shader {
+    Shader::from_wesl(include_str!("particle_light_gpu_proof.wesl"), file!())
+}
+
+#[test]
+fn proof_shader_uses_parseable_native_wesl() {
+    let bevy::shader::Source::Wesl(source) = proof_shader().source else {
+        panic!("the Bevy-importing proof must use the WESL loader");
+    };
+    source
+        .parse::<wesl::syntax::TranslationUnit>()
+        .expect("proof shader must parse before native GPU execution");
+    assert!(source.contains("import bevy_pbr::render::mesh_view_types::ClusteredLight;"));
+}
+
 impl Plugin for ProofPlugin {
     fn build(&self, app: &mut App) {
         let shader = app
             .world_mut()
             .resource_mut::<Assets<Shader>>()
-            .add(Shader::from_wgsl(
-                include_str!("particle_light_gpu_proof.wgsl"),
-                file!(),
-            ));
+            .add(proof_shader());
         app.insert_resource(ProofShader(shader))
             .init_resource::<ProofSettings>()
             .init_resource::<ProofStatistics>()
             .add_plugins((
-                ExtractComponentPlugin::<ProofSlot>::default(),
-                ExtractResourcePlugin::<ProofSettings>::default(),
-                ExtractResourcePlugin::<ProofStatistics>::default(),
-                ExtractResourcePlugin::<ProofShader>::default(),
+                ExtractComponentPlugin::<ProofSlot, RenderApp>::default(),
+                ExtractResourcePlugin::<ProofSettings, RenderApp>::default(),
+                ExtractResourcePlugin::<ProofStatistics, RenderApp>::default(),
+                ExtractResourcePlugin::<ProofShader, RenderApp>::default(),
             ));
         app.sub_app_mut(RenderApp)
             .add_systems(Render, init.in_set(RenderSystems::PrepareResources))

@@ -7,7 +7,6 @@ use bevy::{
     camera::NormalizedRenderTarget,
     picking::{
         backend::HitData,
-        events::DragEnter,
         pointer::{Location, PointerId},
     },
 };
@@ -100,16 +99,16 @@ impl Fixture {
     fn drop(&mut self) {
         let source = self.app.world_mut().spawn(ChildOf(self.source)).id();
         let target = self.app.world_mut().spawn(ChildOf(self.target)).id();
-        self.app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            location(),
-            DragDrop {
+        self.app
+            .world_mut()
+            .trigger(bevy::picking::events::PointerDragDrop {
+                entity: target,
+                pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location()),
+
                 button: PointerButton::Primary,
                 dropped: source,
                 hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            },
-            target,
-        ));
+            });
         self.app.world_mut().flush();
     }
     fn effect(&self) -> EffectAsset {
@@ -378,16 +377,17 @@ fn wrong_input_type_and_changed_binding_are_rejected() {
 fn hover_uses_texture_target_feedback_without_registering_an_asset() {
     let mut fixture = Fixture::new(false);
     let before = fixture.effect();
-    fixture.app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location(),
-        DragEnter {
+    fixture
+        .app
+        .world_mut()
+        .trigger(bevy::picking::events::PointerDragEnter {
+            entity: fixture.target,
+            pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location()),
+
             button: PointerButton::Primary,
             dragged: fixture.source,
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        fixture.target,
-    ));
+        });
     fixture.app.world_mut().flush();
     assert!(
         fixture

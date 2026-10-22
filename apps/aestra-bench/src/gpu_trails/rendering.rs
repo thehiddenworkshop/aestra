@@ -225,7 +225,11 @@ impl Harness {
         rx.recv_timeout(std::time::Duration::from_secs(5))
             .unwrap()
             .unwrap();
-        let bytes = buffer.slice(..).get_mapped_range().to_vec();
+        let bytes = buffer
+            .slice(..)
+            .get_mapped_range()
+            .expect("completed benchmark readback must remain mapped")
+            .to_vec();
         buffer.unmap();
         bytes
     }

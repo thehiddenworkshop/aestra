@@ -563,24 +563,24 @@ fn sources_divider_has_a_full_height_hit_area_and_scales_drag_on_secondary_targe
             };
             let selected = app.world().resource::<AssetBrowserState>().selected;
             begin_sources_drag(&mut app, splitter, size);
-            app.world_mut().trigger(Pointer::new(
-                PointerId::Mouse,
-                Location {
-                    target: NormalizedRenderTarget::None {
-                        width: size.x,
-                        height: size.y,
+            app.world_mut().trigger(bevy::picking::events::PointerDrag {
+                entity: splitter,
+                pointer: bevy::picking::events::Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: NormalizedRenderTarget::None {
+                            width: size.x,
+                            height: size.y,
+                        },
+                        position: Vec2::ZERO,
                     },
-                    position: Vec2::ZERO,
-                },
+                ),
                 // Bevy picking reports pointer travel in logical pixels (the UI backend scales
                 // it up to hit-test), so a 20px drag is 20 at every display scale.
-                Drag {
-                    button: PointerButton::Primary,
-                    distance: Vec2::X * 20.0,
-                    delta: Vec2::X * 20.0,
-                },
-                splitter,
-            ));
+                button: PointerButton::Primary,
+                distance: Vec2::X * 20.0,
+                delta: Vec2::X * 20.0,
+            });
             for _ in 0..4 {
                 app.update();
             }
@@ -612,22 +612,23 @@ fn sources_divider_has_a_full_height_hit_area_and_scales_drag_on_secondary_targe
                 .translation
                 .x;
             begin_sources_drag(&mut app, splitter, size);
-            app.world_mut().trigger(Pointer::new(
-                PointerId::Mouse,
-                Location {
-                    target: NormalizedRenderTarget::None {
-                        width: size.x,
-                        height: size.y,
+            app.world_mut().trigger(bevy::picking::events::PointerDrag {
+                entity: splitter,
+                pointer: bevy::picking::events::Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: NormalizedRenderTarget::None {
+                            width: size.x,
+                            height: size.y,
+                        },
+                        position: Vec2::ZERO,
                     },
-                    position: Vec2::ZERO,
-                },
-                Drag {
-                    button: PointerButton::Primary,
-                    distance: -Vec2::X * 20.0,
-                    delta: -Vec2::X * 20.0,
-                },
-                splitter,
-            ));
+                ),
+
+                button: PointerButton::Primary,
+                distance: -Vec2::X * 20.0,
+                delta: -Vec2::X * 20.0,
+            });
             for _ in 0..4 {
                 app.update();
             }
@@ -653,21 +654,23 @@ fn begin_sources_drag(app: &mut App, splitter: Entity, size: UVec2) {
             pointer::{Location, PointerId},
         },
     };
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target: NormalizedRenderTarget::None {
-                width: size.x,
-                height: size.y,
-            },
-            position: Vec2::ZERO,
-        },
-        DragStart {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragStart {
+            entity: splitter,
+            pointer: bevy::picking::events::Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: NormalizedRenderTarget::None {
+                        width: size.x,
+                        height: size.y,
+                    },
+                    position: Vec2::ZERO,
+                },
+            ),
+
             button: PointerButton::Primary,
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        splitter,
-    ));
+        });
 }
 
 #[test]
@@ -1384,22 +1387,24 @@ fn inline_rename_submits_latest_queued_text_on_enter_blur_and_outside_press() {
                 app.update();
             }
             _ => {
-                app.world_mut().trigger(Pointer::new(
-                    PointerId::Mouse,
-                    Location {
-                        target: NormalizedRenderTarget::None {
-                            width: 800,
-                            height: 600,
-                        },
-                        position: Vec2::ZERO,
-                    },
-                    Press {
+                app.world_mut()
+                    .trigger(bevy::picking::events::PointerPress {
+                        entity: list,
+                        pointer: bevy::picking::events::Pointer::new(
+                            PointerId::Mouse,
+                            Location {
+                                target: NormalizedRenderTarget::None {
+                                    width: 800,
+                                    height: 600,
+                                },
+                                position: Vec2::ZERO,
+                            },
+                        ),
+
                         button: PointerButton::Primary,
                         count: 1,
                         hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                    },
-                    list,
-                ));
+                    });
                 app.update();
             }
         }
@@ -1788,23 +1793,25 @@ fn click_button_at(
             pointer::{Location, PointerId},
         },
     };
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target: NormalizedRenderTarget::None {
-                width: 800,
-                height: 600,
-            },
-            position,
-        },
-        Click {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerClick {
+            entity: target,
+            pointer: bevy::picking::events::Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position,
+                },
+            ),
+
             button,
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
             duration: std::time::Duration::ZERO,
             count,
-        },
-        target,
-    ));
+        });
     app.update();
 }
 

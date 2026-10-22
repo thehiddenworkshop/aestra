@@ -1,11 +1,12 @@
 use crate::{
-    EditorSession, FeathersActionButton, Localizer, MenuState, PendingFeathersActivation, theme,
+    EditorSession, FeathersActionButton, Interaction, Localizer, MenuState,
+    PendingFeathersActivation, theme,
 };
 use bevy::{
     ecs::system::SystemParam,
     prelude::*,
     ui::InteractionDisabled,
-    ui_widgets::Activate,
+    ui_widgets::{Activate, Button},
     window::{PrimaryWindow, WindowPosition},
 };
 use fluent_bundle::FluentArgs;

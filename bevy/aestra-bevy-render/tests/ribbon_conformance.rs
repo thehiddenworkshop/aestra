@@ -151,7 +151,10 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
         .recv_timeout(std::time::Duration::from_secs(5))
         .unwrap()
         .unwrap();
-    let bytes = readback.slice(..).get_mapped_range();
+    let bytes = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("completed test readback must remain mapped");
     let value = |vertex: usize, component: usize| {
         let offset = vertex * 32 + component * 4;
         f32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
@@ -377,7 +380,10 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
                     .recv_timeout(std::time::Duration::from_secs(5))
                     .unwrap()
                     .unwrap();
-                let bytes = readback.slice(..).get_mapped_range();
+                let bytes = readback
+                    .slice(..)
+                    .get_mapped_range()
+                    .expect("completed test readback must remain mapped");
                 let word =
                     |offset| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
                 let mut expected = selected.clone();

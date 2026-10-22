@@ -39,6 +39,7 @@ aestra-fluid = { path = "../../../extensions/aestra-fluid" }
 naga = { version = "=30.0.1", features = ["wgsl-in"] }
 serde_json = "1"
 thiserror = "2"
+elkrs = "=0.1.1"
 resvg = { version = "0.47", default-features = false }
 tiny-skia = "0.12"
 fluent-bundle = "0.16"

@@ -14,7 +14,7 @@ use aestra_project::{ProjectContentVersion, ProjectSourceId};
 use bevy::{
     asset::RenderAssetUsages,
     image::ImageSampler,
-    picking::events::{Out, Over, Pointer},
+    picking::events::{PointerOut, PointerOver},
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     tasks::{IoTaskPool, Task, futures_lite::future},
 };
@@ -66,7 +66,7 @@ fn sweep_thumbnail_cache() {
 }
 
 fn on_thumbnail_over(
-    over: On<Pointer<Over>>,
+    over: On<PointerOver>,
     thumbnails: Query<&Thumbnail>,
     mut hovered: ResMut<HoveredThumbnail>,
 ) {
@@ -76,7 +76,7 @@ fn on_thumbnail_over(
 }
 
 fn on_thumbnail_out(
-    out: On<Pointer<Out>>,
+    out: On<PointerOut>,
     thumbnails: Query<&Thumbnail>,
     mut hovered: ResMut<HoveredThumbnail>,
 ) {

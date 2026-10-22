@@ -16,6 +16,7 @@ use bevy::{
         hover::HoverMap,
         pointer::{PointerButton, PointerId},
     },
+    text::TextEdit,
     ui_widgets::{Activate, Button},
     window::{CursorIcon, CursorOptions, PrimaryWindow},
 };
@@ -70,6 +71,34 @@ fn settle(app: &mut App) {
     for _ in 0..3 {
         app.update();
     }
+}
+
+#[test]
+fn model_updates_before_scene_composition_keep_the_latest_value_without_user_edits() {
+    let mut app = app();
+    let owner = app.world_mut().spawn_empty().id();
+    for initial in [1.0, 17.5] {
+        app.world_mut().trigger(UpdateNumberInput {
+            entity: owner,
+            value: NumberInputValue::F32(initial),
+        });
+    }
+    app.world_mut()
+        .commands()
+        .entity(owner)
+        .apply_scene(feathers_scalar_input());
+    app.world_mut().flush();
+    settle(&mut app);
+    let input = app
+        .world()
+        .get::<Children>(owner)
+        .unwrap()
+        .iter()
+        .find(|child| app.world().get::<EditableText>(*child).is_some())
+        .unwrap();
+    assert_eq!(value(&app, input), "17.5");
+    assert!(app.world().get::<PendingNumberValue>(owner).is_none());
+    assert!(app.world().resource::<Values>().floats.is_empty());
 }
 
 fn spawn(app: &mut App, format: NumberFormat, initial: NumberInputValue) -> (Entity, Entity) {
@@ -178,9 +207,24 @@ fn numeric_scenes_keep_label_sigil_direct_text_and_exactly_two_hover_arrows() {
                 .get::<bevy::feathers::controls::FeathersNumberInput>(owner)
                 .is_none()
         );
-        let surface = app.world().get::<Children>(input).unwrap();
-        assert_eq!(surface.len(), 1);
-        assert!(app.world().get::<NumericSurface>(surface[0]).is_some());
+        assert!(
+            app.world()
+                .get::<Children>(input)
+                .is_none_or(|children| children.is_empty()),
+            "EditableText must remain a measured leaf"
+        );
+        let surface = children
+            .iter()
+            .find(|child| app.world().get::<NumericSurface>(*child).is_some())
+            .unwrap();
+        assert_eq!(
+            app.world().get::<Node>(surface).unwrap().grid_column,
+            app.world().get::<Node>(input).unwrap().grid_column
+        );
+        assert_eq!(
+            app.world().get::<Node>(surface).unwrap().grid_row,
+            app.world().get::<Node>(input).unwrap().grid_row
+        );
         for increase in [false, true] {
             let arrow = arrow(&app, owner, increase);
             assert_eq!(
@@ -226,6 +270,89 @@ fn programmatic_updates_are_silent_typed_and_preserve_a_focused_edit() {
 }
 
 #[test]
+fn real_ui_layout_measures_the_value_and_places_picking_in_the_same_cell() {
+    for (width, labeled) in [(200.0, false), (80.0, true)] {
+        let mut app = app();
+        let camera = app.world_mut().spawn(Camera2d).id();
+        let root = app
+            .world_mut()
+            .spawn((
+                Node {
+                    width: px(width),
+                    height: px(26),
+                    ..default()
+                },
+                UiTargetCamera(camera),
+            ))
+            .id();
+        let scene = bsn! { @EditorNumberInput {
+            @label_text: {if labeled { Some("X") } else { None }},
+        }};
+        let owner = app
+            .world_mut()
+            .commands()
+            .spawn(ChildOf(root))
+            .apply_scene(scene)
+            .id();
+        app.world_mut().flush();
+        app.world_mut().trigger(UpdateNumberInput {
+            entity: owner,
+            value: NumberInputValue::F32(128.0),
+        });
+        for _ in 0..8 {
+            app.update();
+        }
+        let children = app.world().get::<Children>(owner).unwrap();
+        let input = children
+            .iter()
+            .find(|child| app.world().get::<EditableText>(*child).is_some())
+            .unwrap();
+        let surface = children
+            .iter()
+            .find(|child| app.world().get::<NumericSurface>(*child).is_some())
+            .unwrap();
+        assert_eq!(value(&app, input), "128");
+        let bounds = app.world().get::<ComputedNode>(input).unwrap().size();
+        assert!(
+            bounds.x >= 12.0 && bounds.y >= 12.0,
+            "unmeasured value at width {width}: {bounds:?}"
+        );
+        assert!(
+            !app.world()
+                .get::<bevy::text::TextLayoutInfo>(input)
+                .unwrap()
+                .glyphs
+                .is_empty(),
+            "numeric text must shape for rendering"
+        );
+        assert_eq!(
+            bounds,
+            app.world().get::<ComputedNode>(surface).unwrap().size()
+        );
+        assert_eq!(
+            app.world().get::<UiGlobalTransform>(input).unwrap(),
+            app.world().get::<UiGlobalTransform>(surface).unwrap()
+        );
+    }
+}
+
+#[test]
+fn repeated_programmatic_updates_replace_the_buffer_before_the_next_layout() {
+    let mut app = app();
+    let (owner, input) = spawn(&mut app, NumberFormat::F32, NumberInputValue::F32(0.5));
+    for value in [0.51, 0.52] {
+        app.world_mut().trigger(UpdateNumberInput {
+            entity: owner,
+            value: NumberInputValue::F32(value),
+        });
+    }
+    assert_eq!(value(&app, input), "0.52");
+    settle(&mut app);
+    assert_eq!(value(&app, input), "0.52");
+    assert!(app.world().resource::<Values>().floats.is_empty());
+}
+
+#[test]
 fn numeric_text_keeps_the_filter_and_twenty_character_limit() {
     let mut app = app();
     let (_, input) = spawn(&mut app, NumberFormat::F32, NumberInputValue::F32(0.5));
@@ -254,7 +381,13 @@ fn owned_surface_defers_press_focus_and_click_does_not_end_a_scrub_as_text_editi
     app.world_mut()
         .entity_mut(owner)
         .insert(ScrubbableNumber::new(0.5, 0.0, 1.0, 0.01));
-    let surface = app.world().get::<Children>(input).unwrap()[0];
+    let surface = app
+        .world()
+        .get::<Children>(owner)
+        .unwrap()
+        .iter()
+        .find(|child| app.world().get::<NumericSurface>(*child).is_some())
+        .unwrap();
     let window = window(&mut app);
     app.world_mut().trigger(AcquireFocus {
         focused_entity: surface,

@@ -374,7 +374,7 @@ fn create(
 
 #[allow(clippy::too_many_arguments)]
 fn begin_drag(
-    event: On<Pointer<DragStart>>,
+    event: On<PointerDragStart>,
     rows: Query<&VirtualRow>,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
@@ -414,7 +414,7 @@ fn begin_drag(
         && let Ok((node, transform)) = geometry.get(root)
     {
         let position = crate::feathers::context_menu::pointer_position_in_node(
-            event.pointer_location.position,
+            event.pointer.location().position,
             node,
             transform,
         ) * node.inverse_scale_factor();
@@ -422,7 +422,7 @@ fn begin_drag(
             &mut commands,
             root,
             event.entity,
-            event.pointer_id,
+            event.pointer.id,
             position,
             &row.0.name,
             kind(row.0.asset),
@@ -438,13 +438,13 @@ fn begin_drag(
     drag.ended = false;
 }
 
-fn end_drag(event: On<Pointer<DragEnd>>, mut drag: ResMut<Drag>) {
+fn end_drag(event: On<PointerDragEnd>, mut drag: ResMut<Drag>) {
     if event.button == PointerButton::Primary {
         drag.ended = true;
     }
 }
 
-fn cancel_drag(event: On<Pointer<bevy::picking::events::Cancel>>, mut drag: ResMut<Drag>) {
+fn cancel_drag(event: On<bevy::picking::events::PointerCancel>, mut drag: ResMut<Drag>) {
     if drag.origin == Some(event.original_event_target()) {
         drag.ended = true;
     }

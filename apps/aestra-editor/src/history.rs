@@ -26,7 +26,7 @@ pub(crate) mod asset_order;
 pub(crate) struct EditorHistoryPlugin;
 
 mod focus;
-#[path = "history/focus_pointer_019.rs"]
+#[path = "history/focus_pointer_020.rs"]
 mod focus_pointer;
 pub(crate) use focus::HistoryScope;
 use focus::{capture_history_focus, capture_history_keyboard_focus};
@@ -87,7 +87,7 @@ mod compound;
 mod document_execution;
 pub(crate) use document_execution::EditorHistoryLedger;
 
-#[path = "history/control_input_019.rs"]
+#[path = "history/control_input_020.rs"]
 mod control_input;
 mod controls;
 use controls::{audit_history_controls, handle_history_buttons, update_history_availability};
@@ -96,17 +96,8 @@ pub(crate) use keyboard::history_keyboard_input;
 
 pub(crate) mod routing;
 
-pub(crate) fn execute_history_action(
-    action: On<HistoryAction>,
-    routing: routing::Routing,
-    mut commands: Commands,
-) {
-    routing.execute(
-        *action,
-        &mut commands,
-        crate::asset_browser::deletion::history_step,
-    );
-}
+mod dispatch;
+pub(crate) use dispatch::execute_history_action;
 
 mod synchronization;
 use synchronization::sync_effect_history_ledger;
@@ -166,22 +157,24 @@ mod tests {
         };
         let parent = app.world_mut().spawn(scope).id();
         let target = app.world_mut().spawn(ChildOf(parent)).id();
-        app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: NormalizedRenderTarget::None {
-                    width: 800,
-                    height: 600,
-                },
-                position: Vec2::ZERO,
-            },
-            Press {
+        app.world_mut()
+            .trigger(bevy::picking::events::PointerPress {
+                entity: target,
+                pointer: bevy::picking::events::Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: NormalizedRenderTarget::None {
+                            width: 800,
+                            height: 600,
+                        },
+                        position: Vec2::ZERO,
+                    },
+                ),
+
                 button: PointerButton::Primary,
                 count: 1,
                 hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            },
-            target,
-        ));
+            });
     }
 
     #[test]
@@ -605,7 +598,7 @@ mod tests {
         app.add_observer(queue_history_action_activation);
         let action = app
             .world_mut()
-            .spawn((HistoryAction::Undo, FeathersActionButton, Interaction::None))
+            .spawn((HistoryAction::Undo, FeathersActionButton))
             .id();
 
         app.world_mut().trigger(Activate { entity: action });
@@ -613,7 +606,7 @@ mod tests {
 
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
-        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+        assert!(action.contains::<bevy::ui::Pressed>());
     }
 
     #[test]
@@ -637,12 +630,7 @@ mod tests {
         let background = BackgroundColor(theme::BUTTON);
         let button = app
             .world_mut()
-            .spawn((
-                HistoryAction::Undo,
-                FeathersActionButton,
-                Interaction::None,
-                background,
-            ))
+            .spawn((HistoryAction::Undo, FeathersActionButton, background))
             .id();
         app.update();
         assert_eq!(
@@ -664,10 +652,7 @@ mod tests {
                 .get::<PendingFeathersActivation>(button)
                 .is_none()
         );
-        assert_eq!(
-            app.world().get::<Interaction>(button),
-            Some(&Interaction::None)
-        );
+        assert!(app.world().get::<bevy::ui::Pressed>(button).is_none());
         assert_eq!(
             app.world().get::<BackgroundColor>(button),
             Some(&background)

@@ -40,16 +40,15 @@ fn location() -> Location {
 }
 
 fn drop_on(app: &mut App, source: Entity, target: Entity, button: PointerButton) {
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location(),
-        DragDrop {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragDrop {
+            entity: target,
+            pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location()),
+
             button,
             dropped: source,
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        target,
-    ));
+        });
     app.world_mut().flush();
 }
 
@@ -199,16 +198,15 @@ fn browser_hover_previews_effect_and_cancel_removes_gap_without_editing() {
         .spawn_empty()
         .observe(show_invalid_timeline_drop_feedback)
         .id();
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location(),
-        DragEnter {
+    app.world_mut()
+        .trigger(bevy::picking::events::PointerDragEnter {
+            entity: target,
+            pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location()),
+
             button: PointerButton::Primary,
             dragged: source,
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        target,
-    ));
+        });
     assert_eq!(
         app.world()
             .resource::<TimelineState>()

@@ -1,8 +1,9 @@
-# Aestra candidate patch for bevy_pbr 0.20.0
+# Aestra workspace patch for bevy_pbr 0.20.0
 
 This is the actual published 0.20.0 crate with original shaders, assets and licenses.
-It is used only by `benchmarks/bevy-upgrade/patches-020`. The working 0.19 workspace
-still selects `vendor/bevy_pbr`. `UPSTREAM_SHA256.json` records the registry archive
+It is selected by the root workspace's Bevy 0.20 cutover and independently qualified
+by `benchmarks/bevy-upgrade/patches-020`. The retained 0.19 patch is historical,
+not the active editor/runtime dependency. `UPSTREAM_SHA256.json` records the registry archive
 checksum and all original file hashes. Intentional changes are limited to
 `src/cluster/gpu.rs` and `src/cluster/mod.rs`.
 

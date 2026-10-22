@@ -64,4 +64,5 @@ pub(super) fn frame_graph_viewports(
 }
 
 #[cfg(test)]
+#[path = "framing/tests.rs"]
 mod tests;

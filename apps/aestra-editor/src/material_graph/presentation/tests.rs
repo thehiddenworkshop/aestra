@@ -1,11 +1,39 @@
-use super::context::semantic;
-use super::*;
+use crate::feathers::{
+    action_activation::{FeathersActionButton, PendingFeathersActivation},
+    node_graph::{GraphPinEdit, GraphPresentationEdit, GraphViewportMemory},
+};
+use crate::history::asset_order::Context;
 use crate::history::{
     EditorHistoryLedger, HistoryAction, MaterialProgramEditHistory, execute_history_action,
 };
+use crate::material_document::MaterialEditingTarget;
 use crate::material_function_editor::FunctionEditor;
+use crate::material_graph::{
+    MaterialGraphPaletteState, MaterialGraphPreviewState, MaterialGraphPreviewTarget,
+    MaterialGraphSelectionState,
+    keys::{
+        MATERIAL_GRAPH_OUTPUT_NODE_KEY, function_graph_memory_key,
+        material_graph_expression_node_key, material_graph_view_key,
+    },
+    menu_actions::handle_material_graph_palette_actions,
+    palette::MaterialGraphPaletteAction,
+    presentation::{
+        Snapshot, Transaction, arrange,
+        batch_input::{context_for_origin, record},
+        context::semantic,
+    },
+};
+use crate::properties::MaterialStackInspectorState;
+use crate::{EditorSession, ProjectEffectCatalog};
+use aestra_compiler::{MaterialCompiler, MaterialGraphCreateKind};
+use aestra_core::{
+    MaterialExpressionId, MaterialProgramId,
+    material::{MaterialExpression, MaterialExpressionKind, MaterialProgram, MaterialValue},
+};
+use bevy::prelude::*;
+use std::collections::{BTreeMap, BTreeSet};
 
-fn fixture() -> (
+pub(crate) fn fixture() -> (
     tempfile::TempDir,
     App,
     MaterialProgram,
@@ -34,9 +62,8 @@ fn fixture() -> (
         .init_resource::<MaterialProgramEditHistory>()
         .init_resource::<EditorHistoryLedger>()
         .init_resource::<FunctionEditor>()
-        .add_observer(execute_history_action)
-        .add_observer(node_edit)
-        .add_observer(pin_edit);
+        .add_observer(execute_history_action);
+    crate::material_graph::presentation::register(&mut app);
     (root, app, program, function)
 }
 
@@ -55,7 +82,7 @@ fn restored_material_layout_history_resolves_the_graph_owner() {
             .to_owned(),
         id: program.id,
     };
-    let marker = super::super::asset_drop::GraphDropTarget::program_for(
+    let marker = crate::material_graph::asset_drop::GraphDropTarget::program_for(
         app.world().resource::<EditorSession>(),
         program.id,
         &target,
@@ -94,7 +121,7 @@ fn restored_material_layout_history_resolves_the_graph_owner() {
 fn effect_graph_layout_history_does_not_inherit_the_open_material_target() {
     let (_root, mut app, program, _) = fixture();
     let graph = material_graph_view_key(program.id);
-    let marker = super::super::asset_drop::GraphDropTarget::program_for(
+    let marker = crate::material_graph::asset_drop::GraphDropTarget::program_for(
         app.world().resource::<EditorSession>(),
         program.id,
         &MaterialEditingTarget::EffectInstance,
@@ -396,12 +423,15 @@ fn palette_creation_placement_is_one_undo_and_failed_creation_leaves_it_unchange
         graph_key: graph.clone(),
         searchable: "multiply".into(),
     };
-    app.world_mut().spawn((
-        action.clone(),
-        FeathersActionButton,
-        Interaction::Pressed,
-        PendingFeathersActivation,
-    ));
+    let button = app
+        .world_mut()
+        .spawn((
+            action.clone(),
+            FeathersActionButton,
+            PendingFeathersActivation,
+        ))
+        .id();
+    crate::material_graph::control_input::set_pressed(app.world_mut(), button, true);
     app.world_mut()
         .run_system_once(handle_material_graph_palette_actions)
         .unwrap();
@@ -440,12 +470,11 @@ fn palette_creation_placement_is_one_undo_and_failed_creation_leaves_it_unchange
     );
     let mut invalid = action;
     invalid.program = MaterialProgramId::new();
-    app.world_mut().spawn((
-        invalid,
-        FeathersActionButton,
-        Interaction::Pressed,
-        PendingFeathersActivation,
-    ));
+    let button = app
+        .world_mut()
+        .spawn((invalid, FeathersActionButton, PendingFeathersActivation))
+        .id();
+    crate::material_graph::control_input::set_pressed(app.world_mut(), button, true);
     app.world_mut()
         .run_system_once(handle_material_graph_palette_actions)
         .unwrap();
@@ -458,7 +487,7 @@ fn palette_creation_placement_is_one_undo_and_failed_creation_leaves_it_unchange
     assert_eq!(app.world().resource::<EditorSession>().effect, effect);
 }
 
-fn step(app: &mut App, undo: bool) {
+pub(crate) fn step(app: &mut App, undo: bool) {
     app.world_mut().trigger(if undo {
         HistoryAction::Undo
     } else {

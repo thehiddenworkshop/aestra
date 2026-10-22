@@ -150,7 +150,10 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap()
             .unwrap();
-        let bytes = readback.slice(..).get_mapped_range();
+        let bytes = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped");
         let words: Vec<_> = bytes
             .as_chunks::<4>()
             .0
@@ -396,7 +399,7 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
     );
     sampled.blend_mode = aestra_gpu::GpuBlend::Additive as u32;
     let perspective = GpuTrailCullParams {
-        clip_from_world: Mat4::perspective_infinite_reverse_rh(1.0, 1.0, 0.1),
+        clip_from_world: bevy::math::proj::perspective_infinite_reverse(1.0, 1.0, 0.1),
         ..params
     };
     assert_eq!(
@@ -438,8 +441,8 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
         "sampled views cannot trust stale epoch bounds either"
     );
     for projection in [
-        Mat4::perspective_infinite_reverse_rh(1.0, 960.0 / 540.0, 0.1),
-        Mat4::orthographic_rh(-16.0, 16.0, -9.0, 9.0, 0.1, 1000.0),
+        bevy::math::proj::perspective_infinite_reverse(1.0, 960.0 / 540.0, 0.1),
+        bevy::math::proj::orthographic(-16.0, 16.0, -9.0, 9.0, 0.1, 1000.0),
     ] {
         for viewport in [
             bevy::math::Vec2::new(960.0, 540.0),

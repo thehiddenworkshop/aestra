@@ -4,7 +4,7 @@ pub(super) fn compose(wgsl: &str, enabled: bool) -> String {
     super::shader_composition::compose_material(
         wgsl,
         enabled,
-        super::shader_composition::Dialect::Bevy019,
+        super::shader_composition::Dialect::Bevy020,
     )
 }
 
@@ -26,11 +26,13 @@ mod tests {
             )
             .unwrap();
         let source = compose(&compiled.shader.wgsl, true);
-        assert!(source.contains("#ifdef AESTRA_SCENE_POINT_LIGHTING"));
+        assert!(source.contains("@if(AESTRA_SCENE_POINT_LIGHTING)"));
         assert!(source.contains("aestra_bevy_point_irradiance(world, pixel)"));
-        assert!(source.contains("#else\n    return vec3<f32>(0.0);"));
-        assert!(source.contains("#ifndef AESTRA_SCENE_POINT_LIGHTING\n@group(0) @binding(0)\nvar<uniform> view: View;\n#endif"));
-        assert!(source.contains("#import bevy_pbr::mesh_view_bindings::view"));
+        assert!(source.contains("@else { return vec3<f32>(0.0); }"));
+        assert!(source.contains(
+            "@if(!AESTRA_SCENE_POINT_LIGHTING)\n@group(0) @binding(0)\nvar<uniform> view: View;"
+        ));
+        assert!(source.contains("import bevy_pbr::render::mesh_view_bindings::view;"));
         assert_eq!(compose(&compiled.shader.wgsl, false), compiled.shader.wgsl);
     }
 

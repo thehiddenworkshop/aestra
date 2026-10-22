@@ -1,8 +1,10 @@
 //! Bounded asynchronous full and targeted arrangement with stale-result rejection.
 
-use super::layout_adapter::LayoutAdapter;
-use super::*;
 use crate::document::{DocumentId, DocumentKey};
+use crate::feathers::node_graph::{
+    GraphViewportMemory,
+    geometry::{GraphNodeKey, GraphViewKey},
+};
 use crate::feathers::{
     graph_layout::{
         GraphLayoutEngine, GraphLayoutError, GraphLayoutNodeState, GraphLayoutRegion,
@@ -12,8 +14,23 @@ use crate::feathers::{
     },
     node_graph::geometry::{GraphGeometryRegistry, GraphGeometryView},
 };
+use crate::material_graph::{
+    keys::{
+        MATERIAL_GRAPH_OUTPUT_NODE_KEY, function_graph_memory_key,
+        material_graph_expression_node_key, material_graph_view_key,
+    },
+    layout_adapter::LayoutAdapter,
+    presentation,
+};
+use crate::{EditorSession, ProjectEffectCatalog};
+use aestra_authoring::MaterialAuthoringDocument;
+use aestra_compiler::MaterialCompiler;
+use aestra_core::MaterialProgramId;
+use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
+use std::collections::{BTreeMap, BTreeSet};
 
+#[path = "arrange/request.rs"]
 mod request;
 pub(crate) use request::{ArrangeGraph, ArrangeScope};
 
@@ -350,6 +367,7 @@ fn memory_key(asset: DocumentKey, node: GraphNodeKey) -> Result<String, &'static
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aestra_core::material::MaterialProgram;
 
     #[test]
     fn restored_material_tab_arranges_from_its_explicit_target_before_focus() {
@@ -383,3 +401,7 @@ mod tests {
         assert_eq!(document.programs.as_slice(), [program]);
     }
 }
+
+#[cfg(test)]
+#[path = "arrange/qualification_tests.rs"]
+mod qualification_tests;

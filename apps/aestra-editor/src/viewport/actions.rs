@@ -119,8 +119,9 @@ type UnclassifiedViewportControl = (
 );
 
 pub(super) fn audit_viewport_controls(controls: Query<Entity, UnclassifiedViewportControl>) {
-    #[cfg(debug_assertions)]
-    if let Some(entity) = controls.iter().next() {
+    if cfg!(debug_assertions)
+        && let Some(entity) = controls.iter().next()
+    {
         panic!(
             "viewport control {entity:?} must use FeathersActionButton or be explicitly marked \
              EditorNativeControl"

@@ -195,18 +195,67 @@ fn pressed_without_activate_cannot_edit_or_close_menus() {
 }
 
 #[test]
-fn pending_without_pressed_state_does_not_dispatch() {
-    let mut f = Fixture::new();
-    let timeline = f.timeline();
-    let choreography = f.choreography();
-    for button in [timeline, choreography] {
+fn native_release_after_activate_dispatches_exactly_one_undoable_edit() {
+    use bevy::picking::{
+        backend::HitData,
+        events::{Pointer, PointerRelease},
+        pointer::{Location, PointerButton, PointerId},
+    };
+    for choreography in [false, true] {
+        let mut f = Fixture::new();
+        f.app.add_plugins(bevy::ui_widgets::ButtonPlugin);
+        let button = if choreography {
+            f.choreography()
+        } else {
+            f.timeline()
+        };
         f.app
             .world_mut()
             .entity_mut(button)
-            .insert(PendingFeathersActivation);
+            .insert(bevy::ui_widgets::Button);
+        f.action(Activate { entity: button });
+        // Native picking releases the button before application Update consumes Activate.
+        f.action(PointerRelease {
+            entity: button,
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::RenderTarget::Window(bevy::window::WindowRef::Entity(
+                        Entity::PLACEHOLDER,
+                    ))
+                    .normalize(None)
+                    .unwrap(),
+                    position: Vec2::ZERO,
+                },
+            ),
+            button: PointerButton::Primary,
+            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+        });
+        assert!(!control_input::is_pressed(f.app.world(), button));
+        assert!(
+            f.app
+                .world()
+                .get::<PendingFeathersActivation>(button)
+                .is_some()
+        );
+        f.clean();
+        f.app.update();
+        if choreography {
+            assert!(!f.session().effect.emitters[0].enabled);
+        } else {
+            assert_eq!(f.session().effect.markers.len(), f.before.markers.len() + 1);
+        }
+        assert!(
+            f.app
+                .world()
+                .get::<PendingFeathersActivation>(button)
+                .is_none()
+        );
+        let after = f.session().effect.clone();
+        f.app.update();
+        assert_eq!(f.session().effect, after);
+        f.roundtrip();
     }
-    f.app.update();
-    f.clean();
 }
 
 #[test]
@@ -251,19 +300,26 @@ fn repeated_activation_before_dispatch_coalesces_but_later_activation_edits_agai
 }
 
 #[test]
-fn pending_added_after_unchanged_press_waits_for_new_press_transition() {
+fn activation_after_unchanged_press_dispatches_once_without_requiring_another_press() {
     let mut f = Fixture::new();
     let button = f.timeline();
     control_input::set_pressed(f.app.world_mut(), button, true);
     f.app.update();
-    f.app
-        .world_mut()
-        .entity_mut(button)
-        .insert(PendingFeathersActivation);
-    f.app.update();
     f.clean();
-    control_input::set_pressed(f.app.world_mut(), button, true);
+    // Activate, not a second Pressed transition, is the action's authority.
+    f.action(Activate { entity: button });
+    control_input::set_pressed(f.app.world_mut(), button, false);
     f.app.update();
+    assert_eq!(f.session().effect.markers.len(), f.before.markers.len() + 1);
+    assert!(
+        f.app
+            .world()
+            .get::<PendingFeathersActivation>(button)
+            .is_none()
+    );
+    let after = f.session().effect.clone();
+    f.app.update();
+    assert_eq!(f.session().effect, after);
     f.roundtrip();
 }
 

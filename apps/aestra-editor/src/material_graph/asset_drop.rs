@@ -1,87 +1,34 @@
 //! Typed browser function drops shared by material and function graph viewports.
-use super::*;
+use crate::asset_drop::input::{DropLocation, PointerDragDrop, PointerDragEnter};
 use crate::asset_drop::{AssetPayload, AuthoringDropGuard};
+use crate::feathers::{
+    context_menu::pointer_position_in_node,
+    node_graph::{FeathersGraphViewport, GraphViewportMemory, NODE_HEADER_HEIGHT, NODE_WIDTH},
+};
+use crate::history::{EditorHistoryLedger, MaterialProgramEditHistory};
 use crate::material_document::MaterialEditingTarget;
 use crate::material_function_editor::FunctionEditor;
+use crate::material_graph::{
+    keys::material_graph_expression_node_key, presentation, projection::selected_projection_for,
+    workspace_layout::COLUMN_WIDTH,
+};
+use crate::{EditorSession, ProjectEffectCatalog};
+use aestra_authoring::{
+    MaterialAuthoringDocument, MaterialCommandExecutor, MaterialToolCommand, MaterialToolPlanner,
+};
 use aestra_authoring::{MaterialCommand, MaterialFunctionBodyCommand, MaterialTransaction};
-use aestra_core::material::{MaterialFunction, MaterialFunctionRef};
+use aestra_compiler::{MaterialCompiler, MaterialGraphCreateKind};
+use aestra_core::{
+    MaterialExpressionId,
+    material::{MaterialExpressionKind, MaterialFunction, MaterialFunctionRef, MaterialProgram},
+};
 use aestra_project::ProjectAssetId;
-use bevy::picking::events::DragEnter;
+use bevy::prelude::*;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Owner {
-    Program(MaterialProgramId),
-    Function(MaterialFunctionId),
-}
-
-/// A surviving UI entity must not edit a graph from a previous document/target.
-#[derive(Component, Clone)]
-pub(crate) struct GraphDropTarget {
-    owner: Owner,
-    context: MaterialEditingTarget,
-    effect: aestra_core::EffectId,
-}
-
-impl GraphDropTarget {
-    #[cfg(test)]
-    pub(crate) fn program(session: &EditorSession, id: MaterialProgramId) -> Self {
-        Self::program_for(session, id, &session.material_target)
-    }
-    pub(crate) fn program_for(
-        session: &EditorSession,
-        id: MaterialProgramId,
-        context: &MaterialEditingTarget,
-    ) -> Self {
-        Self {
-            owner: Owner::Program(id),
-            context: context.clone(),
-            effect: session.effect.id,
-        }
-    }
-    #[cfg(test)]
-    pub(crate) fn function(session: &EditorSession, id: MaterialFunctionId) -> Self {
-        Self::function_for(session, id, &session.material_target)
-    }
-    pub(crate) fn function_for(
-        session: &EditorSession,
-        id: MaterialFunctionId,
-        context: &MaterialEditingTarget,
-    ) -> Self {
-        Self {
-            owner: Owner::Function(id),
-            context: context.clone(),
-            effect: session.effect.id,
-        }
-    }
-    fn check(&self, session: &EditorSession) -> Result<(), String> {
-        if session.pending_change.is_some() {
-            return Err("Resolve the pending change before adding a function".into());
-        }
-        if matches!(self.context, MaterialEditingTarget::EffectInstance)
-            && self.effect != session.effect.id
-        {
-            return Err("Graph changed; drag the function again".into());
-        }
-        if !matches!(
-            (&self.owner, &self.context),
-            (Owner::Program(_), MaterialEditingTarget::EffectInstance)
-                | (Owner::Program(_), MaterialEditingTarget::Program { .. })
-                | (Owner::Function(_), MaterialEditingTarget::Function { .. })
-        ) {
-            return Err("Graph target changed; drag the function again".into());
-        }
-        Ok(())
-    }
-    pub(crate) fn editing_target(&self) -> &MaterialEditingTarget {
-        &self.context
-    }
-    fn key(&self, catalog: &ProjectEffectCatalog) -> String {
-        match self.owner {
-            Owner::Program(id) => material_graph_view_key(id),
-            Owner::Function(id) => format!("function:{}:{id}", catalog.root().display()),
-        }
-    }
-}
+#[path = "asset_drop/target.rs"]
+mod target;
+pub(crate) use target::GraphDropTarget;
+use target::Owner;
 
 enum Replacement {
     Program {
@@ -255,7 +202,7 @@ pub(super) fn register(app: &mut App) {
 
 #[allow(clippy::too_many_arguments)]
 fn hover(
-    mut event: On<Pointer<DragEnter>>,
+    mut event: On<PointerDragEnter>,
     sources: Query<&AssetPayload>,
     targets: Query<&GraphDropTarget>,
     parents: Query<&ChildOf>,
@@ -306,7 +253,7 @@ fn hover(
 
 #[allow(clippy::too_many_arguments)]
 fn drop_function(
-    mut event: On<Pointer<DragDrop>>,
+    mut event: On<PointerDragDrop>,
     sources: Query<&AssetPayload>,
     targets: Query<&GraphDropTarget>,
     parents: Query<&ChildOf>,
@@ -339,7 +286,7 @@ fn drop_function(
             .get(entity)
             .map_err(|_| "Graph viewport is unavailable")?;
         let position = viewport.unproject_viewport_point(pointer_position_in_node(
-            event.pointer_location.position,
+            event.drop_position(),
             computed,
             transform,
         ));
@@ -356,12 +303,8 @@ fn drop_function(
                 session.open_material_function(&catalog, *id)?;
             }
         }
-        let layout_before = super::presentation::Snapshot::capture(
-            &target.key(&catalog),
-            &catalog,
-            &session,
-            &memory,
-        );
+        let layout_before =
+            presentation::Snapshot::capture(&target.key(&catalog), &catalog, &session, &memory);
         match plan.replacement {
             Replacement::Program { before, after } => {
                 if session.standalone_material().is_some() {
@@ -426,4 +369,5 @@ fn cleanup(
 }
 
 #[cfg(test)]
+#[path = "asset_drop/tests.rs"]
 mod tests;

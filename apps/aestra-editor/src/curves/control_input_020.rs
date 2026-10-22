@@ -21,7 +21,7 @@ pub(super) struct Controls<'w, 's> {
             Option<Ref<'static, Pressed>>,
             Option<Ref<'static, Hovered>>,
             Has<FeathersActionButton>,
-            Has<PendingFeathersActivation>,
+            Option<Ref<'static, PendingFeathersActivation>>,
             &'static mut BackgroundColor,
         ),
         Or<(With<NativeButton>, With<FeathersActionButton>)>,
@@ -39,13 +39,14 @@ impl Controls<'_, '_> {
         self.query.iter_mut().filter_map(
             move |(entity, action, pressed, hovered, feathers, pending, background)| {
                 let changed = action.is_added()
+                    || pending.as_ref().is_some_and(|pending| pending.is_added())
                     || background.is_added()
                     || removed.contains(&entity)
                     || pressed.as_ref().is_some_and(|v| v.is_changed())
                     || hovered.as_ref().is_some_and(|v| v.is_changed());
                 changed.then(|| Control {
                     entity,
-                    phase: if pressed.is_some() {
+                    phase: if pending.is_some() || pressed.is_some() {
                         Phase::Pressed
                     } else if hovered.as_ref().is_some_and(|v| v.0) {
                         Phase::Hovered
@@ -54,7 +55,7 @@ impl Controls<'_, '_> {
                     },
                     action: *action,
                     feathers,
-                    pending,
+                    pending: pending.is_some(),
                     background,
                 })
             },

@@ -67,6 +67,7 @@ fn gpu() -> Option<Gpu> {
         power_preference: wgpu::PowerPreference::HighPerformance,
         force_fallback_adapter: false,
         compatible_surface: None,
+        ..Default::default()
     }))
     .ok();
     let adapter = adapter.filter(|adapter| {
@@ -601,7 +602,11 @@ fn the_density_reaches_its_volume_texture_cell_for_cell() {
     gpu.device
         .poll(wgpu::PollType::wait_indefinitely())
         .unwrap();
-    let bytes = readback.slice(..).get_mapped_range().to_vec();
+    let bytes = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("completed test readback must remain mapped")
+        .to_vec();
     let n = RESOLUTION as usize;
     let mut compared = 0;
     for (index, expected) in density.iter().enumerate() {
@@ -1439,6 +1444,7 @@ fn read_floats(gpu: &Gpu, buffer: &wgpu::Buffer) -> Vec<f32> {
         .unwrap();
     let values = slice
         .get_mapped_range()
+        .expect("completed test readback must remain mapped")
         .as_chunks::<4>()
         .0
         .iter()

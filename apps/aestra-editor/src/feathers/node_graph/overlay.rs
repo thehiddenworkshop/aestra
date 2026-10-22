@@ -2,6 +2,7 @@
 use super::{geometry::*, *};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[path = "overlay/model.rs"]
 mod model;
 
 #[derive(Default)]
@@ -250,4 +251,5 @@ pub(super) fn reconcile(
 }
 
 #[cfg(test)]
+#[path = "overlay/tests.rs"]
 mod tests;

@@ -56,6 +56,7 @@ impl Harness {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: None,
+            ..Default::default()
         }))
         .ok()?;
         if !adapter
@@ -152,6 +153,7 @@ impl Harness {
             .expect("the readback maps");
         let values = slice
             .get_mapped_range()
+            .expect("completed test readback must remain mapped")
             .as_chunks::<4>()
             .0
             .iter()

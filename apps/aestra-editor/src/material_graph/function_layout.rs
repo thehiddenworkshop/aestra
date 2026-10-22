@@ -1,8 +1,29 @@
 //! Function graphs share the persisted node/camera schema, while retaining distinct document IDs.
-use super::*;
+use crate::ProjectEffectCatalog;
+#[cfg(test)]
+use crate::feathers::node_graph::geometry::{GraphDocumentKey, GraphViewKey};
+use crate::feathers::node_graph::{GraphViewportMemory, geometry::GraphGeometryView};
+#[cfg(test)]
+use crate::feathers::node_graph::{GraphViewportProps, spawn_graph_viewport};
+use crate::material_graph::keys::{function_graph_memory_key, material_graph_view_key};
+#[cfg(test)]
+use crate::material_graph::{
+    MaterialGraphPreviewState,
+    keys::{MATERIAL_GRAPH_OUTPUT_NODE_KEY, material_graph_expression_node_key},
+    layout_persistence::*,
+};
 use crate::{document::DocumentKey, feathers::node_graph::geometry::GraphGeometryRegistry};
 use aestra_core::material::MaterialFunction;
+#[cfg(test)]
+use aestra_core::{
+    MaterialExpressionId, MaterialFunctionId, MaterialProgramId, material::MaterialProgram,
+};
+use aestra_project::{MaterialGraphNodeLayout, MaterialGraphViewportLayout, ProjectEditorLayout};
+use bevy::prelude::*;
+use std::collections::BTreeSet;
 use std::path::Path;
+#[cfg(test)]
+use std::time::Instant;
 
 const OUTPUT_NODE: &str = "outputs";
 
@@ -127,4 +148,5 @@ pub(super) fn mirror_graph_camera(
 }
 
 #[cfg(test)]
+#[path = "function_layout/tests.rs"]
 mod tests;

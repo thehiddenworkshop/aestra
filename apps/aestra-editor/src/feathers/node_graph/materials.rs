@@ -40,7 +40,7 @@ impl Default for GraphWireMaterial {
 
 impl UiMaterial for GraphWireMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://aestra_editor/feathers/shaders/node_graph_wire.wgsl".into()
+        "embedded://aestra_editor/feathers/shaders/node_graph_wire.wesl".into()
     }
 }
 
@@ -67,7 +67,7 @@ impl Default for GraphGridMaterial {
 
 impl UiMaterial for GraphGridMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://aestra_editor/feathers/shaders/node_graph_grid.wgsl".into()
+        "embedded://aestra_editor/feathers/shaders/node_graph_grid.wesl".into()
     }
 }
 
@@ -105,11 +105,11 @@ mod tests {
         for (shader, expected) in [
             (
                 GraphWireMaterial::fragment_shader(),
-                "embedded://aestra_editor/feathers/shaders/node_graph_wire.wgsl",
+                "embedded://aestra_editor/feathers/shaders/node_graph_wire.wesl",
             ),
             (
                 GraphGridMaterial::fragment_shader(),
-                "embedded://aestra_editor/feathers/shaders/node_graph_grid.wgsl",
+                "embedded://aestra_editor/feathers/shaders/node_graph_grid.wesl",
             ),
         ] {
             let ShaderRef::Path(path) = shader else {

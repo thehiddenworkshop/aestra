@@ -1,7 +1,7 @@
 //! Pointer click API boundary only: native event identity, location and propagation.
-pub(super) use bevy::picking::events::{PointerClick, PointerPress};
+pub(crate) use bevy::picking::events::{PointerClick, PointerPress};
 use bevy::prelude::*;
-pub(super) trait GraphClick {
+pub(crate) trait GraphClick {
     fn graph_click_position(&self) -> Vec2;
 }
 impl GraphClick for PointerClick {
@@ -10,7 +10,7 @@ impl GraphClick for PointerClick {
     }
 }
 #[cfg(test)]
-pub(super) fn click(
+pub(crate) fn click(
     entity: Entity,
     window: Entity,
     position: Vec2,
@@ -42,13 +42,13 @@ pub(super) fn click(
 }
 
 #[cfg(test)]
-pub(super) fn with_click_count(mut click: PointerClick, count: u8) -> PointerClick {
+pub(crate) fn with_click_count(mut click: PointerClick, count: u8) -> PointerClick {
     click.count = count;
     click
 }
 
 #[cfg(test)]
-pub(super) fn press(
+pub(crate) fn press(
     entity: Entity,
     window: Entity,
     button: bevy::picking::pointer::PointerButton,

@@ -463,7 +463,7 @@ fn keyboard(
     }
 }
 
-fn outside(event: On<Pointer<Click>>, picker: Res<Picker>, mut commands: Commands) {
+fn outside(event: On<PointerClick>, picker: Res<Picker>, mut commands: Commands) {
     if event.button == PointerButton::Primary
         && picker
             .0

@@ -223,7 +223,7 @@ mod tests {
             super::super::FireworksCamera::Wide,
         ] {
             let view = camera.transform().to_matrix().inverse();
-            let projection = Mat4::perspective_infinite_reverse_rh(
+            let projection = bevy::math::proj::perspective_infinite_reverse(
                 PerspectiveProjection::default().fov,
                 super::super::VIEW_WIDTH as f32 / super::super::VIEW_HEIGHT as f32,
                 0.1,
@@ -349,7 +349,7 @@ mod tests {
             super::super::FireworksCamera::Wide,
         ] {
             let view = camera.transform().to_matrix().inverse();
-            let projection = Mat4::perspective_infinite_reverse_rh(
+            let projection = bevy::math::proj::perspective_infinite_reverse(
                 PerspectiveProjection::default().fov,
                 super::super::VIEW_WIDTH as f32 / super::super::VIEW_HEIGHT as f32,
                 0.1,

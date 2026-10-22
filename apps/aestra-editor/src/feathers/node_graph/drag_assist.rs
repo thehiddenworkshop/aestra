@@ -4,9 +4,11 @@
 use super::geometry::*;
 use super::*;
 
+#[path = "drag_assist/model.rs"]
 pub(super) mod model;
 
-mod controls;
+#[path = "drag_assist/controls.rs"]
+pub(super) mod controls;
 #[cfg(test)]
 pub(super) use controls::Toggle;
 pub(crate) use controls::spawn_controls;
@@ -66,4 +68,5 @@ pub(super) fn sync_guides(
 }
 
 #[cfg(test)]
+#[path = "drag_assist/tests.rs"]
 mod tests;

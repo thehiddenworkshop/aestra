@@ -110,7 +110,10 @@ fn normal_maps_match_reference_across_mirrors_handedness_strength_and_convention
         .recv_timeout(std::time::Duration::from_secs(5))
         .unwrap()
         .unwrap();
-    let mapped = readback.slice(..).get_mapped_range();
+    let mapped = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("completed test readback must remain mapped");
     for (index, (bytes, expected)) in mapped.as_chunks::<16>().0.iter().zip(expected).enumerate() {
         let actual: [f32; 3] = std::array::from_fn(|i| {
             f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())

@@ -236,7 +236,10 @@ fn check_compaction(owners: u32, dense: bool) {
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap()
             .unwrap();
-        let data = readback.slice(..).get_mapped_range();
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped");
         let words: Vec<_> = data
             .as_chunks::<4>()
             .0
@@ -374,7 +377,10 @@ fn check_page_total_scan(
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap()
             .unwrap();
-        let data = readback.slice(..).get_mapped_range();
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped");
         let words: Vec<_> = data
             .as_chunks::<4>()
             .0

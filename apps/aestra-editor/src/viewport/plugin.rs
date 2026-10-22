@@ -100,9 +100,15 @@ impl Plugin for ViewportPlugin {
                 (
                     sync_preview_camera_viewport
                         .after(UiSystems::Layout)
-                        .before(TransformGizmoSystems),
+                        // In 0.20 layout follows visibility/transform propagation, while
+                        // gizmo dragging precedes propagation. Do not order layout before
+                        // the whole gizmo set: that creates a PostUpdate cycle. Interaction
+                        // uses the committed viewport; publish this frame's layout before
+                        // building the gizmo overlay for rendering.
+                        .after(TransformGizmoSystems),
                     update_emitter_transform_gizmo
                         .after(TransformGizmoSystems)
+                        .after(sync_preview_camera_viewport)
                         .before(TransformGizmoRenderStep),
                     apply_transform_gizmo_drag_feedback
                         .after(TransformGizmoRenderStep)

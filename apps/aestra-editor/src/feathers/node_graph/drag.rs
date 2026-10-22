@@ -34,7 +34,9 @@ pub(super) fn begin_graph_node_drag<F: bevy::ecs::query::QueryFilter>(
         return;
     }
     let Some(entity) = graph_node_from_target(
-        drag.event_target(),
+        // Global observers run again while bubbling. Keep the original control
+        // ancestry, otherwise a rejected socket drag can become a node drag later.
+        drag.original_event_target(),
         &nodes.as_readonly(),
         &parents,
         &controls,

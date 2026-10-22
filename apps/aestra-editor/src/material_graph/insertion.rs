@@ -1,9 +1,24 @@
 //! One semantic insertion adapter for material programs and function bodies.
-use super::*;
 use crate::feathers::node_graph::GraphWidgetSync;
 use crate::feathers::node_graph::insertion::{self as widget, Candidate, Wire};
+use crate::feathers::node_graph::{
+    GraphViewportMemory,
+    geometry::{GraphGeometryView, GraphNodeKey},
+};
+use crate::history::{EditorHistoryLedger, MaterialProgramEditHistory};
+use crate::material_graph::{
+    asset_drop, edge_target, execution::activate_material_graph_target, presentation,
+};
+use crate::{EditorSession, ProjectEffectCatalog};
+use aestra_authoring::{MaterialAuthoringDocument, MaterialCommandExecutor};
 use aestra_authoring::{MaterialCommand, MaterialFunctionBodyCommand, MaterialTransaction};
-use aestra_compiler::{MaterialFunctionBodyProjection, MaterialFunctionGraphTarget};
+use aestra_compiler::MaterialCompiler;
+use aestra_compiler::MaterialFunctionBodyProjection;
+use aestra_core::{
+    MaterialExpressionId,
+    material::{MaterialExpressionKind, MaterialProgram},
+};
+use bevy::prelude::*;
 
 pub(super) fn register(app: &mut App) {
     app.init_resource::<widget::State>()
@@ -12,29 +27,9 @@ pub(super) fn register(app: &mut App) {
         .add_systems(Update, widget::refresh.after(GraphWidgetSync));
 }
 
-pub(crate) fn function_wire(
-    source: MaterialExpressionId,
-    target: &MaterialFunctionGraphTarget,
-) -> Option<Wire> {
-    use crate::feathers::node_graph::geometry::GraphGeometryPort;
-    Some(match target {
-        MaterialFunctionGraphTarget::Output(output) => Wire {
-            source: GraphNodeKey::Expression(source),
-            target: GraphNodeKey::FunctionOutputs,
-            port: GraphGeometryPort::FunctionOutput(*output),
-        },
-        MaterialFunctionGraphTarget::Argument { expression, input } => Wire::material(
-            source,
-            MaterialConnectionTarget::ExpressionInput {
-                expression: *expression,
-                input: MaterialExpressionInput::FunctionArgument(*input),
-            },
-        ),
-        MaterialFunctionGraphTarget::Input { expression, port } => {
-            Wire::material(source, input_target(*expression, port)?)
-        }
-    })
-}
+#[path = "insertion/function_wire.rs"]
+mod function_wire;
+pub(crate) use function_wire::function_wire;
 
 enum Replacement {
     Program(MaterialProgram, Box<MaterialProgram>),
@@ -375,4 +370,9 @@ fn drop_node(
 }
 
 #[cfg(test)]
+#[path = "insertion/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "insertion/qualification_tests.rs"]
+mod qualification_tests;

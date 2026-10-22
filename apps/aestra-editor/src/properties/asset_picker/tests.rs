@@ -354,23 +354,26 @@ fn clicks_inside_picker_do_not_dismiss_but_backdrop_does() {
     let overlay = pending.overlay;
     let search = pending.search;
     for target in [search, overlay] {
-        f.app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: NormalizedRenderTarget::None {
-                    width: 800,
-                    height: 600,
-                },
-                position: Vec2::ZERO,
-            },
-            Click {
+        f.app
+            .world_mut()
+            .trigger(bevy::picking::events::PointerClick {
+                entity: target,
+                pointer: bevy::picking::events::Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: NormalizedRenderTarget::None {
+                            width: 800,
+                            height: 600,
+                        },
+                        position: Vec2::ZERO,
+                    },
+                ),
+
                 button: PointerButton::Primary,
                 hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
                 duration: std::time::Duration::ZERO,
                 count: 1,
-            },
-            target,
-        ));
+            });
         f.app.world_mut().flush();
         assert_eq!(
             f.app.world().resource::<Picker>().0.is_some(),

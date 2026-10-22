@@ -2712,3 +2712,577 @@ This is headless real-Feathers header/control and layout evidence, not the full
 material canvas, native picking, rendered zoom/DPI or complete graph/application
 acceptance. Next: node/socket/wire canvas composition, then full graph plugin
 integration/scheduling and workflows. Shipping remains on 0.19.1.
+
+## Material canvas, nodes, sockets and wires
+
+B20-2 slice 80 shares the actual material canvas assembly and generic viewport,
+node/socket/preview chrome, typed port presentation, semantic wires and completed
+preview cache mounting. The native workspace calls the shared builder; the
+candidate uses the same production functions with native Button identities.
+Both graph plugin registrations and original root tests stay unchanged.
+
+16 shared real-Feathers/SVG cases cover layer order/dimensions, document/view and
+semantic metadata, scoped selection/shared pins, camera seeding, wire endpoints,
+socket hit areas, preview visibility/cache isolation, constant/inline controls,
+warning styling and empty projections. See
+[implementation, limits and evidence](editor-material-canvas-2026-10-20.md).
+
+Frozen qualification passes **2,105 checks**, including **1,683 editor checks**,
+with all **1,003 input hashes** unchanged. Both strict all-target Clippy gates
+pass. Shipping passes **2,642 editor unit + 3 architecture tests**, with the same
+ten existing ignores. Workspace GPU-feature all-target checking, both formatting
+gates and whitespace validation pass; post-documentation input drift is zero.
+Shipping dependencies and toolchain stay unchanged.
+
+This is headless canvas composition, not full workspace/plugin acceptance.
+Native picking/rendered zoom/DPI, raster worker scheduling and host asset-drop/
+popup/function-inspector assembly remain separate. Next: generic pin/collapse
+and socket visual consumers, then full graph scheduling and editor workflows.
+Shipping remains on 0.19.1; no visual reference is approved.
+
+
+## Generic graph pin/collapse and socket visuals
+
+B20-2 slice 81 shares nine actual node restoration/memory-sync, pin/collapse
+activation/action, body/icon and socket visual consumers. Native boundaries keep
+shipping Interaction semantics and use 0.20 Pressed/Hovered with removal tracking.
+The existing Feathers activation classifier, authored bases, temporary offsets,
+edit events, labels and colors are preserved. All six remaining generic graph
+functions, original root tests and native graph plugin registration are unchanged.
+
+15 shared real-Feathers/SVG cases cover activation gates/consumption/coalescing,
+pin/collapse round trips, anchors/offsets/edit payloads, stale nodes, rebuilds,
+split-view/document isolation, idle writes and socket state transitions/removals,
+geometry and unrelated children. See
+[implementation, limits and evidence](editor-graph-node-controls-2026-10-20.md).
+
+Frozen qualification passes **2,120 checks**, including **1,698 editor checks**,
+with all **1,007 input hashes** unchanged. Both strict all-target Clippy gates
+pass. Shipping passes **2,657 editor unit + 3 architecture tests**, with the same
+ten existing ignores. Workspace GPU-feature all-target checking, both formatting
+gates and whitespace validation pass; post-documentation input drift is zero.
+Shipping dependencies and toolchain remain unchanged.
+
+These are headless composed-control/state tests, not OS pointer delivery or full
+graph plugin/native render acceptance. Next: remaining viewport/grid/selection
+presentation and full graph scheduling, then application/editor workflows.
+Shipping remains on 0.19.1; no visual reference is approved.
+
+## Viewport camera, grid and selection presentation
+
+B20-2 slice 82 shares the six unchanged production camera remembrance/restoration,
+grid asset/uniform and selection-outline functions. Original graph plugin
+registration/order and root tests remain unchanged; no top-level presentation
+functions remain in the native generic graph root. The candidate composition's
+previous grid/material dead-code allowance is removed.
+
+16 shared cases exercise actual Feathers/SVG graph composition, material assets,
+camera restoration/seeding/isolation/rebuilds, idle memory, grid handle reuse and
+camera-specific uniforms, missing owners/assets, same-frame canvas/grid state,
+outline zoom/nearest-ancestor behavior, geometry isolation and idle outlines. See
+[implementation, limits and evidence](editor-graph-viewport-presentation-2026-10-20.md).
+
+Frozen qualification passes **2,136 checks**, including **1,714 editor checks**,
+with all **1,009 input hashes** unchanged. Both strict all-target Clippy gates
+pass. Shipping passes **2,673 editor unit + 3 architecture tests**, with the same
+ten existing ignores. Workspace GPU-feature all-target checking, both formatting
+gates and whitespace validation pass; post-documentation input drift is zero.
+Shipping dependencies and toolchain remain unchanged.
+
+These are headless asset/component and relevant schedule-order tests, not native
+material shader rendering or complete graph plugin acceptance. Existing per-frame
+grid writes and outline policy are preserved. Next: full graph integration and
+scheduling, then application/editor workflows. Shipping remains on 0.19.1;
+no visual reference is approved.
+
+## Generic graph registration and scheduling
+
+B20-2 slice 83 shares the complete production graph registrar and embedded-control
+filter. Native geometry collection, framing, overlays and drag guides now execute
+in the 0.20 gate, including 24 existing cases previously outside it. Ten new
+integration cases exercise real registration, deferred host rebuild/readback,
+camera and canvas/grid order, action routing, teardown and measured framing.
+
+The composed tests exposed a bubbling bug: an excluded embedded control could
+later be treated as a parent-node drag. Node press/drag-start and marquee lookup
+now keep the original pointer target on both engines. Registration order and the
+original generic-root tests remain unchanged; shader embedding keeps its native
+namespace. See [implementation and validation](editor-graph-integration-2026-10-20.md).
+
+Frozen qualification passes **2,185 checks**, including **1,753 editor graph
+checks**, with all **1,011 input hashes** unchanged. Shipping passes **2,688
+editor unit + 3 architecture tests** with default parallel execution and the
+same ten existing ignores. Both strict all-target Clippy gates, workspace GPU-feature
+all-target checking, both formatting gates and whitespace validation pass.
+Root dependencies/toolchain remain unchanged; post-documentation input drift is zero.
+
+This is generic graph headless integration, not complete MaterialGraphPlugin or
+native editor acceptance. Next: material graph host/plugin composition and
+application handlers, then full editor workflows. Shipping remains on 0.19.1.
+
+## Material graph host lifecycle and wire scheduling
+
+B20-2 slice 84 shares production transient resources/cleanup, connection observers
+and the post-layout wire chain. The 22 existing connection cases now exercise
+the native registrar with unchanged assertions. Ten new cases cover document/
+project/history identity, live controls and idle ticks, partial cleanup, preserved
+placement/history, queued rebuild ordering and deferred post-layout wire assets.
+
+Cleanup now runs after MainUpdate and before UiRebuild, fixing an unspecified
+ordering edge that could expose stale state during a same-frame target change.
+The actual cleanup bodies and EditorSet identity remain unchanged. See
+[implementation and validation](editor-material-host-lifecycle-2026-10-20.md).
+
+Frozen qualification passes **2,195 checks**, including **1,763 editor graph
+checks**, with all **1,014 input hashes** unchanged. The candidate graph suite
+also passes in parallel. Shipping passes **2,698 editor unit + 3 architecture
+tests** with default parallel execution and the same ten existing ignores.
+Both strict all-target Clippy gates, formatting and whitespace checks pass.
+Root dependencies/toolchain remain unchanged.
+Workspace GPU-feature all-target checking passes; post-documentation source drift is zero.
+
+This is host lifecycle and connection/wire scheduling, not the entire material
+plugin or native editor acceptance. Next: project-bound layout persistence and
+preview-worker orchestration, then remaining host/application workflows.
+Shipping remains on 0.19.1; no visual reference is approved.
+
+## Project-bound material graph layout persistence
+
+B20-2 slice 85 shares production layout loading/restoration, debounced writing,
+exit flush and registration through `material_graph/layout_persistence.rs`, plus
+the real lifecycle and function-camera implementation. PersistenceSet's identity
+is shared without changing startup/lifecycle/Last scheduling. The disk schema,
+300 ms debounce, corrupt/newer-file protection and base-placement policy remain
+unchanged.
+
+Nine new complete-registrar tests use real temporary project files. Six existing
+lifecycle and five function-layout cases now run on both engines. The existing
+full function-canvas restart test remains intact in the shipping suite until
+that panel's composition is qualified. See
+[implementation and validation](editor-material-layout-persistence-2026-10-20.md).
+
+Frozen qualification passes **2,215 checks**, including **1,783 editor graph
+checks**, with all **1,021 input hashes** unchanged. The graph suite also passes
+in parallel. Both strict all-target Clippy gates, formatting and whitespace
+checks pass. Root dependencies/toolchain remain unchanged.
+
+Shipping passes **2,707 editor unit + 3 architecture tests** with default parallel
+execution and the same ten existing ignores. Workspace GPU-feature all-target
+checking passes; post-documentation input drift is zero.
+
+This is headless layout persistence and scheduling, not the entire material
+plugin or native editor acceptance. Next: material preview-worker orchestration,
+then remaining host/application workflows. Shipping remains on 0.19.1;
+no visual reference is approved.
+
+## Material preview-worker orchestration
+
+B20-2 slice 86 imports the actual bounded CPU worker, its native registrar and
+the shared deterministic evaluator from `material_graph/preview_pixels.rs`.
+Dependency-closure snapshots, two running-job slots, project/instance/target keys,
+cooperative cancellation, stale cache presentation and retry behavior are unchanged.
+All 25 evaluator/helper bodies and remaining native material-root tests are preserved.
+
+Nine new orchestration and two pixel cases cover real completion, duplicate views,
+instance/target isolation, slots/refill, cancellation, obsolete completed snapshots,
+same-ID project switches, retry, idle cache ticks, semantic-state preservation,
+scanline cancellation and strict/permissive fallback. Three existing worker and
+three unchanged pixel/basis cases now execute on both engines. See
+[implementation and validation](editor-material-preview-workers-2026-10-20.md).
+
+Frozen qualification passes **2,232 checks**, including **1,800 editor graph
+checks**, with all **1,024 input hashes** unchanged. The graph suite also passes
+in parallel. Both strict all-target Clippy gates, both formatting gates and
+whitespace validation pass. Root dependencies/toolchain remain unchanged.
+
+Shipping passes **2,718 editor unit + 3 architecture tests** with default parallel
+execution and the same ten existing ignores. Workspace GPU-feature all-target
+checking passes; post-documentation input drift is zero.
+
+This is CPU orchestration/image-asset publication, not native GPU previews or
+complete material-plugin/editor acceptance. Next: the material-preset preview
+pipeline and remaining host/application workflows. Shipping remains on 0.19.1;
+no visual reference is approved.
+
+## Material-preset preview pipeline
+
+B20-2 slice 87 shares actual preset composition, cache/status types, raster
+registration, recipe fingerprints, program resolution and the standard material
+seed through `material_graph/preset_previews.rs`. All seven production function
+bodies and remaining native material-root tests are unchanged. Update scheduling,
+recipe-only cache policy, publication-version refresh, built-in fallback and
+synchronous CPU rasterization are preserved.
+
+Eleven new cases cover real composition/registration, shared assets, idle ticks,
+late views, metadata versus recipe changes, removal/recovery, project switches,
+malformed entries and genuine catalog conflicts, status transitions, missing
+labels and resolved-program pixels. Three existing checks run on both engines
+with their assertions preserved. Frozen evidence includes all bundled recipes.
+See [implementation and validation](editor-material-preset-previews-2026-10-20.md).
+
+Frozen qualification passes **2,246 checks**, including **1,814 editor graph
+checks**, with all **1,035 input hashes** unchanged. The graph suite also passes
+in parallel. Both strict all-target Clippy gates, both formatting gates and
+whitespace checks pass. Root dependencies/toolchain remain unchanged.
+
+Shipping passes **2,729 editor unit + 3 architecture tests** with default parallel
+execution and the same ten existing ignores. Workspace GPU-feature all-target
+checking passes; post-documentation input drift is zero.
+
+This is CPU preset/image/status publication, not browser GPU thumbnail orchestration
+or complete material-plugin/editor acceptance. Next: saved-material asset-preview
+validation, then remaining host/application workflows. Shipping remains on 0.19.1;
+no visual reference is approved.
+
+## Saved-material asset-preview validation
+
+B20-2 slice 88 directly compiles the production saved-material preview entry
+point against both engines, sharing actual preset/evaluator dependencies.
+Renderer/traversal bodies, the three original tests and remaining native material
+root tests are unchanged. Eleven new cases cover exact/one-over limits, shared
+subgraph depth, scene displacement, duplicates, all unsupported forms, unselected
+branches, bypasses, saved defaults, supplied graph functions, nonfinite outputs
+and early cancellation. Thumbnail policy is preserved, not applied to runtime VFX.
+See [implementation and validation](editor-material-asset-previews-2026-10-20.md).
+
+Frozen qualification passes **2,260 checks**, including **1,828 editor graph
+checks**, with all **1,037 input hashes** unchanged. The graph suite also passes
+in parallel. Both strict all-target Clippy gates, both formatting gates and
+whitespace checks pass. Root dependencies/toolchain remain unchanged.
+
+Shipping passes **2,740 editor unit + 3 architecture tests** with default parallel
+execution and the same ten existing ignores. Workspace GPU-feature all-target
+checking passes; post-documentation input drift is zero.
+
+This is headless CPU asset validation, not browser GPU capture or full editor
+acceptance. Next: material-graph workspace host composition and remaining plugin/
+application integration. Shipping remains on 0.19.1; no visual reference is approved.
+
+## Material/effect workspace host composition
+
+B20-2 slice 89 shares the actual material/effect workspace branch, explicit target
+projection and drop-target identity with the 0.20 candidate. The real header,
+canvas, palette and context menus are composed together. Function graph/signature
+composition and drop execution stay in their unchanged native host; neither is
+replaced with a qualification-only implementation.
+
+Seven workspace and three identity cases cover restored explicit targets, instance
+preview binding, split cameras/shared placement, localized empty states, invalid
+drafts, palette routing and stale identities. A real split-view menu leak was
+reproduced and fixed: node/connection menus now also match their owning view.
+Projection/drop methods, menu constructors, native function composition, remaining
+drop logic and original material-root tests are unchanged by source audit. See
+[implementation and validation](editor-material-workspace-2026-10-20.md).
+
+Frozen qualification passes **2,270 checks**, including **1,838 editor graph checks**,
+with all **1,044 input hashes** unchanged. The graph suite also passes in parallel.
+Both strict all-target Clippy gates, both formatting gates and whitespace checks
+pass. Shipping passes **2,750 editor unit + 3 architecture tests**, with the same
+ten existing ignores. Workspace GPU-feature all-target checking passes;
+post-documentation input drift is zero.
+
+Next: function-graph workspace composition, then remaining plugin/application
+integration. This is headless composition, not browser GPU capture or full native
+editor acceptance. Shipping remains 0.19.1; no visual reference is approved.
+
+## Function-native canvas composition
+
+B20-2 slice 90 shares the production function toolbar, canvas, sockets, constant
+controls, wires and context menus from `material_function_editor/graph/composition.rs`.
+Actual component identities, compact/searchable action menus and function wire
+identity are reused, with no substitute program or qualification-only canvas.
+All 31 native input/wire-handler bodies and remaining insertion logic are unchanged.
+
+Eight new cases exercise explicit restored targets, split cameras/scoped actions,
+semantic sockets/wires, unavailable/custom-WESL targets, menu ownership, typed
+constants, actual catalog search, invalid drafts and bootstrap/target mapping.
+The three original menu tests additionally run on both engines; their 12 assertions
+are preserved with complete headless UI prerequisites and PostUpdate focus handling.
+See [implementation and validation](editor-function-canvas-2026-10-20.md).
+
+Frozen qualification passes **2,281 checks**, including **1,849 editor graph checks**,
+with all **1,050 input hashes** unchanged. The graph suite also passes in parallel.
+Shipping passes **2,758 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace and workspace GPU-feature all-target checks pass. Post-documentation
+input drift is zero.
+
+Next: function signature/inspection fallback and the complete graph workspace host,
+then remaining plugin/application input and action integration. This is headless
+composition, not native pointer dispatch or complete editor acceptance. Shipping
+remains 0.19.1; dependencies/toolchain and visual references are unchanged.
+
+## Complete graph workspace host and function signatures
+
+B20-2 slice 91 directly shares the full workspace host, including function graph,
+material/effect and inspection fallback branches, with the 0.20 candidate.
+The actual signature controls, formatter and component identities are reused;
+all signature input handlers and existing signature/material-root tests remain
+unchanged. No substitute canvas or action implementation is introduced.
+
+Two regressions reproduced the active function's source/edit controls leaking into
+an unfocused code tab or unavailable-target tab. Fallback reads now resolve the
+explicit tab target; the unscoped tool retains its current-target behavior.
+Five host and four signature cases cover actual routing and identity, read-only
+WESL, localized fallback actions/empty states, typed port/action payloads and defaults.
+See [implementation and validation](editor-graph-workspace-host-2026-10-20.md).
+
+Frozen qualification passes **2,290 checks**, including **1,858 editor graph checks**,
+with all **1,055 input hashes** unchanged; the parallel graph suite also passes.
+Shipping passes **2,767 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace and workspace GPU-feature all-target checks pass. Post-documentation
+input drift is zero.
+
+Next: function signature and graph input/action integration, then remaining plugin/
+application handlers and complete editor acceptance. This is headless workspace
+composition, not native pointer dispatch or rendered-wire qualification. Shipping
+remains 0.19.1; dependencies/toolchain and visual references are unchanged.
+
+## Function signature events and semantic placement
+
+B20-2 slice 92 shares the actual signature observer registrar, text/number/action
+consumers, semantic placement and global history observer with the 0.20 candidate.
+The immutable layout contract and real native/partial engines are compiled directly;
+the private fixture adds only the already-pinned `elkrs = "=0.1.1"` dev dependency
+to retain existing reference tests. Shipping dependencies and validation policy do
+not change. No alternate editing or placement callbacks are introduced.
+
+Ten new composed-control cases cover final/live commits, typed defaults and errors,
+stale owners, indexed caller validation, structural placement, real keyboard Enter
+submission and global compound undo/redo. Another 52 existing placement/layout tests
+now run on 0.20. See
+[implementation and validation](editor-function-signature-events-2026-10-21.md).
+
+Frozen qualification passes **2,352 checks**, including **1,920 editor graph checks**,
+with all **1,069 input hashes** unchanged; the parallel graph suite also passes.
+Shipping passes **2,777 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace and workspace GPU-feature all-target checks pass. Post-documentation
+input drift is zero.
+
+Next: function-graph gesture/action consumers and registrar, then remaining plugin/
+application integration and full editor acceptance. This is headless signature
+event integration, not full native pointer or rendered-wire qualification. Shipping
+remains 0.19.1; no visual reference is approved.
+
+## Function body actions and constant editing
+
+B20-2 slice 93 shares the actual body-action and constant text/number observers,
+their semantic helpers and production subregistrars with the 0.20 candidate.
+All six moved bodies and 29 remaining graph helper/handler/test bodies are unchanged;
+all 16 native graph observers retain their registration order. Existing socket
+palette creation uses the same helper, with no alternate edit or placement callback.
+
+Ten composed-control cases cover node/input creation, Boolean and typed constant
+edits, live/final/no-op/error history, safe deletion, explicit target activation,
+pinned placement and compound undo/redo, toolbar requests, stale project controls,
+keyboard Enter and missing viewport memory. See
+[implementation and validation](editor-function-body-actions-2026-10-21.md).
+
+Frozen qualification passes **2,362 checks**, including **1,930 editor graph checks**,
+with all **1,071 input hashes** unchanged; the parallel graph suite also passes.
+Shipping passes **2,787 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace and workspace GPU-feature all-target checks pass. Post-documentation
+input drift is zero.
+
+Next: function-graph pointer gestures, context-menu consumers, wire updates and the
+complete registrar, then remaining plugin/application integration. This is headless
+semantic action/value integration, not full native editor acceptance. Shipping stays
+on 0.19.1; dependencies/toolchain and visual references are unchanged.
+
+## Semantic drag-on-wire insertion adapter
+
+B20-2 slice 99 shares the complete production semantic insertion adapter through
+the canonical material-graph facade. Its function-wire helper is compiled through
+the actual child module rather than a standalone qualification module. All six
+production handler bodies, the five original test bodies and their 30 assertions
+are unchanged. Native test-only imports are cleaned up and the obsolete widget
+dead-code allowance is removed.
+
+Five new shared cases exercise real registration, probes, drop, publication and
+global history: unfocused program/function routing, invalid feedback, retired or
+retargeted views, bootstrap-spacing rollback after a missing optional function
+editor, and literal-input replacement/deduplication without bypassing the bound.
+See [implementation and validation](editor-material-insertion-2026-10-21.md).
+
+Frozen qualification passes **2,445 checks**, including **2,013 editor graph checks**,
+with all **1,092 input hashes** unchanged; the default-parallel graph suite passes
+too. Post-documentation input drift is zero. Shipping passes **2,836 editor unit +
+3 architecture tests**, with the same ten existing ignores. Both strict all-target
+Clippy gates, both formatting gates, whitespace checks and workspace GPU-feature
+all-target checking pass.
+
+Next: complete material-plugin registration and remaining application handlers,
+then full native workflow acceptance. Candidate events and viewport identity
+metadata qualify the semantic adapter, not rendered picking or the full OS pointer
+workflow. Shipping remains 0.19.1; dependencies/toolchain and visual references
+are unchanged.
+
+## Complete material graph plugin registration
+
+B20-2 slice 100 compiles the actual complete material plugin build on both engines.
+Registrar/observer order, Update consumers and keyboard registration are unchanged.
+The last registrar dependency, browser function dropping, now uses the complete
+production adapter and shared owner-scoped feedback. Native drag event types and
+pointer-location accessors form a narrow engine boundary; routing, validation,
+history and edit policy remain shared. All 26 existing browser-drop assertions are
+retained, and the existing shared feedback cases run on the candidate too.
+
+Three new shared cases run the material and function registrations together with
+real input, workspace composition and measured layout: idle/source preservation,
+scoped node click/menu/Escape, and single-commit browser drop with global undo/redo
+and unchanged files. See
+[implementation and validation](editor-material-plugin-registration-2026-10-21.md).
+
+Frozen qualification passes **2,459 checks**, including **2,027 editor graph checks**,
+with all **1,098 input hashes** unchanged; the default-parallel graph suite passes
+too. Post-documentation input drift is zero. Shipping passes **2,839 editor unit +
+3 architecture tests**, with the same ten existing ignores. Both strict all-target
+Clippy gates, both formatting gates, whitespace checks and workspace GPU-feature
+all-target checking pass. The modal fixture reuses the existing state factory to
+respect native field privacy without a new lint allowance.
+
+Next: remaining application handlers and shell registration, then full native editor
+workflow acceptance and the coherent root engine switch. This is combined headless
+ECS/UI qualification, not OS picking, GPU rendering or the full editor window.
+Shipping remains 0.19.1; dependencies/toolchain and visual references are unchanged.
+
+## Function socket and selection pointer events
+
+B20-2 slice 94 shares actual function socket start/motion/end/drop, preview state,
+node/canvas/marquee selection and nested-call navigation with the 0.20 candidate.
+The existing engine-native pointer boundaries are reused, with native DragDrop
+aliases/test construction added. All 16 graph observers retain their order.
+The real socket palette is directly compiled too; its 12 production bodies and
+all eight existing tests/35 assertions are preserved.
+
+Ten new native-event cases cover descendants, preview updates, view/owner guards,
+release-time snapping at three DPI/zoom combinations, single commit/global history,
+Escape, selection modifiers, marquee, canvas isolation and actual control bubbling.
+A reproduced constant-field regression is fixed: shared click handlers resolve
+the originally picked descendant throughout propagation, preserving control/socket
+guards instead of reinterpreting ancestors as node/canvas clicks. See
+[implementation and validation](editor-function-pointer-events-2026-10-21.md).
+
+The candidate graph suite passes **1,948 checks** in parallel, with the existing
+ignored timing probe. Shipping passes **2,797 editor unit + 3 architecture tests**,
+with the same ten existing ignores. Both strict all-target Clippy gates, both
+formatting gates, whitespace and workspace GPU-feature all-target checks pass.
+Frozen qualification passes **2,380 checks**, including **1,948 editor graph checks**,
+with all **1,076 input hashes** unchanged. Post-documentation input drift is zero.
+
+Next: function context-menu consumers, modified-node drags, wire updates and the
+complete graph registrar, then remaining plugin/application integration. This is
+headless native-event/UI-layout qualification, not OS picking or full rendered
+editor acceptance. Shipping remains 0.19.1; dependencies/toolchain and visual
+references are unchanged.
+
+## Function context menus and modified drags
+
+B20-2 slice 95 shares real function node/pin/canvas context-menu opening, hit
+testing, action dispatch and dismissal, plus duplication and modified-node drags.
+The actual presentation batch observer/context resolver is shared so branch
+movement reaches production global history. No edit or history callback is
+substituted. All 16 graph observers retain their order; semantic and presentation
+policies and the remaining graph wire/test bodies are unchanged.
+
+Ten new composed-menu/drag cases cover grouped actions, clipboard paste, rejected
+required-source deletion/disconnection, scoped unfocused arrangement requests,
+hover/Escape, unknown targets and positioned-graph duplicate/branch undo/redo.
+The existing arrangement-context test additionally runs unchanged on 0.20. See
+[implementation and validation](editor-function-context-drags-2026-10-21.md).
+
+Frozen qualification passes **2,391 checks**, including **1,959 editor graph checks**,
+with all **1,081 input hashes** unchanged; the parallel graph suite also passes.
+Both strict all-target Clippy gates, both formatting gates and whitespace checks pass.
+Shipping passes **2,807 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Workspace GPU-feature all-target checking passes;
+post-documentation input drift is zero.
+
+Next: function wire updates and complete graph registration, then remaining plugin/
+application handlers and full editor acceptance. This is headless menu/event and
+positioned-graph history qualification, not OS picking or GPU-wire acceptance.
+Shipping remains 0.19.1; dependencies/toolchain and visual references are unchanged.
+
+## Function wires and complete registration
+
+B20-2 slice 96 shares the original function wire systems and complete graph and
+function-editor root registrars. Wire attachment remains in Update; uniforms update
+after PostLayout. All 16 graph observers retain their order and the graph registers
+before the signature. No alternate edit/history callback replaces production code.
+Both wire bodies, the expanded graph registrar and six original graph test bodies
+are unchanged after extraction/newline normalization.
+
+Eight new shared tests exercise actual assets/composition/layout with the complete
+registrar: owned resources, optional-asset recovery, stable handles, camera rebuilds,
+split-view endpoints/ghosts, DPI-aware snapping, release undo, reverse-direction
+ghosts, stale-origin cleanup and combined signature/body/clipboard/context routing.
+See [implementation and validation](editor-function-wires-registration-2026-10-21.md).
+
+The full parallel candidate graph suite passes **1,967 tests**, one existing ignore.
+Frozen qualification passes **2,399 checks**, including **1,967 editor graph checks**,
+with all **1,085 input hashes** unchanged; post-documentation input drift is zero.
+Shipping passes **2,815 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace checks and workspace GPU-feature all-target checking pass.
+
+Next: remaining material-plugin registration/application handlers, then complete
+editor workflow acceptance. These are headless layout/event/wire-uniform checks,
+not OS picking, GPU wire appearance or full native editor acceptance. Shipping
+remains 0.19.1; dependencies/toolchain and visual references are unchanged.
+
+## Material presentation edits and arrangement installation
+
+B20-2 slice 97 shares the original node/pin presentation observers and atomic
+arrangement-result installer. The shared node/batch/pin registrar runs at the
+shipping plugin's original registration point and preserves observer order. All
+three function bodies and the expanded plugin build are unchanged.
+
+All 16 existing history tests also run on the candidate, retaining all 65 assertions;
+two pressed fixtures use the existing engine-specific input boundary. Eight new
+shared cases cover scoped/unfocused node-pin-batch history, no-op/unknown-event
+redo preservation, arrangement validation and semantic/pin/project staleness,
+function arrangement undo/redo, camera/other-graph preservation and saved bytes.
+See [implementation and validation](editor-material-presentation-edits-2026-10-21.md).
+
+The full parallel candidate graph suite passes **1,991 tests**, one existing ignore.
+Frozen qualification passes **2,423 checks**, including **1,991 editor graph checks**,
+with all **1,087 input hashes** unchanged; post-documentation input drift is zero.
+Shipping passes **2,823 editor unit + 3 architecture tests**, with the same ten
+existing ignores. Both strict all-target Clippy gates, both formatting gates,
+whitespace checks and workspace GPU-feature all-target checking pass.
+
+Next: asynchronous arrangement coordination/layout adaptation and semantic
+drag-on-wire insertion, then complete material-plugin registration and remaining
+application handlers. This is CPU ECS event/history and arrangement-result
+installation qualification, not asynchronous solver completion, OS picking,
+rendered UI or full native editor acceptance. Shipping stays on 0.19.1.
+
+## Asynchronous arrangement coordinator and layout adapter
+
+B20-2 slice 98 shares the complete production coordinator and topology adapter,
+including real task dispatch, polling, bounded job state and deferred installation.
+The canonical request type comes from that coordinator, not a separately compiled
+request copy. Nine production coordinator/helper bodies, the original restored-tab
+test and all five adapter method bodies are unchanged; three existing adapter tests
+also run on the candidate. An obsolete adapter dead-code allowance is removed.
+
+Eight new shared cases use actual composed/measured canvases, production geometry,
+real CPU tasks and global undo/redo: full and targeted layouts, frozen nodes, pinned
+anchors, busy/idle behavior, invalid requests and stale placement/draft/view results.
+Successful cases require actual installer acceptance, not merely task retirement.
+See [implementation and validation](editor-material-async-arrangement-2026-10-21.md).
+
+Frozen qualification passes **2,435 checks**, including **2,003 editor graph checks**,
+with all **1,090 input hashes** unchanged; the parallel graph suite also passes.
+Post-documentation input drift is zero. Shipping passes **2,831 editor unit + 3
+architecture tests**, with the same ten existing ignores. Both strict all-target
+Clippy gates, both formatting gates, whitespace checks and workspace GPU-feature
+all-target checking pass.
+
+Next: semantic drag-on-wire insertion, then complete material-plugin registration
+and remaining application handlers. These are real CPU task/geometry/history
+checks, not GPU rendering, OS picking or full native acceptance. Shipping stays
+on 0.19.1; dependencies/toolchain and visual references are unchanged.

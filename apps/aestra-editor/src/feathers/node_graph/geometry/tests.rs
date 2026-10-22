@@ -157,7 +157,7 @@ fn host_project_scope_reads_current_catalog_without_a_cached_root_resource() {
     use bevy::ecs::system::RunSystemOnce;
     let mut world = World::new();
     assert_eq!(world.run_system_once(project_root).unwrap(), None);
-    let catalog = crate::ProjectEffectCatalog::default();
+    let catalog = crate::ProjectEffectCatalog::from_entries(Vec::new());
     let first = catalog.root().to_owned();
     world.insert_resource(catalog);
     assert_eq!(

@@ -8,7 +8,7 @@ use bevy::{
     ui_widgets::popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
     window::PrimaryWindow,
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub(crate) const DEFAULT_TOOLTIP_DELAY: Duration = Duration::from_millis(650);
 
@@ -121,13 +121,14 @@ pub(crate) struct TooltipPopup;
 #[derive(Resource, Default)]
 pub(crate) struct TooltipState {
     target: Option<Entity>,
-    hovered_at: Option<Instant>,
+    hovered_at: Option<Duration>,
     popup: Option<Entity>,
 }
 
 pub(crate) fn begin_tooltip(
     over: On<PointerOver>,
     tooltips: Query<(), With<EditorTooltip>>,
+    time: Res<Time<Real>>,
     mut state: ResMut<TooltipState>,
     mut commands: Commands,
 ) {
@@ -136,7 +137,7 @@ pub(crate) fn begin_tooltip(
     }
     clear_popup(&mut commands, &mut state);
     state.target = Some(over.entity);
-    state.hovered_at = Some(Instant::now());
+    state.hovered_at = Some(time.elapsed());
 }
 
 /// Dragging starts an edit or layout operation, so stale hover help must not obscure it.
@@ -151,6 +152,7 @@ pub(crate) fn dismiss_tooltip_on_drag(
 pub(crate) fn update_tooltip(
     mut commands: Commands,
     mut state: ResMut<TooltipState>,
+    time: Res<Time<Real>>,
     tooltips: Query<(&EditorTooltip, &RelativeCursorPosition)>,
     popups: Query<(), With<TooltipPopup>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -177,7 +179,7 @@ pub(crate) fn update_tooltip(
     if state.popup.is_some()
         || state
             .hovered_at
-            .is_none_or(|started| started.elapsed() < tooltip.delay)
+            .is_none_or(|started| time.elapsed().saturating_sub(started) < tooltip.delay)
     {
         return;
     }

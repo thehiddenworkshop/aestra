@@ -11,14 +11,8 @@ use std::collections::HashMap;
 
 pub(crate) struct EditorShellPlugin;
 
-#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum EditorSet {
-    Setup,
-    PreViewport,
-    MainUpdate,
-    UiRebuild,
-    UiSync,
-}
+mod sets;
+pub(crate) use sets::EditorSet;
 
 impl Plugin for EditorShellPlugin {
     fn build(&self, app: &mut App) {
@@ -1287,6 +1281,6 @@ mod tests {
 
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
-        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+        assert!(action.contains::<bevy::ui::Pressed>());
     }
 }

@@ -1,6 +1,6 @@
-// Experimental Bevy 0.19 bridge: no private Rust-field offsets are assumed.
+// Experimental Bevy 0.20 bridge: no private Rust-field offsets are assumed.
 // Import the exact Bevy shader record consumed by ordinary StandardMaterial.
-#import bevy_pbr::mesh_view_types::ClusteredLight
+import bevy_pbr::render::mesh_view_types::ClusteredLight;
 
 struct SelectedLight {
     position_range: vec4<f32>,

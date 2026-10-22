@@ -142,7 +142,7 @@ fn spawn_menu(
 }
 
 pub(super) fn pointer_menu(
-    mut event: On<Pointer<Click>>,
+    mut event: On<PointerClick>,
     rows: Query<(&BrowserRow, &ComputedNode, &UiGlobalTransform), With<ListItem>>,
     lists: Query<(&ComputedNode, &UiGlobalTransform), With<BrowserItems>>,
     parents: Query<&ChildOf>,
@@ -178,7 +178,7 @@ pub(super) fn pointer_menu(
         (list, None, node, transform)
     };
     focus.set(list, FocusCause::Navigated);
-    let position = pointer_position_in_node(event.pointer_location.position, node, transform)
+    let position = pointer_position_in_node(event.pointer.location().position, node, transform)
         * node.inverse_scale_factor();
     spawn_menu(
         &mut commands,

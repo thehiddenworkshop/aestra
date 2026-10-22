@@ -1,8 +1,5 @@
 //! Pointer API names only; no synthetic event dispatch or behavior translation.
-use bevy::{
-    picking::pointer::{Location, PointerId},
-    prelude::*,
-};
+use bevy::picking::pointer::{Location, PointerId};
 pub(super) trait GraphPointerEvent {
     fn graph_pointer(&self) -> (PointerId, Location);
 }
@@ -31,6 +28,7 @@ pub(super) mod tests {
     use bevy::{
         camera::RenderTarget,
         picking::{backend::HitData, pointer::PointerButton},
+        prelude::{Entity, Vec2},
         window::WindowRef,
     };
     fn location(window: Entity, position: Vec2) -> Location {
@@ -107,6 +105,17 @@ pub(super) mod tests {
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
             count: 1,
         }
+    }
+    pub(crate) fn end_distance(entity: Entity, window: Entity, distance: Vec2) -> PointerDragEnd {
+        let mut event = end(
+            entity,
+            window,
+            Vec2::ZERO,
+            PointerId::Mouse,
+            PointerButton::Primary,
+        );
+        event.distance = distance;
+        event
     }
     pub(crate) fn cancel(entity: Entity, window: Entity, id: PointerId) -> PointerCancel {
         PointerCancel {

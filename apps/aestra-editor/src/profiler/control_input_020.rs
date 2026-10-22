@@ -19,7 +19,10 @@ pub(super) struct Controls<'w, 's> {
             &'static ProfilerAction,
             Option<&'static PendingFeathersActivation>,
         ),
-        (Changed<Pressed>, With<FeathersActionButton>),
+        (
+            Or<(Changed<Pressed>, Added<PendingFeathersActivation>)>,
+            With<FeathersActionButton>,
+        ),
     >,
 }
 impl Controls<'_, '_> {

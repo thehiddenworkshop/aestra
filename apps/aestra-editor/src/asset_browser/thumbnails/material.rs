@@ -25,9 +25,9 @@ use aestra_core::{
 };
 use aestra_project::ResolvedEffectProject;
 use bevy::{
-    math::primitives::Sphere,
     mesh::{Meshable, VertexAttributeValues},
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+    shape::Sphere,
 };
 
 const PREVIEW_DURATION: f32 = 2.0;

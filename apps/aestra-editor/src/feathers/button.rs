@@ -30,8 +30,9 @@ pub(crate) fn queue_action_activation(
 }
 
 pub(crate) fn audit_action_controls(controls: Query<Entity, UnclassifiedEditorActionControl>) {
-    #[cfg(debug_assertions)]
-    if let Some(entity) = controls.iter().next() {
+    if cfg!(debug_assertions)
+        && let Some(entity) = controls.iter().next()
+    {
         panic!(
             "editor action control {entity:?} must use FeathersActionButton or be explicitly \
              marked EditorNativeControl"

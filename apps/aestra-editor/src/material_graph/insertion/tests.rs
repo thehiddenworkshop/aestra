@@ -1,9 +1,21 @@
 use super::*;
 use crate::document::DocumentKey;
+use crate::feathers::node_graph::geometry::{GraphDocumentKey, GraphViewKey};
 use crate::feathers::node_graph::{GraphPresentationEdit, geometry::GraphGeometryPort};
-use aestra_core::material::{MaterialFunction, MaterialFunctionOutput, MaterialSchemaVersion};
+use crate::material_graph::keys::{
+    MATERIAL_GRAPH_OUTPUT_NODE_KEY, function_graph_memory_key, material_graph_expression_node_key,
+    material_graph_view_key,
+};
+use aestra_authoring::{MaterialConnectionTarget, MaterialExpressionInput, MaterialOutputSocket};
+use aestra_core::{
+    MaterialFunctionId,
+    material::{
+        MaterialExpression, MaterialFunction, MaterialFunctionOutput, MaterialSchemaVersion,
+        MaterialValue, MaterialValueType,
+    },
+};
 
-fn fixture(function: bool) -> (MaterialAuthoringDocument, Candidate) {
+pub(super) fn fixture(function: bool) -> (MaterialAuthoringDocument, Candidate) {
     let mut program = MaterialProgram::additive_sprite("Insertion");
     let inserted = MaterialExpressionId::new();
     program.expressions.push(MaterialExpression {

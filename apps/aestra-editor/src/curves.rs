@@ -5,7 +5,7 @@ use crate::feathers::automation_curve::{self, AutomationCurveData};
 #[cfg(test)]
 use crate::*;
 mod composition;
-#[path = "curves/control_input_019.rs"]
+#[path = "curves/control_input_020.rs"]
 mod control_input;
 mod controls;
 use crate::timeline::panel_input as cursor;
@@ -142,7 +142,7 @@ mod tests {
             .add_plugins(EditorCurvesPlugin);
         app.world_mut().spawn((
             Button,
-            Interaction::Pressed,
+            bevy::ui::Pressed,
             CurvesAction::AddKey,
             BackgroundColor::default(),
         ));
@@ -177,7 +177,7 @@ mod tests {
             .add_plugins(EditorCurvesPlugin);
         app.world_mut().spawn((
             Button,
-            Interaction::Pressed,
+            bevy::ui::Pressed,
             CurvesAction::SetInterpolation(aestra_core::CurveInterpolation::Step),
             BackgroundColor::default(),
         ));

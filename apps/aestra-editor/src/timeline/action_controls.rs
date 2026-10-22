@@ -135,15 +135,17 @@ pub(super) fn audit_timeline_controls(
     controls: Query<Entity, UnclassifiedTimelineControl>,
     choreography: Query<Entity, UnclassifiedChoreographyControl>,
 ) {
-    #[cfg(debug_assertions)]
-    if let Some(entity) = controls.iter().next() {
+    if cfg!(debug_assertions)
+        && let Some(entity) = controls.iter().next()
+    {
         panic!(
             "timeline control {entity:?} must use FeathersActionButton or be explicitly marked \
              EditorNativeControl"
         );
     }
-    #[cfg(debug_assertions)]
-    if let Some(entity) = choreography.iter().next() {
+    if cfg!(debug_assertions)
+        && let Some(entity) = choreography.iter().next()
+    {
         panic!(
             "choreography control {entity:?} must use FeathersActionButton or be explicitly \
              marked EditorNativeControl"

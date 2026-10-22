@@ -329,7 +329,11 @@ fn check_seek_replay(
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap()
             .unwrap();
-        let bytes = readback.slice(..).get_mapped_range().to_vec();
+        let bytes = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped")
+            .to_vec();
         readback.unmap();
         let p = buffers[1].size() as usize;
         let result = expand_legacy(&bytes[0..p], &bytes[p..], &[], p / 48);
@@ -835,7 +839,11 @@ fn check_cooperative(owners: u32) {
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap()
             .unwrap();
-        let bytes = readback.slice(..).get_mapped_range().to_vec();
+        let bytes = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped")
+            .to_vec();
         readback.unmap();
         let p = buffers[1].size() as usize;
         let a = buffers[7].size() as usize;
@@ -1565,7 +1573,11 @@ fn check_pool(max_trails: u32, sampling: u32) {
                 .recv_timeout(std::time::Duration::from_secs(5))
                 .unwrap()
                 .unwrap();
-            let bytes = readback.slice(..).get_mapped_range().to_vec();
+            let bytes = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("completed test readback must remain mapped")
+                .to_vec();
             readback.unmap();
             let p = buffers[1].size() as usize;
             let c = buffers[4].size() as usize;

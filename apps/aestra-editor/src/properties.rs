@@ -5361,7 +5361,7 @@ fn step_numeric_input(
 }
 
 fn begin_numeric_scrub(
-    mut drag: On<Pointer<DragStart>>,
+    mut drag: On<PointerDragStart>,
     properties_controls: Query<&PropertiesNumberControl>,
     emitter_controls: Query<&EmitterNumberControl>,
     effect_clip_controls: Query<&EffectClipNumberControl>,
@@ -5406,7 +5406,7 @@ fn begin_numeric_scrub(
 }
 
 fn update_numeric_scrub(
-    mut drag: On<Pointer<Drag>>,
+    mut drag: On<PointerDrag>,
     keys: Res<ButtonInput<KeyCode>>,
     mut session: ResMut<EditorSession>,
     mut state: ResMut<NumericScrubState>,
@@ -5468,7 +5468,7 @@ fn update_numeric_scrub_text(
 }
 
 fn finish_numeric_scrub(
-    mut drag: On<Pointer<DragEnd>>,
+    mut drag: On<PointerDragEnd>,
     mut session: ResMut<EditorSession>,
     mut state: ResMut<NumericScrubState>,
     mut override_cursor: ResMut<OverrideCursor>,
@@ -8729,7 +8729,7 @@ fn module_matches(metadata: &ModuleMetadata, query: &str) -> bool {
 }
 
 fn select_properties_header(
-    click: On<Pointer<Click>>,
+    click: On<PointerClick>,
     selectable: Query<&PropertiesSelectionTarget>,
     parents: Query<&ChildOf>,
     mut session: ResMut<EditorSession>,

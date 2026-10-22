@@ -3,28 +3,16 @@
 //! This module owns presentation only: canvas styling, node chrome, socket hit targets, and the
 //! anti-aliased wire material. Domain panels retain their semantic graph model and commands.
 
-use super::number_input::EditorNumberInput;
-use super::{
-    button::{FeathersActionButton, PendingFeathersActivation},
-    scenes,
-    tooltip::{EditorTooltip, EditorTooltipSide},
-};
-use crate::feathers::icon::{SvgColor, SvgFile, UiSvg};
+#[cfg(test)]
+use super::{button::FeathersActionButton, number_input::EditorNumberInput};
 use crate::theme;
 #[cfg(test)]
-use bevy::picking::{
-    events::{Drag, DragEnd, DragStart, Pointer},
-    pointer::PointerButton,
-};
-use bevy::{
-    asset::embedded_asset,
-    feathers::controls::{FeathersCheckbox, FeathersTextInputContainer},
-    prelude::*,
-    ui::RelativeCursorPosition,
-    ui_render::prelude::UiMaterialPlugin,
-    ui_widgets::Activate,
-    window::SystemCursorIcon,
-};
+use bevy::feathers::controls::{FeathersCheckbox, FeathersTextInputContainer};
+#[cfg(test)]
+use bevy::picking::pointer::PointerButton;
+use bevy::{asset::embedded_asset, prelude::*};
+#[cfg(test)]
+use bevy::{ui_widgets::Activate, window::SystemCursorIcon};
 #[cfg(test)]
 use std::collections::BTreeSet;
 
@@ -33,23 +21,24 @@ mod drag_context;
 mod memory;
 pub(crate) use memory::GraphViewportMemory;
 mod drag;
+#[cfg(test)]
 use drag::*;
-#[path = "node_graph/interaction/pointer_019.rs"]
+#[path = "node_graph/interaction/pointer_020.rs"]
 mod graph_pointer;
 mod node;
-use node::begin_graph_node_press;
 pub(crate) use node::{
-    FeathersGraphNode, FeathersGraphNodePreview, GraphModifiedDragTarget, GraphModifiedNodeDrag,
-    GraphNodeDragModifier, GraphPinEdit, GraphPresentationBatchEdit, GraphPresentationEdit,
+    FeathersGraphNode, GraphModifiedDragTarget, GraphModifiedNodeDrag, GraphNodeDragModifier,
+    GraphPinEdit, GraphPresentationBatchEdit, GraphPresentationEdit,
 };
 mod marquee;
-use marquee::{
-    GraphMarqueeGesture, begin_graph_marquee, cancel_graph_marquee, cleanup_graph_marquee,
-    end_graph_marquee, update_graph_marquee,
-};
+#[cfg(test)]
+use marquee::{GraphMarqueeGesture, begin_graph_marquee};
 pub(crate) use marquee::{GraphMarqueeSelection, GraphSelectionMode};
-#[path = "node_graph/navigation/cursor_019.rs"]
+#[path = "node_graph/navigation/cursor_020.rs"]
 mod graph_cursor;
+#[cfg(test)]
+use bevy::ui::RelativeCursorPosition;
+#[cfg(test)]
 use graph_cursor::EntityCursor;
 #[cfg(test)]
 use graph_cursor::OverrideCursor;
@@ -59,7 +48,6 @@ pub(crate) use navigation::{
     FeathersGraphNavigationBlocker, FeathersGraphViewport, GraphFrameTarget,
 };
 mod materials;
-use materials::GraphGridMaterial;
 pub(crate) use materials::GraphWireMaterial;
 mod framing;
 pub(crate) use drag_assist::spawn_controls as spawn_graph_drag_controls;
@@ -75,21 +63,40 @@ pub(crate) mod placement;
 mod placement_tests;
 mod resize;
 
+mod viewport_presentation;
+#[cfg(test)]
+use viewport_presentation::*;
+mod node_controls;
+#[cfg(test)]
+use node_controls::*;
+mod composition;
+#[path = "node_graph/composition_input_020.rs"]
+mod composition_input;
+#[path = "node_graph/node_control_input_020.rs"]
+mod node_control_input;
+#[cfg(test)]
+use composition::FeathersGraphNodeBody;
+#[cfg(test)]
+pub(crate) use composition::FeathersGraphSocket;
+#[cfg(test)]
+use composition::GraphCollapseAction;
+#[cfg(test)]
+use composition::SELECTED_BORDER_WIDTH;
+#[cfg(test)]
+pub(crate) use composition::graph_canvas_bundle;
+#[cfg(test)]
+use composition::graph_port_row_node;
+pub(crate) use composition::{
+    GraphNodePreviewToggleProps, GraphNodeProps, GraphPortProps, GraphViewportProps,
+    spawn_graph_node, spawn_graph_node_preview, spawn_graph_node_preview_toggle, spawn_graph_port,
+    spawn_graph_port_with, spawn_graph_viewport,
+};
+#[cfg(test)]
+pub(crate) use node::FeathersGraphNodePreview;
+#[cfg(test)]
+use viewport_presentation::MIN_SELECTED_BORDER_SCREEN_WIDTH;
 mod metrics;
 pub(crate) use metrics::{NODE_HEADER_HEIGHT, NODE_PREVIEW_SIZE, NODE_WIDTH, PORT_ROW_HEIGHT};
-pub(crate) const SOCKET_HIT_SIZE: f32 = 20.0;
-const SOCKET_SIZE: f32 = 10.0;
-const SELECTED_BORDER_WIDTH: f32 = 2.0;
-const MIN_SELECTED_BORDER_SCREEN_WIDTH: f32 = 2.0;
-
-type GraphNodeControlFilter = Or<(
-    With<FeathersGraphSocket>,
-    With<GraphCollapseAction>,
-    With<EditorNumberInput>,
-    With<FeathersCheckbox>,
-    With<FeathersTextInputContainer>,
-    With<FeathersActionButton>,
-)>;
 
 pub(crate) struct FeathersNodeGraphPlugin;
 mod toolbar;
@@ -97,1042 +104,34 @@ pub(crate) use toolbar::{
     GraphFrameAction, graph_toolbar_bundle, spawn_graph_frame_button, spawn_graph_tool_button,
     spawn_graph_toolbar_summary,
 };
-use toolbar::{handle_graph_frame_buttons, queue_graph_frame_activation};
-#[path = "node_graph/toolbar_input_019.rs"]
+#[path = "node_graph/toolbar_input_020.rs"]
 mod toolbar_input;
 
-/// Hosts order graph restoration/navigation after their own document lifecycle and UI rebuild.
-#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct GraphWidgetSync;
+mod integration;
+#[cfg(test)]
+use integration::GraphNodeControlFilter;
+pub(crate) use integration::GraphWidgetSync;
 
 impl Plugin for FeathersNodeGraphPlugin {
     fn build(&self, app: &mut App) {
-        geometry::register(app);
-        embedded_asset!(app, "shaders/node_graph_wire.wgsl");
-        embedded_asset!(app, "shaders/node_graph_grid.wgsl");
-        app.add_plugins(UiMaterialPlugin::<GraphWireMaterial>::default())
-            .add_plugins(UiMaterialPlugin::<GraphGridMaterial>::default())
-            .init_resource::<GraphViewportMemory>()
-            .init_resource::<overlay::GraphOverlays>()
-            .init_resource::<drag_assist::State>()
-            .init_resource::<GraphPanGesture>()
-            .init_resource::<GraphMarqueeGesture>()
-            .init_resource::<GraphNodeDragGesture>()
-            .add_observer(queue_graph_frame_activation)
-            .add_observer(queue_graph_collapse_activation)
-            .add_observer(queue_graph_pin_activation)
-            .add_observer(begin_graph_node_press::<GraphNodeControlFilter>)
-            .add_observer(begin_graph_node_drag::<GraphNodeControlFilter>)
-            .add_observer(drag_graph_node)
-            .add_observer(end_graph_node_drag)
-            .add_observer(begin_graph_marquee::<GraphNodeControlFilter>)
-            .add_observer(update_graph_marquee)
-            .add_observer(end_graph_marquee)
-            .add_observer(cancel_graph_marquee)
-            .add_observer(drag_assist::toggle)
-            .add_systems(
-                Update,
-                (
-                    attach_graph_grid_materials,
-                    remember_graph_viewports,
-                    restore_graph_viewports,
-                    restore_graph_nodes,
-                    overlay::reconcile,
-                    overlay::sync_notice,
-                    sync_graph_nodes_from_memory,
-                    handle_graph_frame_buttons,
-                    handle_graph_collapse_buttons,
-                    handle_graph_pin_buttons,
-                    navigate_graph_viewports,
-                    cleanup_graph_marquee,
-                    sync_graph_viewport_transforms,
-                    sync_graph_selection_outlines,
-                    update_socket_visuals,
-                    drag_assist::sync_controls,
-                    drag_assist::sync_guides,
-                )
-                    .chain()
-                    .in_set(GraphWidgetSync),
-            )
-            .add_systems(
-                PostUpdate,
-                sync_graph_grid_materials.after(bevy::ui::UiSystems::Layout),
-            );
+        // Keep asset paths in this native wrapper: moving embedded_asset! changes its namespace.
+        embedded_asset!(app, "shaders/node_graph_wire.wesl");
+        embedded_asset!(app, "shaders/node_graph_grid.wesl");
+        integration::register(app);
     }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct GraphViewportProps {
-    pub(crate) key: String,
-    pub(crate) content_size: Vec2,
-    pub(crate) selection_bounds: Option<Rect>,
-    /// Seed pan/zoom for a viewport whose `key` has no remembered camera yet (a freshly opened or
-    /// split view seeded from the document camera). `None` leaves the viewport to auto-frame.
-    pub(crate) initial_view: Option<(Vec2, f32)>,
 }
 
 /// Graph-space layer rendered below the node canvas with the exact same pan/zoom transform.
 mod wire_layer;
 pub(crate) use wire_layer::FeathersGraphWireLayer;
 
-#[derive(Component, Debug, Clone, Copy)]
-struct FeathersGraphGrid {
-    viewport: Entity,
-}
-
 mod socket;
 #[cfg(test)]
 use socket::compact_graph_socket_offset_for_size;
 pub(crate) use socket::{GraphSocketSide, compact_graph_socket_offset};
 
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct FeathersGraphSocket {
-    pub(crate) color: Color,
-}
-
-#[derive(Component, Debug, Clone, Copy)]
-struct FeathersGraphSocketDot;
-
-#[derive(Debug, Clone)]
-pub(crate) struct GraphNodeProps {
-    pub(crate) graph_key: String,
-    pub(crate) node_key: String,
-    pub(crate) title: String,
-    pub(crate) position: Vec2,
-    pub(crate) selected: bool,
-    pub(crate) pinned: bool,
-    pub(crate) muted: bool,
-    pub(crate) collapse_icon: Handle<SvgFile>,
-    pub(crate) expand_icon: Handle<SvgFile>,
-    pub(crate) pin_icon: Handle<SvgFile>,
-    pub(crate) collapse_label: String,
-    pub(crate) expand_label: String,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct GraphNodePreviewToggleProps {
-    pub(crate) visible: bool,
-    pub(crate) show_icon: Handle<SvgFile>,
-    pub(crate) hide_icon: Handle<SvgFile>,
-    pub(crate) show_label: String,
-    pub(crate) hide_label: String,
-}
-
 mod preview_toggle;
 pub(crate) use preview_toggle::FeathersGraphNodePreviewToggle;
-
-#[derive(Component, Debug, Clone, Copy)]
-struct FeathersGraphNodeBody {
-    node: Entity,
-}
-
-#[derive(Component, Debug, Clone)]
-struct GraphCollapseAction {
-    node: Entity,
-    collapse_label: String,
-    expand_label: String,
-}
-
-#[derive(Component, Debug, Clone)]
-struct GraphCollapseIcon {
-    node: Entity,
-    collapse_icon: Handle<SvgFile>,
-    expand_icon: Handle<SvgFile>,
-}
-
-#[derive(Component, Debug, Clone)]
-struct GraphPinAction {
-    node: Entity,
-}
-
-#[derive(Component, Debug, Clone)]
-struct GraphPinIcon {
-    node: Entity,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct GraphPortProps {
-    pub(crate) label: Option<String>,
-    pub(crate) tooltip_title: String,
-    pub(crate) tooltip_description: String,
-    pub(crate) side: GraphSocketSide,
-    pub(crate) color: Color,
-}
-
-pub(crate) fn graph_canvas(size: Vec2) -> impl Bundle {
-    (
-        Node {
-            position_type: PositionType::Relative,
-            overflow: Overflow::visible(),
-            width: Val::Px(size.x),
-            height: Val::Px(size.y),
-            min_width: Val::Px(size.x),
-            min_height: Val::Px(size.y),
-            ..default()
-        },
-        BackgroundColor(Color::NONE),
-    )
-}
-
-pub(crate) fn graph_canvas_bundle<B: Bundle>(
-    viewport: Entity,
-    size: Vec2,
-    marker: B,
-) -> impl Bundle {
-    (
-        graph_canvas(size),
-        marker,
-        FeathersGraphCanvas { viewport },
-        UiTransform::IDENTITY,
-    )
-}
-
-fn graph_wire_layer_bundle(viewport: Entity) -> impl Bundle {
-    (
-        FeathersGraphWireLayer { viewport },
-        UiTransform::IDENTITY,
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(0.0),
-            top: Val::Px(0.0),
-            overflow: Overflow::visible(),
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            min_width: Val::Px(0.0),
-            min_height: Val::Px(0.0),
-            ..default()
-        },
-        Pickable::IGNORE,
-    )
-}
-
-pub(crate) fn spawn_graph_viewport<B: Bundle>(
-    parent: &mut ChildSpawnerCommands,
-    props: GraphViewportProps,
-    canvas_marker: B,
-    overlay: impl FnOnce(&mut ChildSpawnerCommands),
-    content: impl FnOnce(&mut ChildSpawnerCommands),
-) -> Entity {
-    let mut viewport = parent.spawn((
-        Node {
-            width: Val::Percent(100.0),
-            flex_grow: 1.0,
-            min_width: Val::Px(0.0),
-            min_height: Val::Px(0.0),
-            position_type: PositionType::Relative,
-            overflow: Overflow::clip(),
-            ..default()
-        },
-        BackgroundColor(theme::VIEWPORT),
-        RelativeCursorPosition::default(),
-        Pickable {
-            should_block_lower: true,
-            is_hoverable: true,
-        },
-        // Empty canvas keeps the ordinary arrow. Marquee selection begins with primary drag,
-        // while pan gestures switch the global cursor to `Grabbing` only while active.
-        EntityCursor::System(SystemCursorIcon::Default),
-        FeathersGraphViewport {
-            key: props.key,
-            pan: props.initial_view.map_or(Vec2::ZERO, |(pan, _)| pan),
-            zoom: props.initial_view.map_or(1.0, |(_, zoom)| zoom),
-            content_size: props.content_size,
-            selection_bounds: props.selection_bounds,
-            measured_frame: None,
-            // A seeded camera is honoured immediately; only an unseeded viewport auto-frames.
-            frame_request: props
-                .initial_view
-                .is_none()
-                .then_some(GraphFrameTarget::All),
-        },
-    ));
-    let entity = viewport.id();
-    viewport.with_children(|viewport| {
-        viewport.spawn((
-            FeathersGraphGrid { viewport: entity },
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ));
-        viewport
-            .spawn(graph_wire_layer_bundle(entity))
-            .with_children(overlay);
-        viewport
-            .spawn(graph_canvas_bundle(
-                entity,
-                props.content_size,
-                canvas_marker,
-            ))
-            .with_children(content);
-    });
-    entity
-}
-
-fn remember_graph_viewports(
-    mut memory: ResMut<GraphViewportMemory>,
-    viewports: Query<Ref<FeathersGraphViewport>>,
-) {
-    for viewport in &viewports {
-        if viewport.is_added() {
-            continue;
-        }
-        let next = GraphView {
-            pan: viewport.pan,
-            zoom: viewport.zoom,
-        };
-        if memory.views.get(&viewport.key) != Some(&next) {
-            memory.views.insert(viewport.key.clone(), next);
-        }
-    }
-}
-
-fn restore_graph_viewports(
-    memory: Res<GraphViewportMemory>,
-    mut viewports: Query<&mut FeathersGraphViewport, Added<FeathersGraphViewport>>,
-) {
-    for mut viewport in &mut viewports {
-        let Some(view) = memory.views.get(&viewport.key) else {
-            continue;
-        };
-        viewport.pan = view.pan;
-        viewport.zoom = view.zoom;
-        viewport.frame_request = None;
-    }
-}
-
-fn attach_graph_grid_materials(
-    grids: Query<
-        Entity,
-        (
-            With<FeathersGraphGrid>,
-            Without<MaterialNode<GraphGridMaterial>>,
-        ),
-    >,
-    mut materials: ResMut<Assets<GraphGridMaterial>>,
-    mut commands: Commands,
-) {
-    for entity in &grids {
-        commands
-            .entity(entity)
-            .insert(MaterialNode(materials.add(GraphGridMaterial::default())));
-    }
-}
-
-fn sync_graph_grid_materials(
-    viewports: Query<&FeathersGraphViewport>,
-    grids: Query<(&FeathersGraphGrid, &MaterialNode<GraphGridMaterial>)>,
-    mut materials: ResMut<Assets<GraphGridMaterial>>,
-) {
-    for (grid, material) in &grids {
-        let Ok(viewport) = viewports.get(grid.viewport) else {
-            continue;
-        };
-        let Some(mut material) = materials.get_mut(&material.0) else {
-            continue;
-        };
-        material.pan = viewport.pan;
-        material.zoom = viewport.zoom;
-    }
-}
-
-fn restore_graph_nodes(
-    memory: Res<GraphViewportMemory>,
-    mut nodes: Query<(Entity, &mut FeathersGraphNode, &mut Node), Added<FeathersGraphNode>>,
-    mut bodies: Query<(&FeathersGraphNodeBody, &mut Node), Without<FeathersGraphNode>>,
-    mut icons: Query<(&GraphCollapseIcon, &mut UiSvg)>,
-    mut pin_icons: Query<(&GraphPinIcon, &mut SvgColor)>,
-) {
-    for (entity, mut graph_node, mut style) in &mut nodes {
-        let key = (graph_node.graph_key.clone(), graph_node.node_key.clone());
-        let Some(saved) = memory.nodes.get(&key) else {
-            continue;
-        };
-        let position = memory
-            .node_position(&graph_node.graph_key, &graph_node.node_key)
-            .unwrap();
-        graph_node.position = position;
-        graph_node.collapsed = saved.collapsed;
-        graph_node.pinned = memory.is_pinned(&graph_node.graph_key, &graph_node.node_key);
-        style.left = Val::Px(position.x);
-        style.top = Val::Px(position.y);
-        apply_graph_node_collapse(entity, saved.collapsed, &mut bodies, &mut icons);
-        apply_graph_node_pin(entity, graph_node.pinned, &mut pin_icons);
-    }
-}
-
-/// Keeps every node's position (and collapse) in step with the shared memory, so a second view of
-/// the same document reflects a node move or collapse live — not just when the pane rebuilds. Node
-/// layout is keyed per document, so both views resolve to the same memory entry; the node being
-/// dragged already matches and is skipped. Runs only when memory changed.
-fn sync_graph_nodes_from_memory(
-    memory: Res<GraphViewportMemory>,
-    mut nodes: Query<(Entity, &mut FeathersGraphNode, &mut Node)>,
-    mut bodies: Query<(&FeathersGraphNodeBody, &mut Node), Without<FeathersGraphNode>>,
-    mut icons: Query<(&GraphCollapseIcon, &mut UiSvg)>,
-    mut pin_icons: Query<(&GraphPinIcon, &mut SvgColor)>,
-) {
-    if !memory.is_changed() {
-        return;
-    }
-    for (entity, mut graph_node, mut style) in &mut nodes {
-        let key = (graph_node.graph_key.clone(), graph_node.node_key.clone());
-        let Some(saved) = memory.nodes.get(&key) else {
-            continue;
-        };
-        let position = memory
-            .node_position(&graph_node.graph_key, &graph_node.node_key)
-            .unwrap();
-        if graph_node.position != position {
-            graph_node.position = position;
-            style.left = Val::Px(position.x);
-            style.top = Val::Px(position.y);
-        }
-        if graph_node.collapsed != saved.collapsed {
-            graph_node.collapsed = saved.collapsed;
-            apply_graph_node_collapse(entity, saved.collapsed, &mut bodies, &mut icons);
-        }
-        let pinned = memory.is_pinned(&graph_node.graph_key, &graph_node.node_key);
-        if graph_node.pinned != pinned {
-            graph_node.pinned = pinned;
-            apply_graph_node_pin(entity, pinned, &mut pin_icons);
-        }
-    }
-}
-
-fn queue_graph_collapse_activation(
-    activate: On<Activate>,
-    actions: Query<(), (With<GraphCollapseAction>, With<FeathersActionButton>)>,
-    mut commands: Commands,
-) {
-    if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
-}
-
-fn queue_graph_pin_activation(
-    activate: On<Activate>,
-    actions: Query<(), (With<GraphPinAction>, With<FeathersActionButton>)>,
-    mut commands: Commands,
-) {
-    if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
-}
-
-fn handle_graph_pin_buttons(
-    mut commands: Commands,
-    actions: Query<
-        (
-            Entity,
-            &Interaction,
-            &GraphPinAction,
-            Option<&PendingFeathersActivation>,
-        ),
-        (Changed<Interaction>, With<FeathersActionButton>),
-    >,
-    mut nodes: Query<&mut FeathersGraphNode>,
-    mut icons: Query<(&GraphPinIcon, &mut SvgColor)>,
-    mut memory: ResMut<GraphViewportMemory>,
-) {
-    for (entity, interaction, action, pending) in &actions {
-        if *interaction != Interaction::Pressed || pending.is_none() {
-            continue;
-        }
-        commands
-            .entity(entity)
-            .remove::<PendingFeathersActivation>()
-            .insert(Interaction::None);
-        let Ok(mut node) = nodes.get_mut(action.node) else {
-            continue;
-        };
-        // A bootstrap-only node has no authored base yet. Pinning makes its current displayed
-        // position an explicit anchor, so materialize that position before storing the pin.
-        if memory.node(&node.graph_key, &node.node_key).is_none() {
-            memory.set_node(
-                node.graph_key.clone(),
-                node.node_key.clone(),
-                node.position,
-                node.collapsed,
-            );
-        }
-        let before = memory.is_pinned(&node.graph_key, &node.node_key);
-        let after = !before;
-        memory.set_pinned(&node.graph_key, &node.node_key, after);
-        node.pinned = after;
-        apply_graph_node_pin(action.node, after, &mut icons);
-        commands.entity(entity).insert(AccessibleLabel(if after {
-            "Unpin node".into()
-        } else {
-            "Pin node".into()
-        }));
-        commands.trigger(GraphPinEdit {
-            graph: node.graph_key.clone(),
-            node: node.node_key.clone(),
-            before,
-            after,
-            origin: Some(action.node),
-        });
-    }
-}
-
-fn apply_graph_node_pin(
-    entity: Entity,
-    pinned: bool,
-    icons: &mut Query<(&GraphPinIcon, &mut SvgColor)>,
-) {
-    for (icon, mut color) in icons.iter_mut() {
-        if icon.node == entity {
-            color.0 = if pinned {
-                theme::ACCENT
-            } else {
-                theme::TEXT_FAINT
-            };
-        }
-    }
-}
-
-fn handle_graph_collapse_buttons(
-    mut commands: Commands,
-    actions: Query<
-        (
-            Entity,
-            &Interaction,
-            &GraphCollapseAction,
-            Option<&PendingFeathersActivation>,
-        ),
-        (Changed<Interaction>, With<FeathersActionButton>),
-    >,
-    mut nodes: Query<&mut FeathersGraphNode>,
-    mut bodies: Query<(&FeathersGraphNodeBody, &mut Node), Without<FeathersGraphNode>>,
-    mut icons: Query<(&GraphCollapseIcon, &mut UiSvg)>,
-    mut memory: ResMut<GraphViewportMemory>,
-) {
-    for (entity, interaction, action, pending) in &actions {
-        if *interaction != Interaction::Pressed || pending.is_none() {
-            continue;
-        }
-        commands
-            .entity(entity)
-            .remove::<PendingFeathersActivation>()
-            .insert(Interaction::None);
-        let Ok(mut node) = nodes.get_mut(action.node) else {
-            continue;
-        };
-        let before = memory
-            .node(&node.graph_key, &node.node_key)
-            .unwrap_or((node.position, node.collapsed));
-        node.collapsed = !node.collapsed;
-        let collapsed = node.collapsed;
-        memory.set_collapsed(&node.graph_key, &node.node_key, node.position, collapsed);
-        commands.trigger(GraphPresentationEdit {
-            graph: node.graph_key.clone(),
-            node: node.node_key.clone(),
-            before,
-            after: (before.0, collapsed),
-            origin: Some(action.node),
-        });
-        apply_graph_node_collapse(action.node, collapsed, &mut bodies, &mut icons);
-        commands
-            .entity(entity)
-            .insert(AccessibleLabel(if collapsed {
-                action.expand_label.clone()
-            } else {
-                action.collapse_label.clone()
-            }));
-    }
-}
-
-fn apply_graph_node_collapse(
-    entity: Entity,
-    collapsed: bool,
-    bodies: &mut Query<(&FeathersGraphNodeBody, &mut Node), Without<FeathersGraphNode>>,
-    icons: &mut Query<(&GraphCollapseIcon, &mut UiSvg)>,
-) {
-    for (body, mut style) in bodies.iter_mut() {
-        if body.node == entity {
-            style.display = if collapsed {
-                Display::None
-            } else {
-                Display::Flex
-            };
-        }
-    }
-    for (icon, mut svg) in icons.iter_mut() {
-        if icon.node == entity {
-            svg.0 = if collapsed {
-                icon.expand_icon.clone()
-            } else {
-                icon.collapse_icon.clone()
-            };
-        }
-    }
-}
-
-/// Keep the selected edge visible when the graph canvas shrinks. The regular border contributes
-/// `SELECTED_BORDER_WIDTH * zoom` screen pixels; an outline supplies only the missing amount and
-/// does not change node layout or socket positions.
-fn selection_outline_width(zoom: f32) -> f32 {
-    (MIN_SELECTED_BORDER_SCREEN_WIDTH / zoom.max(MIN_ZOOM) - SELECTED_BORDER_WIDTH).max(0.0)
-}
-
-fn sync_graph_selection_outlines(
-    viewports: Query<&FeathersGraphViewport>,
-    parents: Query<&ChildOf>,
-    mut nodes: Query<(Entity, &FeathersGraphNode, &mut Outline)>,
-) {
-    for (entity, graph_node, mut outline) in &mut nodes {
-        let color = if graph_node.selected {
-            theme::ACCENT
-        } else {
-            Color::NONE
-        };
-        if outline.color != color {
-            outline.color = color;
-        }
-        if !graph_node.selected {
-            continue;
-        }
-        let Some(viewport) = parents
-            .iter_ancestors(entity)
-            .find_map(|ancestor| viewports.get(ancestor).ok())
-        else {
-            continue;
-        };
-        let width = Val::Px(selection_outline_width(viewport.zoom));
-        if outline.width != width {
-            outline.width = width;
-        }
-    }
-}
-
-pub(crate) fn spawn_graph_node<B: Bundle>(
-    parent: &mut ChildSpawnerCommands,
-    props: GraphNodeProps,
-    marker: B,
-    body: impl FnOnce(Entity, &mut ChildSpawnerCommands),
-) -> Entity {
-    let border = if props.selected {
-        theme::ACCENT
-    } else {
-        theme::BORDER_BRIGHT
-    };
-    let background = if props.selected {
-        theme::SELECTION
-    } else {
-        theme::PANEL
-    };
-    let title_color = if props.muted {
-        theme::TEXT_FAINT
-    } else {
-        theme::TEXT
-    };
-    let graph_key = props.graph_key.clone();
-    let node_key = props.node_key.clone();
-    let collapse_icon = props.collapse_icon.clone();
-    let expand_icon = props.expand_icon.clone();
-    let pin_icon = props.pin_icon.clone();
-    let collapse_label = props.collapse_label.clone();
-    let expand_label = props.expand_label.clone();
-    let mut node = parent.spawn((
-        marker,
-        FeathersGraphNode {
-            graph_key,
-            node_key,
-            position: props.position,
-            selected: props.selected,
-            pinned: props.pinned,
-            collapsed: false,
-            dragging: false,
-            drag_before: None,
-            drag_modifier: None,
-            suppress_release_click: false,
-        },
-        Pickable {
-            should_block_lower: true,
-            is_hoverable: true,
-        },
-        EntityCursor::System(SystemCursorIcon::Grab),
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(props.position.x),
-            top: Val::Px(props.position.y),
-            width: Val::Px(NODE_WIDTH),
-            flex_direction: FlexDirection::Column,
-            border: UiRect::all(Val::Px(if props.selected {
-                SELECTED_BORDER_WIDTH
-            } else {
-                1.0
-            })),
-            border_radius: BorderRadius::all(Val::Px(5.0)),
-            ..default()
-        },
-        BackgroundColor(background),
-        BorderColor::all(border),
-        Outline::new(
-            Val::Px(0.0),
-            Val::ZERO,
-            if props.selected {
-                theme::ACCENT
-            } else {
-                Color::NONE
-            },
-        ),
-        BoxShadow::new(
-            Color::srgba(0.0, 0.0, 0.0, 0.45),
-            Val::Px(0.0),
-            Val::Px(3.0),
-            Val::Px(10.0),
-            Val::Px(0.0),
-        ),
-    ));
-    let entity = node.id();
-    node.with_children(|node| {
-        node.spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(NODE_HEADER_HEIGHT),
-                min_height: Val::Px(NODE_HEADER_HEIGHT),
-                align_items: AlignItems::Center,
-                padding: UiRect::horizontal(Val::Px(9.0)),
-                column_gap: Val::Px(7.0),
-                border: UiRect::bottom(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_LIGHT),
-            BorderColor::all(theme::BORDER),
-        ))
-        .with_children(|header| {
-            header.spawn((
-                Node {
-                    width: Val::Px(3.0),
-                    height: Val::Px(16.0),
-                    border_radius: BorderRadius::all(Val::Px(2.0)),
-                    ..default()
-                },
-                BackgroundColor(if props.muted {
-                    theme::TEXT_FAINT
-                } else {
-                    theme::ACCENT
-                }),
-            ));
-            header.spawn((
-                Text::new(props.title),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(title_color),
-            ));
-            header.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
-            });
-            let mut pin = header.spawn_empty();
-            pin.apply_scene(scenes::feathers_tool_button());
-            pin.insert((
-                GraphPinAction { node: entity },
-                FeathersActionButton,
-                AccessibleLabel(if props.pinned {
-                    "Unpin node".into()
-                } else {
-                    "Pin node".into()
-                }),
-                Node {
-                    width: Val::Px(22.0),
-                    height: Val::Px(22.0),
-                    flex_shrink: 0.0,
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    border_radius: BorderRadius::all(Val::Px(3.0)),
-                    ..default()
-                },
-            ))
-            .with_child((
-                GraphPinIcon { node: entity },
-                Node {
-                    width: Val::Px(11.0),
-                    height: Val::Px(11.0),
-                    ..default()
-                },
-                UiSvg(pin_icon),
-                SvgColor(if props.pinned {
-                    theme::ACCENT
-                } else {
-                    theme::TEXT_FAINT
-                }),
-                Pickable::IGNORE,
-            ));
-            let mut disclosure = header.spawn_empty();
-            disclosure.apply_scene(scenes::feathers_tool_button());
-            disclosure
-                .insert((
-                    GraphCollapseAction {
-                        node: entity,
-                        collapse_label: collapse_label.clone(),
-                        expand_label: expand_label.clone(),
-                    },
-                    FeathersActionButton,
-                    AccessibleLabel(collapse_label.clone()),
-                    Node {
-                        width: Val::Px(22.0),
-                        height: Val::Px(22.0),
-                        flex_shrink: 0.0,
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        border_radius: BorderRadius::all(Val::Px(3.0)),
-                        ..default()
-                    },
-                ))
-                .with_child((
-                    GraphCollapseIcon {
-                        node: entity,
-                        collapse_icon: collapse_icon.clone(),
-                        expand_icon,
-                    },
-                    Node {
-                        width: Val::Px(11.0),
-                        height: Val::Px(11.0),
-                        ..default()
-                    },
-                    UiSvg(collapse_icon),
-                    SvgColor(theme::TEXT),
-                    Pickable::IGNORE,
-                ));
-        });
-        node.spawn((
-            FeathersGraphNodeBody { node: entity },
-            Node {
-                width: Val::Percent(100.0),
-                min_height: Val::Px(PORT_ROW_HEIGHT + 10.0),
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::vertical(Val::Px(5.0)),
-                ..default()
-            },
-        ))
-        .with_children(|children| body(entity, children));
-    });
-    entity
-}
-
-pub(crate) fn spawn_graph_node_preview_toggle<B: Bundle>(
-    parent: &mut ChildSpawnerCommands,
-    props: GraphNodePreviewToggleProps,
-    marker: B,
-) -> Entity {
-    let (icon, label) = if props.visible {
-        (props.hide_icon, props.hide_label)
-    } else {
-        (props.show_icon, props.show_label)
-    };
-    let mut toggle = parent.spawn_empty();
-    toggle.apply_scene(scenes::feathers_tool_button());
-    toggle
-        .insert((
-            Button,
-            FeathersActionButton,
-            FeathersGraphNodePreviewToggle,
-            marker,
-            AccessibleLabel(label.clone()),
-            EditorTooltip::description(label),
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(4.0),
-                right: Val::Px(34.0),
-                width: Val::Px(22.0),
-                height: Val::Px(22.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-        ))
-        .with_child((
-            Node {
-                width: Val::Px(12.0),
-                height: Val::Px(12.0),
-                ..default()
-            },
-            UiSvg(icon),
-            SvgColor(theme::TEXT),
-            Pickable::IGNORE,
-        ));
-    toggle.id()
-}
-
-pub(crate) fn spawn_graph_node_preview<B: Bundle>(
-    parent: &mut ChildSpawnerCommands,
-    marker: B,
-) -> Entity {
-    parent
-        .spawn((
-            FeathersGraphNodePreview,
-            marker,
-            Node {
-                width: Val::Px(NODE_PREVIEW_SIZE),
-                height: Val::Px(NODE_PREVIEW_SIZE),
-                min_width: Val::Px(NODE_PREVIEW_SIZE),
-                min_height: Val::Px(NODE_PREVIEW_SIZE),
-                flex_shrink: 0.0,
-                align_self: AlignSelf::Center,
-                margin: UiRect::new(Val::Px(7.0), Val::Px(7.0), Val::Px(5.0), Val::Px(3.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                overflow: Overflow::clip(),
-                ..default()
-            },
-            BackgroundColor(theme::VIEWPORT),
-            BorderColor::all(theme::BORDER),
-            Pickable::IGNORE,
-        ))
-        .id()
-}
-
-pub(crate) fn spawn_graph_port<B: Bundle>(
-    parent: &mut ChildSpawnerCommands,
-    props: GraphPortProps,
-    marker: B,
-) -> Entity {
-    spawn_graph_port_with(parent, props, marker, |_| {})
-}
-
-/// Spawns a typed port with an optional inline control after its label.
-pub(crate) fn spawn_graph_port_with<B: Bundle>(
-    parent: &mut ChildSpawnerCommands,
-    props: GraphPortProps,
-    marker: B,
-    accessory: impl FnOnce(&mut ChildSpawnerCommands),
-) -> Entity {
-    let mut row = parent.spawn((graph_port_row_node(props.side), Pickable::IGNORE));
-    let mut socket_entity = Entity::PLACEHOLDER;
-    row.with_children(|row| {
-        socket_entity = row
-            .spawn((
-                Button,
-                marker,
-                FeathersGraphSocket { color: props.color },
-                AccessibleLabel(format!(
-                    "{}. {}",
-                    props.tooltip_title, props.tooltip_description
-                )),
-                EditorTooltip::titled(props.tooltip_title, props.tooltip_description)
-                    .with_preferred_side(match props.side {
-                        GraphSocketSide::Input => EditorTooltipSide::Left,
-                        GraphSocketSide::Output => EditorTooltipSide::Right,
-                    })
-                    // Sockets live under the pan/zoom canvas transform and clip, so anchor the
-                    // tooltip beside the cursor rather than the (mis-placed, clipped) element.
-                    .anchored_to_cursor(),
-                EntityCursor::System(SystemCursorIcon::Crosshair),
-                Node {
-                    width: Val::Px(SOCKET_HIT_SIZE),
-                    height: Val::Px(SOCKET_HIT_SIZE),
-                    min_width: Val::Px(SOCKET_HIT_SIZE),
-                    min_height: Val::Px(SOCKET_HIT_SIZE),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor(Color::NONE),
-            ))
-            .with_child((
-                FeathersGraphSocketDot,
-                Node {
-                    width: Val::Px(SOCKET_SIZE),
-                    height: Val::Px(SOCKET_SIZE),
-                    border: UiRect::all(Val::Px(2.0)),
-                    border_radius: BorderRadius::all(Val::Px(SOCKET_SIZE * 0.5)),
-                    ..default()
-                },
-                BackgroundColor(theme::PANEL_DARK),
-                BorderColor::all(props.color),
-                Pickable::IGNORE,
-            ))
-            .id();
-        if let Some(label) = props.label {
-            row.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(9.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_MUTED),
-                Pickable::IGNORE,
-            ));
-        }
-        accessory(row);
-    });
-    socket_entity
-}
-
-fn graph_port_row_node(side: GraphSocketSide) -> Node {
-    let (flex_direction, justify_content, position_type, top, right) = match side {
-        GraphSocketSide::Input => (
-            FlexDirection::Row,
-            JustifyContent::FlexStart,
-            PositionType::Relative,
-            Val::Auto,
-            Val::Auto,
-        ),
-        GraphSocketSide::Output => (
-            FlexDirection::RowReverse,
-            JustifyContent::FlexStart,
-            PositionType::Absolute,
-            Val::Px(5.0),
-            Val::Px(0.0),
-        ),
-    };
-    Node {
-        width: Val::Percent(100.0),
-        height: Val::Px(PORT_ROW_HEIGHT),
-        min_height: Val::Px(PORT_ROW_HEIGHT),
-        flex_direction,
-        justify_content,
-        align_items: AlignItems::Center,
-        column_gap: Val::Px(5.0),
-        padding: UiRect::horizontal(Val::Px(4.0)),
-        position_type,
-        top,
-        right,
-        ..default()
-    }
-}
-
-fn update_socket_visuals(
-    sockets: Query<(&Interaction, &FeathersGraphSocket, &Children), Changed<Interaction>>,
-    mut dots: Query<(&mut BackgroundColor, &mut BorderColor), With<FeathersGraphSocketDot>>,
-) {
-    for (interaction, socket, children) in &sockets {
-        for child in children.iter() {
-            let Ok((mut background, mut border)) = dots.get_mut(child) else {
-                continue;
-            };
-            match *interaction {
-                Interaction::None => {
-                    background.0 = theme::PANEL_DARK;
-                    *border = BorderColor::all(socket.color);
-                }
-                Interaction::Hovered => {
-                    background.0 = socket.color;
-                    *border = BorderColor::all(theme::TEXT);
-                }
-                Interaction::Pressed => {
-                    background.0 = theme::TEXT;
-                    *border = BorderColor::all(socket.color);
-                }
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 mod layout_contract_tests;
@@ -1367,7 +366,9 @@ mod tests {
         let zoom = 1.5;
 
         let transform = graph_canvas_transform(pan, zoom, size);
-        let translation = transform.translation.resolve(1.0, size, size);
+        let translation = transform
+            .translation
+            .resolve(1.0, size, size, default(), default());
         let visual_top_left = translation + size * (1.0 - zoom) * 0.5;
 
         assert_vec2_close(visual_top_left, pan);
@@ -1381,7 +382,10 @@ mod tests {
 
         for zoom in [MIN_ZOOM, 0.25, 0.7, 1.0, 1.8] {
             let canvas = graph_canvas_transform(pan, zoom, content_size);
-            let canvas_translation = canvas.translation.resolve(1.0, content_size, content_size);
+            let canvas_translation =
+                canvas
+                    .translation
+                    .resolve(1.0, content_size, content_size, default(), default());
             let canvas_top_left = canvas_translation + content_size * (1.0 - canvas.scale.x) * 0.5;
             let node_socket_screen = canvas_top_left + graph_point * canvas.scale;
 

@@ -5,7 +5,7 @@ use crate::theme;
 use bevy::{
     input_focus::{InputFocus, InputFocusVisible},
     prelude::*,
-    ui_widgets::ActiveDescendant,
+    ui_widgets::{ActiveDescendant, Button},
 };
 
 mod state;

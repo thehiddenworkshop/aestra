@@ -6,11 +6,11 @@ use aestra_bevy::{
 };
 use bevy::{
     ecs::system::SystemState,
+    extract::extract_resource::{ExtractResource, ExtractResourcePlugin},
     prelude::*,
     render::{
         Render, RenderApp, RenderSystems,
         diagnostic::{RecordDiagnostics, begin_diagnostics_frame, resolve_encoder},
-        extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_resource::{Buffer, BufferDescriptor, BufferUsages, MapMode},
         renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems, RenderQueue},
     },
@@ -92,6 +92,7 @@ pub fn add_outputs(effect: &mut EffectAsset) {
 }
 
 #[derive(Resource, Clone, Copy, Default, ExtractResource, Debug, Serialize)]
+#[extract_app(RenderApp)]
 pub struct Tick {
     pub index: u64,
     pub measured: bool,
@@ -187,7 +188,7 @@ pub fn install(app: &mut App, settings: AestraParticleLightSettings, allocations
         .insert_resource(mailbox.clone())
         .insert_resource(clusters.clone())
         .init_resource::<Tick>()
-        .add_plugins(ExtractResourcePlugin::<Tick>::default())
+        .add_plugins(ExtractResourcePlugin::<Tick, RenderApp>::default())
         .add_systems(Update, start.before(aestra_bevy::AestraSet::Playback));
     if let Some(render) = app.get_sub_app_mut(RenderApp) {
         render
@@ -307,16 +308,19 @@ fn copy_counts(
     encoder.copy_buffer_to_buffer(&frame.counters, 0, &buffer, 0, 16);
     encoder.map_buffer_on_submit(&buffer.clone(), MapMode::Read, 0..16, move |result| {
         if result.is_ok() {
-            let bytes = buffer.slice(..).get_mapped_range();
-            let words = bytes
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|v| u32::from_le_bytes(*v))
-                .collect::<Vec<_>>();
-            observation.counters = Some(words.try_into().unwrap());
-            observation.status = "selected".into();
-            drop(bytes);
+            match buffer.slice(..).get_mapped_range() {
+                Ok(bytes) => {
+                    let words = bytes
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|v| u32::from_le_bytes(*v))
+                        .collect::<Vec<_>>();
+                    observation.counters = Some(words.try_into().unwrap());
+                    observation.status = "selected".into();
+                }
+                Err(_) => observation.status = "map_failed".into(),
+            }
             buffer.unmap();
         } else {
             observation.status = "map_failed".into();

@@ -70,6 +70,26 @@ pub(crate) fn app_with(setup: impl FnOnce(&mut App)) -> App {
     app.finish();
     app.cleanup();
     app.world_mut().spawn((Window::default(), PrimaryWindow));
+    // Embedded assets still load asynchronously. A fixed number of empty frames
+    // does not guarantee that selection can shape text under parallel CI load.
+    let font: Handle<Font> = app
+        .world()
+        .resource::<AssetServer>()
+        .load(bevy::feathers::constants::fonts::REGULAR);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !app.world().resource::<Assets<Font>>().contains(font.id()) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "embedded Feathers font did not load: {:?}",
+            app.world()
+                .resource::<AssetServer>()
+                .get_load_state(font.id())
+        );
+        app.update();
+        std::thread::yield_now();
+    }
+    // Register the loaded font in the text collection before composing inputs.
+    app.update();
     app
 }
 

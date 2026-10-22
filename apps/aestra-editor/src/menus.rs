@@ -30,6 +30,7 @@ impl Plugin for EditorMenusPlugin {
         .init_resource::<SubmenuHoverState>()
         .init_resource::<MenuActivationGuard>()
         .add_observer(queue_menu_activation)
+        .add_observer(sync_native_menu_event)
         .add_systems(
             Update,
             (handle_menu_controls, open_hovered_panels_submenu)
@@ -932,13 +933,62 @@ fn handle_menu_controls(
 
 fn queue_menu_activation(
     activate: On<Activate>,
-    actions: Query<(), (With<MenuAction>, With<FeathersActionButton>)>,
+    actions: Query<
+        (),
+        (
+            With<MenuAction>,
+            With<FeathersActionButton>,
+            Without<MenuButton>,
+        ),
+    >,
     mut commands: Commands,
 ) {
     if actions.contains(activate.entity) {
         commands
             .entity(activate.entity)
             .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+// Native menu buttons already turn Activate into MenuEvent::Toggle. Handling both events as
+// independent toggles makes the editor and Feathers disagree about whether the popup is open.
+// Keep the native keyboard/focus behavior, and mirror its events into the editor's menu state.
+fn sync_native_menu_event(
+    event: On<bevy::ui_widgets::MenuEvent>,
+    roots: Query<&Children, With<bevy::feathers::controls::FeathersMenu>>,
+    dropdowns: Query<&MenuDropdown>,
+    mut menu: ResMut<MenuState>,
+    mut session: ResMut<EditorSession>,
+    mut activation_guard: ResMut<MenuActivationGuard>,
+) {
+    let Ok(children) = roots.get(event.source) else {
+        return;
+    };
+    let Some(kind) = children
+        .iter()
+        .find_map(|child| dropdowns.get(child).ok().map(|d| d.0))
+    else {
+        return;
+    };
+    use bevy::ui_widgets::MenuAction as NativeAction;
+    match event.action {
+        NativeAction::Open(_) | NativeAction::Toggle => {
+            activation_guard.0 = true;
+            if menu.tab_context.take().is_some() {
+                session.ui_revision += 1;
+            }
+            menu.panels_open = false;
+            menu.open = if matches!(event.action, NativeAction::Toggle) && menu.open == Some(kind) {
+                None
+            } else {
+                Some(kind)
+            };
+        }
+        NativeAction::CloseAll if menu.open == Some(kind) => {
+            menu.open = None;
+            menu.panels_open = false;
+        }
+        NativeAction::CloseAll | NativeAction::FocusRoot => {}
     }
 }
 
@@ -1013,8 +1063,15 @@ fn menu_after_hover(open: Option<MenuKind>, hovered: MenuKind) -> Option<MenuKin
 
 #[allow(clippy::type_complexity)]
 fn update_menu_visibility(
+    mut commands: Commands,
     menu: Res<MenuState>,
-    mut dropdowns: Query<(&MenuDropdown, &mut Node, &mut Visibility)>,
+    mut dropdowns: Query<(
+        Entity,
+        &MenuDropdown,
+        &mut Node,
+        &mut Visibility,
+        Option<&bevy::ui_widgets::MenuFocusState>,
+    )>,
     mut panels_submenus: Query<
         &mut Node,
         (
@@ -1035,8 +1092,10 @@ fn update_menu_visibility(
     if !menu.is_changed() {
         return;
     }
-    for (dropdown, mut node, mut visibility) in &mut dropdowns {
+    for (entity, dropdown, mut node, mut visibility, focus) in &mut dropdowns {
         let visible = menu.open == Some(dropdown.0);
+        let opening =
+            visible && (node.display == Display::None || *visibility != Visibility::Visible);
         node.display = if visible {
             Display::Flex
         } else {
@@ -1047,6 +1106,21 @@ fn update_menu_visibility(
         } else {
             Visibility::Hidden
         };
+        if let Some(focus) = focus {
+            use bevy::input_focus::tab_navigation::NavAction;
+            use bevy::ui_widgets::MenuFocusState;
+            if opening || (visible && *focus == MenuFocusState::Closed) {
+                // Do this after restoring Display: the focus-eligibility observer must see the
+                // popup's children as visible, including on the very first opening frame.
+                let next = match focus {
+                    MenuFocusState::Opening(nav) => MenuFocusState::Opening(*nav),
+                    _ => MenuFocusState::Opening(NavAction::First),
+                };
+                commands.entity(entity).insert(next);
+            } else if !visible && *focus != MenuFocusState::Closed {
+                commands.entity(entity).insert(MenuFocusState::Closed);
+            }
+        }
     }
     for mut node in &mut panels_submenus {
         node.display = if menu.open == Some(MenuKind::View) && menu.panels_open {
@@ -1093,6 +1167,9 @@ fn update_panel_visibility_labels(
         text.0 = panel_visibility_label(&localizer, label.0, layout.is_visible(label.0));
     }
 }
+
+#[cfg(test)]
+mod native_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1389,7 +1466,7 @@ mod tests {
     }
 
     #[test]
-    fn menu_actions_own_top_level_popup_state() {
+    fn custom_panels_submenu_still_consumes_its_activation_once() {
         let mut app = App::new();
         app.insert_resource(MenuState::default());
         let mut mouse = ButtonInput::<MouseButton>::default();
@@ -1400,8 +1477,7 @@ mod tests {
         let control = app
             .world_mut()
             .spawn((
-                MenuAction::Toggle(MenuKind::Edit),
-                MenuButton,
+                MenuAction::TogglePanelsSubmenu,
                 FeathersActionButton,
                 Interaction::None,
             ))
@@ -1412,10 +1488,9 @@ mod tests {
         app.world_mut().trigger(Activate { entity: control });
         app.update();
 
-        assert_eq!(
-            app.world().resource::<MenuState>().open,
-            Some(MenuKind::Edit)
-        );
+        assert!(app.world().resource::<MenuState>().panels_open);
+        app.update();
+        assert!(app.world().resource::<MenuState>().panels_open);
         assert!(
             !app.world()
                 .entity(control)

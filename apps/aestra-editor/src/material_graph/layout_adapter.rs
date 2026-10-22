@@ -1,14 +1,15 @@
 //! Material-specific topology adapters for the semantic-neutral M8 layout contract.
-#![allow(dead_code)] // Public request wiring arrives with the explicit M9 arrange controller.
-
-use super::*;
 use crate::feathers::graph_layout::{
     GraphDirection, GraphLayoutEdge, GraphLayoutError, GraphLayoutInput, GraphLayoutNode,
     GraphLayoutNodeId, GraphLayoutNodeState, GraphLayoutRegion, GraphLayoutResult,
 };
+use crate::feathers::node_graph::geometry::GraphNodeKey;
 use aestra_compiler::{
     MaterialFunctionBodyProjection, MaterialFunctionGraphProjection, MaterialFunctionGraphTarget,
 };
+use aestra_compiler::{MaterialGraphEdgeTarget, MaterialGraphProjection};
+use bevy::prelude::Vec2;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Retains the only material-aware mapping around an engine request. Engines see opaque IDs.
 #[derive(Debug, Clone)]
@@ -169,4 +170,5 @@ impl LayoutAdapter {
 }
 
 #[cfg(test)]
+#[path = "layout_adapter/tests.rs"]
 mod tests;

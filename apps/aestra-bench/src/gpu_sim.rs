@@ -117,6 +117,7 @@ impl Harness {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: None,
+            ..Default::default()
         }))
         .map_err(|_| "no compatible GPU adapter".to_owned())?;
         let adapter_info = adapter.get_info();
@@ -421,7 +422,10 @@ impl Harness {
         rx.recv_timeout(Duration::from_secs(5))
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
-        let bytes = readback.slice(..).get_mapped_range();
+        let bytes = readback
+            .slice(..)
+            .get_mapped_range()
+            .map_err(|error| error.to_string())?;
         let ticks: Vec<u64> = bytes
             .as_chunks::<8>()
             .0

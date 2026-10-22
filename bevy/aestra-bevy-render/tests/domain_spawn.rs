@@ -27,6 +27,7 @@ fn gpu() -> Option<Gpu> {
         power_preference: wgpu::PowerPreference::HighPerformance,
         force_fallback_adapter: false,
         compatible_surface: None,
+        ..Default::default()
     }))
     .ok()
     .filter(|adapter| {
@@ -88,6 +89,7 @@ fn read(gpu: &Gpu, buffer: &wgpu::Buffer) -> Vec<u32> {
     let words = staging
         .slice(..)
         .get_mapped_range()
+        .expect("completed test readback must remain mapped")
         .as_chunks::<4>()
         .0
         .iter()

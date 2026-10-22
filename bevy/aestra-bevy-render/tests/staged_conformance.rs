@@ -74,6 +74,7 @@ impl StagedHarness {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: None,
+                ..Default::default()
             })) {
                 Ok(adapter) => adapter,
                 Err(_) => return Ok(None),
@@ -302,7 +303,10 @@ impl StagedHarness {
             .recv_timeout(GPU_MAP_CALLBACK_TIMEOUT)
             .map_err(|error| format!("GPU map callback not delivered: {error}"))?
             .map_err(|error| error.to_string())?;
-        let bytes = slice.get_mapped_range().to_vec();
+        let bytes = slice
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped")
+            .to_vec();
         buffer.unmap();
         Ok(bytes)
     }

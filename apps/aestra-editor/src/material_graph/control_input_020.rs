@@ -20,7 +20,11 @@ pub(super) struct Controls<'w, 's, A: Component, F: QueryFilter + 'static = ()> 
             &'static A,
             Option<&'static PendingFeathersActivation>,
         ),
-        (Changed<Pressed>, With<FeathersActionButton>, F),
+        (
+            Or<(Changed<Pressed>, Added<PendingFeathersActivation>)>,
+            With<FeathersActionButton>,
+            F,
+        ),
     >,
 }
 impl<A: Component, F: QueryFilter + 'static> Controls<'_, '_, A, F> {

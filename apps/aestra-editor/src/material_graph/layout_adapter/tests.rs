@@ -1,6 +1,6 @@
 use super::*;
 use crate::feathers::graph_layout::{GraphLayoutNodeState, GraphLayoutResult};
-use aestra_compiler::MaterialFunctionLibrary;
+use aestra_compiler::{MaterialCompiler, MaterialFunctionLibrary};
 use aestra_core::material::{MaterialFunction, MaterialProgram};
 
 fn state(index: usize) -> GraphLayoutNodeState {

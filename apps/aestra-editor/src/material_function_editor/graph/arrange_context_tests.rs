@@ -3,6 +3,7 @@ use crate::material_graph::{
     MaterialGraphSelectionState,
     arrange::{ArrangeGraph, ArrangeScope},
 };
+use aestra_core::MaterialExpressionId;
 use bevy::ecs::system::RunSystemOnce;
 
 #[derive(Resource, Default)]

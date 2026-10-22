@@ -1,8 +1,9 @@
-# Aestra candidate patch for bevy_input_focus 0.20.0
+# Aestra workspace patch for bevy_input_focus 0.20.0
 
-This is the actual published 0.20.0 crate, not relabelled 0.19 source. It is used
-only by `benchmarks/bevy-upgrade/patches-020`; the shipping workspace still selects
-`vendor/bevy_input_focus` 0.19.1 until the renderer/editor migration is ready.
+This is the actual published 0.20.0 crate, not relabelled 0.19 source. It is selected
+by the root workspace's Bevy 0.20 cutover and independently qualified by
+`benchmarks/bevy-upgrade/patches-020`. The retained 0.19 patch is historical,
+not the active editor/runtime dependency.
 `UPSTREAM_SHA256.json` records the registry archive checksum and original file
 hashes. Licenses and upstream behavior outside keyboard dispatch are retained.
 

@@ -58,6 +58,7 @@ impl IrHarness {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: None,
+                ..Default::default()
             })) {
                 Ok(adapter) => adapter,
                 Err(_) => return Ok(None),
@@ -309,7 +310,10 @@ impl IrHarness {
             .recv_timeout(GPU_MAP_CALLBACK_TIMEOUT)
             .expect("map callback delivered")
             .expect("map succeeds");
-        let bytes = slice.get_mapped_range().to_vec();
+        let bytes = slice
+            .get_mapped_range()
+            .expect("completed test readback must remain mapped")
+            .to_vec();
         buffer.unmap();
         bytes
     }

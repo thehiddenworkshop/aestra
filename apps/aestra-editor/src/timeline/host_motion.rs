@@ -435,26 +435,24 @@ mod tests {
             },
             position: Vec2::ZERO,
         };
-        app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            location.clone(),
-            DragEnd {
+        app.world_mut()
+            .trigger(bevy::picking::events::PointerDragEnd {
+                entity: key,
+                pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location.clone()),
+
                 button: PointerButton::Primary,
                 distance: Vec2::ZERO,
-            },
-            key,
-        ));
-        app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            location,
-            Click {
+            });
+        app.world_mut()
+            .trigger(bevy::picking::events::PointerClick {
+                entity: key,
+                pointer: bevy::picking::events::Pointer::new(PointerId::Mouse, location),
+
                 button: PointerButton::Primary,
                 hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
                 duration: std::time::Duration::ZERO,
                 count: 1,
-            },
-            key,
-        ));
+            });
         assert_eq!(
             app.world().resource::<TimelineState>().host_motion.selected,
             Some(2)

@@ -1,6 +1,7 @@
 //! Shared production lifecycle tests; no wall-clock sleeps or OS pointer input.
 use super::super::pointer::tests::{drag_start, over};
 use super::*;
+use bevy::time::TimeUpdateStrategy;
 
 fn app() -> (App, Entity) {
     let mut app = App::new();
@@ -10,14 +11,21 @@ fn app() -> (App, Entity) {
         bevy::text::TextPlugin,
     ))
     .init_resource::<UiScale>()
+    .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO))
     .init_resource::<TooltipState>()
     .add_observer(begin_tooltip)
     .add_observer(dismiss_tooltip_on_drag)
-    .add_systems(Update, update_tooltip);
+    .add_systems(Update, update_tooltip)
+    .add_systems(Last, |mut time: ResMut<TimeUpdateStrategy>| {
+        // Tests advance one frame at a time; unrelated work cannot expire the next hover.
+        *time = TimeUpdateStrategy::ManualDuration(Duration::ZERO);
+    });
     let window = app
         .world_mut()
         .spawn((Window::default(), PrimaryWindow))
         .id();
+    // Initialize the real-time clock before the first controlled delta.
+    app.update();
     (app, window)
 }
 
@@ -35,8 +43,59 @@ fn target(app: &mut App, tooltip: EditorTooltip) -> Entity {
 }
 
 fn mature(app: &mut App) {
-    app.world_mut().resource_mut::<TooltipState>().hovered_at =
-        Some(Instant::now() - Duration::from_secs(10));
+    let delay = app
+        .world()
+        .resource::<TooltipState>()
+        .target
+        .and_then(|target| app.world().get::<EditorTooltip>(target))
+        .map_or(DEFAULT_TOOLTIP_DELAY, |tooltip| tooltip.delay);
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(delay));
+}
+
+fn advance(app: &mut App, duration: Duration) {
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(duration));
+    app.update();
+}
+
+#[test]
+fn tooltip_delay_uses_unpaused_real_time_and_opens_at_the_exact_boundary() {
+    let (mut app, window) = app();
+    let delay = Duration::from_millis(1200);
+    let target = target(
+        &mut app,
+        EditorTooltip::description("help").with_delay(delay),
+    );
+    app.world_mut().resource_mut::<Time<Virtual>>().pause();
+    app.world_mut().trigger(over(target, window));
+    advance(&mut app, delay - Duration::from_nanos(1));
+    assert!(app.world().resource::<TooltipState>().popup.is_none());
+    advance(&mut app, Duration::from_nanos(1));
+    assert!(app.world().resource::<TooltipState>().popup.is_some());
+    assert_eq!(
+        app.world().resource::<Time<Virtual>>().elapsed(),
+        Duration::ZERO
+    );
+}
+
+#[test]
+fn switching_targets_restarts_the_full_delay_after_external_popup_removal() {
+    let (mut app, window) = app();
+    let first = target(&mut app, EditorTooltip::description("first"));
+    let second = target(&mut app, EditorTooltip::description("second"));
+    app.world_mut().trigger(over(first, window));
+    mature(&mut app);
+    app.update();
+    let old = popup(&app);
+    app.world_mut().despawn(old);
+    app.world_mut().trigger(over(second, window));
+    app.world_mut().flush();
+    advance(&mut app, DEFAULT_TOOLTIP_DELAY - Duration::from_nanos(1));
+    assert!(app.world().resource::<TooltipState>().popup.is_none());
+    advance(&mut app, Duration::from_nanos(1));
+    assert_eq!(
+        app.world().get::<AccessibleLabel>(popup(&app)).unwrap().0,
+        "second"
+    );
 }
 
 fn popup(app: &App) -> Entity {

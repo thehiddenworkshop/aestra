@@ -226,8 +226,9 @@ type UnclassifiedTransportControl = (
 );
 
 fn audit_transport_controls(controls: Query<Entity, UnclassifiedTransportControl>) {
-    #[cfg(debug_assertions)]
-    if let Some(entity) = controls.iter().next() {
+    if cfg!(debug_assertions)
+        && let Some(entity) = controls.iter().next()
+    {
         panic!(
             "transport control {entity:?} must use FeathersActionButton or be explicitly marked \
              EditorNativeControl"

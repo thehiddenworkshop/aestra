@@ -23,6 +23,7 @@ pub(crate) struct NumberScrubSet;
 
 impl Plugin for NumberScrubPlugin {
     fn build(&self, app: &mut App) {
+        super::widget::register(app);
         app.init_resource::<NumberScrubState>()
             .add_observer(begin_number_scrub)
             .add_observer(update_number_scrub)
@@ -258,11 +259,17 @@ pub(super) fn replace_number_text(
         let Ok(mut editable) = texts.get_mut(descendant) else {
             continue;
         };
-        editable.queue_edit(TextEdit::SelectAll);
-        editable.queue_edit(TextEdit::Insert(value.into()));
-        editable.queue_edit(TextEdit::CollapseSelection);
+        set_number_text(&mut editable, &value);
         return;
     }
+}
+
+/// Replace a model-owned value without selecting text through an asynchronously loaded layout.
+/// A replacement supersedes pending edits from an earlier model value, not an active typed edit.
+pub(super) fn set_number_text(editable: &mut EditableText, value: &str) {
+    editable.clear();
+    editable.editor_mut().set_text(value);
+    editable.queue_edit(TextEdit::TextEnd(false));
 }
 
 pub(crate) fn scrub_multiplier(shift: bool, control: bool) -> f32 {

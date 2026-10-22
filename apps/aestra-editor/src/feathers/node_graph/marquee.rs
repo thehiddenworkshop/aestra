@@ -71,9 +71,13 @@ pub(super) fn begin_graph_marquee<F: QueryFilter>(
     {
         return;
     }
-    let Some(viewport) =
-        graph_viewport_from_target(drag.event_target(), &viewports, &nodes, &controls, &parents)
-    else {
+    let Some(viewport) = graph_viewport_from_target(
+        drag.original_event_target(),
+        &viewports,
+        &nodes,
+        &controls,
+        &parents,
+    ) else {
         return;
     };
     let Ok((computed, transform, _)) = viewports.get(viewport) else {

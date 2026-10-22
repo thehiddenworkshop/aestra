@@ -1,9 +1,12 @@
 //! Host geometry collector scheduling; the shared registry is engine-qualified independently.
 use bevy::prelude::*;
+#[path = "geometry/model.rs"]
 mod model;
 pub(crate) use model::*;
+#[path = "geometry/collect.rs"]
 mod collect;
 #[cfg(test)]
+#[path = "geometry/tests.rs"]
 pub(crate) mod tests;
 
 pub(super) fn register(app: &mut App) {

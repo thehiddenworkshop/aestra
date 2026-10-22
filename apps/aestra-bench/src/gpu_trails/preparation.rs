@@ -281,7 +281,10 @@ pub(super) fn run(config: &Config) -> Report {
                 rx.recv_timeout(std::time::Duration::from_secs(5))
                     .unwrap()
                     .unwrap();
-                let bytes = readback.slice(..).get_mapped_range();
+                let bytes = readback
+                    .slice(..)
+                    .get_mapped_range()
+                    .expect("completed benchmark readback must remain mapped");
                 let ticks: Vec<_> = bytes[..32]
                     .as_chunks::<8>()
                     .0

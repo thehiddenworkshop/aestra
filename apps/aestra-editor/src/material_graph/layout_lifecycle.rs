@@ -1,15 +1,47 @@
 //! Project-bound placement lifecycle. The active project's legacy material keys are reset as a
 //! unit; generic graph widgets are untouched. Base placement survives semantic reloads, while
 //! removed identities do not. Surviving nodes keep their displayed placement across semantic edits.
-use super::*;
+#[cfg(test)]
+use crate::feathers::node_graph::geometry::{GraphDocumentKey, GraphViewKey};
+use crate::feathers::node_graph::{
+    FeathersGraphNavigationBlocker, GraphViewportMemory, geometry::GraphGeometryView,
+};
+#[cfg(test)]
+use crate::material_graph::function_layout;
+use crate::material_graph::{
+    MaterialGraphPreviewState, MaterialGraphPreviewTarget, clear_document_transients,
+    graph_inventory,
+    keys::{
+        MATERIAL_GRAPH_OUTPUT_NODE_KEY, function_graph_memory_key,
+        material_graph_expression_node_key, material_graph_view_key,
+    },
+    layout_persistence::*,
+};
+use crate::{EditorSession, EditorSet, Localizer, ProjectEffectCatalog, theme};
 use crate::{document::DocumentKey, feathers::node_graph::geometry::GraphGeometryRegistry};
+use aestra_core::MaterialProgramId;
+use aestra_core::material::MaterialProgram;
+#[cfg(test)]
+use aestra_core::{
+    MaterialExpressionId,
+    material::{MaterialExpressionKind, MaterialValue},
+};
+#[cfg(test)]
+use aestra_project::MaterialGraphNodeLayout;
+use aestra_project::ProjectEditorLayout;
+use bevy::{prelude::*, ui_widgets::Activate};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+    time::Instant,
+};
 
 pub(super) fn is_material_graph(key: &str) -> bool {
     key.starts_with("material:") || key.starts_with("function:")
 }
 
-pub(super) use super::graph_inventory::programs;
+pub(super) use graph_inventory::programs;
 
 #[derive(Default)]
 pub(super) struct Observed {
@@ -195,6 +227,7 @@ pub(super) fn reconcile(
 }
 
 #[cfg(test)]
+#[path = "layout_lifecycle/tests.rs"]
 mod tests;
 
 #[derive(Component)]

@@ -9,7 +9,7 @@ use aestra_core::material::{
     MaterialDomain, MaterialInstance, MaterialProgram, MaterialProgramRef,
 };
 use aestra_project::ProjectAssetId;
-use bevy::picking::events::DragEnter;
+use bevy::picking::events::PointerDragEnter;
 
 #[derive(Component, Clone, Copy)]
 pub(super) struct RendererDropTarget {
@@ -309,7 +309,7 @@ fn target(entity: Entity, targets: &DropTargets) -> Option<DropTarget> {
 
 #[allow(clippy::too_many_arguments)]
 fn hover(
-    mut event: On<Pointer<DragEnter>>,
+    mut event: On<PointerDragEnter>,
     sources: Query<&AssetPayload>,
     targets: DropTargets,
     parents: Query<&ChildOf>,
@@ -350,7 +350,7 @@ fn hover(
 
 #[allow(clippy::too_many_arguments)]
 fn drop_asset(
-    mut event: On<Pointer<DragDrop>>,
+    mut event: On<PointerDragDrop>,
     sources: Query<&AssetPayload>,
     targets: DropTargets,
     parents: Query<&ChildOf>,

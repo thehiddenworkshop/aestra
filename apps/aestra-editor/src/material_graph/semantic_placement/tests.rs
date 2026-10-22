@@ -1,9 +1,17 @@
 use super::*;
+use crate::history::EditorHistoryLedger;
 use crate::{
     history::{HistoryAction, execute_history_action},
     material_function_editor::FunctionEditor,
 };
-use aestra_core::material::{MaterialExpression, MaterialExpressionKind};
+use aestra_authoring::{
+    MaterialAuthoringDocument, MaterialCommandExecutor, MaterialConnectionTarget,
+    MaterialOutputSocket, MaterialToolCommand, MaterialToolPlanner,
+};
+use aestra_compiler::MaterialGraphCreateKind;
+use aestra_core::material::{
+    MaterialExpression, MaterialExpressionKind, MaterialValue, MaterialValueType,
+};
 use bevy::ecs::system::RunSystemOnce;
 
 fn fixture() -> (tempfile::TempDir, App, MaterialProgram, MaterialFunction) {

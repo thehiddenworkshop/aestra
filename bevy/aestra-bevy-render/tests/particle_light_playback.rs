@@ -47,7 +47,10 @@ fn snapshot(app: &App) -> (SelectedGpuParticleLights, Vec<u32>) {
         })
         .unwrap();
     rx.recv().unwrap().unwrap();
-    let bytes = buffer.slice(..).get_mapped_range();
+    let bytes = buffer
+        .slice(..)
+        .get_mapped_range()
+        .expect("completed test readback must remain mapped");
     let words = bytes
         .as_chunks::<4>()
         .0

@@ -115,6 +115,17 @@ pub(super) mod tests {
             entity,
         )
     }
+    pub(crate) fn end_distance(entity: Entity, window: Entity, distance: Vec2) -> PointerDragEnd {
+        let mut event = end(
+            entity,
+            window,
+            Vec2::ZERO,
+            PointerId::Mouse,
+            PointerButton::Primary,
+        );
+        event.event.distance = distance;
+        event
+    }
     pub(crate) fn cancel(entity: Entity, window: Entity, id: PointerId) -> PointerCancel {
         Pointer::new(
             id,

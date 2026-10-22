@@ -165,7 +165,7 @@ pub(super) fn spawn_named(
 }
 
 pub(super) fn follow_pointer(
-    event: On<Pointer<Drag>>,
+    event: On<PointerDrag>,
     roots: Query<(&ComputedNode, &UiGlobalTransform)>,
     mut previews: Query<(&DragPreview, &mut Node)>,
 ) {
@@ -173,7 +173,7 @@ pub(super) fn follow_pointer(
         return;
     }
     for (preview, mut node) in &mut previews {
-        if preview.origin != event.entity || preview.pointer != event.pointer_id {
+        if preview.origin != event.entity || preview.pointer != event.pointer.id {
             continue;
         }
         let Ok((root, transform)) = roots.get(preview.root) else {
@@ -181,7 +181,7 @@ pub(super) fn follow_pointer(
         };
         // Pointer coordinates and ComputedNode are physical; Node offsets are
         // logical. Convert once against this window's root (including UI scale).
-        let position = pointer_position_in_node(event.pointer_location.position, root, transform)
+        let position = pointer_position_in_node(event.pointer.location().position, root, transform)
             * root.inverse_scale_factor()
             + OFFSET;
         node.left = Val::Px(position.x);
@@ -255,15 +255,17 @@ mod tests {
                         .get_mut::<Node>(image_entity)
                         .unwrap()
                         .display = if escape { Display::None } else { Display::Flex };
-                    app.world_mut().trigger(Pointer::new(
-                        PointerId::Mouse,
-                        location(start),
-                        DragStart {
+                    app.world_mut()
+                        .trigger(bevy::picking::events::PointerDragStart {
+                            entity: row,
+                            pointer: bevy::picking::events::Pointer::new(
+                                PointerId::Mouse,
+                                location(start),
+                            ),
+
                             button: PointerButton::Primary,
                             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                        },
-                        row,
-                    ));
+                        });
                     app.update();
                     let preview = {
                         let world = app.world_mut();
@@ -296,16 +298,17 @@ mod tests {
                     }
                     let before = app.world().get::<Node>(preview).unwrap().clone();
                     let delta = Vec2::new(280.0, 125.0) * scale;
-                    app.world_mut().trigger(Pointer::new(
-                        PointerId::Mouse,
-                        location(start + delta),
-                        Drag {
-                            button: PointerButton::Primary,
-                            distance: delta,
-                            delta,
-                        },
-                        row,
-                    ));
+                    app.world_mut().trigger(bevy::picking::events::PointerDrag {
+                        entity: row,
+                        pointer: bevy::picking::events::Pointer::new(
+                            PointerId::Mouse,
+                            location(start + delta),
+                        ),
+
+                        button: PointerButton::Primary,
+                        distance: delta,
+                        delta,
+                    });
                     // The new position is written immediately, with no interpolation/lag.
                     let after = app.world().get::<Node>(preview).unwrap();
                     let (Val::Px(x0), Val::Px(y0), Val::Px(x1), Val::Px(y1)) =
@@ -343,15 +346,17 @@ mod tests {
                             .press(KeyCode::Escape);
                     } else {
                         // Releasing over empty/invalid space must also restore the visual.
-                        app.world_mut().trigger(Pointer::new(
-                            PointerId::Mouse,
-                            location(start + delta),
-                            DragEnd {
+                        app.world_mut()
+                            .trigger(bevy::picking::events::PointerDragEnd {
+                                entity: row,
+                                pointer: bevy::picking::events::Pointer::new(
+                                    PointerId::Mouse,
+                                    location(start + delta),
+                                ),
+
                                 button: PointerButton::Primary,
                                 distance: delta,
-                            },
-                            row,
-                        ));
+                            });
                     }
                     app.update();
                     assert!(app.world().get_entity(preview).is_err());

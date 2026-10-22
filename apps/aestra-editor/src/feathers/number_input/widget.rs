@@ -3,7 +3,10 @@
 //! Aestra owns the value bridge, scrub policy and hover steppers. Do not compose
 //! the upstream 0.20 number input as well: its private drag/chevron observers
 //! would compete with these handlers. The document remains the source of truth.
-use super::{pointer::PointerClick, scrub::NumberScrubState};
+use super::{
+    pointer::PointerClick,
+    scrub::{NumberScrubState, set_number_text},
+};
 pub(crate) use bevy::feathers::controls::NumberInputValue;
 use bevy::{
     app::PropagateOver,
@@ -17,7 +20,7 @@ use bevy::{
     input_focus::{AcquireFocus, FocusCause, FocusLost, FocusedInput, InputFocus},
     prelude::*,
     scene::SceneScope,
-    text::{EditableText, EditableTextFilter, FontSourceTemplate, TextEdit, TextEditChange},
+    text::{EditableText, EditableTextFilter, FontSourceTemplate, TextEditChange},
     ui::InteractionDisabled,
     ui_widgets::{SelectAllOnFocus, ValueChange},
 };
@@ -37,6 +40,16 @@ pub(crate) enum NumberFormat {
 pub(crate) struct UpdateNumberInput {
     pub(crate) entity: Entity,
     pub(crate) value: NumberInputValue,
+}
+
+// Application controls can be added before their deferred scene children exist.
+// Retain the latest model value until the real editable text is available.
+#[derive(Component)]
+struct PendingNumberValue(NumberInputValue);
+
+pub(super) fn register(app: &mut App) {
+    app.add_observer(update_display)
+        .add_systems(Update, sync_displays.in_set(super::NumberScrubSet));
 }
 
 #[derive(SceneComponent, Default, Clone, Reflect)]
@@ -74,9 +87,12 @@ impl EditorNumberInput {
     fn scene(props: EditorNumberInputProps) -> impl Scene {
         let surface = bsn! {
             Node {
-                position_type: PositionType::Absolute,
-                left: px(0), right: px(0), top: px(0), bottom: px(0),
+                grid_column: GridPlacement::start(3),
+                grid_row: GridPlacement::start(1),
+                width: percent(100), height: percent(100),
+                min_width: px(0), min_height: px(0),
             }
+            ZIndex(1)
             NumericSurface
             Pickable::default()
             on(defer_focus)
@@ -84,6 +100,15 @@ impl EditorNumberInput {
         };
         let input = bsn! {
             @FeathersTextInput { @max_characters: 20usize }
+            Node {
+                grid_column: GridPlacement::start(3),
+                grid_row: GridPlacement::start(1),
+                min_width: px(0),
+                align_self: AlignSelf::Stretch,
+                // Preserve the centered single-line baseline while the editable box fills the
+                // same grid cell as its full-height scrub/click surface.
+                padding: UiRect::vertical(px(4)),
+            }
             NumericText::default()
             SelectAllOnFocus
             on(text_changed)
@@ -92,11 +117,12 @@ impl EditorNumberInput {
             EditableTextFilter::new(|c| {
                 c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')
             })
-            Children [{surface}]
         };
         let label = props.label_text.map(|text| {
             SceneScope(bsn! {
                 Node {
+                    grid_column: GridPlacement::start(1),
+                    grid_row: GridPlacement::start(1),
                     display: Display::Flex,
                     align_items: AlignItems::Center,
                     align_self: AlignSelf::Stretch,
@@ -118,10 +144,24 @@ impl EditorNumberInput {
         (
             bsn! {
                 @FeathersTextInputContainer
+                // Keep EditableText a leaf. A child picking surface disables
+                // intrinsic text measurement in 0.20's layout. Grid siblings
+                // share the exact value cell without covering labels/arrows.
+                Node {
+                    display: Display::Grid,
+                    position_type: PositionType::Relative,
+                    height: size::ROW_HEIGHT,
+                    min_width: px(0),
+                    border: UiRect::left(px(3)),
+                    column_gap: px(2),
+                    grid_template_columns: {vec![
+                        if props.label_text.is_some() { GridTrack::auto() } else { GridTrack::px(0.0) },
+                        GridTrack::px(12.0), GridTrack::flex(1.0), GridTrack::px(12.0),
+                    ]},
+                }
                 ThemeBorderColor({props.sigil_color})
                 EditorNumberInput
-                on(update_display)
-                Children [{(label, SceneScope(input))}]
+                Children [{(label, SceneScope(input), SceneScope(surface))}]
             },
             template_value(props.number_format),
         )
@@ -136,6 +176,8 @@ fn defer_focus(mut request: On<AcquireFocus>) {
 fn click_to_edit(
     mut click: On<PointerClick>,
     parents: Query<&ChildOf>,
+    inputs: Query<&Children, With<EditorNumberInput>>,
+    texts: Query<(), With<EditableText>>,
     disabled: Query<(), With<InteractionDisabled>>,
     state: Res<NumberScrubState>,
     mut focus: ResMut<InputFocus>,
@@ -143,25 +185,35 @@ fn click_to_edit(
     if click.button != bevy::picking::pointer::PointerButton::Primary {
         return;
     }
-    let Ok(input) = parents.get(click.entity) else {
+    let Ok(owner) = parents.get(click.entity) else {
         return;
     };
-    let Ok(owner) = parents.get(input.parent()) else {
+    let Ok(children) = inputs.get(owner.parent()) else {
+        return;
+    };
+    let Some(input) = children.iter().find(|child| texts.contains(*child)) else {
         return;
     };
     click.propagate(false);
     // Picking dispatches Click before DragEnd on release. A drag must not enter editing.
     if !state.is_scrubbing(owner.parent()) && enabled(click.entity, &parents, &disabled) {
-        focus.set(input.parent(), FocusCause::Navigated);
+        focus.set(input, FocusCause::Navigated);
     }
 }
 
 pub(super) fn sync_numeric_surfaces(
     focus: Res<InputFocus>,
+    inputs: Query<&Children, With<EditorNumberInput>>,
+    texts: Query<(), With<EditableText>>,
     mut surfaces: Query<(&ChildOf, &mut Pickable), With<NumericSurface>>,
 ) {
     for (parent, mut pickable) in &mut surfaces {
-        let next = if focus.get() == Some(parent.parent()) {
+        let editing = inputs.get(parent.parent()).is_ok_and(|children| {
+            children
+                .iter()
+                .any(|child| texts.contains(child) && focus.get() == Some(child))
+        });
+        let next = if editing {
             Pickable::IGNORE
         } else {
             Pickable::default()
@@ -191,34 +243,78 @@ fn update_display(
     update: On<UpdateNumberInput>,
     inputs: Query<(&Children, &NumberFormat), With<EditorNumberInput>>,
     mut texts: Query<&mut EditableText>,
-    focus: Res<InputFocus>,
+    focus: Option<Res<InputFocus>>,
+    mut commands: Commands,
 ) {
-    let Ok((children, format)) = inputs.get(update.entity) else {
-        return;
-    };
-    let value_format = match update.value {
+    let applied = inputs.get(update.entity).is_ok_and(|(children, format)| {
+        apply_display(
+            update.value,
+            children,
+            *format,
+            focus.as_ref().and_then(|focus| focus.get()),
+            &mut texts,
+        )
+    });
+    if let Ok(mut entity) = commands.get_entity(update.entity) {
+        if applied {
+            // A newer immediate value supersedes any earlier deferred value.
+            entity.remove::<PendingNumberValue>();
+        } else {
+            entity.insert(PendingNumberValue(update.value));
+        }
+    }
+}
+
+fn sync_displays(
+    mut commands: Commands,
+    inputs: Query<(Entity, &Children, &NumberFormat, &PendingNumberValue), With<EditorNumberInput>>,
+    mut texts: Query<&mut EditableText>,
+    focus: Option<Res<InputFocus>>,
+) {
+    for (entity, children, format, pending) in &inputs {
+        if apply_display(
+            pending.0,
+            children,
+            *format,
+            focus.as_ref().and_then(|focus| focus.get()),
+            &mut texts,
+        ) {
+            commands.entity(entity).remove::<PendingNumberValue>();
+        }
+    }
+}
+
+/// True means the request is handled, including wrong-type or focused-edit suppression.
+/// False means scene composition is incomplete and the model value must be retained.
+fn apply_display(
+    value: NumberInputValue,
+    children: &Children,
+    format: NumberFormat,
+    focused: Option<Entity>,
+    texts: &mut Query<&mut EditableText>,
+) -> bool {
+    let value_format = match value {
         NumberInputValue::F32(_) => NumberFormat::F32,
         NumberInputValue::F64(_) => NumberFormat::F64,
         NumberInputValue::I32(_) => NumberFormat::I32,
         NumberInputValue::I64(_) => NumberFormat::I64,
     };
-    if *format != value_format {
-        return;
+    if format != value_format {
+        return true;
     }
     for child in children {
         if let Ok(mut text) = texts.get_mut(*child) {
             // Preserve an in-progress edit when panels refresh their model.
-            if focus.get() != Some(*child) {
-                let digits = update.value.to_string();
+            if focused != Some(*child) {
+                let digits = value.to_string();
                 if text.value().to_string() != digits {
-                    text.queue_edit(TextEdit::SelectAll);
-                    text.queue_edit(TextEdit::Insert(digits.into()));
-                    text.queue_edit(TextEdit::CollapseSelection);
+                    set_number_text(&mut text, &digits);
                 }
             }
-            break;
+            return true;
         }
     }
+    false
 }
 
 fn enabled(

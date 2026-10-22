@@ -1,12 +1,44 @@
 //! Bounded, cancellable CPU rasterization. Never evaluate preview pixels on the UI thread.
-use super::*;
+#[cfg(test)]
+#[path = "node_previews/orchestration_tests.rs"]
+mod orchestration_tests;
+use crate::material_graph::{
+    MaterialGraphPreviewState, MaterialGraphPreviewTarget,
+    preview_pixels::{MATERIAL_PREVIEW_SIZE, render_material_preview_pixels},
+    preview_state::MaterialGraphPreviewCache,
+    preview_surface::MaterialGraphPreviewRaster,
+};
+use crate::{EditorSession, ProjectEffectCatalog};
+use aestra_core::material::{MaterialInstance, MaterialProgram};
+#[cfg(test)]
+use aestra_core::{
+    MaterialExpressionId,
+    material::{MaterialExpression, MaterialExpressionKind, MaterialValue},
+};
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
+use bevy::{
+    asset::RenderAssetUsages,
+    image::ImageSampler,
+    prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+#[cfg(test)]
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 const WORKERS: usize = 2;
+
+pub(super) fn register(app: &mut App) {
+    app.init_resource::<MaterialGraphPreviewState>()
+        .add_systems(Update, update);
+}
 
 pub(super) use super::preview_state::{Input, Key};
 
@@ -100,34 +132,8 @@ pub(super) struct Jobs {
 
 /// Mount the last completed image in the same command batch as the node. A graph rebuild must not
 /// briefly replace every preview with an empty surface while new pixels are being prepared.
-pub(super) fn spawn(
-    parent: &mut ChildSpawnerCommands,
-    previews: &MaterialGraphPreviewState,
-    request: MaterialGraphPreviewRaster,
-) {
-    let cached = previews
-        .cache
-        .iter()
-        .find(|(key, _)| {
-            key.program == request.program
-                && key.target == request.target
-                && key.instance == request.instance
-                && match &request.editing_target {
-                    crate::material_document::MaterialEditingTarget::Program { root, .. } => {
-                        &key.root == root
-                    }
-                    _ => true,
-                }
-        })
-        .map(|(_, cached)| cached.image.clone());
-    let entity = spawn_graph_node_preview(parent, request);
-    if let Some(image) = cached {
-        parent
-            .commands()
-            .entity(entity)
-            .insert(ImageNode::new(image).with_mode(NodeImageMode::Stretch));
-    }
-}
+#[cfg(test)]
+pub(super) use super::preview_surface::spawn;
 
 pub(super) fn update(
     mut commands: Commands,

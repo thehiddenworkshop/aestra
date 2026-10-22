@@ -41,16 +41,11 @@ use bevy::input_focus::InputFocus;
 #[cfg(test)]
 use bevy::input_focus::InputFocusVisible;
 #[cfg(test)]
-use bevy::picking::events::Click;
-#[cfg(test)]
-use bevy::picking::{
-    events::{DragDrop, DragEnd, DragEnter, Pointer},
-    pointer::PointerButton,
-};
-#[cfg(test)]
-use bevy::ui_widgets::Activate;
+use bevy::picking::pointer::PointerButton;
 #[cfg(test)]
 use bevy::ui_widgets::ActiveDescendant;
+#[cfg(test)]
+use bevy::ui_widgets::{Activate, Button};
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar, ValueChange};
 #[cfg(test)]
@@ -105,7 +100,7 @@ mod asset_drop;
 use asset_drop::clear_cancelled_preview;
 mod automation;
 mod automation_data;
-#[path = "timeline/control_input_019.rs"]
+#[path = "timeline/control_input_020.rs"]
 mod control_input;
 #[cfg(test)]
 #[path = "timeline/document_actions/native_tests.rs"]
@@ -123,7 +118,7 @@ mod execution;
 mod gesture_math;
 mod gestures;
 mod region_gestures;
-#[path = "timeline/pointer_019.rs"]
+#[path = "timeline/pointer_020.rs"]
 mod timeline_pointer;
 #[cfg(test)]
 use gesture_math::*;
@@ -142,7 +137,7 @@ mod motion_execution;
 mod motion_gestures;
 mod motion_state;
 mod navigation;
-#[path = "timeline/cursor_019.rs"]
+#[path = "timeline/cursor_020.rs"]
 mod navigation_cursor;
 #[cfg(test)]
 use navigation::timeline_cursor_fraction;
@@ -2479,11 +2474,7 @@ mod tests {
         app.add_observer(queue_timeline_action_activation);
         let action = app
             .world_mut()
-            .spawn((
-                TimelineAction::FrameAll,
-                FeathersActionButton,
-                Interaction::None,
-            ))
+            .spawn((TimelineAction::FrameAll, FeathersActionButton))
             .id();
 
         app.world_mut().trigger(Activate { entity: action });
@@ -2491,7 +2482,7 @@ mod tests {
 
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
-        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+        assert!(action.contains::<bevy::ui::Pressed>());
     }
 
     #[test]

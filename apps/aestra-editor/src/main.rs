@@ -20,7 +20,7 @@ mod effect_authoring;
 mod feathers;
 mod history;
 mod input;
-#[path = "input/api_019.rs"]
+#[path = "input/api_020.rs"]
 mod input_api;
 mod localization;
 mod material_document;
@@ -46,13 +46,14 @@ mod theme;
 mod timeline;
 mod transaction_dialog;
 mod transport;
-#[path = "transport/control_input_019.rs"]
+#[path = "transport/control_input_020.rs"]
 mod transport_input;
 mod viewport;
 mod wesl_document;
 mod wesl_editor;
 mod wesl_syntax;
 
+pub(crate) use crate::feathers::control_state::ControlInteraction as Interaction;
 use crate::feathers::icon::SvgPlugin;
 use crate::feathers::number_input::{NumberInputValue, UpdateNumberInput};
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
@@ -75,7 +76,6 @@ use bevy::{
     feathers::{
         constants::fonts,
         containers::{group, group_body, group_header, pane_header},
-        cursor::{EntityCursor, OverrideCursor},
         display::{label, label_dim},
         theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText},
         tokens,
@@ -83,11 +83,16 @@ use bevy::{
     gizmos::transform_gizmo::TransformGizmoState,
     input::{ButtonState, keyboard::KeyboardInput},
     input_focus::tab_navigation::TabIndex,
-    picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer},
+    picking::cursor::{EntityCursor, OverrideCursor},
+    picking::events::{
+        PointerClick, PointerDrag, PointerDragDrop, PointerDragEnd, PointerDragStart, PointerOut,
+        PointerOver,
+    },
     picking::pointer::PointerButton,
     prelude::*,
     text::{EditableText, FontSource, TextEdit},
     ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition},
+    ui_widgets::Button,
     ui_widgets::{ListBox, ListItem, ScrollIntoView, ValueChange},
     window::{
         CursorIcon, CursorOptions, PrimaryWindow, SystemCursorIcon, WindowCloseRequested,

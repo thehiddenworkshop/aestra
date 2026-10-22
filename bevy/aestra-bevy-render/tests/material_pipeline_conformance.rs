@@ -190,17 +190,17 @@ fn assert_pipeline(device: &wgpu::Device, wgsl: &str, fragment: &str, samples: u
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(wgsl)),
     });
     let mesh_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x2, 4 => Float32x4];
-    let mesh_layout = [wgpu::VertexBufferLayout {
+    let mesh_layout = [Some(wgpu::VertexBufferLayout {
         array_stride: 56,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &mesh_attributes,
-    }];
+    })];
     let line_attributes = mesh_attributes;
-    let line_layout = [wgpu::VertexBufferLayout {
+    let line_layout = [Some(wgpu::VertexBufferLayout {
         array_stride: 56,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &line_attributes,
-    }];
+    })];
     let _pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(fragment),
         layout: None,
@@ -340,7 +340,10 @@ fn assert_tangent_transform(device: &wgpu::Device, queue: &wgpu::Queue) {
         .recv_timeout(std::time::Duration::from_secs(5))
         .unwrap()
         .unwrap();
-    let mapped = readback.slice(..).get_mapped_range();
+    let mapped = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("completed test readback must remain mapped");
     let values = mapped
         .as_chunks::<4>()
         .0

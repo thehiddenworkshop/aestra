@@ -1,5 +1,5 @@
 //! Editor palette with a small engine-version-specific Feathers storage boundary.
-#[path = "theme/bevy_019.rs"]
+#[path = "theme/bevy_020.rs"]
 mod boundary;
 #[path = "theme/palette.rs"]
 mod palette;

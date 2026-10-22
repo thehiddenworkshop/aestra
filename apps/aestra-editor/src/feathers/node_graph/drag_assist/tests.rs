@@ -1,8 +1,5 @@
 use super::*;
-use bevy::{
-    ecs::system::RunSystemOnce,
-    picking::pointer::{Location, PointerId},
-};
+use bevy::{ecs::system::RunSystemOnce, picking::pointer::PointerId};
 
 #[derive(Resource, Default)]
 struct Edits(Vec<GraphPresentationEdit>);
@@ -10,25 +7,21 @@ struct Edits(Vec<GraphPresentationEdit>);
 #[derive(Resource, Default)]
 struct BatchEdits(Vec<GraphPresentationBatchEdit>);
 
-fn location() -> Location {
-    Location {
-        target: bevy::camera::NormalizedRenderTarget::None {
-            width: 800,
-            height: 600,
-        },
-        position: Vec2::ZERO,
-    }
+fn start(app: &mut App, node: Entity) {
+    app.world_mut().trigger(graph_pointer::tests::start(
+        node,
+        Entity::PLACEHOLDER,
+        Vec2::ZERO,
+        PointerId::Mouse,
+        PointerButton::Primary,
+    ));
 }
 
-fn start(app: &mut App, node: Entity) {
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location(),
-        DragStart {
-            button: PointerButton::Primary,
-            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
+fn finish(app: &mut App, node: Entity, distance: Vec2) {
+    app.world_mut().trigger(graph_pointer::tests::end_distance(
         node,
+        Entity::PLACEHOLDER,
+        distance,
     ));
 }
 
@@ -100,15 +93,10 @@ fn setup(zoom: f32, scale: f32) -> (App, Entity, Entity) {
 }
 
 fn motion(app: &mut App, node: Entity, delta: Vec2) {
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location(),
-        Drag {
-            button: PointerButton::Primary,
-            distance: delta,
-            delta,
-        },
+    app.world_mut().trigger(graph_pointer::tests::motion_delta(
         node,
+        Entity::PLACEHOLDER,
+        delta,
     ));
 }
 
@@ -164,15 +152,7 @@ fn small_pointer_deltas_escape_grid_without_drift_and_emit_one_edit() {
                 (app.world().get::<FeathersGraphNode>(node).unwrap().position - expected).length()
                     < 0.001
             );
-            app.world_mut().trigger(Pointer::new(
-                PointerId::Mouse,
-                location(),
-                DragEnd {
-                    button: PointerButton::Primary,
-                    distance: Vec2::X * 36.0,
-                },
-                node,
-            ));
+            finish(&mut app, node, Vec2::X * 36.0);
             app.world_mut().flush();
             assert_eq!(app.world().resource::<Edits>().0.len(), 1);
             assert_eq!(
@@ -223,15 +203,7 @@ fn dragging_a_selected_node_moves_the_selected_group_as_one_edit() {
         app.world().get::<FeathersGraphNode>(peer).unwrap().position,
         Vec2::new(112.0, 43.0)
     );
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location(),
-        DragEnd {
-            button: PointerButton::Primary,
-            distance: Vec2::new(12.0, -7.0),
-        },
-        node,
-    ));
+    finish(&mut app, node, Vec2::new(12.0, -7.0));
     app.world_mut().flush();
 
     assert!(app.world().resource::<Edits>().0.is_empty());
@@ -380,15 +352,7 @@ fn measured_alignment_is_view_scoped_and_invalidates_changed_targets() {
             }
             let (nodes, zoom) = &surfaces[1];
             let moving = nodes[0];
-            app.world_mut().trigger(Pointer::new(
-                PointerId::Mouse,
-                location(),
-                DragStart {
-                    button: PointerButton::Primary,
-                    hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-                },
-                moving,
-            ));
+            start(&mut app, moving);
             assert_eq!(
                 app.world().resource::<State>().gestures[&moving]
                     .geometry

@@ -32,7 +32,7 @@ pub(super) fn register(app: &mut App) {
 
 #[allow(clippy::too_many_arguments)]
 fn click(
-    mut event: On<Pointer<Click>>,
+    mut event: On<PointerClick>,
     folders: Query<&BrowserAction, With<BrowserFolderButton>>,
     parents: Query<&ChildOf>,
     editors: Query<(), With<super::operations::InlineRenameEditor>>,

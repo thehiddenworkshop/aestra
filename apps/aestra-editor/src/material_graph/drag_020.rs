@@ -1,9 +1,10 @@
 //! Native drag event types and pointer location only; no lifecycle policy translation.
-pub(super) use bevy::picking::events::PointerDrag;
-pub(super) use bevy::picking::events::PointerDragEnd;
-pub(super) use bevy::picking::events::PointerDragStart;
+pub(crate) use bevy::picking::events::PointerDrag;
+pub(crate) use bevy::picking::events::PointerDragDrop;
+pub(crate) use bevy::picking::events::PointerDragEnd;
+pub(crate) use bevy::picking::events::PointerDragStart;
 use bevy::prelude::*;
-pub(super) trait GraphDrag {
+pub(crate) trait GraphDrag {
     fn graph_drag_position(&self) -> Vec2;
 }
 impl GraphDrag for PointerDragStart {
@@ -22,7 +23,7 @@ impl GraphDrag for PointerDragEnd {
     }
 }
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     use super::*;
     use bevy::{
         camera::RenderTarget,
@@ -39,6 +40,21 @@ pub(super) mod tests {
                 .normalize(None)
                 .unwrap(),
             position,
+        }
+    }
+    pub(crate) fn drop(
+        entity: Entity,
+        dropped: Entity,
+        window: Entity,
+        position: Vec2,
+        button: PointerButton,
+    ) -> PointerDragDrop {
+        PointerDragDrop {
+            entity,
+            pointer: Pointer::new(PointerId::Mouse, location(window, position)),
+            button,
+            dropped,
+            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
         }
     }
     pub(crate) fn start(

@@ -84,7 +84,7 @@ toolbar-save = Enregistrer
 toolbar-source-back = Revenir à la source parente
 toolbar-source-forward = Avancer vers la source imbriquée
 toolbar-source-hidden-ancestors = Sources parentes masquées
-toolbar-runtime = BEVY 0.19  |  APERÇU EN DIRECT
+toolbar-runtime = BEVY 0.20  |  APERÇU EN DIRECT
 
 panel-viewport = APERÇU
 panel-assets = RESSOURCES

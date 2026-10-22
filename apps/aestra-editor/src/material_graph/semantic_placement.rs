@@ -1,6 +1,20 @@
 //! Placement at the non-pointer semantic commit boundary. No background reconciliation:
 //! failed commands, reloads and Undo never accidentally create a second layout action.
-use super::*;
+use crate::feathers::node_graph::{
+    GraphViewportMemory, NODE_WIDTH,
+    geometry::{GraphDocumentKey, GraphNodeKey, GraphViewKey},
+};
+use crate::material_graph::{
+    MaterialGraphPreviewState, MaterialGraphPreviewTarget,
+    keys::{
+        MATERIAL_GRAPH_OUTPUT_NODE_KEY, function_graph_memory_key,
+        material_graph_expression_node_key, material_graph_view_key,
+    },
+    node_metrics::{MATERIAL_PREVIEW_LAYOUT_HEIGHT, material_graph_node_row_count, node_height},
+    presentation,
+    workspace_layout::layout_graph,
+};
+use crate::{EditorSession, ProjectEffectCatalog, history::MaterialProgramEditHistory};
 use crate::{
     document::DocumentKey,
     feathers::graph_layout::{
@@ -11,7 +25,14 @@ use crate::{
     },
     feathers::node_graph::placement::{self, Neighborhood},
 };
+use aestra_compiler::MaterialCompiler;
 use aestra_core::material::MaterialFunction;
+use aestra_core::{
+    MaterialExpressionId,
+    material::{MaterialExpressionKind, MaterialProgram},
+};
+use bevy::prelude::*;
+use std::collections::{BTreeMap, BTreeSet};
 
 struct Node {
     initial: Vec2,
@@ -530,4 +551,5 @@ fn targeted_fallback(
 }
 
 #[cfg(test)]
+#[path = "semantic_placement/tests.rs"]
 mod tests;
