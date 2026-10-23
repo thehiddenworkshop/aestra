@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.98.1"
 publish = false
 
-# Real source qualification, independent of the shipping Bevy 0.19 workspace.
+# Isolated native patch/regression qualification on the same engine as the workspace.
 [workspace]
 
 [features]
@@ -79,16 +79,6 @@ required-features = ["editor-qualification"]
 [[test]]
 name = "editor_controls"
 path = "editor_controls.rs"
-required-features = ["editor-qualification"]
-
-[[test]]
-name = "editor_numbers"
-path = "editor_numbers.rs"
-required-features = ["editor-qualification"]
-
-[[test]]
-name = "editor_colors"
-path = "editor_colors.rs"
 required-features = ["editor-qualification"]
 
 [[test]]

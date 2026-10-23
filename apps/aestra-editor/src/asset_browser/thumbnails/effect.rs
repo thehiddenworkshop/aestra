@@ -913,4 +913,5 @@ fn receive(event: On<ScreenshotCaptured>, mut cache: ResMut<ThumbnailCache>) {
 }
 
 #[cfg(test)]
+#[path = "../tests/thumbnails_effect.rs"]
 mod tests;

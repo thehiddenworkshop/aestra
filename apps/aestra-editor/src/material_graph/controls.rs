@@ -13,7 +13,7 @@ use crate::{
     material_graph::{
         MaterialGraphAction, MaterialGraphPaletteState, MaterialGraphPreviewState,
         MaterialGraphPreviewTarget, MaterialGraphSelectionState, MaterialGraphViewport, arrange,
-        click_input::{PointerClick, PointerPress},
+        click_input::PointerClick,
         control_input,
         execution::{activate_material_graph_target, apply_material_tool_command},
         keys::material_graph_view_key,
@@ -29,11 +29,7 @@ use aestra_core::{
     material::{MaterialExpressionKind, MaterialValue},
 };
 use bevy::{
-    input_focus::{FocusCause, InputFocus},
-    picking::pointer::PointerButton,
-    prelude::*,
-    text::EditableText,
-    ui_widgets::ValueChange,
+    picking::pointer::PointerButton, prelude::*, text::EditableText, ui_widgets::ValueChange,
 };
 
 pub(super) fn handle_material_graph_toolbar_actions(
@@ -148,42 +144,6 @@ pub(super) fn handle_material_graph_toolbar_actions(
             }
         }
         session.ui_revision += 1;
-    }
-}
-
-pub(super) fn focus_material_graph_number_input(
-    mut press: On<PointerPress>,
-    controls: Query<(), With<MaterialGraphDefaultNumberControl>>,
-    editable_text: Query<(), With<EditableText>>,
-    children: Query<&Children>,
-    parents: Query<&ChildOf>,
-    mut focus: ResMut<InputFocus>,
-) {
-    if press.button != PointerButton::Primary {
-        return;
-    }
-    let target = press.event_target();
-    let mut candidate = target;
-    for _ in 0..6 {
-        if controls.contains(candidate) {
-            let input = editable_text
-                .contains(target)
-                .then_some(target)
-                .or_else(|| {
-                    children
-                        .iter_descendants(candidate)
-                        .find(|descendant| editable_text.contains(*descendant))
-                });
-            if let Some(input) = input {
-                focus.set(input, FocusCause::Pressed);
-                press.propagate(false);
-            }
-            return;
-        }
-        let Ok(parent) = parents.get(candidate) else {
-            return;
-        };
-        candidate = parent.parent();
     }
 }
 
@@ -436,5 +396,5 @@ pub(super) fn handle_material_graph_default_toggle_change(
 }
 
 #[cfg(test)]
-#[path = "controls/tests.rs"]
+#[path = "tests/controls.rs"]
 mod tests;

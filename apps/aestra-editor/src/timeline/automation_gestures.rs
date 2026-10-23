@@ -582,5 +582,5 @@ impl TimelineState {
 }
 
 #[cfg(test)]
-#[path = "automation_gestures/tests.rs"]
+#[path = "tests/automation_gestures.rs"]
 mod tests;

@@ -10,6 +10,7 @@ mod ui;
 pub(crate) use ui::spawn;
 pub(super) use ui::spawn_reopen_button;
 #[cfg(test)]
+#[path = "tests/relocation_recovery.rs"]
 mod tests;
 
 #[derive(Resource, Default)]

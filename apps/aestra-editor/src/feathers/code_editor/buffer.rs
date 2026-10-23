@@ -214,5 +214,5 @@ pub(super) fn line_col(source: &str, caret: usize) -> (usize, usize) {
 }
 
 #[cfg(test)]
-#[path = "buffer/tests.rs"]
+#[path = "tests/buffer.rs"]
 mod tests;

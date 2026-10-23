@@ -16,7 +16,3 @@ publish = false
 aestra-bevy = { path = "../aestra-bevy" }
 avian3d = { version = "0.7.0", default-features = false, features = ["3d", "f32", "parry-f32"] }
 bevy = "=0.19.1"
-
-[patch.crates-io]
-bevy_input_focus = { path = "../../vendor/bevy_input_focus" }
-bevy_pbr = { path = "../../vendor/bevy_pbr" }

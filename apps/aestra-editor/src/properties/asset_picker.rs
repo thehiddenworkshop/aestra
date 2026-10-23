@@ -7,6 +7,7 @@ use bevy::input_focus::{FocusCause, FocusedInput, InputFocus, tab_navigation::Ta
 use bevy::text::EditableText;
 
 #[cfg(test)]
+#[path = "tests/asset_picker.rs"]
 mod tests;
 
 #[derive(Component, Clone, Copy)]

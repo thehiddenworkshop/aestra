@@ -8,11 +8,11 @@ pub(crate) mod action_activation;
 pub(crate) mod automation_curve;
 pub(crate) mod breadcrumb;
 pub(crate) mod button;
-#[path = "button/activation_020.rs"]
+#[path = "button/activation.rs"]
 mod button_activation;
 pub(crate) mod code_editor;
 pub(crate) mod color_picker;
-#[path = "color_picker/pointer_020.rs"]
+#[path = "color_picker/pointer.rs"]
 mod color_pointer;
 pub(crate) mod combo_box;
 pub(crate) mod context_menu;
@@ -25,7 +25,7 @@ pub(crate) mod node_graph;
 pub(crate) mod number_input;
 pub(crate) mod panel;
 pub(crate) mod panel_card;
-#[path = "pointer_020.rs"]
+#[path = "pointer.rs"]
 mod pointer;
 pub(crate) mod scenes;
 pub(crate) mod scroll;
@@ -72,6 +72,7 @@ impl Plugin for AestraFeathersPlugin {
             .add_observer(color_picker::handle_color_lightness_change)
             .add_observer(color_picker::handle_color_alpha_change)
             .add_observer(color_picker::handle_color_channel_change)
+            .add_observer(color_picker::cancel_color_number)
             .add_observer(color_picker::handle_color_hex_change)
             .add_plugins(number_input::NumberScrubPlugin)
             .add_observer(search_field::clear_search_field)

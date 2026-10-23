@@ -366,4 +366,5 @@ pub(super) fn queue_reload(
 }
 
 #[cfg(test)]
+#[path = "tests/material.rs"]
 mod tests;

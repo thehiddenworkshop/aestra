@@ -16,4 +16,5 @@ pub(crate) use edits::arrange;
 pub(super) use edits::register;
 
 #[cfg(test)]
+#[path = "tests/presentation.rs"]
 mod tests;

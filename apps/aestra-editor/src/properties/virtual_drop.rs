@@ -4,6 +4,7 @@ use super::*;
 use crate::asset_drop::VirtualAsset;
 
 #[cfg(test)]
+#[path = "tests/virtual_drop.rs"]
 mod tests;
 
 pub(super) fn plan(

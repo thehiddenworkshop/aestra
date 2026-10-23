@@ -112,5 +112,5 @@ pub(super) fn spawn_vertical_gutter(body: &mut ChildSpawnerCommands, target: Ent
 }
 
 #[cfg(test)]
-#[path = "scroll_composition/tests.rs"]
+#[path = "tests/scroll_composition.rs"]
 mod tests;

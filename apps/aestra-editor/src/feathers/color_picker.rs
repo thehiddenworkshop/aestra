@@ -49,6 +49,12 @@ pub(crate) struct ColorPickerState {
 #[derive(Component)]
 pub(crate) struct ColorPickerRoot;
 
+#[derive(Component)]
+pub(crate) struct NumericColorPreview {
+    source: Entity,
+    original: ColorPickerState,
+}
+
 impl ColorPickerState {
     fn from_srgba(color: [f32; 4]) -> Self {
         Self {
@@ -556,7 +562,7 @@ pub(crate) fn handle_color_channel_change(
     controls: Query<&ColorPickerChannelInput>,
     parents: Query<&ChildOf>,
     roots: Query<(), With<ColorPickerRoot>>,
-    mut pickers: Query<&mut ColorPickerState>,
+    mut pickers: Query<(&mut ColorPickerState, Option<&NumericColorPreview>)>,
     mut commands: Commands,
 ) {
     let source = change.event_target();
@@ -566,12 +572,45 @@ pub(crate) fn handle_color_channel_change(
     let Some(root) = find_picker_root(source, &parents, &roots) else {
         return;
     };
-    let Ok(mut picker) = pickers.get_mut(root) else {
+    let Ok((mut picker, preview)) = pickers.get_mut(root) else {
         return;
     };
+    if change.is_final {
+        commands.entity(root).remove::<NumericColorPreview>();
+    } else if preview.is_none() {
+        commands.entity(root).insert(NumericColorPreview {
+            source,
+            original: *picker,
+        });
+    }
     set_picker_channel(&mut picker, *channel, change.value);
     picker.automatic = false;
     emit_picker_change(&mut commands, root, *picker, change.is_final);
+}
+
+pub(crate) fn cancel_color_number(
+    edit: On<number_input::NumberEdit>,
+    parents: Query<&ChildOf>,
+    roots: Query<(), With<ColorPickerRoot>>,
+    mut pickers: Query<(&mut ColorPickerState, &NumericColorPreview)>,
+    mut commands: Commands,
+) {
+    if edit.phase != number_input::EditPhase::Cancel {
+        return;
+    }
+    let Some(root) = find_picker_root(edit.entity, &parents, &roots) else {
+        return;
+    };
+    let Ok((mut picker, preview)) = pickers.get_mut(root) else {
+        return;
+    };
+    if preview.source != edit.entity {
+        return;
+    }
+    *picker = preview.original;
+    commands.entity(root).remove::<NumericColorPreview>();
+    // Restore Automatic/None as well as channel values, without a final edit.
+    emit_picker_change(&mut commands, root, *picker, false);
 }
 
 fn set_picker_channel(picker: &mut ColorPickerState, channel: ColorPickerChannelInput, value: f32) {
@@ -1014,7 +1053,7 @@ fn parse_hex(value: &str) -> Option<[f32; 4]> {
 }
 
 #[cfg(test)]
-#[path = "color_picker/interaction_tests.rs"]
+#[path = "color_picker/tests/interaction.rs"]
 mod interaction_tests;
 
 #[cfg(test)]

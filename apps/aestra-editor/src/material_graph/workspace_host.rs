@@ -1,6 +1,6 @@
 //! Production complete material/function workspace host, shared with qualification.
 #[cfg(test)]
-#[path = "workspace_host/tests.rs"]
+#[path = "tests/workspace_host.rs"]
 mod tests;
 use crate::feathers::{node_graph::GraphViewportMemory, scroll::spawn_vertical_scroll_area};
 use crate::material_graph::{

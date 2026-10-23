@@ -339,7 +339,7 @@ fn plan<K: Ord + Clone, D>(
 }
 
 #[cfg(test)]
-#[path = "resize/tests.rs"]
+#[path = "tests/resize.rs"]
 mod tests;
 
 #[cfg(test)]

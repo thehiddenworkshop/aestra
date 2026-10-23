@@ -304,5 +304,5 @@ impl Context<'_, '_> {
 }
 
 #[cfg(test)]
-#[path = "placement/algorithm_tests.rs"]
+#[path = "tests/placement_algorithm.rs"]
 mod tests;

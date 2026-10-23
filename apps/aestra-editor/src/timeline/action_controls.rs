@@ -168,5 +168,5 @@ type UnclassifiedChoreographyControl = (
 );
 
 #[cfg(test)]
-#[path = "action_controls/tests.rs"]
+#[path = "tests/action_controls.rs"]
 mod tests;

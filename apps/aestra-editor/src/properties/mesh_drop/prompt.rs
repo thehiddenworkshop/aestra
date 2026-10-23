@@ -3,6 +3,7 @@ use super::*;
 use crate::project_content::io::{self, IoGuard};
 use bevy::input_focus::{FocusCause, FocusedInput, InputFocus, tab_navigation::TabGroup};
 #[cfg(test)]
+#[path = "../tests/mesh_drop_prompt.rs"]
 mod tests;
 
 #[derive(Event)]

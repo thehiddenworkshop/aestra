@@ -119,5 +119,5 @@ impl FunctionEditor {
 }
 
 #[cfg(test)]
-#[path = "history/tests.rs"]
+#[path = "tests/history.rs"]
 mod tests;

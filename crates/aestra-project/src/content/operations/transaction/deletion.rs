@@ -2,6 +2,7 @@
 //! immutable, synced journal precedes publication; restore never overwrites or purges.
 use super::*;
 #[cfg(test)]
+#[path = "../../tests/operations_transaction_deletion.rs"]
 mod tests;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

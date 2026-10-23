@@ -1,6 +1,6 @@
 //! Production function-native canvas composition shared by both engine qualification roots.
 #[cfg(test)]
-#[path = "composition/tests.rs"]
+#[path = "../tests/graph_composition.rs"]
 mod tests;
 use crate::feathers::node_graph::geometry::{
     GraphDocumentKey, GraphGeometryNode, GraphGeometryPort, GraphGeometryView, GraphNodeKey,
@@ -17,7 +17,7 @@ use crate::feathers::{
     },
     icon::load_svg_icon,
     node_graph::*,
-    text_input::spawn_text_input,
+    number_input::spawn_scalar_input,
 };
 use crate::material_function_editor::graph::{
     clipboard_context::{FunctionGraphNodeAction, View, ViewScope},
@@ -429,23 +429,15 @@ pub(crate) fn spawn(
                                     },
                                     Pickable::IGNORE,
                                 ));
-                                let control = spawn_text_input(
+                                spawn_scalar_input(
                                     row,
-                                    &value.to_string(),
+                                    value,
                                     "Constant value",
                                     Constant {
                                         owner: function.id,
                                         expression: expression.id,
                                         component,
                                     },
-                                );
-                                row.commands().entity(control).insert(
-                                    crate::feathers::number_input::ScrubbableNumber::new(
-                                        value,
-                                        -f32::MAX,
-                                        f32::MAX,
-                                        0.01,
-                                    ),
                                 );
                             });
                         }

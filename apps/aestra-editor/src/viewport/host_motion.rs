@@ -431,5 +431,5 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "host_motion/tests.rs"]
+#[path = "tests/host_motion.rs"]
 mod consumer_tests;

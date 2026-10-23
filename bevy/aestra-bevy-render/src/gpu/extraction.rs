@@ -1,4 +1,4 @@
-//! Shipping 0.19 extraction adapter; the actual payload/policy is version-shared.
+//! Native app-labeled adapter.
 use super::{
     clone_extraction::{clone_component, clone_resource},
     effect_inputs::GpuEffectBuffers,
@@ -8,22 +8,23 @@ use super::{
 };
 use super::{draw_instance::GpuDrawInstance, extraction_cleanup, world_sdf::AestraWorldSdf};
 use crate::render_settings::AestraRenderSettings;
-pub(super) use bevy::render::{Extract, MainWorld, sync_world::MainEntity};
+pub(super) use bevy::extract::{Extract, MainWorld, sync_world::MainEntity};
 use bevy::{
     camera::primitives::Aabb,
-    prelude::*,
-    render::{
-        ExtractSchedule, RenderApp,
+    extract::{
+        ExtractSchedule,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         sync_component::SyncComponent,
     },
+    prelude::*,
+    render::RenderApp,
 };
 
-impl SyncComponent for GpuDrawInstance {
+impl SyncComponent<RenderApp> for GpuDrawInstance {
     type Target = Self;
 }
-impl ExtractComponent for GpuDrawInstance {
+impl ExtractComponent<RenderApp> for GpuDrawInstance {
     type QueryData = (
         &'static Self,
         &'static ViewVisibility,
@@ -42,29 +43,41 @@ impl ExtractComponent for GpuDrawInstance {
         instance.extracted(visibility, transform, bounds)
     }
 }
-impl ExtractResource for AestraWorldSdf {
+impl ExtractResource<RenderApp> for AestraWorldSdf {
     type Source = Self;
     fn extract_resource(source: &Self) -> Self {
         source.clone()
     }
 }
 
-clone_component!(GpuEffectBuffers, SyncComponent, ExtractComponent);
-clone_component!(ExtractedStages, SyncComponent, ExtractComponent);
-clone_component!(Inputs, SyncComponent, ExtractComponent);
-clone_resource!(AestraParticleLightSettings, ExtractResource);
-clone_resource!(ParticleLightMode, ExtractResource);
-clone_resource!(ParticleLightReadbackSettings, ExtractResource);
-clone_resource!(ParticleLightReadbackFrame, ExtractResource);
-clone_resource!(AestraRenderSettings, ExtractResource);
+clone_component!(
+    GpuEffectBuffers,
+    SyncComponent<RenderApp>,
+    ExtractComponent<RenderApp>
+);
+clone_component!(
+    ExtractedStages,
+    SyncComponent<RenderApp>,
+    ExtractComponent<RenderApp>
+);
+clone_component!(
+    Inputs,
+    SyncComponent<RenderApp>,
+    ExtractComponent<RenderApp>
+);
+clone_resource!(AestraParticleLightSettings, ExtractResource<RenderApp>);
+clone_resource!(ParticleLightMode, ExtractResource<RenderApp>);
+clone_resource!(ParticleLightReadbackSettings, ExtractResource<RenderApp>);
+clone_resource!(ParticleLightReadbackFrame, ExtractResource<RenderApp>);
+clone_resource!(AestraRenderSettings, ExtractResource<RenderApp>);
 
 pub(super) fn install(app: &mut App) {
     app.add_plugins((
-        ExtractComponentPlugin::<GpuDrawInstance>::default(),
-        ExtractComponentPlugin::<GpuEffectBuffers>::default(),
-        ExtractComponentPlugin::<ExtractedStages>::default(),
-        ExtractResourcePlugin::<AestraWorldSdf>::default(),
-        ExtractResourcePlugin::<AestraRenderSettings>::default(),
+        ExtractComponentPlugin::<GpuDrawInstance, RenderApp>::default(),
+        ExtractComponentPlugin::<GpuEffectBuffers, RenderApp>::default(),
+        ExtractComponentPlugin::<ExtractedStages, RenderApp>::default(),
+        ExtractResourcePlugin::<AestraWorldSdf, RenderApp>::default(),
+        ExtractResourcePlugin::<AestraRenderSettings, RenderApp>::default(),
     ));
     if let Some(render) = app.get_sub_app_mut(RenderApp) {
         render.add_systems(
@@ -91,27 +104,34 @@ pub(super) fn install_device_publication(app: &mut App) {
 
 pub(super) fn install_particle_lights(app: &mut App) {
     app.add_plugins((
-        ExtractComponentPlugin::<Inputs>::default(),
-        ExtractResourcePlugin::<AestraParticleLightSettings>::default(),
-        ExtractResourcePlugin::<ParticleLightMode>::default(),
+        ExtractComponentPlugin::<Inputs, RenderApp>::default(),
+        ExtractResourcePlugin::<AestraParticleLightSettings, RenderApp>::default(),
+        ExtractResourcePlugin::<ParticleLightMode, RenderApp>::default(),
     ));
 }
 
 pub(super) fn install_light_readback(app: &mut App) {
     app.add_plugins((
-        ExtractResourcePlugin::<ParticleLightReadbackSettings>::default(),
-        ExtractResourcePlugin::<ParticleLightReadbackFrame>::default(),
+        ExtractResourcePlugin::<ParticleLightReadbackSettings, RenderApp>::default(),
+        ExtractResourcePlugin::<ParticleLightReadbackFrame, RenderApp>::default(),
     ));
 }
 
 #[cfg(test)]
-fn test_app() -> App {
+pub(super) fn test_app() -> App {
     use bevy::{
-        ecs::schedule::ScheduleLabel,
-        render::{Render, extract_plugin::ExtractPlugin},
+        ecs::schedule::{ScheduleLabel, SystemSet},
+        extract::ExtractPlugin,
+        render::{Render, RenderSystems},
     };
     let mut app = App::new();
-    app.add_plugins(ExtractPlugin::default());
+    app.add_plugins(ExtractPlugin::<RenderApp>::new(
+        |_, _| {},
+        Render::base_schedule,
+        Render.intern(),
+        RenderSystems::ExtractCommands.intern(),
+        RenderSystems::PostCleanup.intern(),
+    ));
     app.sub_app_mut(RenderApp).update_schedule = Some(Render.intern());
     install(&mut app);
     install_particle_lights(&mut app);
@@ -122,17 +142,30 @@ fn test_app() -> App {
 #[cfg(test)]
 fn render_entity(app: &App, main: Entity) -> Entity {
     app.world()
-        .get::<bevy::render::sync_world::RenderEntity>(main)
+        .get::<bevy::extract::sync_world::SubEntity<RenderApp>>(main)
         .unwrap()
         .id()
 }
 
 #[cfg(test)]
-#[path = "extraction_control_tests.rs"]
+#[path = "tests/extraction_control.rs"]
 mod control_tests;
 #[cfg(test)]
-#[path = "extraction_state_tests.rs"]
+#[path = "tests/extraction_state.rs"]
 mod state_tests;
 #[cfg(test)]
-#[path = "extraction_tests.rs"]
+#[path = "tests/extraction.rs"]
 mod tests;
+
+#[test]
+fn removing_actual_draw_without_render_app_is_safe() {
+    use bevy::extract::sync_component::SyncComponentPlugin;
+    let mut app = App::new();
+    app.add_plugins(SyncComponentPlugin::<GpuDrawInstance, RenderApp>::default());
+    let owner = app.world_mut().spawn_empty().id();
+    let entity = app.world_mut().spawn(tests::draw(owner)).id();
+    app.world_mut()
+        .entity_mut(entity)
+        .remove::<GpuDrawInstance>();
+    app.world_mut().despawn(entity);
+}

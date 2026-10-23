@@ -178,4 +178,5 @@ pub(super) fn spawn_workspace(
 }
 
 #[cfg(test)]
+#[path = "tests/details.rs"]
 mod tests;

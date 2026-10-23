@@ -551,5 +551,5 @@ fn targeted_fallback(
 }
 
 #[cfg(test)]
-#[path = "semantic_placement/tests.rs"]
+#[path = "tests/semantic_placement.rs"]
 mod tests;

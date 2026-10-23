@@ -41,7 +41,7 @@ use bevy::{camera::visibility::RenderLayers, ui::RelativeCursorPosition};
 use std::sync::Arc;
 
 mod actions;
-#[path = "viewport/control_input_020.rs"]
+#[path = "viewport/control_input.rs"]
 mod control_input;
 mod gizmo_state;
 mod host_motion;

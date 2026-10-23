@@ -301,7 +301,6 @@ fn native_020_production_pipeline_descriptors_validate_with_explicit_layouts() {
                                         &material.program.shader.wgsl
                                     },
                                     material.program.requires_scene_lighting(),
-                                    composition::Dialect::Bevy020,
                                 )
                             } else {
                                 aestra_gpu::shader::SPRITE_RENDER_WESL.to_owned()

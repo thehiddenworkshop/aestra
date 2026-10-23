@@ -170,5 +170,5 @@ pub(super) fn audit_history_controls(controls: Query<Entity, UnclassifiedHistory
 }
 
 #[cfg(test)]
-#[path = "controls/tests.rs"]
+#[path = "tests/controls.rs"]
 mod tests;

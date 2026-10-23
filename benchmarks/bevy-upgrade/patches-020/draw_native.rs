@@ -735,7 +735,6 @@ fn native_020_commands_submit_with_real_mesh_view_and_prepass_bindings() {
                         &material.program.shader.wgsl
                     },
                     material.program.requires_scene_lighting(),
-                    pipeline_native::composition::Dialect::Bevy020,
                 )
             };
             let mut defs = descriptor.vertex.shader_defs.clone();

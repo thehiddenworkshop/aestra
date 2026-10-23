@@ -343,4 +343,5 @@ pub(super) fn check_file(
 }
 
 #[cfg(test)]
+#[path = "tests/texture_drop.rs"]
 mod tests;

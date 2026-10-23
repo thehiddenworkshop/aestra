@@ -349,5 +349,5 @@ pub(crate) fn apply_project_effect_catalog_refresh(
 }
 
 #[cfg(test)]
-#[path = "refresh/tests.rs"]
+#[path = "tests/refresh.rs"]
 mod tests;

@@ -369,5 +369,5 @@ fn cleanup(
 }
 
 #[cfg(test)]
-#[path = "asset_drop/tests.rs"]
+#[path = "asset_drop/tests/drop.rs"]
 mod tests;

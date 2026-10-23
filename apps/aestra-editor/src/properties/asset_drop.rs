@@ -1,6 +1,7 @@
 //! Renderer authoring drops. Source recipes/programs are never modified by assignment.
 mod preset_drop;
 #[cfg(test)]
+#[path = "asset_drop/tests/drop.rs"]
 mod tests;
 
 use super::*;

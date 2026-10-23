@@ -7,10 +7,10 @@ pub(crate) use keypresses::ShortcutKeys;
 #[cfg(test)]
 use keypresses::{KeyboardPresses, shortcut_key_state};
 #[cfg(test)]
-#[path = "input/ownership_tests.rs"]
+#[path = "input/tests/ownership.rs"]
 mod ownership_tests;
 #[cfg(test)]
-#[path = "input/tests.rs"]
+#[path = "input/tests/input.rs"]
 pub(crate) mod tests;
 use bevy::{ecs::system::SystemParam, input_focus::InputFocus, prelude::*, text::EditableText};
 

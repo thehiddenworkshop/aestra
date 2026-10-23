@@ -213,5 +213,5 @@ pub(crate) fn publish_catalog(world: &mut World, mut prepared: EditorProjectCont
 }
 
 #[cfg(test)]
-#[path = "io/tests.rs"]
+#[path = "tests/io.rs"]
 mod tests;

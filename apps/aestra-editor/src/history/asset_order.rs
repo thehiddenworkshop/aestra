@@ -208,5 +208,5 @@ pub(super) fn clear_material_redo(history: &mut MaterialProgramEditHistory) {
 }
 
 #[cfg(test)]
-#[path = "asset_order/tests.rs"]
+#[path = "tests/asset_order.rs"]
 mod tests;

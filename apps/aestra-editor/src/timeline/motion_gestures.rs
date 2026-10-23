@@ -248,5 +248,5 @@ pub(super) fn update_keys(
 }
 
 #[cfg(test)]
-#[path = "motion_gestures/tests.rs"]
+#[path = "tests/motion_gestures.rs"]
 mod tests;

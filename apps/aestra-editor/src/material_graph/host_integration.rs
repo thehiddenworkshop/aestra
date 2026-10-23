@@ -83,5 +83,5 @@ fn reset_graph_document_transients(
 }
 
 #[cfg(test)]
-#[path = "host_integration/tests.rs"]
+#[path = "tests/host_integration.rs"]
 mod tests;

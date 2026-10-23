@@ -1,31 +1,15 @@
 //! Actual editor scene wrappers and single-line text bridge on the candidate graph.
-#[path = "../../../apps/aestra-editor/src/theme/bevy_020.rs"]
+#[path = "../../../apps/aestra-editor/src/theme/feathers.rs"]
 pub mod boundary;
 #[path = "../../../apps/aestra-editor/src/theme/palette.rs"]
 pub mod palette;
 mod theme {
     pub(crate) use super::boundary::feathers_theme;
 }
-#[path = "../../../apps/aestra-editor/src/feathers/number_input/scrub.rs"]
-#[allow(
-    dead_code,
-    reason = "Full numeric composition is covered by editor_numbers"
-)]
-mod number_input;
-#[path = "../../../apps/aestra-editor/src/feathers/number_input/pointer_020.rs"]
-#[allow(
-    dead_code,
-    unused_imports,
-    reason = "Click-to-edit is covered by editor_numbers"
-)]
-mod pointer;
 #[path = "../../../apps/aestra-editor/src/feathers/scenes/common.rs"]
 mod scenes;
 #[path = "../../../apps/aestra-editor/src/feathers/text_input.rs"]
 mod text_input;
-mod feathers {
-    pub(crate) use super::text_input;
-}
 
 use bevy::{
     input::keyboard::{Key, KeyboardInput},

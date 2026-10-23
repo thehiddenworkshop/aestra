@@ -5,7 +5,6 @@ mod composition;
 
 mod shader_support;
 use bevy::shader::ShaderDefVal;
-use composition::Dialect;
 use shader_support::{Compiled, compile};
 use std::path::Path;
 
@@ -94,10 +93,7 @@ fn real_smoke_fire_and_liquid_volume_shaders_compile_for_storage_uniform_and_dep
                 if multisampled {
                     defs.push("MULTISAMPLED".into());
                 }
-                let compiled = compile(
-                    composition::compose_volume(program, entry, Dialect::Bevy020),
-                    &defs,
-                );
+                let compiled = compile(composition::compose_volume(program, entry), &defs);
                 entry_points(
                     &compiled,
                     &[
@@ -149,11 +145,8 @@ fn lit_smoke() -> String {
 #[test]
 fn generated_lit_smoke_keeps_one_view_binding_and_neutral_2d_branch() {
     let portable = lit_smoke();
-    assert_eq!(
-        composition::compose_material(&portable, false, Dialect::Bevy020),
-        portable
-    );
-    let source = composition::compose_material(&portable, true, Dialect::Bevy020);
+    assert_eq!(composition::compose_material(&portable, false), portable);
+    let source = composition::compose_material(&portable, true);
     for lighting in [false, true] {
         for storage in [false, true] {
             let mut defs = Vec::new();
@@ -195,18 +188,11 @@ fn generated_lit_smoke_keeps_one_view_binding_and_neutral_2d_branch() {
 #[test]
 fn actual_graph_grid_and_wire_bodies_compile_with_bevy_020_ui_vertex_output() {
     for source in [
-        include_str!("../../../apps/aestra-editor/src/feathers/shaders/node_graph_grid.wgsl"),
-        include_str!("../../../apps/aestra-editor/src/feathers/shaders/node_graph_wire.wgsl"),
+        include_str!("../../../apps/aestra-editor/src/feathers/shaders/node_graph_grid.wesl"),
+        include_str!("../../../apps/aestra-editor/src/feathers/shaders/node_graph_wire.wesl"),
     ] {
-        // Only the import changes; preserve production geometry, zoom/DPI and derivatives.
-        let body = source
-            .strip_prefix("#import bevy_ui::ui_vertex_output::UiVertexOutput")
-            .unwrap();
-        assert!(!body.contains('#'));
-        let compiled = compile(
-            format!("import bevy_ui_render::ui_vertex_output::UiVertexOutput;\n{body}"),
-            &[],
-        );
+        assert!(!source.contains('#'));
+        let compiled = compile(source.to_owned(), &[]);
         entry_points(&compiled, &[("fragment", naga::ShaderStage::Fragment)]);
         assert_eq!(
             compiled
@@ -271,17 +257,14 @@ fn native_020_shader_modules_and_render_pipelines_validate() {
                 if multisampled {
                     defs.push("MULTISAMPLED".into());
                 }
-                let compiled = compile(
-                    composition::compose_volume(program, entry, Dialect::Bevy020),
-                    &defs,
-                );
+                let compiled = compile(composition::compose_volume(program, entry), &defs);
                 let label = format!("{entry}/storage={storage}/depth={depth}/msaa={multisampled}");
                 pipeline(&device, &compiled.wgsl, &label, "vertex", "fragment", true);
                 count += 1;
             }
         }
     }
-    let source = composition::compose_material(&lit_smoke(), true, Dialect::Bevy020);
+    let source = composition::compose_material(&lit_smoke(), true);
     for lighting in [false, true] {
         for storage in [false, true] {
             let mut defs = Vec::new();
@@ -306,20 +289,16 @@ fn native_020_shader_modules_and_render_pipelines_validate() {
     for (name, source) in [
         (
             "grid",
-            include_str!("../../../apps/aestra-editor/src/feathers/shaders/node_graph_grid.wgsl"),
+            include_str!("../../../apps/aestra-editor/src/feathers/shaders/node_graph_grid.wesl"),
         ),
         (
             "wire",
-            include_str!("../../../apps/aestra-editor/src/feathers/shaders/node_graph_wire.wgsl"),
+            include_str!("../../../apps/aestra-editor/src/feathers/shaders/node_graph_wire.wesl"),
         ),
     ] {
-        let body = source
-            .strip_prefix("#import bevy_ui::ui_vertex_output::UiVertexOutput")
-            .unwrap();
         let source = format!(
             r#"
-import bevy_ui_render::ui_vertex_output::UiVertexOutput;
-{body}
+{source}
 // Fixture vertex only. The fragment and vertex-output type are real production sources.
 @vertex fn qualification_vertex() -> UiVertexOutput {{
     var output: UiVertexOutput;

@@ -167,5 +167,5 @@ pub(super) fn visible_targets(
 }
 
 #[cfg(test)]
-#[path = "transaction/tests.rs"]
+#[path = "../tests/presentation_transaction.rs"]
 mod tests;

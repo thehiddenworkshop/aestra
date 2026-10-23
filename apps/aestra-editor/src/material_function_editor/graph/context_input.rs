@@ -1,9 +1,9 @@
 //! Production function context-menu hit testing, dispatch and dismissal.
 #[cfg(test)]
-#[path = "arrange_context_tests.rs"]
+#[path = "../tests/graph_arrange_context.rs"]
 mod arrange_context_tests;
 #[cfg(test)]
-#[path = "context_input/tests.rs"]
+#[path = "../tests/graph_context_input.rs"]
 mod tests;
 use crate::feathers::{
     context_menu::{

@@ -416,5 +416,5 @@ fn spawn_viewport_svg_icon<'a>(
 }
 
 #[cfg(test)]
-#[path = "workspace/tests.rs"]
+#[path = "tests/workspace.rs"]
 mod tests;

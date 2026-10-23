@@ -20,7 +20,7 @@ mod effect_authoring;
 mod feathers;
 mod history;
 mod input;
-#[path = "input/api_020.rs"]
+#[path = "input/api.rs"]
 mod input_api;
 mod localization;
 mod material_document;
@@ -46,7 +46,7 @@ mod theme;
 mod timeline;
 mod transaction_dialog;
 mod transport;
-#[path = "transport/control_input_020.rs"]
+#[path = "transport/control_input.rs"]
 mod transport_input;
 mod viewport;
 mod wesl_document;
@@ -95,8 +95,8 @@ use bevy::{
     ui_widgets::Button,
     ui_widgets::{ListBox, ListItem, ScrollIntoView, ValueChange},
     window::{
-        CursorIcon, CursorOptions, PrimaryWindow, SystemCursorIcon, WindowCloseRequested,
-        WindowMoved, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
+        CursorIcon, PrimaryWindow, SystemCursorIcon, WindowCloseRequested, WindowMoved, WindowRef,
+        WindowResizeConstraints, WindowResized, WindowResolution,
     },
 };
 use bevy_winit::WINIT_WINDOWS;

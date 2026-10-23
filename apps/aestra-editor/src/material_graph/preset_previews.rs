@@ -322,8 +322,8 @@ pub(crate) fn material_preset_base(
 }
 
 #[cfg(test)]
-#[path = "preset_previews/integration_tests.rs"]
+#[path = "tests/preset_previews_integration.rs"]
 mod integration_tests;
 #[cfg(test)]
-#[path = "preset_previews/tests.rs"]
+#[path = "tests/preset_previews.rs"]
 mod tests;

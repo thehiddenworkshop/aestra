@@ -247,5 +247,5 @@ fn spawn_material_graph_connection_menu(
 }
 
 #[cfg(test)]
-#[path = "workspace/tests.rs"]
+#[path = "tests/workspace.rs"]
 mod tests;

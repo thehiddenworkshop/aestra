@@ -38,11 +38,12 @@
 //! diagnostics, and GPU benchmarking layered on top.
 mod bindings;
 #[cfg(test)]
+#[path = "tests/choreography.rs"]
 mod choreography_tests;
 mod input_events;
 mod lighting_quality;
 mod lights;
-#[path = "particle_light_boundary_020.rs"]
+#[path = "particle_light_boundary.rs"]
 mod particle_light_boundary;
 mod particle_light_gpu;
 mod particle_lights;

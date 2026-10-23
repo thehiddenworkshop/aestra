@@ -1027,6 +1027,13 @@ impl EditorSession {
         self.refresh_preview();
     }
 
+    /// Cancellation must not restart an untouched preview (for example a no-op numeric edit).
+    pub(crate) fn restore_numeric_interaction_preview(&mut self) {
+        if self.interaction_source.is_some() {
+            self.restore_interaction_preview();
+        }
+    }
+
     pub fn preview_transaction(&mut self, transaction: EffectTransaction) -> bool {
         let label = transaction.label.clone();
         let preview = match CommandExecutor::preview(&self.effect, &self.locks, transaction) {
@@ -2830,7 +2837,7 @@ fn default_layer(index: usize) -> Emitter {
 }
 
 #[cfg(test)]
-#[path = "session/preview_tests.rs"]
+#[path = "tests/session_preview.rs"]
 mod preview_tests;
 
 #[cfg(test)]

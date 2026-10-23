@@ -1,5 +1,5 @@
 //! Runtime profile ingestion, presentation, and Profiler workspace actions.
-#[path = "profiler/control_input_020.rs"]
+#[path = "profiler/control_input.rs"]
 mod control_input;
 mod controls;
 mod plugin;

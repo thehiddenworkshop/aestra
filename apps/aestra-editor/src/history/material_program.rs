@@ -101,5 +101,5 @@ impl MaterialProgramEditHistory {
 }
 
 #[cfg(test)]
-#[path = "material_program/tests.rs"]
+#[path = "tests/material_program.rs"]
 mod tests;

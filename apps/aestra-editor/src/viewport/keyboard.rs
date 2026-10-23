@@ -6,7 +6,7 @@ use crate::{
 use bevy::{gizmos::transform_gizmo::TransformGizmoMode, prelude::*, ui::RelativeCursorPosition};
 
 #[cfg(test)]
-#[path = "keyboard/tests.rs"]
+#[path = "tests/keyboard.rs"]
 mod tests;
 
 pub(crate) fn register(app: &mut App) {

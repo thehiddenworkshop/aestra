@@ -6,4 +6,5 @@ use crate::asset_drop::AssetPayload;
 mod source;
 pub(super) use source::*;
 #[cfg(test)]
+#[path = "asset_drop/tests/drop.rs"]
 mod tests;

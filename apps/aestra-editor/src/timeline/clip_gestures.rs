@@ -312,5 +312,5 @@ pub(super) fn commit_effect_clip_timeline_drag(
 }
 
 #[cfg(test)]
-#[path = "clip_gestures/tests.rs"]
+#[path = "tests/clip_gestures.rs"]
 mod tests;

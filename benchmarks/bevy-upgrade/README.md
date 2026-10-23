@@ -1,5 +1,28 @@
 # Bevy 0.20 dependency and patch preflight
 
+## Current status: Bevy 0.20 only
+
+The shipping workspace now uses Bevy 0.20.0. The obsolete 0.19 source adapters,
+vendor patches, legacy shader dialect and manifest-copy preflight script have been
+removed. Production adapter files use version-neutral names. The `_020` vendor
+directories are still active, provenance-checked patches, not compatibility copies.
+The excluded physics adapters remain unported; see
+[their status](../../bevy/PHYSICS_ADAPTERS.md).
+
+`run-020-patches.ps1` still qualifies the pinned engine patches and native renderer
+regressions. Its paths follow production sources. Numeric/color qualification now
+runs the real editor package tests, including transaction identity, rather than the
+retired partial widget assemblies. `patches-020/editor_graph.rs` also imports the
+complete production numeric module. Its lockfile now follows the workspace's
+single glam version. Native GPU probes remain explicit opt-ins.
+
+The sections below are a chronological migration record, **not current setup
+instructions**. References to the old shipping engine, removed source filenames and
+the retired `prepare-020-probe.ps1` describe historical experiments. Use Git history
+to reproduce those baselines; do not restore 0.19 adapters into the current workspace.
+
+## Historical migration record
+
 This is migration evidence tooling, not a new benchmark or a replacement for CI.
 See the [upgrade plan](../../docs/new/AESTRA_BEVY_0_20_UPGRADE_PLAN.md) and
 [2026-10-09 audit](preflight-2026-10-09.md) and the subsequent

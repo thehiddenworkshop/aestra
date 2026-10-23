@@ -16,7 +16,3 @@ publish = false
 aestra-bevy = { path = "../aestra-bevy" }
 bevy = "=0.19.1"
 bevy_rapier3d = { version = "0.36.0", default-features = false, features = ["dim3"] }
-
-[patch.crates-io]
-bevy_input_focus = { path = "../../vendor/bevy_input_focus" }
-bevy_pbr = { path = "../../vendor/bevy_pbr" }

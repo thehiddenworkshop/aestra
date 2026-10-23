@@ -66,5 +66,5 @@ pub(super) fn function(
 }
 
 #[cfg(test)]
-#[path = "semantic/tests.rs"]
+#[path = "../tests/presentation_semantic.rs"]
 mod tests;

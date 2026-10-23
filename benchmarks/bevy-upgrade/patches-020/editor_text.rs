@@ -1,7 +1,7 @@
 //! Real custom code/search compositions and context menus, not replacement widgets.
 #[path = "../../../apps/aestra-editor/src/feathers/action_activation.rs"]
 pub(crate) mod action_activation;
-#[path = "../../../apps/aestra-editor/src/theme/bevy_020.rs"]
+#[path = "../../../apps/aestra-editor/src/theme/feathers.rs"]
 pub mod boundary;
 #[path = "../../../apps/aestra-editor/src/history/action.rs"]
 mod history_action;
@@ -17,7 +17,7 @@ mod theme {
     reason = "Application action dispatch is outside this widget fixture"
 )]
 mod button;
-#[path = "../../../apps/aestra-editor/src/feathers/button/activation_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/button/activation.rs"]
 mod button_activation;
 
 #[test]
@@ -106,7 +106,7 @@ mod code_editor;
 #[path = "../../../apps/aestra-editor/src/feathers/context_menu.rs"]
 #[allow(dead_code, reason = "Other panels use the remaining menu helpers")]
 mod context_menu;
-#[path = "../../../apps/aestra-editor/src/feathers/pointer_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/pointer.rs"]
 mod pointer;
 #[path = "../../../apps/aestra-editor/src/feathers/scenes/common.rs"]
 mod scenes;

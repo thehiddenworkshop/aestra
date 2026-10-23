@@ -146,5 +146,5 @@ pub(crate) fn replace_function(
 }
 
 #[cfg(test)]
-#[path = "publication/tests.rs"]
+#[path = "tests/publication.rs"]
 mod tests;

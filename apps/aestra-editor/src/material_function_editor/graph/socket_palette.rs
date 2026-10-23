@@ -597,5 +597,5 @@ fn choose(
 }
 
 #[cfg(test)]
-#[path = "socket_palette/tests.rs"]
+#[path = "../tests/graph_socket_palette.rs"]
 pub(super) mod tests;

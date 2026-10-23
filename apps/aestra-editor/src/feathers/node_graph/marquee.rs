@@ -282,5 +282,5 @@ pub(super) fn cleanup_graph_marquee(
 }
 
 #[cfg(test)]
-#[path = "marquee/tests.rs"]
+#[path = "tests/marquee.rs"]
 mod tests;

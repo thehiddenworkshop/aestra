@@ -62,5 +62,5 @@ impl Ownership<'_, '_> {
 }
 
 #[cfg(test)]
-#[path = "ownership/tests.rs"]
+#[path = "tests/ownership.rs"]
 mod tests;

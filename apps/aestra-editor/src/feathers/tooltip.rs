@@ -580,5 +580,5 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "tooltip/interaction_tests.rs"]
+#[path = "tests/tooltip_interaction.rs"]
 mod interaction_tests;

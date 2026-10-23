@@ -367,4 +367,5 @@ fn rasterize(triangles: &[[Vec3; 3]], flag: &AtomicBool) -> Result<Vec<u8>, Stri
 }
 
 #[cfg(test)]
+#[path = "../tests/thumbnails_mesh.rs"]
 mod tests;

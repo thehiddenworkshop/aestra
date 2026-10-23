@@ -403,5 +403,5 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "arrange/qualification_tests.rs"]
+#[path = "tests/arrange_qualification.rs"]
 mod qualification_tests;

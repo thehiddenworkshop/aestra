@@ -64,5 +64,5 @@ fn apply_history_focus(
 }
 
 #[cfg(test)]
-#[path = "focus/tests.rs"]
+#[path = "tests/focus.rs"]
 mod tests;

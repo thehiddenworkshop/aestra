@@ -6,7 +6,7 @@ pub(crate) use model::*;
 #[path = "geometry/collect.rs"]
 mod collect;
 #[cfg(test)]
-#[path = "geometry/tests.rs"]
+#[path = "tests/geometry.rs"]
 pub(crate) mod tests;
 
 pub(super) fn register(app: &mut App) {

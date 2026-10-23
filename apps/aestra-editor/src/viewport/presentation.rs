@@ -216,5 +216,5 @@ pub(super) fn adaptive_grid_spacing(desired: f32) -> f32 {
 }
 
 #[cfg(test)]
-#[path = "presentation/tests.rs"]
+#[path = "tests/presentation.rs"]
 mod tests;

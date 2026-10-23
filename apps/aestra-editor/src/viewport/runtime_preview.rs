@@ -329,5 +329,5 @@ pub(super) fn compiled_effects_differ_only_in_live_edits(
 }
 
 #[cfg(test)]
-#[path = "runtime_preview/tests.rs"]
+#[path = "tests/runtime_preview.rs"]
 mod tests;

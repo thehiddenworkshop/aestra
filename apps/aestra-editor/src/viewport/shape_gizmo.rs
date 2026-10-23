@@ -649,5 +649,5 @@ pub(super) fn selected_shape_module(session: &EditorSession) -> Option<SelectedS
 }
 
 #[cfg(test)]
-#[path = "shape_gizmo/tests.rs"]
+#[path = "tests/shape_gizmo.rs"]
 mod tests;

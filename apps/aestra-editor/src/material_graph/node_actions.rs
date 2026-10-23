@@ -327,5 +327,5 @@ pub(super) fn graph_branch_nodes(
 }
 
 #[cfg(test)]
-#[path = "node_actions/tests.rs"]
+#[path = "tests/node_actions.rs"]
 mod tests;

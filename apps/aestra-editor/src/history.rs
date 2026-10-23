@@ -26,7 +26,7 @@ pub(crate) mod asset_order;
 pub(crate) struct EditorHistoryPlugin;
 
 mod focus;
-#[path = "history/focus_pointer_020.rs"]
+#[path = "history/focus_pointer.rs"]
 mod focus_pointer;
 pub(crate) use focus::HistoryScope;
 use focus::{capture_history_focus, capture_history_keyboard_focus};
@@ -87,7 +87,7 @@ mod compound;
 mod document_execution;
 pub(crate) use document_execution::EditorHistoryLedger;
 
-#[path = "history/control_input_020.rs"]
+#[path = "history/control_input.rs"]
 mod control_input;
 mod controls;
 use controls::{audit_history_controls, handle_history_buttons, update_history_availability};

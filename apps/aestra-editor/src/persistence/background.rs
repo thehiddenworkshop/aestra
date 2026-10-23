@@ -643,4 +643,5 @@ pub(super) fn queue_save(
 }
 
 #[cfg(test)]
+#[path = "tests/background.rs"]
 mod tests;

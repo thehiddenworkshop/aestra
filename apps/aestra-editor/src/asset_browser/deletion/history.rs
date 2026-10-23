@@ -161,5 +161,5 @@ pub(super) fn step(
 }
 
 #[cfg(test)]
-#[path = "history/tests.rs"]
+#[path = "../tests/deletion_history.rs"]
 mod tests;

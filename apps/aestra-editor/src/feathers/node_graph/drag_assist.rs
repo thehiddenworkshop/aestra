@@ -68,5 +68,5 @@ pub(super) fn sync_guides(
 }
 
 #[cfg(test)]
-#[path = "drag_assist/tests.rs"]
+#[path = "tests/drag_assist.rs"]
 mod tests;

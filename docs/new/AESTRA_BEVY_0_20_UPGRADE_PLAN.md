@@ -1,12 +1,43 @@
 # Bevy 0.20 upgrade and adoption plan
 
-Date: 2026-10-10. Updated: 2026-10-22. Status: the real workspace now selects
+Date: 2026-10-10. Updated: 2026-10-23. Status: the real workspace now selects
 Bevy 0.20.0 and its qualified patches. Native editor build/launch, ordinary workspace
 tests, native cluster/particle-light proofs, executable linkage/startup checks and
 the matched release GPU matrix and relocated package defaults pass on Windows.
 Final UI/showcase approval, clean-machine installer checks and Linux CI remain open;
 compatibility is not yet declared complete.
 Repository baseline inspected: `e8191982`, Bevy 0.19.1.
+
+### Retired engine compatibility — 2026-10-23
+
+- Removed the 32 unused `_019.rs` source boundaries and the superseded unsuffixed
+  storage/extraction implementations. Renamed all 33 active `_020.rs` boundaries
+  to version-neutral names, preserving the native numeric-widget rollout.
+- Removed the legacy shader dialect. Volume/material tests now exercise the actual
+  WESL composition; graph shader qualification uses the production `.wesl` assets
+  directly. The particle-light shader is WESL at source, without import rewriting.
+- Removed the obsolete 0.19 vendored patches and manifest-copy preflight script.
+  The qualified 0.20 vendor patches remain unchanged and versioned for provenance.
+  Physics adapters remain excluded and unpublished, with their frozen upstream
+  requirements documented as unported integrations, not supported 0.19 playback.
+- Updated qualification includes, source hashes and the cluster lifetime runner.
+  Numeric/color fixtures run the real editor package; the graph fixture imports
+  its complete native numeric module. No production test bodies were removed.
+  Historical reports retain their original baseline paths and measurements.
+- Added an architecture regression gate against reintroducing version-suffixed
+  boundary files under the shipping editor and Bevy adapter source trees.
+- Validation: workspace all-target checking and strict Clippy pass with
+  `--features aestra-bench/gpu --locked --offline`. The editor, Bevy host and renderer
+  package regression run passes **3,168 tests**, zero failures, with 22 existing
+  opt-in ignores; the updated architecture suite separately passes all four tests.
+  The isolated harness passes all-target checking and strict Clippy with
+  `editor-qualification`; headless shader/storage/keyboard/control suites pass
+  another **27 tests**, with two existing native GPU probes ignored. Both workspace
+  formatting checks, suspended-adapter formatting, runner PowerShell parsing,
+  source-path existence and whitespace validation pass. Local logs use the
+  `target/bevy-legacy-cleanup-` prefix. Native GPU probes were not rerun for cleanup.
+- Test organization is unchanged; a subsystem-local `tests/actions.rs` layout can
+  be a separate cleanup without mixing it into engine compatibility removal.
 
 ### Application cutover — 2026-10-21
 
@@ -3658,6 +3689,63 @@ expanding to a transform field. f32/f64/unit conversion, document-gesture undo,
 timeline/material semantics and removal of the legacy numeric composition remain
 explicit later parity/rollout gates. No Bevy widget hierarchy patch is introduced.
 
+### B20-4B — Shared native numeric rollout, 2026-10-23
+
+At the user's request the numeric rollout now covers all shared number-field
+constructors rather than stopping at Position X. Each semantic owner composes
+exactly one released `FeathersNumberInput` child. The outer Aestra wrapper owns
+axis labels/sigils, accessible clickable step buttons, model synchronization,
+semantic bounds, optional-value policy and transaction routing; it does not own
+another drag controller or depend on private upstream scrubber/chevron markers.
+
+This covers settings, emitter/effect-clip transforms and timing, module and
+instance parameters, renderer/material properties, event controls, point-light
+properties, host-motion inspector fields, material graph defaults/constants and
+color-picker numeric channels. Function-body numeric constants and scalar
+function defaults formerly built with a text input also use the shared native
+composition. Optional/compound material-function literal editors remain literal
+editors; clearing an optional scalar default still means required/unset, not zero.
+
+The separate autosave pilot and both legacy numeric pointer-drag implementations
+are removed. `ScrubbableNumber` is retained only as compatibility metadata for
+existing panel limits/step configuration, which is translated into public native
+components. Feathers owns drag arithmetic and Shift precision; Aestra retains
+Ctrl/Shift button-step policy. Do not claim identical legacy Ctrl-drag behavior.
+
+The adapter preserves typed F32/F64/I32/I64 values, delegates unit parsing to the
+public native registry, rejects nonfinite/invalid/stale/disabled edits, and retains
+draft versus final semantics. Application text-change previews remain available
+without reimplementing native text editing. Inspector previews leave authored
+data untouched and commit one undo transaction on release/Enter. Escape, pointer
+cancellation and removal of an active field restore its preview without creating
+an undo command. External updates preserve focused text but reject stale submits.
+Deferred scene creation is reconciled against the actual native value, including
+cold-start text synchronization before shaped layout is available.
+
+Windows qualification with pinned Rust 1.98.1 passes:
+
+- All **2854 editor unit tests passed**, zero failed, with **10 existing opt-in
+  tests ignored**, plus all **three architecture tests**. Command:
+  `cargo test -p aestra-editor --locked --offline -- --test-threads=1 --format terse`;
+  log: `target/bevy-020-all-numbers-package-tests.log`. This also rebuilds the
+  standalone editor executable.
+- Production native-widget tests cover real coordinate-based picking/scrubbing,
+  click-to-edit, typing/Enter/blur, precision, typed f64/large i64 values, unit
+  suffixes, limits, optional clearing, disabled ancestors, Escape/cancel/stale
+  release rejection, deferred initialization and measured hover/focus geometry.
+  Inspector transaction tests cover translation, degree-valued rotation, scale
+  and timing, one-command undo, stale document rejection and field teardown.
+  Existing graph/popover/timeline coverage runs against the native composition;
+  color cancellation additionally restores the full Automatic/None picker state.
+- Strict all-target editor Clippy (`-D warnings`), workspace formatting and
+  `git diff --check` pass. Logs: `target/bevy-020-all-numbers-clippy.log` and
+  `target/bevy-020-all-numbers-fmt-check.log`.
+
+The shared numeric rollout is implemented and Windows package-qualified. Desktop
+visual approval, Linux CI and full application acceptance remain separate gates;
+this is not a declaration of complete legacy modifier parity or final upgrade
+acceptance.
+
 ## B20-5 — Menus, dropdowns and color controls
 
 | Current boundary | Proposed upstream reuse | Aestra policy to retain |
@@ -3742,6 +3830,6 @@ new host features or an authored-format redesign into this engine upgrade.
 then run complete workspace tests/lints and native editor workflow acceptance.
 The root graph and qualified adapters are now switched; do not add more isolated
 slices or make optional widget adoption a prerequisite for the compatibility merge.
-Keep current controls, geometry, action routing and undo behavior. Retire retained
-0.19 boundary copies only after the full regression gate passes. Refresh visual and
+Keep current controls, geometry, action routing and undo behavior. Retained 0.19
+boundaries are now retired as recorded above. Refresh visual and
 performance evidence rather than approving changed references.

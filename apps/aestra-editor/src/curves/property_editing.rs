@@ -715,5 +715,5 @@ pub(super) fn bounded_key_time(times: &[f32], index: usize, value: f32) -> f32 {
 }
 
 #[cfg(test)]
-#[path = "property_editing/tests.rs"]
+#[path = "tests/property_editing.rs"]
 mod tests;

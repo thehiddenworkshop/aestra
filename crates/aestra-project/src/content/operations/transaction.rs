@@ -492,8 +492,11 @@ fn rollback(
 }
 
 #[cfg(all(test, any(windows, target_os = "linux")))]
+#[path = "../tests/operations_transaction_folder.rs"]
 mod folder_tests;
 #[cfg(all(test, any(windows, target_os = "linux")))]
+#[path = "../tests/operations_transaction_rewrite.rs"]
 mod rewrite_tests;
 #[cfg(all(test, any(windows, target_os = "linux")))]
+#[path = "../tests/operations_transaction.rs"]
 mod tests;

@@ -645,5 +645,5 @@ pub(super) fn color_components(color: Color) -> [f32; 4] {
 }
 
 #[cfg(test)]
-#[path = "emitter_composition/tests.rs"]
+#[path = "tests/emitter_composition.rs"]
 mod tests;

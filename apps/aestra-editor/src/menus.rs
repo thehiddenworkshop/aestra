@@ -1169,6 +1169,7 @@ fn update_panel_visibility_labels(
 }
 
 #[cfg(test)]
+#[path = "menus/tests/native.rs"]
 mod native_tests;
 
 #[cfg(test)]

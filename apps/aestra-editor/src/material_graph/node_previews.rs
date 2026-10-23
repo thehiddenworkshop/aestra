@@ -1,6 +1,6 @@
 //! Bounded, cancellable CPU rasterization. Never evaluate preview pixels on the UI thread.
 #[cfg(test)]
-#[path = "node_previews/orchestration_tests.rs"]
+#[path = "tests/node_previews_orchestration.rs"]
 mod orchestration_tests;
 use crate::material_graph::{
     MaterialGraphPreviewState, MaterialGraphPreviewTarget,

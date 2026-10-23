@@ -3,6 +3,7 @@ use super::*;
 use crate::project_content::io::{self, IoGuard};
 
 #[cfg(test)]
+#[path = "tests/background.rs"]
 mod tests;
 
 pub(super) enum SourceAction {

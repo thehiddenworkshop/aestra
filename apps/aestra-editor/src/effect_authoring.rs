@@ -1,5 +1,6 @@
 //! Reusable-effect authoring commands, independent of the Library UI.
 #[cfg(test)]
+#[path = "tests/effect_authoring.rs"]
 mod tests;
 use crate::*;
 use aestra_core::{

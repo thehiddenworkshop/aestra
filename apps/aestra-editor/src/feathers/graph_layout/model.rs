@@ -265,5 +265,5 @@ fn bounds(
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "tests/graph_layout.rs"]
 mod tests;

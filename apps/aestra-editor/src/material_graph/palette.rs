@@ -468,5 +468,5 @@ pub(super) fn spawn_material_graph_palette_option(
 }
 
 #[cfg(test)]
-#[path = "palette/tests.rs"]
+#[path = "tests/palette.rs"]
 mod tests;

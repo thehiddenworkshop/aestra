@@ -102,4 +102,5 @@ pub(super) fn restore_candidate(
 }
 
 #[cfg(test)]
+#[path = "tests/recovery_target.rs"]
 mod tests;

@@ -120,6 +120,7 @@ mod curves;
 )]
 mod curves_action;
 #[path = "../../../apps/aestra-editor/src/feathers/field_row.rs"]
+#[allow(dead_code, reason = "Other panels own wrapping numeric row policy")]
 pub(crate) mod field_row;
 pub(crate) use action_button::spawn_action_button as spawn_feathers_action_button;
 #[path = "../../../apps/aestra-editor/src/properties/stack_button.rs"]
@@ -138,7 +139,7 @@ mod combo_selection;
     reason = "Production insertion dependencies retain shipping lint policy"
 )]
 pub(crate) mod material_insertion;
-#[path = "../../../apps/aestra-editor/src/feathers/combo_box/selection_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/combo_box/selection_input.rs"]
 mod selection_input;
 pub(crate) use action_activation::EditorNativeControl;
 pub(crate) use localization::Localizer;
@@ -224,9 +225,9 @@ mod context_menu_composition;
 mod icon;
 #[path = "../../../apps/aestra-editor/src/input.rs"]
 mod input;
-#[path = "../../../apps/aestra-editor/src/input/api_020.rs"]
+#[path = "../../../apps/aestra-editor/src/input/api.rs"]
 mod input_api;
-#[path = "../../../apps/aestra-editor/src/feathers/pointer_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/pointer.rs"]
 #[allow(
     dead_code,
     unused_imports,
@@ -242,7 +243,7 @@ mod pointer;
 mod tooltip;
 #[path = "../../../apps/aestra-editor/src/transport.rs"]
 mod transport;
-#[path = "../../../apps/aestra-editor/src/transport/control_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/transport/control_input.rs"]
 mod transport_input;
 #[path = "editor_viewport.rs"]
 mod viewport;
@@ -324,7 +325,7 @@ pub(crate) mod layout_partial;
 pub(crate) mod presentation_batch_input;
 #[path = "../../../apps/aestra-editor/src/material_graph/presentation/edits.rs"]
 pub(crate) mod presentation_edits;
-#[path = "../../../apps/aestra-editor/src/material_graph/presentation/tests.rs"]
+#[path = "../../../apps/aestra-editor/src/material_graph/tests/presentation.rs"]
 pub(crate) mod presentation_history_tests;
 #[path = "../../../apps/aestra-editor/src/material_graph/semantic_placement.rs"]
 pub(crate) mod semantic_placement;
@@ -340,11 +341,11 @@ pub(crate) mod material_palette_state;
 #[path = "../../../apps/aestra-editor/src/material_graph/workspace_host.rs"]
 pub(crate) mod material_workspace_host;
 use material_palette_state as palette_state;
-#[path = "../../../apps/aestra-editor/src/material_graph/appearance_020.rs"]
+#[path = "../../../apps/aestra-editor/src/material_graph/appearance_input.rs"]
 pub(crate) mod appearance_input;
 #[path = "../../../apps/aestra-editor/src/material_graph/appearance.rs"]
 pub(crate) mod graph_appearance;
-#[path = "../../../apps/aestra-editor/src/material_graph/click_020.rs"]
+#[path = "../../../apps/aestra-editor/src/material_graph/click.rs"]
 pub(crate) mod graph_click_input;
 #[path = "../../../apps/aestra-editor/src/material_graph/connection_drag.rs"]
 #[allow(
@@ -357,7 +358,7 @@ pub(crate) mod graph_connection_drag;
 pub(crate) mod graph_connection_state;
 #[path = "../../../apps/aestra-editor/src/material_graph/connections.rs"]
 pub(crate) mod graph_connections;
-#[path = "../../../apps/aestra-editor/src/material_graph/control_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/material_graph/control_input.rs"]
 pub(crate) mod graph_control_input;
 #[path = "../../../apps/aestra-editor/src/material_graph/controls.rs"]
 #[allow(
@@ -366,7 +367,7 @@ pub(crate) mod graph_control_input;
     reason = "Original material control system dependencies match shipping lint policy"
 )]
 pub(crate) mod graph_controls;
-#[path = "../../../apps/aestra-editor/src/material_graph/drag_020.rs"]
+#[path = "../../../apps/aestra-editor/src/material_graph/drag.rs"]
 pub(crate) mod graph_drag_input;
 #[path = "../../../apps/aestra-editor/src/material_graph/header.rs"]
 #[allow(
@@ -436,7 +437,7 @@ mod graph_wire_layer;
 pub(crate) mod graph_workspace_layout;
 #[path = "../../../apps/aestra-editor/src/feathers/search_field.rs"]
 mod search_field;
-#[path = "../../../apps/aestra-editor/src/feathers/node_graph/toolbar_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/toolbar_input.rs"]
 mod toolbar_input;
 use color_support::text_input;
 use feathers::button;
@@ -468,9 +469,9 @@ mod menu_state;
 #[allow(dead_code, reason = "Other docking consumers remain host-owned")]
 mod tool_panels;
 use history_controls as controls;
-#[path = "../../../apps/aestra-editor/src/history/control_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/history/control_input.rs"]
 mod control_input;
-#[path = "../../../apps/aestra-editor/src/history/focus_pointer_020.rs"]
+#[path = "../../../apps/aestra-editor/src/history/focus_pointer.rs"]
 mod focus_pointer;
 #[path = "../../../apps/aestra-editor/src/history/focus.rs"]
 #[allow(dead_code, reason = "Full panel focus composition remains host-owned")]
@@ -686,7 +687,7 @@ const MATERIAL_GRAPH_LAB_PROGRAM_SOURCE: &str =
 #[path = "../../../apps/aestra-editor/src/feathers/action_activation.rs"]
 #[allow(dead_code, reason = "Native control audit consumers remain host-owned")]
 pub(crate) mod action_activation;
-#[path = "../../../apps/aestra-editor/src/feathers/button/activation_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/button/activation.rs"]
 #[allow(unused_imports, reason = "Control audit consumers remain host-owned")]
 mod button_activation;
 #[path = "../../../apps/aestra-editor/src/history/action.rs"]
@@ -739,9 +740,9 @@ mod semantic_snapshot;
 use semantic_snapshot as semantic;
 #[path = "../../../apps/aestra-editor/src/feathers/node_graph/composition.rs"]
 mod composition;
-#[path = "../../../apps/aestra-editor/src/feathers/node_graph/composition_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/composition_input.rs"]
 mod composition_input;
-#[path = "../../../apps/aestra-editor/src/feathers/node_graph/node_control_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/node_control_input.rs"]
 mod node_control_input;
 #[path = "../../../apps/aestra-editor/src/feathers/node_graph/node_controls.rs"]
 mod node_controls;
@@ -753,7 +754,7 @@ use graph_socket_geometry as socket;
 use graph_wire_layer as wire_layer;
 #[path = "../../../apps/aestra-editor/src/asset_drop/feedback.rs"]
 pub(crate) mod asset_drop_feedback;
-#[path = "../../../apps/aestra-editor/src/asset_drop/input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/asset_drop/input.rs"]
 pub(crate) mod asset_drop_input;
 #[path = "../../../apps/aestra-editor/src/material_graph/ports.rs"]
 pub(crate) mod graph_ports;
@@ -967,9 +968,9 @@ mod editor_view_registry;
     reason = "Explicit collector system dependencies match shipping editor lint policy"
 )]
 pub(crate) mod geometry;
-#[path = "../../../apps/aestra-editor/src/feathers/node_graph/navigation/cursor_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/navigation/cursor.rs"]
 mod graph_cursor;
-#[path = "../../../apps/aestra-editor/src/feathers/node_graph/interaction/pointer_020.rs"]
+#[path = "../../../apps/aestra-editor/src/feathers/node_graph/interaction/pointer.rs"]
 mod graph_pointer;
 #[path = "../../../apps/aestra-editor/src/feathers/node_graph/insertion.rs"]
 mod insertion;
@@ -1021,7 +1022,7 @@ mod palette;
 pub(crate) mod panel_chrome;
 #[path = "../../../apps/aestra-editor/src/feathers/node_graph/resize.rs"]
 mod resize;
-#[path = "../../../apps/aestra-editor/src/theme/bevy_020.rs"]
+#[path = "../../../apps/aestra-editor/src/theme/feathers.rs"]
 mod theme_boundary;
 mod theme {
     pub(crate) use crate::palette::*;

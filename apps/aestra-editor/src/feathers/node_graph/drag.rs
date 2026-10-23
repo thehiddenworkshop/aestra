@@ -276,5 +276,5 @@ pub(super) fn end_graph_node_drag(
 }
 
 #[cfg(test)]
-#[path = "drag/tests.rs"]
+#[path = "tests/drag.rs"]
 mod tests;

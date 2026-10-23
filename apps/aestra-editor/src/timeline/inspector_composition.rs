@@ -222,5 +222,5 @@ pub(super) fn initialize_numbers(
 }
 
 #[cfg(test)]
-#[path = "inspector_composition/tests.rs"]
+#[path = "tests/inspector_composition.rs"]
 mod tests;

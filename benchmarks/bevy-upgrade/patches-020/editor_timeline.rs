@@ -72,7 +72,7 @@ mod motion_state;
     reason = "Production system dependencies match shipping editor lint policy"
 )]
 mod navigation;
-#[path = "../../../apps/aestra-editor/src/timeline/cursor_020.rs"]
+#[path = "../../../apps/aestra-editor/src/timeline/cursor.rs"]
 mod navigation_cursor;
 #[path = "../../../apps/aestra-editor/src/timeline/region_gestures.rs"]
 #[allow(
@@ -86,7 +86,7 @@ mod region_gestures;
     reason = "Production system dependencies match shipping editor lint policy"
 )]
 mod reorder;
-#[path = "../../../apps/aestra-editor/src/timeline/pointer_020.rs"]
+#[path = "../../../apps/aestra-editor/src/timeline/pointer.rs"]
 mod timeline_pointer;
 pub(crate) mod host_motion {
     pub(super) use super::host_composition::{spawn_header, spawn_lane};
@@ -114,7 +114,7 @@ use actions::{ChoreographyAction, TimelineAction};
     reason = "Production system queries match shipping editor lint policy"
 )]
 mod action_controls;
-#[path = "../../../apps/aestra-editor/src/timeline/control_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/timeline/control_input.rs"]
 #[allow(
     clippy::type_complexity,
     reason = "Version-specific production control query"
@@ -129,7 +129,7 @@ mod automation_data;
 mod automation_execution;
 use automation_data::add_automation_key_at_pointer_action;
 #[cfg(test)]
-#[path = "../../../apps/aestra-editor/src/timeline/action_execution_tests.rs"]
+#[path = "../../../apps/aestra-editor/src/timeline/tests/action_execution.rs"]
 #[allow(
     clippy::too_many_arguments,
     reason = "Observer adapter matches the native automation handler's explicit dependencies"
@@ -142,7 +142,7 @@ mod action_execution_tests;
 )]
 mod execution;
 #[cfg(test)]
-#[path = "../../../apps/aestra-editor/src/timeline/execution_tests.rs"]
+#[path = "../../../apps/aestra-editor/src/timeline/tests/execution.rs"]
 mod execution_tests;
 #[path = "../../../apps/aestra-editor/src/timeline/keyboard.rs"]
 #[allow(

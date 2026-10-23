@@ -379,4 +379,5 @@ fn neutral_image(color_space: MaterialTextureColorSpace) -> Image {
 }
 
 #[cfg(test)]
+#[path = "../tests/thumbnails_material.rs"]
 mod tests;

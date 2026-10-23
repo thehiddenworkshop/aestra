@@ -115,5 +115,5 @@ pub(crate) fn snap(
 }
 
 #[cfg(test)]
-#[path = "model/tests.rs"]
+#[path = "../tests/drag_assist_model.rs"]
 mod tests;

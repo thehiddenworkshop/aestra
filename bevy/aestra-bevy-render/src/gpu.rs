@@ -13,7 +13,7 @@ fn alpha_sort_test_readback(buffer: &wgpu::Buffer) -> Vec<u8> {
 mod bootstrap;
 mod bounds;
 #[cfg(test)]
-#[path = "gpu/bounds_test_types_020.rs"]
+#[path = "gpu/bounds_test_types.rs"]
 mod bounds_test_types;
 mod capability_publication;
 mod catchup_pacing;
@@ -25,18 +25,18 @@ mod draw_preparation;
 mod draw_resources;
 mod effect_inputs;
 mod extension_stages;
-#[path = "gpu/extraction_020.rs"]
+#[path = "gpu/extraction.rs"]
 mod extraction;
 mod extraction_cleanup;
 mod extraction_systems;
 mod field_observations;
 mod geometry_sample;
 mod geometry_statistics;
-#[path = "gpu/mapped_readback_020.rs"]
+#[path = "gpu/mapped_readback.rs"]
 mod mapped_readback;
 #[cfg(test)]
 mod material_lighting;
-#[path = "gpu/material_shader_020.rs"]
+#[path = "gpu/material_shader.rs"]
 mod material_shader;
 mod mesh_inputs;
 mod output_context;
@@ -57,7 +57,7 @@ mod preparation_timing;
 mod presentation_readiness;
 mod render;
 mod ribbon_bounds;
-#[path = "gpu/scene_depth_020.rs"]
+#[path = "gpu/scene_depth.rs"]
 mod scene_depth;
 mod shader_composition;
 mod simulation_graph;
@@ -71,7 +71,7 @@ mod stage_output_delivery;
 mod stage_runtimes;
 mod stateful_simulation;
 mod stateful_trails;
-#[path = "gpu/storage_buffers_020.rs"]
+#[path = "gpu/storage_buffers.rs"]
 mod storage_buffers;
 mod storage_encoding;
 mod timestamp_observation;
@@ -85,7 +85,7 @@ mod transform_sync;
 mod view_phases;
 mod visibility_updates;
 mod volume;
-#[path = "gpu/volume_shader_020.rs"]
+#[path = "gpu/volume_shader.rs"]
 mod volume_shader;
 mod wireframe;
 mod world_sdf;
@@ -848,7 +848,7 @@ mod coupled_tests {
     const STRIDE: u32 = aestra_gpu::STATEFUL_STATE_STRIDE;
     const TICKS_PER_SUBMISSION: u32 = 8;
 
-    include!("gpu/stateful_trails_tests.rs");
+    include!("gpu/tests/stateful_trails.rs");
 
     struct Scene {
         device: RenderDevice,

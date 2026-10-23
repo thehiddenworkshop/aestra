@@ -7,8 +7,8 @@ Set-StrictMode -Version Latest
 if (Test-Path -LiteralPath $ReportsDirectory) { throw 'Use a fresh reports directory' }
 New-Item -ItemType Directory -Path $ReportsDirectory | Out-Null
 $directory = (Resolve-Path -LiteralPath $ReportsDirectory).Path
-$sourcePaths = @('Cargo.toml','Cargo.lock','vendor/bevy_pbr/Cargo.toml',
-    'vendor/bevy_pbr/src/cluster/gpu.rs','vendor/bevy_pbr/src/cluster/mod.rs',
+$sourcePaths = @('Cargo.toml','Cargo.lock','vendor/bevy_pbr_020/Cargo.toml',
+    'vendor/bevy_pbr_020/src/cluster/gpu.rs','vendor/bevy_pbr_020/src/cluster/mod.rs',
     'bevy/aestra-bevy/tests/cluster_buffer_reuse.rs','benchmarks/fireworks/run-cluster-lifetimes.ps1')
 function Inputs {
     @($sourcePaths | ForEach-Object {

@@ -265,5 +265,5 @@ pub(super) fn update_socket_visuals(
 }
 
 #[cfg(test)]
-#[path = "node_controls/tests.rs"]
+#[path = "tests/node_controls.rs"]
 mod tests;

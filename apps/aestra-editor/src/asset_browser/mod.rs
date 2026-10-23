@@ -16,6 +16,7 @@ mod relocation;
 pub(crate) mod relocation_recovery;
 mod state;
 #[cfg(test)]
+#[path = "tests/asset_browser.rs"]
 pub(crate) mod tests;
 mod thumbnails;
 mod tree;

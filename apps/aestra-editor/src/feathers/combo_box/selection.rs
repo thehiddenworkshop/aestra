@@ -118,5 +118,5 @@ pub(super) fn spawn_combo_option<A: Component + Copy>(
 }
 
 #[cfg(test)]
-#[path = "selection/tests.rs"]
+#[path = "tests/selection.rs"]
 mod tests;

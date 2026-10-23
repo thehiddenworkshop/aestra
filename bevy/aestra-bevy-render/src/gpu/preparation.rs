@@ -1236,5 +1236,5 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
 }
 
 #[cfg(test)]
-#[path = "preparation_tests.rs"]
+#[path = "tests/preparation.rs"]
 mod tests;

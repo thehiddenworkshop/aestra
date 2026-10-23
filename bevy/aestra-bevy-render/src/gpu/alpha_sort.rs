@@ -332,7 +332,7 @@ fn sort(
 #[cfg(test)]
 mod tests {
     use super::*;
-    include!("alpha_sort_tests.rs");
+    include!("tests/alpha_sort.rs");
     #[test]
     fn plan_has_no_capture_limit_and_merge_parity_is_total() {
         for capacity in [1, 48, 256, 257, 4096, 4097, 65537, 1_000_000] {

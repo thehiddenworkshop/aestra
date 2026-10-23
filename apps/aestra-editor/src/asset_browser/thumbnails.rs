@@ -1068,4 +1068,5 @@ fn decode(root: &Path, relative: &Path, cancelled: &AtomicBool) -> Result<Vec<u8
 }
 
 #[cfg(test)]
+#[path = "tests/thumbnails.rs"]
 mod tests;

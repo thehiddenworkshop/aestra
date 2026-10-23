@@ -208,5 +208,5 @@ fn update_wires(
 }
 
 #[cfg(test)]
-#[path = "wires/tests.rs"]
+#[path = "../tests/graph_wires.rs"]
 mod tests;

@@ -209,5 +209,5 @@ pub(super) fn timeline_effect_heading(localizer: &Localizer, name: &str) -> Stri
 }
 
 #[cfg(test)]
-#[path = "toolbar_composition/tests.rs"]
+#[path = "tests/toolbar_composition.rs"]
 mod tests;

@@ -17,7 +17,7 @@ use bevy::{prelude::*, ui::RelativeCursorPosition};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
-#[path = "execution/tests.rs"]
+#[path = "../../tests/graph_clipboard_execution.rs"]
 mod tests;
 
 pub(crate) fn register(app: &mut App) {

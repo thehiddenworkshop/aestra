@@ -3,10 +3,9 @@ use crate::material_graph::{
     appearance::handle_material_graph_actions,
     arrange, asset_drop, clipboard,
     controls::{
-        focus_material_graph_number_input, handle_material_graph_default_number_change,
-        handle_material_graph_default_toggle_change, handle_material_graph_preview_actions,
-        handle_material_graph_toolbar_actions, stop_material_graph_preview_toggle_click,
-        sync_material_graph_default_number_inputs,
+        handle_material_graph_default_number_change, handle_material_graph_default_toggle_change,
+        handle_material_graph_preview_actions, handle_material_graph_toolbar_actions,
+        stop_material_graph_preview_toggle_click, sync_material_graph_default_number_inputs,
     },
     host_integration, insertion, keyboard, layout_persistence,
     menu_actions::{
@@ -50,7 +49,6 @@ impl Plugin for EditorMaterialGraphPlugin {
             .add_observer(open_material_graph_node_menu)
             .add_observer(select_material_graph_canvas)
             .add_observer(stop_material_graph_preview_toggle_click)
-            .add_observer(focus_material_graph_number_input)
             .add_observer(handle_material_graph_default_number_change)
             .add_observer(handle_material_graph_default_toggle_change)
             .add_observer(update_material_graph_palette_search)
@@ -74,5 +72,5 @@ impl Plugin for EditorMaterialGraphPlugin {
 }
 
 #[cfg(test)]
-#[path = "registration/tests.rs"]
+#[path = "tests/registration.rs"]
 mod tests;

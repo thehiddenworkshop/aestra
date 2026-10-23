@@ -509,7 +509,6 @@ fn volume_clusters_get_clusterable_object_id(index: u32) -> u32 {{ return index;
             "fn march(ray: AestraVolumeRay) -> vec4<f32> {\n    \
              return aestra_volume_field(0u, ray.origin) * (ray.t_far - ray.t_near);\n}",
             "march",
-            super::super::shader_composition::Dialect::Bevy019,
         );
         assert!(composed.contains("return march(AestraVolumeRay("));
         assert!(composed.contains(SCENE_LIGHTING_WGSL));
@@ -522,15 +521,15 @@ fn volume_clusters_get_clusterable_object_id(index: u32) -> u32 {{ return index;
             SCENE_LIGHTING_WGSL,
             "fn aestra_volume_scene_lighting(uvw: vec3<f32>, pixel: vec2<f32>, max_lights: u32) -> vec3<f32> { return vec3<f32>(0.0); }",
         );
-        let interface_and_march = portable
+        // Strip only the native import prefix; the body and encoded interface remain real.
+        let interface_start = portable
+            .find("struct AestraVolumeParams")
+            .expect("volume params");
+        let interface_and_march = portable[interface_start..]
             .split("\nstruct AestraVolumeVertex")
             .next()
             .unwrap()
-            .lines()
-            .filter(|line| !line.starts_with('#'))
-            .collect::<Vec<_>>()
-            .join("\n")
-            .replace("#{MATERIAL_BIND_GROUP}", "0");
+            .replace("constants::MATERIAL_BIND_GROUP", "0");
         let module = naga::front::wgsl::parse_str(&interface_and_march).expect("parses");
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),

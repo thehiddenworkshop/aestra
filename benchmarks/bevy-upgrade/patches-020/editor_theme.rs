@@ -1,11 +1,11 @@
 //! Real Aestra palette and version-selected theme boundary with real Feathers controls.
-#[path = "../../../apps/aestra-editor/src/theme/bevy_020.rs"]
+#[path = "../../../apps/aestra-editor/src/theme/feathers.rs"]
 pub mod boundary;
 #[path = "../../../apps/aestra-editor/src/theme/palette.rs"]
 pub mod palette;
 pub use boundary::feathers_theme;
 pub use palette::*;
-#[path = "../../../apps/aestra-editor/src/theme/tests.rs"]
+#[path = "../../../apps/aestra-editor/src/theme/tests/theme.rs"]
 mod shared_tests;
 
 use bevy::{

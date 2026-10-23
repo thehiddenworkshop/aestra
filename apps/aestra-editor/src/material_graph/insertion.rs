@@ -370,9 +370,9 @@ fn drop_node(
 }
 
 #[cfg(test)]
-#[path = "insertion/tests.rs"]
+#[path = "tests/insertion.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "insertion/qualification_tests.rs"]
+#[path = "tests/insertion_qualification.rs"]
 mod qualification_tests;

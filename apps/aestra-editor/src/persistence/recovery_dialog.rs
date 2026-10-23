@@ -403,4 +403,5 @@ pub(super) fn activate(
 }
 
 #[cfg(test)]
+#[path = "tests/recovery_dialog.rs"]
 mod tests;

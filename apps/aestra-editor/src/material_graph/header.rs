@@ -154,5 +154,5 @@ pub(super) fn material_graph_viewport_key(
     }
 }
 #[cfg(test)]
-#[path = "header/tests.rs"]
+#[path = "tests/header.rs"]
 mod tests;

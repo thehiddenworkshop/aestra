@@ -412,5 +412,5 @@ pub(crate) fn spawn_timeline(
 }
 
 #[cfg(test)]
-#[path = "panel_composition/tests.rs"]
+#[path = "tests/panel_composition.rs"]
 mod tests;

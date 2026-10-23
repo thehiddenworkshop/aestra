@@ -115,5 +115,5 @@ pub(crate) fn expression_depth(
     depth
 }
 #[cfg(test)]
-#[path = "workspace_layout/tests.rs"]
+#[path = "tests/workspace_layout.rs"]
 mod tests;

@@ -9,6 +9,7 @@ use aestra_core::{
 };
 
 #[cfg(test)]
+#[path = "tests/scene_lights.rs"]
 mod tests;
 mod ui;
 pub(super) fn spawn(

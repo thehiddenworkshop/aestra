@@ -1,6 +1,35 @@
 use std::{fs, path::Path};
 
 #[test]
+fn shipping_sources_do_not_retain_versioned_engine_boundaries() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for source in [
+        "apps/aestra-editor/src",
+        "bevy/aestra-bevy/src",
+        "bevy/aestra-bevy-render/src",
+    ] {
+        assert_version_neutral_sources(&root.join(source));
+    }
+}
+
+fn assert_version_neutral_sources(directory: &Path) {
+    for entry in fs::read_dir(directory).expect("shipping source directory must be readable") {
+        let path = entry
+            .expect("shipping source entry must be readable")
+            .path();
+        if path.is_dir() {
+            assert_version_neutral_sources(&path);
+        } else if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            assert!(
+                !name.ends_with("_019.rs") && !name.ends_with("_020.rs"),
+                "shipping engine boundaries must be version-neutral: {}",
+                path.display()
+            );
+        }
+    }
+}
+
+#[test]
 fn editor_does_not_depend_on_the_bevy_runtime_adapter() {
     let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_root = manifest_root.join("src");

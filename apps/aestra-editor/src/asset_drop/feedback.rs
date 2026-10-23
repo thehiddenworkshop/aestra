@@ -148,5 +148,5 @@ fn cleanup<T: Send + Sync + 'static>(
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "tests/feedback.rs"]
 mod tests;

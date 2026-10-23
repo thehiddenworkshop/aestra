@@ -26,5 +26,5 @@ impl Plugin for ProjectContentServicesPlugin {
 }
 
 #[cfg(test)]
-#[path = "services/tests.rs"]
+#[path = "tests/services.rs"]
 mod tests;

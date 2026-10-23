@@ -126,5 +126,5 @@ impl Routing<'_, '_> {
 }
 
 #[cfg(test)]
-#[path = "routing/tests.rs"]
+#[path = "tests/routing.rs"]
 mod tests;

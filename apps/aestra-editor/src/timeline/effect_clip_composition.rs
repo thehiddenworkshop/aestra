@@ -334,5 +334,5 @@ pub(super) fn spawn_track_reorder_icon(
 }
 
 #[cfg(test)]
-#[path = "effect_clip_composition/tests.rs"]
+#[path = "tests/effect_clip_composition.rs"]
 mod tests;

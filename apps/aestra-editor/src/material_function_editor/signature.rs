@@ -1,6 +1,6 @@
 //! Production function signature composition; custom-WESL signatures remain read-only.
 #[cfg(test)]
-#[path = "signature/tests.rs"]
+#[path = "tests/signature.rs"]
 mod tests;
 use crate::feathers::{
     button::spawn_action_button,
@@ -79,23 +79,27 @@ pub(crate) fn spawn(parent: &mut ChildSpawnerCommands, function: &MaterialFuncti
             port.value_type,
         );
         if !matches!(port.value_type, MaterialValueType::Texture2D(_)) {
-            let entity = spawn_text_input(
-                parent,
-                &default_text(&port.default),
-                "Input default (empty = required)",
-                Field {
-                    owner: function.id,
-                    kind: FieldKind::Default(port.id),
-                },
-            );
+            let field = Field {
+                owner: function.id,
+                kind: FieldKind::Default(port.id),
+            };
             if let Some(MaterialValue::Float(value)) = port.default {
-                parent.commands().entity(entity).insert(
-                    crate::feathers::number_input::ScrubbableNumber::new(
-                        value,
-                        -f32::MAX,
-                        f32::MAX,
-                        0.01,
-                    ),
+                let entity = crate::feathers::number_input::spawn_scalar_input(
+                    parent,
+                    value,
+                    "Input default",
+                    field,
+                );
+                parent
+                    .commands()
+                    .entity(entity)
+                    .insert(crate::feathers::number_input::OptionalNumberInput);
+            } else {
+                spawn_text_input(
+                    parent,
+                    &default_text(&port.default),
+                    "Input default (empty = required)",
+                    field,
                 );
             }
         }

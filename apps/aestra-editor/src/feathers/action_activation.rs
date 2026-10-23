@@ -54,5 +54,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "action_activation/tests.rs"]
+#[path = "tests/action_activation.rs"]
 mod tests;

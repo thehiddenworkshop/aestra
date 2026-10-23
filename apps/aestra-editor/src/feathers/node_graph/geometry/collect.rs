@@ -238,5 +238,5 @@ fn port_offset(
 }
 
 #[cfg(test)]
-#[path = "collect/tests.rs"]
+#[path = "../tests/geometry_collect.rs"]
 mod tests;

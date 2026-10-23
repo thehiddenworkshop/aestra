@@ -87,5 +87,5 @@ pub(super) fn choreography_keyboard_input(
 }
 
 #[cfg(test)]
-#[path = "keyboard/tests.rs"]
+#[path = "tests/keyboard.rs"]
 mod tests;

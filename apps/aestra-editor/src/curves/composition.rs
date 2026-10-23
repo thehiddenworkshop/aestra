@@ -989,5 +989,5 @@ pub(super) fn spawn_complex_controls(
 }
 
 #[cfg(test)]
-#[path = "composition/tests.rs"]
+#[path = "tests/composition.rs"]
 mod tests;

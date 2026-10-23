@@ -146,5 +146,5 @@ pub(super) fn spawn_lane(parent: &mut ChildSpawnerCommands, session: &EditorSess
 }
 
 #[cfg(test)]
-#[path = "host_composition/tests.rs"]
+#[path = "tests/host_composition.rs"]
 mod tests;

@@ -79,5 +79,5 @@ pub(super) fn sync_effect_history_ledger(
 }
 
 #[cfg(test)]
-#[path = "synchronization/tests.rs"]
+#[path = "tests/synchronization.rs"]
 mod tests;

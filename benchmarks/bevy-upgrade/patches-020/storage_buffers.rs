@@ -1,5 +1,5 @@
 //! Real Aestra encoding and candidate adapter, exercised with Bevy 0.20 assets.
-#[path = "../../../bevy/aestra-bevy-render/src/gpu/storage_buffers_020.rs"]
+#[path = "../../../bevy/aestra-bevy-render/src/gpu/storage_buffers.rs"]
 mod storage_buffers;
 #[path = "../../../bevy/aestra-bevy-render/src/gpu/storage_encoding.rs"]
 mod storage_encoding;

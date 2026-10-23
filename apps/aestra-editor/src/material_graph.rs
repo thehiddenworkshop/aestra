@@ -68,7 +68,7 @@ pub(crate) use workspace_layout::expression_depth;
 #[cfg(test)]
 use workspace_layout::layout_graph;
 mod appearance;
-#[path = "material_graph/appearance_020.rs"]
+#[path = "material_graph/appearance_input.rs"]
 mod appearance_input;
 pub(crate) mod arrange;
 mod connection_state;
@@ -83,10 +83,10 @@ use node_actions::*;
 mod connection_drag;
 #[cfg(test)]
 use connection_drag::{connection_endpoints, wire_viewport};
-#[path = "material_graph/drag_020.rs"]
+#[path = "material_graph/drag.rs"]
 pub(crate) mod drag_input;
 pub(crate) use connection_drag::update_wire_material;
-#[path = "material_graph/click_020.rs"]
+#[path = "material_graph/click.rs"]
 pub(crate) mod click_input;
 mod menu_opening;
 mod sockets;
@@ -95,12 +95,13 @@ use menu_actions::*;
 #[cfg(test)]
 use sockets::*;
 pub(crate) use sockets::{distance_to_graph_wire, viewport_local_position};
-#[path = "material_graph/control_input_020.rs"]
+#[path = "material_graph/control_input.rs"]
 mod control_input;
 mod node_metrics;
 #[cfg(test)]
 use node_metrics::*;
 #[cfg(test)]
+#[path = "material_graph/tests/arrange_context.rs"]
 mod arrange_context_tests;
 pub(crate) mod asset_drop;
 mod asset_preview;
@@ -108,7 +109,7 @@ pub(crate) mod clipboard;
 mod command_preparation;
 mod function_layout;
 #[cfg(test)]
-#[path = "material_graph/function_layout/native_tests.rs"]
+#[path = "material_graph/tests/function_layout_native.rs"]
 mod function_layout_native_tests;
 pub(crate) mod insertion;
 pub(crate) mod keys;

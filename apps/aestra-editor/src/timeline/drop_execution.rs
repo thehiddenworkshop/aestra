@@ -337,5 +337,5 @@ pub(super) fn choreography_insertion_index(
 }
 
 #[cfg(test)]
-#[path = "drop_execution/tests.rs"]
+#[path = "tests/drop_execution.rs"]
 mod tests;

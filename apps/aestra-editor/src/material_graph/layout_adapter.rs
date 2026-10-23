@@ -170,5 +170,5 @@ impl LayoutAdapter {
 }
 
 #[cfg(test)]
-#[path = "layout_adapter/tests.rs"]
+#[path = "tests/layout_adapter.rs"]
 mod tests;

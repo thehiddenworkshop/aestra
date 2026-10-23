@@ -15,7 +15,7 @@ use plugin::EditorCurvesPlugin;
     reason = "Original production graph constructor's explicit resource contract"
 )]
 mod composition;
-#[path = "../../../apps/aestra-editor/src/curves/control_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/curves/control_input.rs"]
 mod control_input;
 #[path = "../../../apps/aestra-editor/src/curves/controls.rs"]
 mod controls;

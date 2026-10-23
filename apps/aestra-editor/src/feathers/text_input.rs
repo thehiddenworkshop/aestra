@@ -126,5 +126,5 @@ fn submit_text(
 }
 
 #[cfg(test)]
-#[path = "text_input/tests.rs"]
+#[path = "tests/text_input.rs"]
 pub(crate) mod tests;

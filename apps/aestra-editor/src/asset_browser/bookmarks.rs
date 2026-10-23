@@ -1,5 +1,6 @@
 //! Root-local shortcuts. Missing locations remain dormant so deletion Undo restores them.
 #[cfg(test)]
+#[path = "tests/bookmarks.rs"]
 mod tests;
 use super::{state::*, *};
 use aestra_project::ProjectAssetId;

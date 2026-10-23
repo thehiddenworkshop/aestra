@@ -145,5 +145,5 @@ pub(crate) fn view_document_key(
 }
 
 #[cfg(test)]
-#[path = "editor_target/tests.rs"]
+#[path = "tests/editor_target.rs"]
 mod tests;

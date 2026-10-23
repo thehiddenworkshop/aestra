@@ -136,5 +136,5 @@ pub(super) fn track_event_link_drops(
 }
 
 #[cfg(test)]
-#[path = "feedback/tests.rs"]
+#[path = "tests/feedback.rs"]
 mod tests;

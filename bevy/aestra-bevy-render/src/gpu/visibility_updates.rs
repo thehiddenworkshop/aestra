@@ -142,5 +142,5 @@ fn sync_host_motion_draw_transforms(
 }
 
 #[cfg(test)]
-#[path = "visibility_tests.rs"]
+#[path = "tests/visibility.rs"]
 mod tests;

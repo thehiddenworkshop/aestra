@@ -59,5 +59,5 @@ pub(crate) fn execute(
 }
 
 #[cfg(test)]
-#[path = "compound/tests.rs"]
+#[path = "tests/compound.rs"]
 mod tests;

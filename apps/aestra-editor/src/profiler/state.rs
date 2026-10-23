@@ -112,5 +112,5 @@ impl ProfilerState {
 }
 
 #[cfg(test)]
-#[path = "state/tests.rs"]
+#[path = "tests/state.rs"]
 mod tests;

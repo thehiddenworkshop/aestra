@@ -2,7 +2,7 @@
 #[path = "../../../apps/aestra-editor/src/profiler/state.rs"]
 mod state;
 pub(crate) use state::ProfilerState;
-#[path = "../../../apps/aestra-editor/src/profiler/control_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/profiler/control_input.rs"]
 mod control_input;
 #[path = "../../../apps/aestra-editor/src/profiler/controls.rs"]
 mod controls;

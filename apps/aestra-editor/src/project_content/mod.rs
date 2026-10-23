@@ -5,6 +5,7 @@ pub(crate) use plugin::EditorProjectContentPlugin;
 mod services;
 pub(crate) use services::ProjectContentSet;
 #[cfg(test)]
+#[path = "tests/catalog.rs"]
 mod catalog_tests;
 mod refresh;
 use crate::*;

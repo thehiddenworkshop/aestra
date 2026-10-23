@@ -91,5 +91,5 @@ pub(super) fn draw_preview_mocks(
 }
 
 #[cfg(test)]
-#[path = "scene/tests.rs"]
+#[path = "tests/scene.rs"]
 mod tests;

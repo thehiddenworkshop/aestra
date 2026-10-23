@@ -103,5 +103,5 @@ fn set_preview_cameras_active(
 }
 
 #[cfg(test)]
-#[path = "lifecycle/tests.rs"]
+#[path = "tests/lifecycle.rs"]
 mod tests;

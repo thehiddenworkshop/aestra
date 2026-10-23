@@ -124,5 +124,5 @@ impl EditOrder {
 }
 
 #[cfg(test)]
-#[path = "model/tests.rs"]
+#[path = "../tests/asset_order_model.rs"]
 mod tests;

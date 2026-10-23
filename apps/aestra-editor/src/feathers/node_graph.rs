@@ -23,7 +23,7 @@ pub(crate) use memory::GraphViewportMemory;
 mod drag;
 #[cfg(test)]
 use drag::*;
-#[path = "node_graph/interaction/pointer_020.rs"]
+#[path = "node_graph/interaction/pointer.rs"]
 mod graph_pointer;
 mod node;
 pub(crate) use node::{
@@ -34,7 +34,7 @@ mod marquee;
 #[cfg(test)]
 use marquee::{GraphMarqueeGesture, begin_graph_marquee};
 pub(crate) use marquee::{GraphMarqueeSelection, GraphSelectionMode};
-#[path = "node_graph/navigation/cursor_020.rs"]
+#[path = "node_graph/navigation/cursor.rs"]
 mod graph_cursor;
 #[cfg(test)]
 use bevy::ui::RelativeCursorPosition;
@@ -54,12 +54,12 @@ pub(crate) use drag_assist::spawn_controls as spawn_graph_drag_controls;
 pub(crate) mod geometry;
 pub(crate) mod insertion;
 #[cfg(test)]
-#[path = "node_graph/insertion/tests.rs"]
+#[path = "node_graph/tests/insertion.rs"]
 mod insertion_tests;
 mod overlay;
 pub(crate) mod placement;
 #[cfg(test)]
-#[path = "node_graph/placement/tests.rs"]
+#[path = "node_graph/tests/placement.rs"]
 mod placement_tests;
 mod resize;
 
@@ -70,9 +70,9 @@ mod node_controls;
 #[cfg(test)]
 use node_controls::*;
 mod composition;
-#[path = "node_graph/composition_input_020.rs"]
+#[path = "node_graph/composition_input.rs"]
 mod composition_input;
-#[path = "node_graph/node_control_input_020.rs"]
+#[path = "node_graph/node_control_input.rs"]
 mod node_control_input;
 #[cfg(test)]
 use composition::FeathersGraphNodeBody;
@@ -104,7 +104,7 @@ pub(crate) use toolbar::{
     GraphFrameAction, graph_toolbar_bundle, spawn_graph_frame_button, spawn_graph_tool_button,
     spawn_graph_toolbar_summary,
 };
-#[path = "node_graph/toolbar_input_020.rs"]
+#[path = "node_graph/toolbar_input.rs"]
 mod toolbar_input;
 
 mod integration;
@@ -134,6 +134,7 @@ mod preview_toggle;
 pub(crate) use preview_toggle::FeathersGraphNodePreviewToggle;
 
 #[cfg(test)]
+#[path = "node_graph/tests/layout_contract.rs"]
 mod layout_contract_tests;
 
 #[cfg(test)]

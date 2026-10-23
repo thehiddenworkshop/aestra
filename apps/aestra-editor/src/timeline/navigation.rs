@@ -255,5 +255,5 @@ pub(super) enum TimelineWheelIntent {
 }
 
 #[cfg(test)]
-#[path = "navigation/tests.rs"]
+#[path = "tests/navigation.rs"]
 mod tests;

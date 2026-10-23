@@ -5,6 +5,7 @@ use super::*;
 use crate::material_graph::clipboard::{GraphClipboard, Shortcut};
 
 #[cfg(test)]
+#[path = "../tests/graph_clipboard.rs"]
 mod tests;
 
 mod execution;

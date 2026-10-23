@@ -490,5 +490,5 @@ pub(super) fn open_referenced_emitter_source_from_header(
 }
 
 #[cfg(test)]
-#[path = "clicks/tests.rs"]
+#[path = "tests/clicks.rs"]
 mod tests;

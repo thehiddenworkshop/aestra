@@ -116,5 +116,5 @@ pub(super) fn sync_graph_selection_outlines(
 }
 
 #[cfg(test)]
-#[path = "viewport_presentation/tests.rs"]
+#[path = "tests/viewport_presentation.rs"]
 mod tests;

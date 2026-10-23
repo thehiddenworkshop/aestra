@@ -33,6 +33,6 @@ pub(crate) fn input_row<T: Component>(
 }
 
 pub(crate) mod feedback;
-#[path = "asset_drop/input_020.rs"]
+#[path = "asset_drop/input.rs"]
 pub(crate) mod input;
 pub(crate) use feedback::{Feedback, clear_feedback, register_feedback, resolve, show_feedback};

@@ -78,5 +78,5 @@ pub(super) fn sync_photographic_overlay_composition(
 pub(super) struct AppliedOverlayComposition(bool);
 
 #[cfg(test)]
-#[path = "photographic/tests.rs"]
+#[path = "tests/photographic.rs"]
 mod tests;

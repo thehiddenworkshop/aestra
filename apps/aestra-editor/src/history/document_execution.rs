@@ -234,5 +234,5 @@ pub(super) fn execute_document_history(
 }
 
 #[cfg(test)]
-#[path = "document_execution/tests.rs"]
+#[path = "tests/document_execution.rs"]
 mod tests;

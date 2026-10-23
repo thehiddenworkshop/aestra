@@ -1,6 +1,6 @@
 //! Actual material canvas assembly, semantic nodes, typed ports and wires.
 #[cfg(test)]
-#[path = "composition/tests.rs"]
+#[path = "tests/composition.rs"]
 mod tests;
 use crate::material_graph::{
     MaterialGraphAction, MaterialGraphPreviewState, MaterialGraphPreviewTarget,

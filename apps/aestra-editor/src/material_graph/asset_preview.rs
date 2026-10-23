@@ -10,7 +10,7 @@ use aestra_core::{
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
-#[path = "asset_preview/qualification_tests.rs"]
+#[path = "tests/asset_preview_qualification.rs"]
 mod qualification_tests;
 
 pub(crate) fn render_material_asset_preview(

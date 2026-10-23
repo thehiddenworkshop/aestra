@@ -488,6 +488,8 @@ mod tests {
         .init_asset::<SvgFile>()
         .init_resource::<InputFocus>()
         .init_resource::<InitialValues>()
+        .init_resource::<bevy::feathers::controls::UnitsRegistry>()
+        .init_resource::<bevy::feathers::theme::UiTheme>()
         .add_observer(
             |event: On<UpdateNumberInput>, mut values: ResMut<InitialValues>| {
                 if let NumberInputValue::F32(value) = event.value {

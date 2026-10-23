@@ -116,5 +116,5 @@ pub(crate) fn apply(
 }
 
 #[cfg(test)]
-#[path = "document_actions/tests.rs"]
+#[path = "tests/document_actions.rs"]
 mod tests;

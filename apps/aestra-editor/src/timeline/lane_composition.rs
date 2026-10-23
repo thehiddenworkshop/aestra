@@ -360,5 +360,5 @@ pub(super) fn spawn_automation_lane_row(
 }
 
 #[cfg(test)]
-#[path = "lane_composition/tests.rs"]
+#[path = "tests/lane_composition.rs"]
 mod tests;

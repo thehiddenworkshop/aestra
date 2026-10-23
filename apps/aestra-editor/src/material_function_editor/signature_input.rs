@@ -1,6 +1,6 @@
 //! Production function signature observers and semantic validation; no alternate callbacks.
 #[cfg(test)]
-#[path = "signature_input/tests.rs"]
+#[path = "tests/signature_input.rs"]
 mod tests;
 use crate::material_function_editor::{FunctionEditor, signature_model::*};
 use crate::{EditorSession, ProjectEffectCatalog};

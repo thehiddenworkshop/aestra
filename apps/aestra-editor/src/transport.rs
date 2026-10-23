@@ -481,5 +481,5 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "transport/toolbar_tests.rs"]
+#[path = "transport/tests/toolbar.rs"]
 mod toolbar_tests;

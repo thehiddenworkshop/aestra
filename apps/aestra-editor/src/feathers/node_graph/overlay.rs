@@ -251,5 +251,5 @@ pub(super) fn reconcile(
 }
 
 #[cfg(test)]
-#[path = "overlay/tests.rs"]
+#[path = "tests/overlay.rs"]
 mod tests;

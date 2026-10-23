@@ -5,7 +5,7 @@ use crate::feathers::automation_curve::{self, AutomationCurveData};
 #[cfg(test)]
 use crate::*;
 mod composition;
-#[path = "curves/control_input_020.rs"]
+#[path = "curves/control_input.rs"]
 mod control_input;
 mod controls;
 use crate::timeline::panel_input as cursor;

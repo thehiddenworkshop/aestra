@@ -307,5 +307,5 @@ pub(super) fn update_material_graph_layout_document(
 }
 
 #[cfg(test)]
-#[path = "layout_persistence/tests.rs"]
+#[path = "tests/layout_persistence.rs"]
 mod tests;

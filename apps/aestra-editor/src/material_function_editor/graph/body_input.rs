@@ -1,6 +1,6 @@
 //! Production function-body action and constant-edit observers.
 #[cfg(test)]
-#[path = "body_input/tests.rs"]
+#[path = "../tests/graph_body_input.rs"]
 mod tests;
 use crate::feathers::node_graph::{
     GraphViewportMemory, NODE_HEADER_HEIGHT, NODE_WIDTH,

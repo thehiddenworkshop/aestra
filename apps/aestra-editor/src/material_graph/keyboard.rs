@@ -15,7 +15,7 @@ pub(crate) fn register(app: &mut App) {
 }
 
 #[cfg(test)]
-#[path = "keyboard/tests.rs"]
+#[path = "tests/keyboard.rs"]
 mod tests;
 
 #[allow(clippy::too_many_arguments)]

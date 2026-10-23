@@ -1,8 +1,6 @@
 [workspace]
 resolver = "2"
 exclude = [
-    "vendor/bevy_input_focus",
-    "vendor/bevy_pbr",
     "vendor/bevy_input_focus_020",
     "vendor/bevy_pbr_020",
     "benchmarks/bevy-upgrade/patches-020",

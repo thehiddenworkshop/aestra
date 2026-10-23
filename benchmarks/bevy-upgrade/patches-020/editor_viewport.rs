@@ -45,7 +45,7 @@ mod shape_gizmo;
     reason = "Original explicit ECS telemetry query matches shipping policy"
 )]
 mod telemetry;
-#[path = "../../../apps/aestra-editor/src/viewport/telemetry/candidate_tests.rs"]
+#[path = "../../../apps/aestra-editor/src/viewport/tests/telemetry_candidate.rs"]
 mod telemetry_observation_tests;
 #[path = "../../../apps/aestra-editor/src/viewport/transform_gizmo.rs"]
 #[allow(
@@ -62,7 +62,7 @@ mod keyboard {
 #[path = "../../../apps/aestra-editor/src/viewport/actions.rs"]
 mod actions;
 use actions::PreviewDisplayState;
-#[path = "../../../apps/aestra-editor/src/viewport/control_input_020.rs"]
+#[path = "../../../apps/aestra-editor/src/viewport/control_input.rs"]
 mod control_input;
 pub(crate) use crate::viewport_shortcuts::PreviewDisplayMode;
 use navigation::PreviewCameraController;

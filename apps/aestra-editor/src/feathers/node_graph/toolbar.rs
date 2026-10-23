@@ -172,5 +172,5 @@ pub(super) fn handle_graph_frame_buttons(
 }
 
 #[cfg(test)]
-#[path = "toolbar/tests.rs"]
+#[path = "tests/toolbar.rs"]
 mod tests;

@@ -152,5 +152,5 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
 #[path = "playback/qualification.rs"]
 mod qualification;
 #[cfg(test)]
-#[path = "playback/tests.rs"]
+#[path = "tests/playback.rs"]
 mod tests;

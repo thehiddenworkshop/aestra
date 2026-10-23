@@ -1,25 +1,7 @@
-//! Engine-boundary shader composition. The shader bodies are shared verbatim.
-//! The active renderer uses the qualified 0.20 WESL dialect; legacy fixtures retain 0.19 parity checks.
+//! Native Bevy WESL composition around the engine-neutral shader bodies.
 use aestra_gpu::volume::volume_interface_wgsl_with_scene_lighting;
 
-#[derive(Clone, Copy)]
-pub(crate) enum Dialect {
-    #[cfg(test)]
-    Bevy019,
-    Bevy020,
-}
-
-#[cfg(test)]
-const VOLUME_IMPORTS_019: &str = r#"#import bevy_pbr::mesh_functions
-#import bevy_pbr::mesh_view_bindings::view
-#import bevy_pbr::mesh_view_bindings as volume_scene
-#import bevy_pbr::clustered_forward as volume_clusters
-#import bevy_pbr::view_transformations::{position_world_to_clip, position_ndc_to_world, frag_coord_to_ndc}
-#ifdef DEPTH_PREPASS
-#import bevy_pbr::prepass_utils
-#endif"#;
-
-const VOLUME_IMPORTS_020: &str = r#"import bevy_pbr::render::{
+const VOLUME_IMPORTS: &str = r#"import bevy_pbr::render::{
     mesh_functions,
     mesh_view_bindings::{view},
     mesh_view_bindings as volume_scene,
@@ -29,7 +11,7 @@ const VOLUME_IMPORTS_020: &str = r#"import bevy_pbr::render::{
 @if(DEPTH_PREPASS)
 import bevy_pbr::prepass::utils as prepass_utils;"#;
 
-const MATERIAL_IMPORTS_020: &str = r#"@if(AESTRA_SCENE_POINT_LIGHTING)
+const MATERIAL_IMPORTS: &str = r#"@if(AESTRA_SCENE_POINT_LIGHTING)
 import bevy_pbr::render::mesh_view_bindings::view;
 @if(AESTRA_SCENE_POINT_LIGHTING)
 import bevy_pbr::render::mesh_view_bindings as aestra_sprite_scene;
@@ -37,22 +19,7 @@ import bevy_pbr::render::mesh_view_bindings as aestra_sprite_scene;
 import bevy_pbr::render::clustered_forward as aestra_sprite_clusters;
 "#;
 
-pub(crate) fn compose_volume(program_wgsl: &str, entry_point: &str, dialect: Dialect) -> String {
-    let (imports, depth_start, depth_end, group) = match dialect {
-        #[cfg(test)]
-        Dialect::Bevy019 => (
-            VOLUME_IMPORTS_019,
-            "#ifdef DEPTH_PREPASS",
-            "#endif",
-            "#{MATERIAL_BIND_GROUP}",
-        ),
-        Dialect::Bevy020 => (
-            VOLUME_IMPORTS_020,
-            "@if(DEPTH_PREPASS) {",
-            "}",
-            "constants::MATERIAL_BIND_GROUP",
-        ),
-    };
+pub(crate) fn compose_volume(program_wgsl: &str, entry_point: &str) -> String {
     format!(
         r#"{imports}
 {interface}
@@ -110,14 +77,20 @@ fn fragment(in: AestraVolumeVarying) -> @location(0) vec4<f32> {{
     return {entry_point}(AestraVolumeRay(origin, direction, span.x, span.y, size, in.clip.xy));
 }}
 "#,
-        interface = volume_interface_wgsl_with_scene_lighting(group, SCENE_LIGHTING_WGSL,),
+        imports = VOLUME_IMPORTS,
+        depth_start = "@if(DEPTH_PREPASS) {",
+        depth_end = "}",
+        interface = volume_interface_wgsl_with_scene_lighting(
+            "constants::MATERIAL_BIND_GROUP",
+            SCENE_LIGHTING_WGSL,
+        ),
     )
 }
 
 // Invocation-private sample transforms and the fixed visited-entry budget are unchanged.
 const SCENE_LIGHTING_WGSL: &str = include_str!("volume_lighting.wgsl");
 
-pub(crate) fn compose_material(wgsl: &str, enabled: bool, dialect: Dialect) -> String {
+pub(crate) fn compose_material(wgsl: &str, enabled: bool) -> String {
     if !enabled {
         return wgsl.to_owned();
     }
@@ -136,29 +109,13 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool, dialect: Dialect) -> S
             .expect("scene-light callback end missing")
         + 1;
     let mut source = String::with_capacity(wgsl.len() + 3000);
-    source.push_str(match dialect {
-        #[cfg(test)]
-        Dialect::Bevy019 => "#ifdef AESTRA_SCENE_POINT_LIGHTING\n#import bevy_pbr::mesh_view_bindings::view\n#import bevy_pbr::mesh_view_bindings as aestra_sprite_scene\n#import bevy_pbr::clustered_forward as aestra_sprite_clusters\n#endif\n",
-        Dialect::Bevy020 => MATERIAL_IMPORTS_020,
-    });
+    source.push_str(MATERIAL_IMPORTS);
     source.push_str(&wgsl[..body]);
-    source.push_str(match dialect {
-        #[cfg(test)]
-        Dialect::Bevy019 => "{\n#ifdef AESTRA_SCENE_POINT_LIGHTING\n    return aestra_bevy_point_irradiance(world, pixel);\n#else\n    return vec3<f32>(0.0);\n#endif\n}",
-        Dialect::Bevy020 => "{\n    @if(AESTRA_SCENE_POINT_LIGHTING) { return aestra_bevy_point_irradiance(world, pixel); }\n    @else { return vec3<f32>(0.0); }\n}",
-    });
+    source.push_str("{\n    @if(AESTRA_SCENE_POINT_LIGHTING) { return aestra_bevy_point_irradiance(world, pixel); }\n    @else { return vec3<f32>(0.0); }\n}");
     source.push_str(&wgsl[end..]);
-    source.push_str(match dialect {
-        #[cfg(test)]
-        Dialect::Bevy019 => "\n#ifdef AESTRA_SCENE_POINT_LIGHTING\n",
-        Dialect::Bevy020 => "\n@if(AESTRA_SCENE_POINT_LIGHTING) {\n",
-    });
+    source.push_str("\n@if(AESTRA_SCENE_POINT_LIGHTING) {\n");
     source.push_str(include_str!("material_lighting.wgsl"));
-    source.push_str(match dialect {
-        #[cfg(test)]
-        Dialect::Bevy019 => "\n#endif\n",
-        Dialect::Bevy020 => "\n}\n",
-    });
+    source.push_str("\n}\n");
     // Cluster helpers also read the native view. Keep one binding-0 declaration in 3D;
     // two independently declared view globals are invalid even with compatible layouts.
     let declaration = "@group(0) @binding(0)\nvar<uniform> view: View;";
@@ -169,13 +126,7 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool, dialect: Dialect) -> S
     );
     source.replace(
         declaration,
-        &match dialect {
-            #[cfg(test)]
-            Dialect::Bevy019 => {
-                format!("#ifndef AESTRA_SCENE_POINT_LIGHTING\n{declaration}\n#endif")
-            }
-            Dialect::Bevy020 => format!("@if(!AESTRA_SCENE_POINT_LIGHTING)\n{declaration}"),
-        },
+        &format!("@if(!AESTRA_SCENE_POINT_LIGHTING)\n{declaration}"),
     )
 }
 
@@ -184,22 +135,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dialects_share_volume_body_and_keep_depth_condition_local() {
+    fn native_volume_keeps_body_and_depth_condition_local() {
         let march = "fn march(ray: AestraVolumeRay) -> vec4<f32> { return vec4<f32>(ray.t_far); }";
-        let legacy = compose_volume(march, "march", Dialect::Bevy019);
-        let wesl = compose_volume(march, "march", Dialect::Bevy020);
-        assert!(
-            legacy.contains("#import bevy_pbr::view_transformations::{position_world_to_clip,")
-        );
-        assert!(legacy.contains("#ifdef DEPTH_PREPASS\n    let depth"));
+        let wesl = compose_volume(march, "march");
         assert!(wesl.contains("@if(DEPTH_PREPASS) {\n    let depth"));
         assert!(wesl.contains("import bevy_pbr::prepass::utils as prepass_utils;"));
         assert!(wesl.contains("@group(constants::MATERIAL_BIND_GROUP)"));
         assert!(!wesl.contains('#'));
-        for source in [&legacy, &wesl] {
-            assert!(source.contains(march));
-            assert!(source.contains("return march(AestraVolumeRay("));
-            assert!(source.contains(SCENE_LIGHTING_WGSL));
-        }
+        assert!(wesl.contains(march));
+        assert!(wesl.contains("return march(AestraVolumeRay("));
+        assert!(wesl.contains(SCENE_LIGHTING_WGSL));
     }
 }

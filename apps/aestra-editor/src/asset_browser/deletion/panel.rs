@@ -579,5 +579,5 @@ fn button(host: &mut ChildSpawnerCommands, value: &str, choice: Choice, disabled
 }
 
 #[cfg(test)]
-#[path = "panel/tests.rs"]
+#[path = "../tests/deletion_panel.rs"]
 mod tests;

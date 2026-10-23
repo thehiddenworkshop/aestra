@@ -33,5 +33,5 @@ pub(super) fn handle_material_graph_actions(
     }
 }
 #[cfg(test)]
-#[path = "appearance/tests.rs"]
+#[path = "tests/appearance.rs"]
 mod tests;

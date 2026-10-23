@@ -824,5 +824,5 @@ pub(super) fn apply_timeline_insertion_border(
 }
 
 #[cfg(test)]
-#[path = "presentation/tests.rs"]
+#[path = "tests/presentation.rs"]
 mod tests;

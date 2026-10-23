@@ -83,8 +83,8 @@ pub(super) fn register(app: &mut App) {
 }
 
 #[cfg(test)]
-#[path = "integration/control_tests.rs"]
+#[path = "tests/integration_control.rs"]
 mod control_tests;
 #[cfg(test)]
-#[path = "integration/tests.rs"]
+#[path = "tests/integration.rs"]
 mod tests;

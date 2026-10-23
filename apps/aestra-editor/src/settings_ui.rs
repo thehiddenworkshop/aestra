@@ -6,13 +6,14 @@ use bevy::{ecs::system::SystemParam, ui_widgets::Activate};
 use fluent_bundle::FluentArgs;
 
 const MAX_PREVIEW_PARTICLE_LIMIT: usize = 384;
-mod native_number;
+#[cfg(test)]
+#[path = "tests/settings_ui_number.rs"]
+mod number_tests;
 
 pub(crate) struct EditorSettingsUiPlugin;
 
 impl Plugin for EditorSettingsUiPlugin {
     fn build(&self, app: &mut App) {
-        native_number::install(app);
         app.init_resource::<SettingsPanelState>()
             .add_observer(queue_settings_action_activation)
             .add_observer(handle_settings_toggle_change)
@@ -699,13 +700,6 @@ fn spawn_settings_integer(
                 ..default()
             })
             .with_children(|input| {
-                if setting == SettingsNumber::AutosaveInterval {
-                    input
-                        .spawn_empty()
-                        .apply_scene(native_number::scene(title.to_owned()))
-                        .insert(AccessibleLabel(title.to_owned()));
-                    return;
-                }
                 input
                     .spawn_empty()
                     .apply_scene(ui_shell::feathers_integer_input())
@@ -1039,9 +1033,12 @@ fn apply_settings_scalar(
 fn sync_settings_number_inputs(
     mut commands: Commands,
     settings: Res<EditorSettings>,
-    controls: Query<(Entity, &SettingsNumberControl), Added<SettingsNumberControl>>,
+    controls: Query<(Entity, Ref<SettingsNumberControl>)>,
 ) {
     for (entity, control) in &controls {
+        if !control.is_added() && !settings.is_changed() {
+            continue;
+        }
         let value = settings_number_input_value(&settings, control.0);
         commands.trigger(UpdateNumberInput { entity, value });
         let profile = settings.preview.photographic;
@@ -1062,10 +1059,33 @@ fn sync_settings_number_inputs(
                     0.01,
                 ))
             }
+            SettingsNumber::UiScale => Some(crate::feathers::number_input::ScrubbableNumber::new(
+                settings.appearance.ui_scale * 100.0,
+                75.0,
+                150.0,
+                5.0,
+            )),
             _ => None,
         };
         if let Some(scrub) = scrub {
             commands.entity(entity).insert(scrub);
+        }
+        use bevy::feathers::controls::{HardLimit, NumberInputPrecision, NumberInputStep};
+        let limit = match control.0 {
+            SettingsNumber::AutosaveInterval => Some(HardLimit::i32(5..=600)),
+            SettingsNumber::PreviewParticleLimit => {
+                Some(HardLimit::i32(64..=MAX_PREVIEW_PARTICLE_LIMIT as i32))
+            }
+            SettingsNumber::CaptureFrameRate => Some(HardLimit::i32(1..=240)),
+            SettingsNumber::ContactSheetColumns => Some(HardLimit::i32(1..=16)),
+            _ => None,
+        };
+        if let Some(limit) = limit {
+            commands.entity(entity).insert((
+                limit,
+                NumberInputStep(100.0),
+                NumberInputPrecision(0),
+            ));
         }
     }
 }

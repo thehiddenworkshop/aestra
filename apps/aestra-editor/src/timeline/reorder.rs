@@ -221,5 +221,5 @@ pub(super) fn drop_effect_clip_track_reorder(
 }
 
 #[cfg(test)]
-#[path = "reorder/tests.rs"]
+#[path = "tests/reorder.rs"]
 mod tests;

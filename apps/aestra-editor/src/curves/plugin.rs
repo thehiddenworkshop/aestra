@@ -26,5 +26,5 @@ impl Plugin for EditorCurvesPlugin {
 }
 
 #[cfg(test)]
-#[path = "plugin/tests.rs"]
+#[path = "tests/plugin.rs"]
 mod tests;

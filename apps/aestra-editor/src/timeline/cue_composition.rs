@@ -195,5 +195,5 @@ pub(super) fn spawn_choreography_event_lane(
 }
 
 #[cfg(test)]
-#[path = "cue_composition/tests.rs"]
+#[path = "tests/cue_composition.rs"]
 mod tests;

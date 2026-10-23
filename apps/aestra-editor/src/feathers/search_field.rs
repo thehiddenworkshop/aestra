@@ -296,5 +296,5 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "search_field/interaction_tests.rs"]
+#[path = "tests/search_field_interaction.rs"]
 mod interaction_tests;

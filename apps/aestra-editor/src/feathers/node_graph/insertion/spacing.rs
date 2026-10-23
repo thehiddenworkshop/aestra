@@ -179,5 +179,5 @@ pub(super) fn capture(
 }
 
 #[cfg(test)]
-#[path = "spacing/tests.rs"]
+#[path = "../tests/insertion_spacing.rs"]
 mod tests;

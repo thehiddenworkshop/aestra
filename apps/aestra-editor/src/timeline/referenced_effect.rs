@@ -431,7 +431,7 @@ pub(super) fn mapped_referenced_emitter_timing(
 }
 
 #[cfg(test)]
-#[path = "referenced_effect/composition_tests.rs"]
+#[path = "tests/referenced_effect_composition.rs"]
 mod composition_tests;
 
 #[cfg(test)]

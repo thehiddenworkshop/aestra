@@ -1,11 +1,7 @@
 //! Opt-in clustered point irradiance for semantic materials. No new light pool/readback.
 
 pub(super) fn compose(wgsl: &str, enabled: bool) -> String {
-    super::shader_composition::compose_material(
-        wgsl,
-        enabled,
-        super::shader_composition::Dialect::Bevy020,
-    )
+    super::shader_composition::compose_material(wgsl, enabled)
 }
 
 #[cfg(test)]

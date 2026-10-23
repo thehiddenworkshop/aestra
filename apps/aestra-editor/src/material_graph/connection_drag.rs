@@ -541,5 +541,5 @@ pub(crate) fn update_wire_material(
 }
 
 #[cfg(test)]
-#[path = "connection_drag/tests.rs"]
+#[path = "tests/connection_drag.rs"]
 mod tests;

@@ -277,5 +277,5 @@ pub(super) fn graph_canvas_transform(pan: Vec2, zoom: f32, content_size: Vec2) -
 }
 
 #[cfg(test)]
-#[path = "navigation/tests.rs"]
+#[path = "tests/navigation.rs"]
 mod tests;

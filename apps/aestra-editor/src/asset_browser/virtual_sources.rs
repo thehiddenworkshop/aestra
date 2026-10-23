@@ -12,6 +12,7 @@ use bevy::ui_widgets::Activate;
 mod chrome;
 
 #[cfg(test)]
+#[path = "tests/virtual_sources.rs"]
 mod tests;
 
 #[derive(Component, Clone)]

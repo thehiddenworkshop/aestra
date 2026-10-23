@@ -551,5 +551,5 @@ pub(super) fn spawn_choreography_rows(
 }
 
 #[cfg(test)]
-#[path = "track_composition/tests.rs"]
+#[path = "tests/track_composition.rs"]
 mod tests;

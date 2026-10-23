@@ -3,6 +3,7 @@ mod action;
 mod background;
 pub(crate) use action::AssetAction;
 #[cfg(test)]
+#[path = "asset_actions/tests/asset_actions.rs"]
 mod tests;
 use crate::effect_authoring::{create_reusable_effect_from_emitters, explode_effect_clip};
 use crate::project_content::ProjectEffectWatchState;

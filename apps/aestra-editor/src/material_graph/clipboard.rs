@@ -4,6 +4,7 @@
 use super::*;
 
 #[cfg(test)]
+#[path = "tests/clipboard.rs"]
 mod tests;
 
 mod model;

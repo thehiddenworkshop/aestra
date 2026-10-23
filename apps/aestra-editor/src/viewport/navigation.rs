@@ -196,5 +196,5 @@ pub(super) fn preview_camera_transform(
 }
 
 #[cfg(test)]
-#[path = "navigation/tests.rs"]
+#[path = "tests/navigation.rs"]
 mod tests;

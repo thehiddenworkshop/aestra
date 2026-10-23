@@ -16,4 +16,5 @@ use bevy::{input_focus::InputFocus, ui_widgets::Activate};
 #[cfg(test)]
 use panel::{Body, Choice, State, show_error};
 #[cfg(test)]
+#[path = "tests/deletion.rs"]
 mod tests;

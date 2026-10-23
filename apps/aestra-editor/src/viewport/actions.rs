@@ -130,5 +130,5 @@ pub(super) fn audit_viewport_controls(controls: Query<Entity, UnclassifiedViewpo
 }
 
 #[cfg(test)]
-#[path = "actions/tests.rs"]
+#[path = "tests/actions.rs"]
 mod tests;

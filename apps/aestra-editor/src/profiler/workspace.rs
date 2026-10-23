@@ -748,5 +748,5 @@ pub(super) fn update_profiler_labels(
 }
 
 #[cfg(test)]
-#[path = "workspace/tests.rs"]
+#[path = "tests/workspace.rs"]
 mod tests;

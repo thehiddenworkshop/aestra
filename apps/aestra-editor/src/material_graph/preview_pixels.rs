@@ -1,6 +1,6 @@
 //! Deterministic CPU material evaluation shared by previews and bounded raster workers.
 #[cfg(test)]
-#[path = "preview_pixels/tests.rs"]
+#[path = "tests/preview_pixels.rs"]
 mod tests;
 use crate::material_graph::MaterialGraphPreviewTarget;
 use aestra_core::{

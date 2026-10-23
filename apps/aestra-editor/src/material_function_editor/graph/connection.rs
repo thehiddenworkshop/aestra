@@ -1,6 +1,6 @@
 //! Production function socket drag/drop lifecycle with engine-native event transport.
 #[cfg(test)]
-#[path = "connection/tests.rs"]
+#[path = "../tests/graph_connection.rs"]
 mod tests;
 use crate::material_function_editor::graph::{
     clipboard_context::{View, activate_function_graph_target},

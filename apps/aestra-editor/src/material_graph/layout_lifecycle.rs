@@ -227,7 +227,7 @@ pub(super) fn reconcile(
 }
 
 #[cfg(test)]
-#[path = "layout_lifecycle/tests.rs"]
+#[path = "tests/layout_lifecycle.rs"]
 mod tests;
 
 #[derive(Component)]

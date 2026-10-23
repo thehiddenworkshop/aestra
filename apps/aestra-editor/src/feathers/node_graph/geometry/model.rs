@@ -13,7 +13,7 @@ use std::{
 };
 
 #[cfg(test)]
-#[path = "model_tests.rs"]
+#[path = "../tests/geometry_model.rs"]
 pub(crate) mod model_tests;
 
 /// Logical units; tolerates sub-pixel rounding without quantizing saved/manual positions.

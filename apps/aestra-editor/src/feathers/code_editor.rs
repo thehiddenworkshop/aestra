@@ -1084,5 +1084,5 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "code_editor/interaction_tests.rs"]
+#[path = "code_editor/tests/interaction.rs"]
 mod interaction_tests;

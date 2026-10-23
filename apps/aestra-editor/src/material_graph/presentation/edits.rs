@@ -151,5 +151,5 @@ pub(crate) fn node_edit(event: On<GraphPresentationEdit>, mut commands: Commands
 }
 
 #[cfg(test)]
-#[path = "edits/tests.rs"]
+#[path = "../tests/presentation_edits.rs"]
 mod tests;

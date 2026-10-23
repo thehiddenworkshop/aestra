@@ -354,5 +354,5 @@ pub(super) fn select_material_graph_canvas(
 }
 
 #[cfg(test)]
-#[path = "menu_opening/tests.rs"]
+#[path = "tests/menu_opening.rs"]
 mod tests;

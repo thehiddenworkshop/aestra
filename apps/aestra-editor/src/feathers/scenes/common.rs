@@ -1,4 +1,4 @@
-//! Scene wrappers whose composition is shared by shipping and candidate Bevy.
+//! Shared native Feathers scene compositions.
 use bevy::{
     feathers::controls::{
         ButtonVariant, ColorChannel, FeathersButton, FeathersCheckbox, FeathersColorPlane,

@@ -148,5 +148,5 @@ pub(super) fn mirror_graph_camera(
 }
 
 #[cfg(test)]
-#[path = "function_layout/tests.rs"]
+#[path = "tests/function_layout.rs"]
 mod tests;

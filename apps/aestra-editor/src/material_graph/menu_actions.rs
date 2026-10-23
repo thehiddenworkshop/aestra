@@ -434,5 +434,5 @@ pub(super) fn handle_material_graph_context_actions(
 }
 
 #[cfg(test)]
-#[path = "menu_actions/tests.rs"]
+#[path = "tests/menu_actions.rs"]
 mod tests;

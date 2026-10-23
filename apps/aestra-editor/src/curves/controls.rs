@@ -167,5 +167,5 @@ pub(super) fn handle_curves_actions(
 }
 
 #[cfg(test)]
-#[path = "controls/tests.rs"]
+#[path = "tests/controls.rs"]
 mod tests;

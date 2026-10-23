@@ -123,5 +123,5 @@ impl Plugin for ViewportPlugin {
 }
 
 #[cfg(test)]
-#[path = "plugin/tests.rs"]
+#[path = "tests/plugin.rs"]
 mod tests;

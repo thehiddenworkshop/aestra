@@ -739,5 +739,5 @@ pub(super) fn screen_space_gizmo_radius(
 }
 
 #[cfg(test)]
-#[path = "transform_gizmo/tests.rs"]
+#[path = "tests/transform_gizmo.rs"]
 mod tests;

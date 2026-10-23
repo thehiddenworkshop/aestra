@@ -129,7 +129,6 @@ pub(super) fn material(
         let source = pipeline_native::composition::compose_material(
             source,
             binding.program.requires_scene_lighting(),
-            pipeline_native::composition::Dialect::Bevy020,
         );
         assets
             .insert(

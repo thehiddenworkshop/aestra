@@ -40,5 +40,5 @@ pub(super) fn prepare(
 }
 
 #[cfg(test)]
-#[path = "command_preparation/tests.rs"]
+#[path = "tests/command_preparation.rs"]
 mod tests;

@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
-#[path = "model/tests.rs"]
+#[path = "../tests/clipboard_model.rs"]
 mod tests;
 
 #[derive(Resource, Default)]

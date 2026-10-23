@@ -69,6 +69,7 @@ mod presentation;
 use presentation::*;
 mod action_controls;
 #[cfg(test)]
+#[path = "timeline/tests/action_execution.rs"]
 mod action_execution_tests;
 mod actions;
 mod cue_composition;
@@ -100,10 +101,10 @@ mod asset_drop;
 use asset_drop::clear_cancelled_preview;
 mod automation;
 mod automation_data;
-#[path = "timeline/control_input_020.rs"]
+#[path = "timeline/control_input.rs"]
 mod control_input;
 #[cfg(test)]
-#[path = "timeline/document_actions/native_tests.rs"]
+#[path = "timeline/tests/document_actions_native.rs"]
 mod document_action_tests;
 use automation_data::add_automation_key_at_pointer_action;
 mod automation_execution;
@@ -118,11 +119,12 @@ mod execution;
 mod gesture_math;
 mod gestures;
 mod region_gestures;
-#[path = "timeline/pointer_020.rs"]
+#[path = "timeline/pointer.rs"]
 mod timeline_pointer;
 #[cfg(test)]
 use gesture_math::*;
 #[cfg(test)]
+#[path = "timeline/tests/execution.rs"]
 mod execution_tests;
 mod referenced_execution;
 mod region_execution;
@@ -137,7 +139,7 @@ mod motion_execution;
 mod motion_gestures;
 mod motion_state;
 mod navigation;
-#[path = "timeline/cursor_020.rs"]
+#[path = "timeline/cursor.rs"]
 mod navigation_cursor;
 #[cfg(test)]
 use navigation::timeline_cursor_fraction;

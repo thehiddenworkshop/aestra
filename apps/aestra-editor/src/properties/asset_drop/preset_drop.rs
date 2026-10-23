@@ -8,6 +8,7 @@ use bevy::text::EditableText;
 use bevy::ui_widgets::ValueChange;
 
 #[cfg(test)]
+#[path = "tests/preset_drop.rs"]
 mod tests;
 
 #[derive(Event)]

@@ -148,5 +148,5 @@ pub(super) fn update_preview(
 }
 
 #[cfg(test)]
-#[path = "telemetry/tests.rs"]
+#[path = "tests/telemetry.rs"]
 pub(crate) mod tests;

@@ -266,5 +266,5 @@ pub(super) fn finish_choreography_event_drag(
 }
 
 #[cfg(test)]
-#[path = "gestures/tests.rs"]
+#[path = "tests/gestures.rs"]
 mod tests;

@@ -46,12 +46,16 @@ mod interface_events;
 mod material_document;
 mod mesh_drop;
 mod module_controls;
+#[cfg(test)]
+#[path = "properties/tests/native_number.rs"]
+mod native_number_tests;
 mod referenced_effect;
 mod renderer_controls;
 mod scene_lights;
 mod stack_panel;
 mod texture_drop;
 #[cfg(test)]
+#[path = "properties/tests/transform_layout.rs"]
 mod transform_layout_tests;
 mod virtual_drop;
 pub(crate) mod wesl;
@@ -153,9 +157,11 @@ impl Plugin for PropertiesPlugin {
             .add_observer(handle_properties_integer_change)
             .add_observer(handle_properties_scalar_change)
             .add_observer(handle_bounded_slider_change)
-            .add_observer(begin_numeric_scrub)
-            .add_observer(update_numeric_scrub)
-            .add_observer(finish_numeric_scrub)
+            .add_observer(handle_native_numeric_edit)
+            .add_systems(
+                Update,
+                cleanup_native_numeric_edit.in_set(PropertiesSet::Sync),
+            )
             .add_observer(step_numeric_input)
             .add_observer(select_properties_header)
             .add_observer(handle_instance_label_change)
@@ -194,6 +200,7 @@ impl Plugin for PropertiesPlugin {
                     scroll_properties_to_focus,
                     update_properties_highlight,
                     decorate_numeric_scrub_inputs,
+                    configure_native_numeric_inputs,
                     sync_module_input_public_toggle_visibility,
                 )
                     .chain()
@@ -1132,12 +1139,16 @@ mod tests {
     #[test]
     fn transform_number_hints_stay_outside_the_scrolling_inspector() {
         let mut app = App::new();
+        app.init_resource::<bevy::feathers::controls::UnitsRegistry>();
+        app.init_resource::<bevy::feathers::theme::UiTheme>()
+            .init_resource::<bevy::input_focus::InputFocus>();
         app.add_plugins((
             MinimalPlugins,
             bevy::asset::AssetPlugin::default(),
             bevy::scene::ScenePlugin,
             bevy::text::TextPlugin,
         ));
+        app.init_asset::<Image>();
         app.world_mut()
             .commands()
             .spawn(Node::default())
@@ -5313,8 +5324,7 @@ fn step_numeric_input(
     start_reference_controls: Query<&StartReferenceOffsetControl>,
     choreography_event_controls: Query<&ChoreographyEventNumberControl>,
     parents: Query<&ChildOf>,
-    children: Query<&Children>,
-    mut texts: Query<&mut EditableText>,
+    mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     mut session: ResMut<EditorSession>,
     localizer: Res<Localizer>,
@@ -5353,17 +5363,19 @@ fn step_numeric_input(
     if value == initial {
         return;
     }
-    update_numeric_scrub_text(
-        owner,
-        format_numeric_scrub_value(target, value, multiplier),
-        &children,
-        &mut texts,
-    );
+    commands.trigger(UpdateNumberInput {
+        entity: owner,
+        value: if numeric_scrub_is_integer(target) {
+            NumberInputValue::I32(value as i32)
+        } else {
+            NumberInputValue::F32(value)
+        },
+    });
     commit_numeric_scrub(&mut session, target, value, &localizer);
 }
 
-fn begin_numeric_scrub(
-    mut drag: On<PointerDragStart>,
+fn handle_native_numeric_edit(
+    edit: On<crate::feathers::number_input::NumberEdit>,
     properties_controls: Query<&PropertiesNumberControl>,
     emitter_controls: Query<&EmitterNumberControl>,
     effect_clip_controls: Query<&EffectClipNumberControl>,
@@ -5371,16 +5383,14 @@ fn begin_numeric_scrub(
     start_reference_controls: Query<&StartReferenceOffsetControl>,
     choreography_event_controls: Query<&ChoreographyEventNumberControl>,
     parents: Query<&ChildOf>,
-    session: Res<EditorSession>,
+    mut session: ResMut<EditorSession>,
     mut state: ResMut<NumericScrubState>,
-    mut override_cursor: ResMut<OverrideCursor>,
-    mut cursor: Single<(&mut CursorIcon, &mut CursorOptions), With<PrimaryWindow>>,
+    localizer: Res<Localizer>,
+    mut commands: Commands,
 ) {
-    if drag.button != PointerButton::Primary {
-        return;
-    }
-    let Some((entity, target)) = resolve_numeric_scrub_target(
-        drag.entity,
+    use crate::feathers::number_input::{DisplayNumberInput, EditPhase};
+    let Some((owner, target)) = resolve_numeric_scrub_target(
+        edit.entity,
         &parents,
         &properties_controls,
         &emitter_controls,
@@ -5391,112 +5401,126 @@ fn begin_numeric_scrub(
     ) else {
         return;
     };
-    let Some(initial) = numeric_scrub_value(&session, target) else {
+    if edit.phase == EditPhase::Cancel {
+        if state.active.take().is_some() {
+            session.restore_interaction_preview();
+        }
         return;
-    };
-    drag.propagate(false);
-    state.active = Some(ActiveNumericScrub {
-        entity,
-        target,
-        initial,
-        raw: initial,
-        current: initial,
+    }
+    // Feathers owns numeric precision. Domain policy only applies semantic bounds;
+    // rounding again here would destroy fine dragging and typed rotation values.
+    let value = clamp_native_numeric_value(&session, target, number_input_value_as_f32(edit.value));
+    commands.trigger(DisplayNumberInput {
+        entity: owner,
+        value: if numeric_scrub_is_integer(target) {
+            NumberInputValue::I32(value as i32)
+        } else {
+            NumberInputValue::F32(value)
+        },
     });
-    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::EwResize));
-    *cursor.0 = CursorIcon::System(SystemCursorIcon::EwResize);
-    cursor.1.visible = false;
+    if edit.phase == EditPhase::Preview {
+        if state.active.is_some_and(|active| active.entity != owner) {
+            session.restore_interaction_preview();
+            state.active = None;
+        }
+        if state.active.is_none() {
+            let Some(initial) = numeric_scrub_value(&session, target) else {
+                return;
+            };
+            state.active = Some(ActiveNumericScrub {
+                entity: owner,
+                initial,
+            });
+        }
+        preview_numeric_scrub(&mut session, target, value);
+    } else {
+        let initial = state
+            .active
+            .take()
+            .filter(|active| active.entity == owner)
+            .map(|active| active.initial)
+            .or_else(|| numeric_scrub_value(&session, target));
+        if initial.is_some_and(|initial| (value - initial).abs() <= f32::EPSILON) {
+            session.restore_interaction_preview();
+        } else {
+            commit_numeric_scrub(&mut session, target, value, &localizer);
+        }
+        commands.trigger(UpdateNumberInput {
+            entity: owner,
+            value: if numeric_scrub_is_integer(target) {
+                NumberInputValue::I32(value as i32)
+            } else {
+                NumberInputValue::F32(value)
+            },
+        });
+    }
 }
 
-fn update_numeric_scrub(
-    mut drag: On<PointerDrag>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut session: ResMut<EditorSession>,
+/// Removing/rebuilding a panel during a gesture must not strand its preview.
+fn cleanup_native_numeric_edit(
+    inputs: Query<(), With<crate::feathers::number_input::EditorNumberInput>>,
     mut state: ResMut<NumericScrubState>,
-    parents: Query<&ChildOf>,
-    children: Query<&Children>,
-    mut text_inputs: Query<&mut EditableText>,
+    mut session: ResMut<EditorSession>,
 ) {
-    if drag.button != PointerButton::Primary {
-        return;
+    if state
+        .active
+        .is_some_and(|active| !inputs.contains(active.entity))
+    {
+        state.active = None;
+        session.restore_interaction_preview();
     }
-    let Some(active) = state.active.as_mut() else {
-        return;
-    };
-    if !numeric_scrub_event_belongs_to(drag.entity, active.entity, &parents) {
-        return;
-    }
-    drag.propagate(false);
-    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let multiplier = numeric_scrub_multiplier(shift, control);
-    let delta = numeric_scrub_delta(drag.delta.x, numeric_scrub_step(active.target), multiplier);
-    if delta == 0.0 {
-        return;
-    }
-    active.raw += delta;
-    active.current = normalize_numeric_scrub_value_with_multiplier(
-        &session,
-        active.target,
-        active.raw,
-        multiplier,
-    );
-    update_numeric_scrub_text(
-        active.entity,
-        format_numeric_scrub_value(active.target, active.current, multiplier),
-        &children,
-        &mut text_inputs,
-    );
-    preview_numeric_scrub(&mut session, active.target, active.current);
 }
 
-fn update_numeric_scrub_text(
-    entity: Entity,
-    value: String,
-    children: &Query<&Children>,
-    text_inputs: &mut Query<&mut EditableText>,
+fn configure_native_numeric_inputs(
+    inputs: Query<Entity, Added<NumericScrubInput>>,
+    properties: Query<&PropertiesNumberControl>,
+    emitter: Query<&EmitterNumberControl>,
+    clips: Query<&EffectClipNumberControl>,
+    parameters: Query<&EffectClipParameterNumberControl>,
+    offsets: Query<&StartReferenceOffsetControl>,
+    events: Query<&ChoreographyEventNumberControl>,
+    parents: Query<&ChildOf>,
+    mut commands: Commands,
 ) {
-    let Ok(children) = children.get(entity) else {
-        return;
-    };
-    for child in children.iter() {
-        let Ok(mut editable) = text_inputs.get_mut(child) else {
+    use bevy::feathers::controls::{HardLimit, NumberInputPrecision, NumberInputStep};
+    for entity in &inputs {
+        let Some((_, target)) = resolve_numeric_scrub_target(
+            entity,
+            &parents,
+            &properties,
+            &emitter,
+            &clips,
+            &parameters,
+            &offsets,
+            &events,
+        ) else {
             continue;
         };
-        editable.queue_edit(TextEdit::SelectAll);
-        editable.queue_edit(TextEdit::Insert(value.into()));
-        editable.queue_edit(TextEdit::CollapseSelection);
-        break;
+        let step = numeric_scrub_step(target);
+        commands.entity(entity).insert((
+            NumberInputStep(f64::from(step) * 12.5),
+            NumberInputPrecision(crate::feathers::number_input::decimal_places(step * 0.1) as i32),
+        ));
+        let bounds = match target {
+            NumericScrubTarget::Properties(control)
+                if control.kind != PropertiesNumberKind::U32 =>
+            {
+                Some((
+                    control.min.unwrap_or(-f32::MAX),
+                    control.max.unwrap_or(f32::MAX),
+                ))
+            }
+            NumericScrubTarget::Emitter(EmitterNumberControl::Scale(_))
+            | NumericScrubTarget::EffectClip(EffectClipNumberControl {
+                control: EmitterNumberControl::Scale(_),
+                ..
+            }) => Some((0.001, f32::MAX)),
+            _ => None,
+        };
+        if let Some((min, max)) = bounds {
+            commands.entity(entity).insert(HardLimit::f32(min..=max));
+        }
     }
-}
-
-fn finish_numeric_scrub(
-    mut drag: On<PointerDragEnd>,
-    mut session: ResMut<EditorSession>,
-    mut state: ResMut<NumericScrubState>,
-    mut override_cursor: ResMut<OverrideCursor>,
-    mut cursor: Single<(&mut CursorIcon, &mut CursorOptions), With<PrimaryWindow>>,
-    parents: Query<&ChildOf>,
-    localizer: Res<Localizer>,
-) {
-    if drag.button != PointerButton::Primary {
-        return;
-    }
-    let Some(active) = state.active.take() else {
-        return;
-    };
-    if !numeric_scrub_event_belongs_to(drag.entity, active.entity, &parents) {
-        state.active = Some(active);
-        return;
-    }
-    drag.propagate(false);
-    override_cursor.0 = None;
-    *cursor.0 = CursorIcon::System(SystemCursorIcon::EwResize);
-    cursor.1.visible = true;
-    if (active.current - active.initial).abs() <= f32::EPSILON {
-        session.restore_interaction_preview();
-        return;
-    }
-    commit_numeric_scrub(&mut session, active.target, active.current, &localizer);
 }
 
 fn resolve_numeric_scrub_target(
@@ -5539,28 +5563,11 @@ fn resolve_numeric_scrub_target(
     None
 }
 
-fn numeric_scrub_event_belongs_to(
-    entity: Entity,
-    owner: Entity,
-    parents: &Query<&ChildOf>,
-) -> bool {
-    let mut candidate = entity;
-    for _ in 0..4 {
-        if candidate == owner {
-            return true;
-        }
-        let Ok(parent) = parents.get(candidate) else {
-            return false;
-        };
-        candidate = parent.parent();
-    }
-    false
-}
-
 fn numeric_scrub_multiplier(shift: bool, control: bool) -> f32 {
     crate::feathers::number_input::scrub_multiplier(shift, control)
 }
 
+#[cfg(test)]
 fn numeric_scrub_delta(pixel_delta: f32, step: f32, multiplier: f32) -> f32 {
     crate::feathers::number_input::scrub_delta(pixel_delta, step, multiplier)
 }
@@ -5642,6 +5649,7 @@ fn number_input_value_as_f32(value: NumberInputValue) -> f32 {
     }
 }
 
+#[cfg(test)]
 fn format_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier: f32) -> String {
     if numeric_scrub_is_integer(target) {
         return (value.max(0.0).round().min(i32::MAX as f32) as i32).to_string();
@@ -5688,10 +5696,22 @@ fn normalize_numeric_scrub_value_with_multiplier(
     value: f32,
     multiplier: f32,
 ) -> f32 {
+    round_numeric_scrub_value(
+        target,
+        clamp_native_numeric_value(session, target, value),
+        multiplier,
+    )
+}
+
+fn clamp_native_numeric_value(
+    session: &EditorSession,
+    target: NumericScrubTarget,
+    value: f32,
+) -> f32 {
     if !value.is_finite() {
         return numeric_scrub_value(session, target).unwrap_or_default();
     }
-    let normalized = match target {
+    match target {
         NumericScrubTarget::Properties(control) => {
             let mut value =
                 clamp_properties_number(value, control.min, control.max).unwrap_or_default();
@@ -5758,8 +5778,7 @@ fn normalize_numeric_scrub_value_with_multiplier(
         NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Intensity(_)) => {
             value.max(0.0)
         }
-    };
-    round_numeric_scrub_value(target, normalized, multiplier)
+    }
 }
 
 fn preview_numeric_scrub(
@@ -8930,10 +8949,7 @@ enum NumericScrubTarget {
 #[derive(Debug, Clone, Copy)]
 struct ActiveNumericScrub {
     entity: Entity,
-    target: NumericScrubTarget,
     initial: f32,
-    raw: f32,
-    current: f32,
 }
 
 #[derive(Resource, Default)]
