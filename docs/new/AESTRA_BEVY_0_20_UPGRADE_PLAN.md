@@ -8,6 +8,26 @@ Final UI/showcase approval, clean-machine installer checks and Linux CI remain o
 compatibility is not yet declared complete.
 Repository baseline inspected: `e8191982`, Bevy 0.19.1.
 
+### Optional physics restored — 2026-10-23
+
+Upstream now publishes Bevy 0.20-compatible releases: Avian 0.8.0 and
+`bevy_rapier3d` 0.37.0. Both adapters are restored to the active workspace, shared
+lockfile, inherited metadata and Bevy dependency/patches. Avian drops the obsolete
+`f32` feature; Rapier's shape-intersection callback accepts its new collider argument.
+Core Aestra remains engine-independent: neither backend becomes an `aestra-bevy`
+dependency. The old standalone adapter locks are unused local artifacts.
+
+Ordinary workspace CI now checks/tests the adapters again, including all-target
+example compilation and Linux validation. Compatibility coverage includes moving and
+scaled kinematic bodies, empty/out-of-range/despawn cleanup, nearest-proxy budgets
+after effect motion, and the retained shape-query tests. See
+[adapter availability](../../bevy/PHYSICS_ADAPTERS.md) for versions, sources and commands.
+Local validation passes six adapter tests, two doctests, both native sparks launches/
+captures and strict workspace all-target Clippy with `aestra-bench/gpu`. Formatting,
+CI YAML parsing and the single-Bevy active dependency graph also pass. Linux and the
+complete workspace test execution are not newly claimed by this restoration.
+Historical suspension/cutover reports below remain evidence of those earlier states.
+
 ### Retired engine compatibility — 2026-10-23
 
 - Removed the 32 unused `_019.rs` source boundaries and the superseded unsuffixed
@@ -338,7 +358,7 @@ future plugin versions.
 | WESL | Direct compiler 0.6.0; shipping Bevy still uses 0.3.2 | Portable composition uses the 0.6 API; Bevy's internal shader compiler changes with the engine. The showcase dev-dependency inherits the workspace pin. |
 | encase | 0.12.1 | Bevy still uses 0.12; verify resolution and buffer-layout tests rather than forcing a major bump. |
 | SVG | Aestra-owned icon bridge, resvg 0.47 / tiny-skia 0.12 | Engine-neutral rasterization, native Bevy ImageNode; no bevy_resvg dependency. |
-| avian3d / bevy_rapier3d | 0.7.0 / 0.36.0 | Explicitly suspended standalone adapters, outside the active workspace; restore only after compatibility tests. |
+| avian3d / bevy_rapier3d | 0.8.0 / 0.37.0 | Restored as optional workspace adapters for Bevy 0.20 on 2026-10-23; see the restoration status above. |
 
 Version evidence: released [Bevy manifest](https://github.com/bevyengine/bevy/blob/v0.20.0/Cargo.toml),
 [render manifest](https://raw.githubusercontent.com/bevyengine/bevy/v0.20.0/crates/bevy_render/Cargo.toml),

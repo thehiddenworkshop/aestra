@@ -1,6 +1,6 @@
 //! Particles colliding with a game's own physics (host bindings HB10), no physics crate involved.
 //!
-//! Optional Rapier/Avian adapters are temporarily suspended during the Bevy upgrade
+//! Optional Rapier/Avian adapters are available for Bevy 0.20
 //! (see `bevy/PHYSICS_ADAPTERS.md`); this example needs neither. A game
 //! with its own physics — or none — describes its colliders itself: one system writes the
 //! effect's `AestraPhysicsColliders` every frame from whatever the game simulates, as `PhysicsProxy`

@@ -602,10 +602,10 @@ whole contract, and three ways fill it:
 - A game's own system, for any other engine or none: `PhysicsPose` places the primitives
   (`examples/custom_physics.rs`).
 
-Avian and Rapier integrations are temporarily suspended and excluded from the active
-workspace during the Bevy upgrade; see [adapter availability](../bevy/PHYSICS_ADAPTERS.md).
-The engine-neutral contract, native collision simulation and custom-host example
-remain supported. Adapter source is preserved, not claimed compatible with Bevy 0.20.
+Avian 0.8 and bevy_rapier3d 0.37 integrations support Bevy 0.20 and are active workspace
+members, checked alongside the other crates; see [adapter availability](../bevy/PHYSICS_ADAPTERS.md).
+They remain optional host integrations: core Aestra has no dependency on either engine.
+The engine-neutral contract, native collision simulation and custom-host example remain supported.
 
 Shapes map to proxies exactly for balls, cuboids, capsules, segments and half-spaces, and part by
 part for compounds. Everything else (meshes, height fields, cylinders, cones, convex hulls) becomes

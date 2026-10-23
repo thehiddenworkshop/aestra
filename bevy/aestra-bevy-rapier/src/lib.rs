@@ -1,8 +1,7 @@
 //! Rapier physics for Aestra effects (host bindings HB10, the `EnginePhysicsQuery` collision
 //! provider).
 //!
-//! Temporarily suspended during Aestra's Bevy upgrade, outside workspace CI.
-//! This adapter targets Bevy 0.19 only; see `bevy/PHYSICS_ADAPTERS.md` for restoration.
+//! Uses bevy_rapier3d 0.37 with Bevy 0.20; see `bevy/PHYSICS_ADAPTERS.md` for validation and limits.
 //!
 //! Add [`AestraRapierPlugin`] next to `bevy_rapier3d`'s `RapierPhysicsPlugin` and Aestra's
 //! `AestraPlugin`, and give an effect entity an [`AestraPhysicsQuery`]: every frame the plugin asks
@@ -70,7 +69,7 @@ pub fn query_rapier_colliders(
             Quat::IDENTITY,
             &*probe.raw,
             QueryFilter::default(),
-            |hit| {
+            |hit, _| {
                 if let Ok((collider, pose)) = colliders.get(hit) {
                     proxies_of(&*collider.raw, PhysicsPose::of(pose), &mut proxies);
                 }

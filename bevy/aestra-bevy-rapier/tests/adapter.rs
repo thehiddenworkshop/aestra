@@ -12,8 +12,7 @@ fn near(a: [f32; 3], b: [f32; 3]) -> bool {
     a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-4)
 }
 
-#[test]
-fn the_colliders_around_an_effect_become_its_proxies() {
+fn app() -> App {
     let mut app = App::new();
     app.add_plugins((
         MinimalPlugins,
@@ -24,6 +23,18 @@ fn the_colliders_around_an_effect_become_its_proxies() {
     .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
         16,
     )));
+    app
+}
+
+fn settle(app: &mut App) {
+    for _ in 0..8 {
+        app.update();
+    }
+}
+
+#[test]
+fn the_colliders_around_an_effect_become_its_proxies() {
+    let mut app = app();
     let spawn = |app: &mut App, collider: Collider, transform: Transform| {
         app.world_mut()
             .spawn((RigidBody::Fixed, collider, transform));
@@ -76,9 +87,7 @@ fn the_colliders_around_an_effect_become_its_proxies() {
         .id();
     app.finish();
     app.cleanup();
-    for _ in 0..8 {
-        app.update();
-    }
+    settle(&mut app);
     let proxies = &app
         .world()
         .get::<AestraPhysicsColliders>(effect)
@@ -116,4 +125,118 @@ fn the_colliders_around_an_effect_become_its_proxies() {
         ))
         .count();
     assert_eq!(compound_parts, 2, "a compound becomes its parts");
+}
+
+#[test]
+fn moving_scaled_colliders_refresh_and_removed_or_distant_colliders_clear() {
+    let mut app = app();
+    let body = app
+        .world_mut()
+        .spawn((
+            RigidBody::KinematicPositionBased,
+            Collider::ball(0.5),
+            Transform::from_xyz(2.0, 0.0, 0.0),
+        ))
+        .id();
+    let effect = app
+        .world_mut()
+        .spawn((Transform::default(), AestraPhysicsQuery::within(10.0)))
+        .id();
+    app.finish();
+    app.cleanup();
+    settle(&mut app);
+    let proxies = &app
+        .world()
+        .get::<AestraPhysicsColliders>(effect)
+        .unwrap()
+        .0
+        .proxies;
+    assert!(
+        matches!(proxies.as_slice(), [PhysicsProxy::Sphere { center, radius }] if near(*center, [2.0, 0.0, 0.0]) && *radius == 0.5)
+    );
+
+    *app.world_mut().get_mut::<Transform>(body).unwrap() =
+        Transform::from_xyz(5.0, 1.0, 0.0).with_scale(Vec3::splat(2.0));
+    settle(&mut app);
+    let proxies = &app
+        .world()
+        .get::<AestraPhysicsColliders>(effect)
+        .unwrap()
+        .0
+        .proxies;
+    assert!(
+        matches!(proxies.as_slice(), [PhysicsProxy::Sphere { center, radius }] if near(*center, [5.0, 1.0, 0.0]) && *radius == 1.0),
+        "{proxies:?}"
+    );
+
+    app.world_mut()
+        .entity_mut(effect)
+        .insert(AestraPhysicsQuery::within(1.0));
+    settle(&mut app);
+    assert!(
+        app.world()
+            .get::<AestraPhysicsColliders>(effect)
+            .unwrap()
+            .0
+            .proxies
+            .is_empty()
+    );
+    app.world_mut()
+        .entity_mut(effect)
+        .insert(AestraPhysicsQuery::within(10.0));
+    settle(&mut app);
+    assert_eq!(
+        app.world()
+            .get::<AestraPhysicsColliders>(effect)
+            .unwrap()
+            .0
+            .proxies
+            .len(),
+        1
+    );
+    app.world_mut().despawn(body);
+    settle(&mut app);
+    assert!(
+        app.world()
+            .get::<AestraPhysicsColliders>(effect)
+            .unwrap()
+            .0
+            .proxies
+            .is_empty()
+    );
+}
+
+#[test]
+fn query_budget_keeps_nearest_to_the_current_effect_pose() {
+    let mut app = app();
+    for x in [2.0, 4.0] {
+        app.world_mut().spawn((
+            RigidBody::Fixed,
+            Collider::ball(0.5),
+            Transform::from_xyz(x, 0.0, 0.0),
+        ));
+    }
+    let mut query = AestraPhysicsQuery::within(10.0);
+    query.max = 1;
+    let effect = app.world_mut().spawn((Transform::default(), query)).id();
+    app.finish();
+    app.cleanup();
+    for (host_x, expected_x) in [(0.0, 2.0), (5.0, 4.0)] {
+        app.world_mut()
+            .get_mut::<Transform>(effect)
+            .unwrap()
+            .translation
+            .x = host_x;
+        settle(&mut app);
+        let proxies = &app
+            .world()
+            .get::<AestraPhysicsColliders>(effect)
+            .unwrap()
+            .0
+            .proxies;
+        assert!(
+            matches!(proxies.as_slice(), [PhysicsProxy::Sphere { center, .. }] if near(*center, [expected_x, 0.0, 0.0])),
+            "{proxies:?}"
+        );
+    }
 }

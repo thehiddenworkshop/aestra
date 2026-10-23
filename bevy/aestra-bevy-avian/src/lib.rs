@@ -1,8 +1,7 @@
 //! Avian physics for Aestra effects (host bindings HB10, the `EnginePhysicsQuery` collision
 //! provider).
 //!
-//! Temporarily suspended during Aestra's Bevy upgrade, outside workspace CI.
-//! This adapter targets Bevy 0.19 only; see `bevy/PHYSICS_ADAPTERS.md` for restoration.
+//! Uses Avian 0.8 with Bevy 0.20; see `bevy/PHYSICS_ADAPTERS.md` for validation and limits.
 //!
 //! Add [`AestraAvianPlugin`] next to Avian's `PhysicsPlugins` and Aestra's `AestraPlugin`, and give an
 //! effect entity an [`AestraPhysicsQuery`]: every frame the plugin asks Avian's spatial query for the

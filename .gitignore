@@ -3,7 +3,7 @@
 debug
 target
 
-# Suspended standalone physics integrations resolve independently when opted in.
+# Legacy local adapter lockfiles are unused; both adapters now use the root workspace lock.
 /bevy/aestra-bevy-avian/Cargo.lock
 /bevy/aestra-bevy-rapier/Cargo.lock
 

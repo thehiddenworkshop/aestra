@@ -4,15 +4,14 @@ exclude = [
     "vendor/bevy_input_focus_020",
     "vendor/bevy_pbr_020",
     "benchmarks/bevy-upgrade/patches-020",
-    # Temporarily suspended, independently resolved integrations; see bevy/PHYSICS_ADAPTERS.md.
-    "bevy/aestra-bevy-avian",
-    "bevy/aestra-bevy-rapier",
 ]
 members = [
     "apps/aestra-bench",
     "apps/aestra-editor",
     "apps/aestra-viewer",
     "bevy/aestra-bevy",
+    "bevy/aestra-bevy-avian",
+    "bevy/aestra-bevy-rapier",
     "bevy/aestra-bevy-render",
     "crates/aestra-artifact",
     "crates/aestra-core",
