@@ -21,6 +21,7 @@ use bevy::{
 use fluent_bundle::FluentArgs;
 
 mod metrics;
+pub(crate) mod tabs;
 pub(crate) use metrics::{EDITOR_MIN_SIZE, FLOATING_MIN_SIZE};
 
 #[derive(Clone, Copy)]
@@ -954,9 +955,12 @@ fn spawn_dock_tab_bar(
             },
             ScrollPosition::default(),
             DockTabScroll,
+            bevy::ui_widgets::TabList::default(),
+            tabs::DockTabStrip(node),
             BackgroundColor(theme::MENU),
             BorderColor::all(theme::BORDER_BRIGHT),
         ))
+        .observe(tabs::request_selection)
         .with_children(|bar| {
             for tab in &stack.tabs {
                 let dirty = match tab {
@@ -1022,11 +1026,14 @@ fn spawn_dock_tab(
     editor_title: Option<String>,
     localizer: &Localizer,
 ) {
+    let accessible = editor_title
+        .clone()
+        .unwrap_or_else(|| dock_tab_title(tab, localizer));
     parent
         .spawn((
-            Button,
-            EditorNativeControl,
-            DockingAction::Select(tab),
+            bevy::ui_widgets::Tab,
+            bevy::picking::hover::Hovered::default(),
+            AccessibleLabel(accessible),
             DockTabButton(tab),
             RelativeCursorPosition::default(),
             Pickable {
@@ -1062,7 +1069,7 @@ fn spawn_dock_tab(
         .observe(move_dock_tab)
         .observe(reset_dock_tab)
         .observe(reorder_dock_tab)
-        .observe(select_dock_tab)
+        .observe(tabs::focus_or_reselect)
         .observe(open_dock_tab_context_menu)
         .with_children(|row| {
             // Tool panels use their localized name; editor views (added later) carry their own
@@ -1124,6 +1131,7 @@ fn spawn_dock_tab(
                         dock_close_button_node(),
                         BackgroundColor(Color::NONE),
                     ))
+                    .observe(tabs::stop_close_click)
                     .with_children(spawn_dock_close_glyph);
                 }
                 DockTab::Editor(view) => {
@@ -1394,13 +1402,12 @@ pub(crate) fn clear_finished_dock_drag(
     }
 }
 
-/// Activates a dock tab on primary-click release. Selection is intentionally not done on
-/// press (see `handle_docking_actions`) so that a press which turns into a drag keeps the
-/// tab entity alive long enough for the drag gesture to start.
+/// One application route for native tab commits and already-selected-tab refocus.
+/// Pointer commits still happen on release, never at drag start.
 #[allow(clippy::too_many_arguments)]
 fn select_dock_tab(
-    mut click: On<PointerClick>,
-    tabs: Query<&DockTabButton>,
+    event: On<tabs::SelectDockTab>,
+    targets: tabs::DockTabTargets,
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
@@ -1409,20 +1416,16 @@ fn select_dock_tab(
     documents: Res<crate::document::DocumentManager>,
     mut active: ResMut<crate::editor_view::ActiveEditorContext>,
 ) {
-    if click.button != PointerButton::Primary {
-        return;
-    }
-    let Ok(tab) = tabs.get(click.event_target()) else {
+    let Some(tab) = targets.resolve(event.entity, &layout) else {
         return;
     };
-    click.propagate(false);
     let mut changed = false;
     menu.open = None;
     menu.panels_open = false;
     if menu.tab_context.take().is_some() {
         changed = true;
     }
-    if layout.activate(tab.0) {
+    if layout.activate(tab) {
         if let Err(error) = layout.save() {
             warn!("failed to save editor workspace layout: {error}");
         }
@@ -1431,7 +1434,7 @@ fn select_dock_tab(
     // Focusing an editor view makes it the active material target so rendering, history, and
     // contextual tools follow the focused document (the singleton target still drives the tool
     // panels; editor tabs steer it here).
-    match tab.0 {
+    match tab {
         DockTab::Editor(view) => {
             if let Some(document) = views
                 .document_of(view)

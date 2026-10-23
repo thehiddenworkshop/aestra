@@ -5,7 +5,10 @@ use super::{scenes, text_input};
 use crate::{EditorNativeControl, feathers::number_input, theme};
 use bevy::{
     color::{Hsla, Srgba},
-    feathers::controls::{ButtonVariant, ColorChannel, ColorPlaneValue, SliderBaseColor},
+    feathers::controls::{
+        ButtonVariant, ColorChannel, ColorPlaneValue, ColorSwatchValue, FeathersColorSwatch,
+        SliderBaseColor,
+    },
     input_focus::InputFocus,
     prelude::*,
     text::{EditableText, TextEdit},
@@ -194,20 +197,27 @@ pub(crate) fn spawn_color_picker<M: Bundle>(
                 ..default()
             })
             .with_children(|footer| {
-                footer.spawn((
-                    ColorPickerPreview,
-                    Node {
-                        width: Val::Px(28.0),
-                        height: Val::Px(20.0),
-                        flex_shrink: 0.0,
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(3.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(initial[0], initial[1], initial[2], initial[3])),
-                    BorderColor::all(theme::BORDER_BRIGHT),
-                    Pickable::IGNORE,
-                ));
+                footer
+                    .spawn_empty()
+                    .apply_scene(bsn! {
+                        @FeathersColorSwatch { @opaque_color_percentage: 25.0, @border_radius: 3.0 }
+                    })
+                    .insert((
+                        ColorPickerPreview,
+                        Node {
+                            width: Val::Px(28.0),
+                            height: Val::Px(20.0),
+                            flex_shrink: 0.0,
+                            border: UiRect::all(Val::Px(1.0)),
+                            border_radius: BorderRadius::all(Val::Px(3.0)),
+                            ..default()
+                        },
+                        ColorSwatchValue(Color::srgba(
+                            initial[0], initial[1], initial[2], initial[3],
+                        )),
+                        BorderColor::all(theme::BORDER_BRIGHT),
+                        Pickable::IGNORE,
+                    ));
                 footer.spawn((
                     Text::new(labels.hex.clone()),
                     TextFont {
@@ -862,7 +872,7 @@ pub(crate) fn sync_color_picker_visuals(
         Has<ColorPickerLightness>,
         Has<ColorPickerAlpha>,
     )>,
-    mut previews: Query<&mut BackgroundColor, With<ColorPickerPreview>>,
+    mut previews: Query<&mut ColorSwatchValue, With<ColorPickerPreview>>,
     channels: Query<(Entity, &ColorPickerChannelInput)>,
     mut scrubbable_numbers: Query<&mut number_input::ScrubbableNumber>,
     hex_inputs: Query<Entity, With<ColorPickerHexInput>>,

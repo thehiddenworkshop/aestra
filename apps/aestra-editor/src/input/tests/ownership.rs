@@ -20,6 +20,36 @@ fn decision(app: &mut App) -> (bool, bool) {
 }
 
 #[test]
+fn tab_strip_focus_owns_panel_navigation_but_not_global_save_or_history() {
+    let mut app = App::new();
+    let strip = app
+        .world_mut()
+        .spawn(bevy::ui_widgets::TabList::default())
+        .id();
+    let tab = app
+        .world_mut()
+        .spawn((bevy::ui_widgets::Tab, ChildOf(strip)))
+        .id();
+    app.insert_resource(InputFocus::from_entity(tab));
+    assert_eq!(
+        app.world_mut()
+            .run_system_once(|context: ShortcutContext| (
+                context.blocked(),
+                context.tab_strip_focused()
+            ))
+            .unwrap(),
+        (false, true)
+    );
+    let outside = app.world_mut().spawn_empty().id();
+    app.insert_resource(InputFocus::from_entity(outside));
+    assert!(
+        !app.world_mut()
+            .run_system_once(|context: ShortcutContext| context.tab_strip_focused())
+            .unwrap()
+    );
+}
+
+#[test]
 fn absent_optional_resources_and_stale_or_empty_focus_do_not_capture_shortcuts() {
     let mut app = App::new();
     assert_eq!(decision(&mut app), (false, false));
@@ -28,6 +58,24 @@ fn absent_optional_resources_and_stale_or_empty_focus_do_not_capture_shortcuts()
     let stale = app.world_mut().spawn_empty().id();
     app.world_mut().despawn(stale);
     app.insert_resource(InputFocus::from_entity(stale));
+    assert_eq!(decision(&mut app), (false, false));
+}
+
+#[test]
+fn native_select_listbox_focus_blocks_authoring_shortcuts_through_the_popup() {
+    let mut app = App::new();
+    let popup = app
+        .world_mut()
+        .spawn(bevy::ui_widgets::MenuPopup::default())
+        .id();
+    let listbox = app
+        .world_mut()
+        .spawn((bevy::ui_widgets::ListBox, ChildOf(popup)))
+        .id();
+    app.insert_resource(InputFocus::from_entity(listbox));
+    assert_eq!(decision(&mut app), (true, false));
+    let trigger = app.world_mut().spawn_empty().id();
+    app.insert_resource(InputFocus::from_entity(trigger));
     assert_eq!(decision(&mut app), (false, false));
 }
 

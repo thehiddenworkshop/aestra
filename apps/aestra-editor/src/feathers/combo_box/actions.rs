@@ -1,6 +1,6 @@
 //! Actual compact/icon/searchable action-menu composition and filtering.
 use crate::feathers::{
-    combo_box::selection::{ComboOption, spawn_combo_option},
+    combo_box::selection::{ComboOption, spawn_combo_option, spawn_lazy_action_menu},
     icon::{SvgColor, UiSvg, load_svg_icon},
     scenes,
     tooltip::EditorTooltip,
@@ -91,6 +91,11 @@ mod searchable_tests {
     #[derive(Component, Clone, Copy)]
     struct TestMenuAction;
 
+    #[derive(Resource, Default)]
+    struct OpenOnNextFrame(Option<Entity>);
+    #[derive(Resource, Default, Debug)]
+    struct MenuTrace(Vec<String>);
+
     fn spawn_test_action_menu(mut commands: Commands) {
         commands.spawn(Node::default()).with_children(|parent| {
             spawn_action_menu(
@@ -113,10 +118,26 @@ mod searchable_tests {
             app.add_systems(Startup, spawn_test_action_menu);
         });
 
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<MenuPopup>>()
+                .iter(app.world())
+                .count(),
+            0
+        );
+        let button = app
+            .world_mut()
+            .query_filtered::<Entity, With<bevy::ui_widgets::MenuButton>>()
+            .single(app.world())
+            .unwrap();
+        app.world_mut()
+            .trigger(bevy::ui_widgets::Activate { entity: button });
+        app.update();
+
         let option = {
             let mut options = app.world_mut().query_filtered::<
                 (Entity, &bevy::input_focus::tab_navigation::TabIndex),
-                (With<bevy::ui_widgets::MenuItem>, With<TestMenuAction>),
+                With<bevy::ui_widgets::MenuItem>,
             >();
             let (option, tab_index) = options.single(app.world()).unwrap();
             assert_eq!(tab_index.0, 0);
@@ -140,11 +161,45 @@ mod searchable_tests {
     }
 
     #[test]
-    fn retained_arrange_icon_menu_restores_focus_before_open_and_reopen() {
+    fn lazy_arrange_icon_menu_acquires_focus_when_scene_resolves_and_reopens() {
         let mut app = crate::feathers::text_input::tests::app_with(|app| {
             app.add_plugins(crate::input::EditorKeyboardPlugin)
                 .add_message::<bevy::input_focus::KeyboardInputSnapshot>()
-                .init_asset::<crate::feathers::icon::SvgFile>();
+                .init_asset::<crate::feathers::icon::SvgFile>()
+                .init_resource::<OpenOnNextFrame>()
+                .init_resource::<MenuTrace>()
+                .add_observer(
+                    |event: On<bevy::ui_widgets::MenuEvent>,
+                     mut trace: ResMut<MenuTrace>,
+                     focus: Res<InputFocus>| {
+                        trace.0.push(format!(
+                            "{:?} at {:?}, focus {:?}",
+                            event.action,
+                            event.source,
+                            focus.get()
+                        ));
+                    },
+                )
+                .add_observer(
+                    |event: On<bevy::ui_widgets::Activate>,
+                     mut trace: ResMut<MenuTrace>,
+                     disabled: Query<(), With<bevy::ui::InteractionDisabled>>| {
+                        trace.0.push(format!(
+                            "Activate {:?}, disabled {}",
+                            event.entity,
+                            disabled.contains(event.entity)
+                        ));
+                    },
+                )
+                .add_systems(
+                    PreUpdate,
+                    (|mut next: ResMut<OpenOnNextFrame>, mut commands: Commands| {
+                        if let Some(entity) = next.0.take() {
+                            commands.trigger(bevy::ui_widgets::Activate { entity });
+                        }
+                    })
+                    .after(bevy::input_focus::InputFocusSystems::Dispatch),
+                );
         });
         let root = app.world_mut().spawn(Node::default()).id();
         let assets = app.world().resource::<AssetServer>().clone();
@@ -172,39 +227,73 @@ mod searchable_tests {
             .query_filtered::<Entity, With<bevy::ui_widgets::MenuButton>>()
             .single(app.world())
             .unwrap();
-        let popup = app
-            .world_mut()
-            .query_filtered::<Entity, With<MenuPopup>>()
-            .single(app.world())
-            .unwrap();
-        let option = app
-            .world_mut()
-            .query_filtered::<Entity, With<TestMenuAction>>()
-            .single(app.world())
-            .unwrap();
-
+        let owner = app.world().get::<ChildOf>(button).unwrap().parent();
+        assert!(
+            app.world()
+                .get::<bevy::feathers::controls::FeathersLazyMenu>(owner)
+                .is_some(),
+            "icon trigger must belong to the lazy menu owner"
+        );
         for _ in 0..2 {
             assert_eq!(
-                app.world().get::<Visibility>(popup),
-                Some(&Visibility::Hidden)
+                app.world_mut()
+                    .query_filtered::<Entity, With<MenuPopup>>()
+                    .iter(app.world())
+                    .count(),
+                0
             );
+            app.world_mut().resource_mut::<MenuTrace>().0.clear();
+            // Pointer/keyboard activation occurs after eligibility sync in PreUpdate.
+            app.world_mut().resource_mut::<OpenOnNextFrame>().0 = Some(button);
+            // Run the actual Main frame (including asset/scene phases), with
+            // activation injected after the editor's tab-eligibility pass.
+            app.update();
+            // Native lazy menus queue a SceneListPatch asset. An in-frame
+            // activation can miss this frame's asset-event publication and resolve
+            // next frame; focus must be acquired as soon as the scene actually exists.
+            // Do not reopen it while waiting: an accidental CloseAll must fail.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while app
+                .world_mut()
+                .query_filtered::<Entity, With<MenuPopup>>()
+                .iter(app.world())
+                .next()
+                .is_none()
+            {
+                let trace = app.world().resource::<MenuTrace>();
+                assert!(
+                    !trace.0.iter().any(|event| event.starts_with("CloseAll")),
+                    "popup closed while resolving: {trace:?}"
+                );
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "lazy popup did not resolve: {trace:?}"
+                );
+                app.update();
+                std::thread::yield_now();
+            }
+            let popup = app
+                .world_mut()
+                .query_filtered::<Entity, With<MenuPopup>>()
+                .single(app.world())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "lazy popup missing: {e:?}; {:?}",
+                        app.world().resource::<MenuTrace>()
+                    )
+                });
+            let option = app
+                .world_mut()
+                .query_filtered::<Entity, With<bevy::ui_widgets::MenuItem>>()
+                .single(app.world())
+                .unwrap();
             assert_eq!(
                 app.world()
                     .get::<bevy::input_focus::tab_navigation::TabIndex>(option)
                     .unwrap()
                     .0,
-                -1
+                0
             );
-            // Pointer/keyboard activation occurs after eligibility sync in PreUpdate.
-            // The popup must acquire focus in this frame, not close before the next sync.
-            app.world_mut().run_schedule(PreUpdate);
-            app.world_mut()
-                .trigger(bevy::ui_widgets::Activate { entity: button });
-            app.world_mut().flush();
-            app.world_mut().run_schedule(Update);
-            // Menu focus acquisition is PostUpdate in 0.20. Execute the complete
-            // current frame on both engines before asserting focus ownership.
-            app.world_mut().run_schedule(PostUpdate);
             assert_eq!(
                 app.world().get::<Visibility>(popup),
                 Some(&Visibility::Visible)
@@ -396,130 +485,135 @@ fn spawn_icon_menu<A: Component + Copy>(
     options: &[ComboOption<A>],
     categories: Option<&[String]>,
 ) {
-    parent
-        .spawn_empty()
-        .apply_scene(scenes::feathers_menu())
-        .with_children(|menu| {
-            let mut search_button = Entity::PLACEHOLDER;
-            menu.spawn_empty()
-                .apply_scene(scenes::feathers_menu_button())
-                .insert((
-                    AccessibleLabel(accessible_label.to_owned()),
-                    EditorTooltip::description(tooltip),
-                    Node {
-                        width: Val::Px(28.0),
-                        height: Val::Px(28.0),
-                        flex_shrink: 0.0,
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    },
-                ))
-                .with_child((
-                    Node {
-                        width: Val::Px(15.0),
-                        height: Val::Px(15.0),
-                        ..default()
-                    },
-                    UiSvg(load_svg_icon(asset_server, icon_path)),
-                    SvgColor(theme::TEXT),
-                    Pickable::IGNORE,
-                ))
-                .with_children(|button| {
-                    search_button = button.target_entity();
-                });
-            menu.spawn_empty()
-                .apply_scene(scenes::feathers_menu_popup())
-                .insert((
-                    Popover {
-                        positions: vec![
-                            PopoverPlacement {
-                                side: PopoverSide::Bottom,
-                                align: if categories.is_some() {
-                                    PopoverAlign::Start
-                                } else {
-                                    PopoverAlign::End
-                                },
-                                gap: 2.0,
+    let owner = if categories.is_none() {
+        spawn_lazy_action_menu(parent, options)
+    } else {
+        parent
+            .spawn_empty()
+            .apply_scene(scenes::feathers_menu())
+            .id()
+    };
+    parent.commands().entity(owner).with_children(|menu| {
+        let mut search_button = Entity::PLACEHOLDER;
+        menu.spawn_empty()
+            .apply_scene(scenes::feathers_menu_button())
+            .insert((
+                AccessibleLabel(accessible_label.to_owned()),
+                EditorTooltip::description(tooltip),
+                Node {
+                    width: Val::Px(28.0),
+                    height: Val::Px(28.0),
+                    flex_shrink: 0.0,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+            ))
+            .with_child((
+                Node {
+                    width: Val::Px(15.0),
+                    height: Val::Px(15.0),
+                    ..default()
+                },
+                UiSvg(load_svg_icon(asset_server, icon_path)),
+                SvgColor(theme::TEXT),
+                Pickable::IGNORE,
+            ))
+            .with_children(|button| {
+                search_button = button.target_entity();
+            });
+        if categories.is_none() {
+            return;
+        }
+        menu.spawn_empty()
+            .apply_scene(scenes::feathers_menu_popup())
+            .insert((
+                Popover {
+                    positions: vec![
+                        PopoverPlacement {
+                            side: PopoverSide::Bottom,
+                            align: if categories.is_some() {
+                                PopoverAlign::Start
+                            } else {
+                                PopoverAlign::End
                             },
-                            PopoverPlacement {
-                                side: PopoverSide::Top,
-                                align: if categories.is_some() {
-                                    PopoverAlign::Start
-                                } else {
-                                    PopoverAlign::End
-                                },
-                                gap: 2.0,
+                            gap: 2.0,
+                        },
+                        PopoverPlacement {
+                            side: PopoverSide::Top,
+                            align: if categories.is_some() {
+                                PopoverAlign::Start
+                            } else {
+                                PopoverAlign::End
                             },
-                            PopoverPlacement {
-                                side: PopoverSide::Left,
-                                align: PopoverAlign::Start,
-                                gap: 2.0,
+                            gap: 2.0,
+                        },
+                        PopoverPlacement {
+                            side: PopoverSide::Left,
+                            align: PopoverAlign::Start,
+                            gap: 2.0,
+                        },
+                    ],
+                    window_margin: 8.0,
+                },
+                OverrideClip,
+            ))
+            .with_children(|popup| {
+                if let Some(categories) = categories {
+                    let popup_entity = popup.target_entity();
+                    popup
+                        .commands()
+                        .entity(popup_entity)
+                        .insert(crate::feathers::node_graph::FeathersGraphNavigationBlocker);
+                    let input = crate::feathers::search_field::spawn_search_field(
+                        popup,
+                        "",
+                        "Search nodes",
+                        "Clear search",
+                        (),
+                    );
+                    // A search popup owns focus itself; ordinary menus assume focusable
+                    // items directly beneath the popup and can immediately close this tree.
+                    popup
+                        .commands()
+                        .entity(search_button)
+                        .remove::<bevy::ui_widgets::MenuButton>()
+                        .remove::<bevy::ui_widgets::ActivateOnPress>()
+                        .observe(
+                            move |_: On<bevy::ui_widgets::Activate>, mut commands: Commands| {
+                                commands.queue(move |world: &mut World| {
+                                    let visible = world.get::<Visibility>(popup_entity)
+                                        == Some(&Visibility::Visible);
+                                    if let Ok(mut entity) = world.get_entity_mut(popup_entity) {
+                                        entity.insert((
+                                            if visible {
+                                                Visibility::Hidden
+                                            } else {
+                                                Visibility::Visible
+                                            },
+                                            if visible {
+                                                bevy::ui_widgets::MenuFocusState::Closed
+                                            } else {
+                                                bevy::ui_widgets::MenuFocusState::Open
+                                            },
+                                        ));
+                                    }
+                                    if !visible {
+                                        world
+                                            .resource_mut::<bevy::input_focus::InputFocus>()
+                                            .set(input, bevy::input_focus::FocusCause::Navigated);
+                                    }
+                                });
                             },
-                        ],
-                        window_margin: 8.0,
-                    },
-                    OverrideClip,
-                ))
-                .with_children(|popup| {
-                    if let Some(categories) = categories {
-                        let popup_entity = popup.target_entity();
-                        popup
-                            .commands()
-                            .entity(popup_entity)
-                            .insert(crate::feathers::node_graph::FeathersGraphNavigationBlocker);
-                        let input = crate::feathers::search_field::spawn_search_field(
-                            popup,
-                            "",
-                            "Search nodes",
-                            "Clear search",
-                            (),
                         );
-                        // A search popup owns focus itself; ordinary menus assume focusable
-                        // items directly beneath the popup and can immediately close this tree.
-                        popup
-                            .commands()
-                            .entity(search_button)
-                            .remove::<bevy::ui_widgets::MenuButton>()
-                            .remove::<bevy::ui_widgets::ActivateOnPress>()
-                            .observe(
-                                move |_: On<bevy::ui_widgets::Activate>, mut commands: Commands| {
-                                    commands.queue(move |world: &mut World| {
-                                        let visible = world.get::<Visibility>(popup_entity)
-                                            == Some(&Visibility::Visible);
-                                        if let Ok(mut entity) = world.get_entity_mut(popup_entity) {
-                                            entity.insert((
-                                                if visible {
-                                                    Visibility::Hidden
-                                                } else {
-                                                    Visibility::Visible
-                                                },
-                                                if visible {
-                                                    bevy::ui_widgets::MenuFocusState::Closed
-                                                } else {
-                                                    bevy::ui_widgets::MenuFocusState::Open
-                                                },
-                                            ));
-                                        }
-                                        if !visible {
-                                            world
-                                                .resource_mut::<bevy::input_focus::InputFocus>()
-                                                .set(
-                                                    input,
-                                                    bevy::input_focus::FocusCause::Navigated,
-                                                );
-                                        }
-                                    });
-                                },
-                            );
-                        spawn_searchable_action_list(popup, input, options, categories);
-                        return;
-                    }
-                    for option in options {
-                        spawn_combo_option(popup, option);
-                    }
-                });
-        });
+                    spawn_searchable_action_list(popup, input, options, categories);
+                    return;
+                }
+                for option in options {
+                    spawn_combo_option(popup, option);
+                }
+            });
+    });
 }
 
 #[derive(Clone, Copy)]
@@ -534,9 +628,10 @@ fn spawn_action_menu_with_trigger<A: Component + Copy>(
     options: &[ComboOption<A>],
     trigger: ActionMenuTrigger,
 ) {
+    let owner = spawn_lazy_action_menu(parent, options);
     parent
-        .spawn_empty()
-        .apply_scene(scenes::feathers_menu())
+        .commands()
+        .entity(owner)
         .insert(Pickable::IGNORE)
         .with_children(|menu| {
             menu.spawn_empty()
@@ -590,36 +685,6 @@ fn spawn_action_menu_with_trigger<A: Component + Copy>(
                             ThemedText,
                             Pickable::IGNORE,
                         ));
-                    }
-                });
-            menu.spawn_empty()
-                .apply_scene(scenes::feathers_menu_popup())
-                .insert((
-                    Popover {
-                        positions: vec![
-                            PopoverPlacement {
-                                side: PopoverSide::Bottom,
-                                align: PopoverAlign::End,
-                                gap: 2.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Top,
-                                align: PopoverAlign::End,
-                                gap: 2.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Left,
-                                align: PopoverAlign::Start,
-                                gap: 2.0,
-                            },
-                        ],
-                        window_margin: 8.0,
-                    },
-                    OverrideClip,
-                ))
-                .with_children(|popup| {
-                    for option in options {
-                        spawn_combo_option(popup, option);
                     }
                 });
         });

@@ -1157,33 +1157,29 @@ mod tests {
 
     #[test]
     fn new_scroll_area_keeps_memory_until_same_frame_restore() {
-        let saved = Vec2::new(0.0, 184.0);
-        let mut memory = ScrollMemoryState::default();
-        memory.0.insert(ScrollMemoryKey::Properties, saved);
-        let mut app = App::new();
-        app.insert_resource(memory);
-        app.add_systems(
-            Update,
-            (remember_scroll_positions, restore_scroll_positions).chain(),
-        );
-        let rebuilt = app
-            .world_mut()
-            .spawn((
-                PersistedScroll(ScrollMemoryKey::Properties),
-                ScrollPosition::default(),
-            ))
-            .id();
+        for key in [ScrollMemoryKey::Properties, ScrollMemoryKey::RecentProjects] {
+            let saved = Vec2::new(0.0, 184.0);
+            let mut memory = ScrollMemoryState::default();
+            memory.0.insert(key, saved);
+            let mut app = App::new();
+            app.insert_resource(memory);
+            app.add_systems(
+                Update,
+                (remember_scroll_positions, restore_scroll_positions).chain(),
+            );
+            let rebuilt = app
+                .world_mut()
+                .spawn((PersistedScroll(key), ScrollPosition::default()))
+                .id();
 
-        app.update();
+            app.update();
 
-        assert_eq!(app.world().get::<ScrollPosition>(rebuilt).unwrap().0, saved);
-        assert_eq!(
-            app.world()
-                .resource::<ScrollMemoryState>()
-                .0
-                .get(&ScrollMemoryKey::Properties),
-            Some(&saved)
-        );
+            assert_eq!(app.world().get::<ScrollPosition>(rebuilt).unwrap().0, saved);
+            assert_eq!(
+                app.world().resource::<ScrollMemoryState>().0.get(&key),
+                Some(&saved)
+            );
+        }
     }
 
     #[test]

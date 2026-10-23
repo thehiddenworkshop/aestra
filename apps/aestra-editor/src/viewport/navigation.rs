@@ -1,6 +1,9 @@
 //! Existing preview camera navigation shared by shipping and compatibility qualification.
+use super::gizmo_state::{EmitterTransformGizmoInteraction, ShapeGizmoState};
 use super::shortcuts::PreviewCanvas;
 use bevy::{
+    ecs::system::SystemParam,
+    gizmos::transform_gizmo::TransformGizmoState,
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     prelude::*,
     ui::RelativeCursorPosition,
@@ -83,8 +86,30 @@ pub(super) struct PreviewNavigationState {
     pub(super) flight_blocked: bool,
 }
 
+/// Ownership stays application-side even if camera motion is delegated later.
+#[derive(SystemParam)]
+pub(super) struct PreviewInputCapture<'w> {
+    native: Option<Res<'w, TransformGizmoState>>,
+    shape: Option<Res<'w, ShapeGizmoState>>,
+    transform: Option<Res<'w, EmitterTransformGizmoInteraction>>,
+}
+
+impl PreviewInputCapture<'_> {
+    fn gizmo_owns_input(&self, buttons: &ButtonInput<MouseButton>) -> bool {
+        self.native.as_ref().is_some_and(|state| state.active)
+            || self.shape.as_ref().is_some_and(|state| state.active.is_some())
+            || self.transform.as_ref().is_some_and(|state| state.is_active())
+            // Picking/drag activation happens after Update. Reserve the initial
+            // left press from the last committed hover state, not one frame late.
+            || (buttons.pressed(MouseButton::Left)
+                && (self.native.as_ref().is_some_and(|state| state.hovered_axis.is_some())
+                    || self.shape.as_ref().is_some_and(|state| state.hovered.is_some())))
+    }
+}
+
 pub(super) fn navigate_preview_camera(
     context: crate::input::ShortcutContext,
+    capture: PreviewInputCapture,
     time: Res<Time<Real>>,
     mut motion: MessageReader<MouseMotion>,
     mut wheel: MessageReader<MouseWheel>,
@@ -97,7 +122,8 @@ pub(super) fn navigate_preview_camera(
     mut controller: ResMut<PreviewCameraController>,
     mut camera: Single<&mut Transform, With<PreviewRenderCamera>>,
 ) {
-    if context.blocked() || keys.just_pressed(KeyCode::Escape) {
+    if context.blocked() || capture.gizmo_owns_input(&buttons) || keys.just_pressed(KeyCode::Escape)
+    {
         motion.clear();
         wheel.clear();
         navigation.dragging = false;
@@ -149,6 +175,12 @@ pub(super) fn navigate_preview_camera(
         controller.focus += (-right * pointer_delta.x + up * pointer_delta.y) * units_per_pixel;
         changed = true;
     }
+    let tab_focused = context.tab_strip_focused();
+    if tab_focused {
+        // Keyboard navigation belongs to the strip. Explicit pointer orbit/pan
+        // and zoom over the viewport must remain usable without an extra click.
+        navigation.flight_blocked = true;
+    }
     if ![KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD]
         .into_iter()
         .any(|key| keys.pressed(key))
@@ -165,7 +197,7 @@ pub(super) fn navigate_preview_camera(
     ]
     .into_iter()
     .any(|key| keys.pressed(key));
-    if cursor_over && !navigation.flight_blocked && !shortcut_modifier {
+    if cursor_over && !tab_focused && !navigation.flight_blocked && !shortcut_modifier {
         changed |= controller.fly(&keys, time.delta_secs());
     }
     if cursor_over && scroll_delta != 0.0 {

@@ -47,6 +47,177 @@ fn navigation_tick(app: &mut App, delta: Vec2) {
 }
 
 #[test]
+fn dock_tab_focus_blocks_keyboard_flight_but_preserves_explicit_pointer_orbit() {
+    let (mut app, _, camera) = navigation_app();
+    let strip = app
+        .world_mut()
+        .spawn(bevy::ui_widgets::TabList::default())
+        .id();
+    let tab = app
+        .world_mut()
+        .spawn((bevy::ui_widgets::Tab, ChildOf(strip)))
+        .id();
+    app.insert_resource(bevy::input_focus::InputFocus::from_entity(tab));
+    let before = *app.world().get::<Transform>(camera).unwrap();
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::KeyW);
+    navigation_tick(&mut app, Vec2::ZERO);
+    assert_eq!(*app.world().get::<Transform>(camera).unwrap(), before);
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .press(MouseButton::Right);
+    navigation_tick(&mut app, Vec2::splat(20.0));
+    assert_ne!(*app.world().get::<Transform>(camera).unwrap(), before);
+    assert_eq!(
+        app.world().resource::<PreviewCameraController>().focus,
+        Vec3::ZERO,
+        "W must not fly while the strip owns keyboard focus"
+    );
+}
+
+#[test]
+fn gizmo_capture_and_initial_handle_press_own_camera_input_without_eating_frame_requests() {
+    use super::super::gizmo_state::*;
+    use bevy::gizmos::transform_gizmo::TransformGizmoAxis;
+    for kind in 0..5 {
+        let (mut app, _, camera) = navigation_app();
+        let mut native = TransformGizmoState::default();
+        let mut shape = ShapeGizmoState::default();
+        let mut transform = EmitterTransformGizmoInteraction::default();
+        let emitter = aestra_core::EmitterId::new();
+        match kind {
+            0 => native.active = true,
+            1 => {
+                shape.active = Some(ActiveShapeGizmoDrag {
+                    emitter,
+                    module: aestra_core::ModuleId::new(),
+                    handle: ShapeGizmoHandle::Radius,
+                    original: aestra_core::EmitterShape::Sphere { radius: 1.0 },
+                    current: aestra_core::EmitterShape::Sphere { radius: 1.0 },
+                })
+            }
+            2 => {
+                transform.active = Some(ActiveEmitterTransformGizmo {
+                    target: PreviewTransformTarget::Emitter(emitter),
+                    original: default(),
+                    current: default(),
+                    raw_anchor: default(),
+                    output_anchor: default(),
+                    precision: false,
+                    effect: aestra_core::EffectId::new(),
+                    revision: 0,
+                })
+            }
+            3 => native.hovered_axis = Some(TransformGizmoAxis::X),
+            _ => shape.hovered = Some(ShapeGizmoHandle::Radius),
+        }
+        app.insert_resource(native)
+            .insert_resource(shape)
+            .insert_resource(transform);
+        let before = *app.world().get::<Transform>(camera).unwrap();
+        app.world_mut()
+            .resource_mut::<PreviewCameraController>()
+            .request_frame();
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Right);
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Middle);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyW);
+        scroll(&mut app, MouseScrollUnit::Line, 3.0);
+        navigation_tick(&mut app, Vec2::splat(50.0));
+        assert_eq!(
+            *app.world().get::<Transform>(camera).unwrap(),
+            before,
+            "capture kind {kind}"
+        );
+        assert!(
+            app.world()
+                .resource::<PreviewCameraController>()
+                .frame_requested
+        );
+        assert!(!app.world().resource::<PreviewNavigationState>().looking);
+        assert!(!app.world().resource::<PreviewNavigationState>().dragging);
+    }
+}
+
+#[test]
+fn leaving_gizmo_capture_discards_stale_deltas_and_requires_fresh_drag_and_flight() {
+    let (mut app, _, camera) = navigation_app();
+    app.insert_resource(TransformGizmoState {
+        active: true,
+        ..default()
+    });
+    let before = *app.world().get::<Transform>(camera).unwrap();
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .press(MouseButton::Right);
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::KeyW);
+    scroll(&mut app, MouseScrollUnit::Line, 9.0);
+    navigation_tick(&mut app, Vec2::splat(100.0));
+    app.world_mut().resource_mut::<TransformGizmoState>().active = false;
+    navigation_tick(&mut app, Vec2::ZERO);
+    assert_eq!(*app.world().get::<Transform>(camera).unwrap(), before);
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .release(MouseButton::Right);
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .release(KeyCode::KeyW);
+    navigation_tick(&mut app, Vec2::ZERO);
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .press(MouseButton::Right);
+    navigation_tick(&mut app, Vec2::new(20.0, 0.0));
+    assert_ne!(*app.world().get::<Transform>(camera).unwrap(), before);
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::KeyW);
+    let before_flight = app.world().resource::<PreviewCameraController>().focus;
+    navigation_tick(&mut app, Vec2::ZERO);
+    assert_ne!(
+        app.world().resource::<PreviewCameraController>().focus,
+        before_flight
+    );
+    assert_eq!(
+        app.world().resource::<PreviewCameraController>().distance,
+        140.0
+    );
+}
+
+#[test]
+fn merely_hovering_a_gizmo_does_not_disable_explicit_orbit_or_pan() {
+    use super::super::gizmo_state::*;
+    use bevy::gizmos::transform_gizmo::TransformGizmoAxis;
+    for button in [MouseButton::Right, MouseButton::Middle] {
+        let (mut app, _, camera) = navigation_app();
+        app.insert_resource(TransformGizmoState {
+            hovered_axis: Some(TransformGizmoAxis::X),
+            ..default()
+        });
+        app.insert_resource(ShapeGizmoState {
+            hovered: Some(ShapeGizmoHandle::Radius),
+            ..default()
+        });
+        let before = *app.world().get::<Transform>(camera).unwrap();
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(button);
+        navigation_tick(&mut app, Vec2::splat(15.0));
+        assert_ne!(*app.world().get::<Transform>(camera).unwrap(), before);
+    }
+}
+
+#[test]
 fn preview_navigation_middle_drag_pans_without_modifiers_or_rotation() {
     let (mut app, _, camera) = navigation_app();
     let before = *app.world().get::<Transform>(camera).unwrap();

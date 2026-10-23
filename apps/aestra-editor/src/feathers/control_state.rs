@@ -1,6 +1,6 @@
 //! Transitional read-only state for application consumers not yet using native marker queries.
 //! Picking and widgets own input/activation. This bridge never emits events or semantic actions.
-use crate::feathers::action_activation::PendingFeathersActivation;
+use crate::feathers::action_activation::{FeathersActionButton, PendingFeathersActivation};
 use bevy::{
     picking::hover::Hovered,
     prelude::*,
@@ -20,6 +20,7 @@ pub(super) fn register(app: &mut App) {
     app.register_required_components::<Button, ControlInteraction>()
         .register_required_components::<MenuButton, ControlInteraction>()
         .register_required_components::<MenuItem, ControlInteraction>()
+        .register_required_components::<FeathersActionButton, ControlInteraction>()
         .add_systems(Update, sync.in_set(super::AestraFeathersSet::Input));
 }
 

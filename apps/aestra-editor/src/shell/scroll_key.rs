@@ -11,6 +11,7 @@ pub(crate) enum ScrollMemoryKey {
     CompilerInspector,
     Profiler,
     Settings,
+    RecentProjects,
     Diagnostics,
     TransactionConfirmation,
     Curves,

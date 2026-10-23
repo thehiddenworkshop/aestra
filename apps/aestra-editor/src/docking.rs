@@ -34,6 +34,7 @@ pub(crate) enum DockingSet {
 
 impl Plugin for DockingPlugin {
     fn build(&self, app: &mut App) {
+        crate::dock_ui::tabs::register(app);
         app.init_resource::<DockDragState>()
             .init_resource::<ResizeState>()
             .init_resource::<MaximizedPanel>()
@@ -74,7 +75,6 @@ impl Plugin for DockingPlugin {
 
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub(crate) enum DockingAction {
-    Select(DockTab),
     Close(ToolPanel),
     Show(ToolPanel),
     Toggle(ToolPanel),
@@ -182,12 +182,6 @@ fn handle_docking_actions(
                 } else {
                     background.0 = theme::ACCENT_DIM;
                 }
-                // Dock tabs activate on release (see `select_dock_tab`), not on press: a
-                // press that becomes a drag must not rebuild the tab bar and cancel the
-                // drag gesture before `DragStart` can fire.
-                if matches!(action, DockingAction::Select(_)) {
-                    continue;
-                }
                 if !matches!(action, DockingAction::Toggle(_)) {
                     menu.open = None;
                     menu.panels_open = false;
@@ -218,10 +212,6 @@ fn apply_docking_action(
     window: Option<&Window>,
 ) -> DockingActionOutcome {
     match action {
-        DockingAction::Select(panel) => DockingActionOutcome {
-            changed: layout.activate(panel),
-            status: None,
-        },
         DockingAction::Close(panel) => DockingActionOutcome {
             changed: layout.close(panel),
             status: Some(DockingStatus::Closed(panel)),

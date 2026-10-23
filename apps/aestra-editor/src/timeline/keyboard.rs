@@ -20,6 +20,7 @@ pub(super) fn choreography_keyboard_input(
         .is_some_and(|entity| editable_text.contains(entity));
     if palette.open
         || shortcuts.blocked()
+        || shortcuts.tab_strip_focused()
         || shortcuts.asset_browser_focused()
         || timelines.is_empty()
         || editing_text

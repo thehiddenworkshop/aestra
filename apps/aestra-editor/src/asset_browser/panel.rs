@@ -1058,7 +1058,7 @@ fn sync_chrome(
                 selected: state.kinds.contains(&kind),
                 action: BrowserAction::Kind(Some(kind)),
             }));
-            spawn_combo_control(
+            crate::feathers::combo_box::spawn_action_combo_control(
                 parent,
                 &label,
                 &localizer.text("browser-types"),

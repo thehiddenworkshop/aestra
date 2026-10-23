@@ -47,6 +47,45 @@ fn labels() -> ColorPickerLabels {
 }
 
 #[test]
+fn native_swatch_preserves_srgb_alpha_and_shows_opaque_comparison() {
+    use bevy::feathers::controls::{ColorSwatchFg, FeathersColorSwatch};
+    let mut app = app();
+    let (root, _, _, _) = spawn(&mut app, Some([0.2, 0.4, 0.6, 0.25]));
+    let preview = app
+        .world_mut()
+        .query_filtered::<Entity, With<ColorPickerPreview>>()
+        .single(app.world())
+        .unwrap();
+    assert!(app.world().get::<FeathersColorSwatch>(preview).is_some());
+    let value = app
+        .world()
+        .get::<ColorSwatchValue>(preview)
+        .unwrap()
+        .0
+        .to_srgba();
+    assert!((value.red - 0.2).abs() < 1e-5);
+    assert!((value.green - 0.4).abs() < 1e-5);
+    assert!((value.blue - 0.6).abs() < 1e-5);
+    assert_eq!(value.alpha, 0.25);
+    let children = app.world().get::<Children>(preview).unwrap();
+    assert_eq!(children.len(), 2);
+    for (index, child) in children.iter().enumerate() {
+        assert!(app.world().get::<ColorSwatchFg>(child).is_some());
+        let color = app
+            .world()
+            .get::<BackgroundColor>(child)
+            .unwrap()
+            .0
+            .to_srgba();
+        assert_eq!(color.alpha, if index == 0 { 0.25 } else { 1.0 });
+    }
+    assert_eq!(
+        app.world().get::<ColorPickerState>(root).unwrap().srgba()[3],
+        0.25
+    );
+}
+
+#[test]
 fn cancelling_numeric_channel_restores_automatic_and_all_picker_state_without_final_change() {
     let mut app = app();
     let (root, _, _, _) = spawn(&mut app, None);

@@ -455,7 +455,16 @@ fn full_panel_bars_target_the_constructed_horizontal_and_track_viewports() {
     let t = f.pane(TimelineVerticalPane::Tracks);
     let w = f.app.world_mut();
     let bars = w.query::<&Scrollbar>().iter(w).collect::<Vec<_>>();
-    assert_eq!(bars.len(), 2);
+    // The native snapping select owns a third, bounded dropdown scrollbar.
+    assert_eq!(bars.len(), 3);
+    assert_eq!(
+        bars.iter()
+            .filter(|b| b.target != h
+                && b.target != t
+                && b.orientation == ControlOrientation::Vertical)
+            .count(),
+        1
+    );
     assert!(
         bars.iter()
             .any(|b| b.orientation == ControlOrientation::Horizontal && b.target == h)

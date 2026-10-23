@@ -3045,7 +3045,18 @@ mod tests {
         };
         assert!(scrollbar_targets.contains(&(ControlOrientation::Vertical, track_target)));
         assert!(scrollbar_targets.contains(&(ControlOrientation::Horizontal, horizontal_target)));
-        assert_eq!(scrollbar_targets.len(), 2);
+        // The native snap dropdown owns its own vertical scrollbar too.
+        assert_eq!(scrollbar_targets.len(), 3);
+        assert_eq!(
+            scrollbar_targets
+                .iter()
+                .filter(
+                    |(orientation, target)| *orientation == ControlOrientation::Vertical
+                        && *target != track_target
+                )
+                .count(),
+            1
+        );
 
         let constrained_ancestors = {
             let world = app.world_mut();

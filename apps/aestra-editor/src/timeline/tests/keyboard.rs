@@ -456,16 +456,21 @@ fn canvas_presence_not_hover_owns_shortcuts_without_duplicate_dispatch() {
 
 #[test]
 fn editable_code_menu_and_browser_ancestor_focus_block() {
-    for kind in 0..4 {
+    for kind in 0..5 {
         let mut f = Fixture::new();
         let parent = match kind {
             0 => f.app.world_mut().spawn(EditableText::new("Name")).id(),
             1 => f.app.world_mut().spawn(CodeEditor::new("code".into())).id(),
             2 => f.app.world_mut().spawn(bevy::ui_widgets::MenuItem).id(),
-            _ => f
+            3 => f
                 .app
                 .world_mut()
                 .spawn(crate::asset_browser::BrowserSurface)
+                .id(),
+            _ => f
+                .app
+                .world_mut()
+                .spawn(bevy::ui_widgets::TabList::default())
                 .id(),
         };
         let child = f.app.world_mut().spawn(ChildOf(parent)).id();

@@ -211,7 +211,7 @@ pub(super) fn colors() -> HashMap<ThemeToken, Color> {
     colors.insert(tokens::GROUP_HEADER_TEXT, TEXT);
 
     colors.insert(tokens::LISTROW_BG, Color::NONE);
-    colors.insert(tokens::LISTROW_BG_HOVER, PANEL_LIGHT);
+    colors.insert(tokens::LISTROW_BG_HOVER, MENU_ITEM_HOVER);
     colors.insert(tokens::LISTROW_BG_SELECTED, SELECTION);
     colors.insert(tokens::LISTROW_TEXT, TEXT);
     colors.insert(tokens::LISTROW_TEXT_DISABLED, TEXT_FAINT);

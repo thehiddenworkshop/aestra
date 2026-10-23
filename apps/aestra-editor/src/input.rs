@@ -28,13 +28,19 @@ impl Plugin for EditorKeyboardPlugin {
     }
 }
 
+type MenuControlFilter = Or<(
+    With<bevy::ui_widgets::MenuItem>,
+    With<bevy::ui_widgets::MenuPopup>,
+)>;
+
 #[derive(SystemParam)]
 pub(crate) struct ShortcutContext<'w, 's> {
     focus: Option<Res<'w, InputFocus>>,
     editable: Query<'w, 's, (), With<EditableText>>,
     code_editors: Query<'w, 's, (), With<crate::feathers::code_editor::CodeEditor>>,
     parents: Query<'w, 's, &'static ChildOf>,
-    menu_items: Query<'w, 's, (), With<bevy::ui_widgets::MenuItem>>,
+    menu_controls: Query<'w, 's, (), MenuControlFilter>,
+    tab_strips: Query<'w, 's, (), With<bevy::ui_widgets::TabList>>,
     asset_surfaces: Query<'w, 's, (), With<crate::asset_browser::BrowserSurface>>,
     protection: Option<Res<'w, crate::persistence::DocumentProtectionState>>,
     asset_operation: Option<Res<'w, crate::asset_actions::AssetOperationState>>,
@@ -46,6 +52,19 @@ pub(crate) struct ShortcutContext<'w, 's> {
 }
 
 impl ShortcutContext<'_, '_> {
+    /// Roving tab keys belong to the strip, not the timeline or viewport behind it.
+    /// Keep this separate from blocked() so global Save/Undo remain available.
+    pub(crate) fn tab_strip_focused(&self) -> bool {
+        let mut current = self.focus.as_ref().and_then(|focus| focus.get());
+        while let Some(entity) = current {
+            if self.tab_strips.contains(entity) {
+                return true;
+            }
+            current = self.parents.get(entity).ok().map(ChildOf::parent);
+        }
+        false
+    }
+
     /// Panel-local shortcuts must not also edit the timeline behind Assets.
     /// Keep global history/save shortcuts available by not folding this into blocked().
     pub(crate) fn asset_browser_focused(&self) -> bool {
@@ -90,7 +109,7 @@ impl ShortcutContext<'_, '_> {
         while let Some(entity) = focused {
             if self.editable.contains(entity)
                 || self.code_editors.contains(entity)
-                || self.menu_items.contains(entity)
+                || self.menu_controls.contains(entity)
             {
                 return true;
             }

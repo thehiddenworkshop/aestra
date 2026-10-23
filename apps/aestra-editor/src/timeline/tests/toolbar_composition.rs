@@ -13,10 +13,11 @@ use aestra_core::{EffectAsset, Emitter, EmitterRegionId};
 use bevy::{
     asset::AssetPlugin,
     ecs::system::RunSystemOnce,
+    feathers::controls::{FeathersListRow, SelectPlugin},
     input_focus::InputFocus,
     scene::ScenePlugin,
     text::TextPlugin,
-    ui_widgets::{Activate, Button, MenuButton, MenuItem},
+    ui_widgets::{Activate, Button, MenuButton},
 };
 
 #[derive(Resource)]
@@ -61,6 +62,7 @@ impl Fixture {
             AssetPlugin::default(),
             ScenePlugin,
             TextPlugin,
+            SelectPlugin,
         ))
         .init_asset::<Image>()
         .init_asset::<SvgFile>()
@@ -260,7 +262,7 @@ fn transport_and_duration_buttons_have_actual_payloads_and_localized_labels() {
 }
 
 #[test]
-fn snap_combo_contains_all_real_modes_focusable_and_exactly_one_indicator() {
+fn snap_combo_contains_all_real_modes_in_native_listbox_with_one_selected_row() {
     for mode in TimelineSnapMode::ALL {
         let mut f = Fixture::configured("en-US", |app| {
             app.world_mut().resource_mut::<TimelineState>().snap = mode
@@ -268,18 +270,19 @@ fn snap_combo_contains_all_real_modes_focusable_and_exactly_one_indicator() {
         for candidate in TimelineSnapMode::ALL {
             let e = f.control(TimelineAction::SetSnap(candidate));
             let w = f.app.world();
-            assert!(w.get::<MenuItem>(e).is_some());
+            assert!(w.get::<FeathersListRow>(e).is_some());
             assert!(w.get::<FeathersActionButton>(e).is_some());
+            assert_eq!(w.get::<bevy::ui::Selected>(e).is_some(), candidate == mode);
+            let listbox =
+                std::iter::successors(Some(e), |e| w.get::<ChildOf>(*e).map(ChildOf::parent))
+                    .find(|e| w.get::<bevy::ui_widgets::ListBox>(*e).is_some())
+                    .unwrap();
+            assert!(w.get::<bevy::ui_widgets::ListBox>(listbox).is_some());
             assert_eq!(
-                w.get::<bevy::input_focus::tab_navigation::TabIndex>(e)
+                w.get::<bevy::input_focus::tab_navigation::TabIndex>(listbox)
                     .unwrap()
                     .0,
                 0
-            );
-            let indicator = w.get::<Children>(e).unwrap()[0];
-            assert_eq!(
-                w.get::<Children>(indicator).map_or(0, Children::len),
-                usize::from(candidate == mode)
             );
         }
         f.clean();

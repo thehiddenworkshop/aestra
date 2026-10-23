@@ -3748,6 +3748,63 @@ acceptance.
 
 ## B20-5 — Menus, dropdowns and color controls
 
+### Production adoption (2026-10-23)
+
+- Shared value selectors now compose `FeathersSelect` and `FeathersListRow`.
+  Bevy owns the listbox, bounded scrolling, caption, keyboard selection and popup
+  focus. Aestra keeps localized labels, typed actions, accessible trigger labels,
+  control sizing and one-time semantic dispatch. Only the root select's final
+  `ValueChange<Entity>` becomes an editor activation; the nested listbox event does not.
+  Popup-owned listbox focus also blocks authoring shortcuts behind the dropdown,
+  just as the former menu-item focus did.
+- Unselected "Add…" pickers and the browser's multi-select type filter remain action
+  menus: a select would swallow repeated
+  choices of the same action. These pickers and ordinary compact/icon action menus
+  now use `FeathersLazyMenu`. Closed menus retain semantic action targets, not their
+  visual popup rows. This is intentional: native close destroys the popup before
+  Aestra's deferred domain dispatcher consumes activation. Availability is mirrored
+  from those persistent targets onto the visual rows.
+- Both adapters reject disabled targets/ancestors and selections from an interaction
+  opened for an obsolete effect/document/UI revision. Each opening refreshes the
+  interaction epoch, so persistent browser/settings controls remain usable after
+  unrelated edits. Empty action pickers have disabled triggers,
+  not invented placeholder commands. Native list hover uses Aestra's existing
+  high-contrast menu token. File-menu grouping, widths and shortcut columns are unchanged.
+- Searchable graph palettes retain their search-owned focus composition. Pointer
+  context menus already construct content on demand and retain their pointer anchors,
+  viewport fallbacks and submenu policy. They do not need an additional lazy wrapper.
+- The localized advanced color picker continues composing upstream planes, sliders
+  and numeric inputs. Its preview now uses `FeathersColorSwatch`, with transparency
+  pattern and a 25% opaque comparison. Its boundary is explicitly normalized sRGBA;
+  the swatch does not reinterpret it as linear light. HDR material/emission fields
+  stay on their existing numeric path and are not clamped through this picker.
+
+Full `FeathersColorInput` replacement is **deferred after source review**, not silently
+marked complete: its popup currently hardcodes English RGB/HSL/channel labels and
+has no Automatic/None reset. Nesting it inside the existing picker would also add a
+second popup/click. Retain the current localized RGB/HSL/hex/alpha and preview/final/
+cancel/undo contract until those public extension points are available. No private
+upstream child markers, string matching or patched color-input fork is introduced.
+
+Regression coverage lives in `feathers/combo_box/tests/selection.rs`,
+`feathers/combo_box/actions.rs`, `feathers/color_picker/tests/interaction.rs` and the
+existing timeline/color history suites. The lazy-menu regression accounts for native
+`SceneListPatch` asset resolution: activation during a frame can resolve in the next
+frame. It never reissues activation while waiting, rejects unexpected `CloseAll`,
+and requires focus acquisition when the popup resolves and on reopening.
+
+Validation on the pinned Windows toolchain:
+
+- Editor package tests: **2,859 unit tests passed**, 10 existing opt-in tests ignored;
+  all **5 architecture/test-layout integration guards passed**.
+- Strict editor all-target Clippy and isolated `editor-qualification` all-target
+  Clippy passed. The focused qualification lazy-menu resolution/reopen test passed.
+- Workspace and qualification formatting checks and `git diff --check` passed.
+
+Desktop visual acceptance remains required (not performed by the headless suite):
+check menu/picker edges at small window sizes and non-default UI scale, keyboard and
+pointer opening/reopening, click-away/Escape, and both English and French labels.
+
 | Current boundary | Proposed upstream reuse | Aestra policy to retain |
 | --- | --- | --- |
 | `combo_box` | Dropdown selection | Localized labels, selected semantic value, disabled options and command dispatch. |
@@ -3768,7 +3825,111 @@ emission editor. Preserve the recent menu contrast/alignment improvements.
 
 ## B20-6 — Lists, tabs and viewport: selective reuse
 
-- Pilot the new scrollable list on recent projects or a simple settings selection.
+**Recent-project list and dock-tab pilots implemented (Bevy `=0.20.0`); viewport
+candidate evaluated, adoption deferred.** This is not a claim
+that the whole milestone or native visual acceptance is complete.
+
+Implemented in `apps/aestra-editor/src/persistence/project_launcher/recent.rs`:
+
+- Replace the chooser's per-project buttons/plain overflow container with
+  `FeathersListView` and `FeathersListRow`. Keep the existing project tile,
+  localized name/path/current/missing labels and one-click open behavior.
+- Native arrow navigation changes the active row without opening it; Enter/Space
+  or a pointer commit uses the existing protected document-action route exactly
+  once, including the initially selected current project's reselect event.
+- Missing projects stay readable but are excluded from keyboard candidates.
+  An empty or missing-only list does not introduce an unusable tab stop.
+  Reject disabled/foreign/stale rows, reordered history indexes and directories
+  deleted after the chooser opened.
+- Attach `PersistedScroll(RecentProjects)` to the public native `ScrollArea` and
+  reuse the existing overflow-only scrollbar policy. Do not add a second list
+  selection controller or mutate retained row selection after opening closes
+  and destroys the overlay.
+
+Regression coverage lives in `persistence/project_launcher/tests/recent.rs`:
+native composition in both locales, real headless keyboard/pointer dispatch,
+current-row reselect, stale/disabled/missing rows, Escape, scrollbar policy, and
+actual long-history layout with keyboard scroll-into-view.
+The shell scroll-memory regression also covers the new recent-project key.
+Headless checks do not replace a native chooser visual/scroll/DPI acceptance pass.
+
+Validation (Rust `1.98.1`, Bevy `=0.20.0`):
+
+- `cargo test -p aestra-editor --locked --offline -- --test-threads=1`:
+  2,866 unit tests passed, 10 existing opt-in tests ignored; all five integration
+  guards passed. Seven new list tests run against the real native widgets.
+- Strict all-target editor Clippy and the `patches-020` qualification Clippy with
+  `--features editor-qualification --locked --offline -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+Dock-tab adapter (`dock_ui/tabs.rs`, `dock_ui.rs`, `docking.rs`):
+
+- Native `TabList`/`Tab` provide roving focus, arrows/Home/End, disabled-tab skipping
+  and manual Enter/Space selection. `SelectedTab` mirrors the persisted docking
+  model, not a second self-updating widget authority.
+- Pointer selection remains on primary-click release; remove the old tab
+  `Button` and `DockingAction::Select` route. Native commits and selected-tab
+  pointer refocus share the existing document/layout activation handler.
+  Nested close clicks do not select their containing tab. Keep existing drag,
+  reorder, append/drop, dirty markers, context menus and layout serialization.
+- Reject disabled, hidden, foreign, non-final, moved/closed-model requests and
+  competing commits during tab dragging. Remember focused tab identity across
+  shell rebuilds without stealing focus from another live control or hidden
+  staging tree; retain the current hover/selection colors and add keyboard focus
+  outlines.
+- Reveal offscreen keyboard-focused tabs horizontally without adding a second
+  wheel controller. Separate tab-strip navigation ownership from global shortcut
+  blocking: timeline shortcuts and camera keyboard flight stay quiet behind
+  focused tabs while global Save/Undo and explicit viewport mouse gestures
+  remain available.
+- Regressions in `dock_ui/tests/tabs.rs` exercise actual dock composition and
+  native input, controlled selection, nested close isolation, model staleness,
+  drag start, rebuild focus, real horizontal layout and the actual current-WESL
+  document refocus handler. The latter keeps selection unchanged so tests never
+  write the user's layout file. Shared input, timeline and viewport tests cover
+  shortcut ownership. Native drag/drop/floating-window/DPI acceptance is still
+  required; headless tests are not a visual sign-off.
+
+Dock-tab validation (Rust `1.98.1`, Bevy `=0.20.0`):
+
+- The full editor package suite passed 2,876 unit tests (10 existing opt-in
+  tests ignored) and all five integration guards, including eight new native
+  dock-strip tests. Timeline ownership coverage now also includes tab strips.
+- After refining the viewport guard to retain explicit mouse gestures,
+  `cargo test -p aestra-editor --bin aestra-editor --locked --offline -- --test-threads=1`
+  passed all 2,876 editor unit tests again (10 existing opt-in tests ignored),
+  including keyboard-flight/RMB-orbit separation.
+- Strict all-target editor and `patches-020` editor-qualification Clippy passed;
+  formatting and whitespace checks passed. No dependencies or authored/workspace
+  serialization formats changed.
+
+Viewport evaluation:
+
+- Decision and parity matrix: [B20-6 viewport evaluation](AESTRA_B20_6_VIEWPORT_EVALUATION.md).
+  Keep the existing controller; no camera feature, plugin or dependency changes.
+  The exact optional `bevy_camera_controller` 0.20 dependency did not resolve in
+  either offline or network-enabled isolated checks. The temporary probe was
+  removed; both manifests and lockfiles are unchanged. Native candidate parity
+  and performance are unmeasured, not passed.
+- The inspected bundled input example needs application-specific remapping,
+  anchor/flight/framing/ownership and scheduling work; adding the plugin alone
+  would not preserve Aestra's contract. Revisit only with a resolvable pinned
+  dependency and a concrete benefit; do not block compatibility acceptance on it.
+- Harden retained navigation's gizmo ownership via `PreviewInputCapture`:
+  native/shape/TRS capture discards queued motion/wheel, retires camera dragging,
+  blocks held flight until release, and defers frame requests. Reserve a left
+  press over committed hovered handles before later gizmo activation. Hover
+  alone does not disable RMB orbit or MMB pan. Three new real-system regressions
+  extend the existing navigation contract suite.
+- Validation: the full editor package passed 2,879 unit tests (10 existing opt-in
+  tests ignored) and all five integration guards. Strict all-target editor and
+  editor-qualification Clippy, formatting and whitespace checks passed. These
+  results cover retained navigation, not the unavailable native candidate;
+  native visual/gizmo/DPI/minimize acceptance remains outstanding.
+
+Adoption boundaries and remaining scope:
+
+- Keep the native scrollable-list pilot bounded to recent projects first.
   Do not assume it provides virtualization, asset grids, tree navigation or multi-select
   drag/drop. Keep persisted scroll behavior and overflow-only scrollbars.
 - Use [headless tabs](https://github.com/bevyengine/bevy/pull/25515) for focus,

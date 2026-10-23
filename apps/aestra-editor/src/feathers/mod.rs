@@ -96,6 +96,7 @@ impl Plugin for AestraFeathersPlugin {
                     automation_curve::rasterize_automation_curves,
                     list_row::update_keyboard_list_focus_visuals,
                     color_picker::sync_color_picker_visuals,
+                    combo_box::sync_action_menu_availability,
                     scroll::update_scrollbar_visibility,
                     search_field::sync_search_clear_visibility,
                     tooltip::update_tooltip,
