@@ -4830,7 +4830,47 @@ asset or public-default changes. The initial saved-material light-contrast failu
 and fixture calibration are retained in the evidence.
 See [`fragment-list-hdr-lighting-2026-10-23.md`](../../benchmarks/fireworks/fragment-list-hdr-lighting-2026-10-23.md).
 
-**Next:** textured/flipbook paths, then mixed additive/trail/non-OIT draws, other depth
+**F8.1C4H textured/flipbook oracle (2026-10-25):** deterministic RGBA textures now
+qualify semantic sprites, semantic flipbooks and the separate legacy alpha-flipbook
+shader against correctly sorted one-particle reference draws. Both camera directions
+and spawn orders cover sampled color/alpha, transparent notches, three distinct frames
+and looping, in-place image changes on existing handles, semantic texture/gain overrides
+and override removal, HDR exposure and controlled native lighting. Independent central
+source-over predictions include sRGB decoding and linear texture alpha; completely
+transparent images must allocate zero fragment-list nodes.
+
+Both final native runs pass 132 cases; all 396 corresponding PNGs match. Maximum
+linear errors are .003342 (analytic center) and .007450 (whole-image split reference);
+OIT/state restoration is byte-exact, with no drops/over-sort/visited-invalid links.
+The six-probe combined native regression also passes. This is bounded resource/shader
+integration, not smoke art, a disk-import/hot-reload guarantee or general flipbook
+playback-mode acceptance. No production shader/API/asset/default changes were needed.
+See [`fragment-list-textures-2026-10-25.md`](../../benchmarks/fireworks/fragment-list-textures-2026-10-25.md).
+
+**F8.1C4I mixed-pass gate (2026-10-25): blocked for adoption.** The diagnostic
+now reproduces incorrect foreground ordering with Aestra additive sprites, additive
+trails, alpha trails and semantic alpha mesh particles. All four remain outside the
+fragment lists; the resolve overlays them with smoke regardless of their world depth.
+Fast and DepthBackToFront both fail, from both camera directions and spawn orders.
+All 48 foreground cases are wrong (minimum .220131 linear error), while 48 background
+controls and independently calibrated ordinary sorted draws pass. Allocation approval
+and zero drop/over-sort/invalid-link counters do not detect this ordering failure.
+
+Two final native runs reproduce all 96 cases and 480 corresponding PNGs byte-exactly;
+the seven-probe combined regression passes **as a diagnostic**, not renderer acceptance.
+OIT/camera restoration is byte-exact; this is not stale playback or a fragment-capacity
+problem. Public API documentation now explicitly warns about these known exclusions.
+No render behavior, asset or default changes. See
+[`fragment-list-mixed-2026-10-25.md`](../../benchmarks/fireworks/fragment-list-mixed-2026-10-25.md).
+
+**Next — F8.1C4J:** address mixed compositing before attempting adoption or further
+smoke art. Prototype unified depth-ordered collection for eligible Aestra alpha/additive
+sprite, trail and mesh draws (with correct additive emission/no-extinction semantics),
+or choose a different compositor if that cannot be made bounded and interoperable.
+Explicitly retain/reject unsupported blend/depth/custom paths; do not silently claim
+arbitrary host-material support. Convert the foreground cases to positive correctness
+gates and repeat the existing alpha/HDR/texture/depth/saturation controls. More storage
+or pool sorting alone cannot fix the demonstrated pass-order error. Then qualify other depth
 paths, native resize/multiple cameras, and matched dense/live-paced costs. The camera allocation
 guard is not fragment-overflow detection, and zero global drops do not prove exact
 blending beyond the local sort threshold. Keep fragment-list

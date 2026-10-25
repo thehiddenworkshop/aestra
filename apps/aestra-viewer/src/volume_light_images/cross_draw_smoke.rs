@@ -32,6 +32,16 @@ pub(super) fn sheet_program(
     speed_z: f32,
     program: MaterialProgram,
 ) -> Arc<CompiledEffectProject> {
+    sheet_configured(count, shape, speed_z, program, |_| {})
+}
+
+pub(super) fn sheet_configured(
+    count: u32,
+    shape: aestra_bevy::EmitterShape,
+    speed_z: f32,
+    program: MaterialProgram,
+    configure: impl FnOnce(&mut EffectAsset),
+) -> Arc<CompiledEffectProject> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
     let mut effect = EffectAsset::from_ron(
         &fs::read_to_string(root.join("effects/fireworks_particle_smoke_lighting.aestra.ron"))
@@ -86,6 +96,7 @@ pub(super) fn sheet_program(
         }
     }
     effect.material_instances[0].program = MaterialProgramRef::Project(program.id);
+    configure(&mut effect);
     let resolved = aestra_project::ResolvedEffectProject {
         root: effect,
         dependencies: BTreeMap::new(),

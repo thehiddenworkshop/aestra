@@ -1,0 +1,4573 @@
+{
+  "milestone": "F8.1C4H",
+  "date": "2026-10-25",
+  "base_commit": "cae66f29be8aa3f21ef22eab40ebe394696228ea",
+  "scope": "Bounded textured semantic sprites/flipbooks and legacy alpha flipbooks; no production shader/API/asset/default changes or smoke-art/mixed-draw/live-cost acceptance.",
+  "environment": {
+    "os": "Windows",
+    "adapter": {
+      "backend": "Vulkan",
+      "name": "NVIDIA GeForce RTX 4070 SUPER"
+    },
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1",
+    "target": "480x360 sRGB display-referred SDR from HDR camera",
+    "msaa": "Off",
+    "display": "Reinhard; bloom 0; dither off; exposure 0/+1",
+    "history": "PlaybackOnly",
+    "original_pool_sort": "Fast",
+    "reference_sort": "DepthBackToFront",
+    "sample_frames": [
+      10,
+      40,
+      70,
+      100
+    ],
+    "flipbook": "EffectTime forward, 2fps, 3 cells, looping, no random start"
+  },
+  "sources": [
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_draw_smoke.rs",
+      "sha256": "583EFFFCB2B7CFC35CEACFE87A5334A83E62F238DF5D98DB7A86E89D5279853A"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_oit.rs",
+      "sha256": "727746F2E7F6F17C194C62A5B4342F59DF1BFD0A916356C216E22A7149F8C087"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_textures.rs",
+      "sha256": "F14EC119D09AC44930E6A67EE48E0CDE58DDBA6DF3CA424A4FD2B9E40547F047"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_limits.rs",
+      "sha256": "05565C5B63E2297E4337C95128FAC4CD614879626702345CD214F49C8EC7A743"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_hdr.rs",
+      "sha256": "727B01FA3B4301A8EED845B0EB4D1674F9B125F4456BE49A33A5795D9BC7B234"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images.rs",
+      "sha256": "6C7F9FC24A2BC910211094221C2CCC65A1E2E9FE7AB775FBB4E090466645B09E"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "5146E91A97BA56ACC40B61C24AD71444EDC1AD4CF4FACD8014F4806EC6CC6D6F"
+    }
+  ],
+  "runs": [
+    {
+      "root": "target/fireworks-f8/fragment-list-textures-2026-10-25-b",
+      "report_sha256": "15CF6AACA6C1884770A9D8BDB29F14A349DC00D110B97BA056A9138EF88C45F7",
+      "summary": {
+        "probe_passed": true,
+        "cases": 132,
+        "paths": [
+          {
+            "path": "legacy-flipbook",
+            "cases": 36
+          },
+          {
+            "path": "semantic-flipbook",
+            "cases": 48
+          },
+          {
+            "path": "semantic-sprite",
+            "cases": 48
+          }
+        ],
+        "whole_image_split_max_linear_error": 0.007449686527252197,
+        "analytic_center_max_linear_error": 0.0033417940139770508,
+        "oit_restore_max_byte_error": 0,
+        "state_restore_max_byte_error": 0,
+        "controlled_light_min_center_contrast": 0.013677507638931274,
+        "transparent_cases_with_zero_attempts": 12,
+        "dropped_fragments_max": 0,
+        "over_sort_pixels_max": 0,
+        "visited_invalid_links_max": 0
+      },
+      "cases": [
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0032522454857826233,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.04518621414899826,
+            0.04518621414899826,
+            0.7529420852661133
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-material-texture",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "material-texture",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.0007933704182505608,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.3075082302093506,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-material-gain",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "material-gain",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00440552830696106
+        },
+        {
+          "analytic_center_max_error": 0.0029360055923461914,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.6307567358016968,
+            0.6375964879989624,
+            0.049706533551216125
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006455600261688232
+        },
+        {
+          "analytic_center_max_error": null,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4724538326263428,
+            0.48469436168670654,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": 0.016042590141296387,
+          "name": "semantic-sprite-spawn-0-view-0-lit",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "lit",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005829751491546631
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-0-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006882786750793457
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0032522454857826233,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.04518621414899826,
+            0.04518621414899826,
+            0.7529420852661133
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-material-texture",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "material-texture",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007449686527252197
+        },
+        {
+          "analytic_center_max_error": 0.0007933704182505608,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.3075082302093506,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-material-gain",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "material-gain",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004367619752883911
+        },
+        {
+          "analytic_center_max_error": 0.0029360055923461914,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.6307567358016968,
+            0.6375964879989624,
+            0.049706533551216125
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006839752197265625
+        },
+        {
+          "analytic_center_max_error": null,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.46778348088264465,
+            0.48469436168670654,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": 0.013677507638931274,
+          "name": "semantic-sprite-spawn-0-view-1-lit",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "lit",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005829751491546631
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-0-view-1-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0032522454857826233,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.04518621414899826,
+            0.04518621414899826,
+            0.7529420852661133
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-material-texture",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "material-texture",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.0007933704182505608,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.3075082302093506,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-material-gain",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "material-gain",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00440552830696106
+        },
+        {
+          "analytic_center_max_error": 0.0029360055923461914,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.6307567358016968,
+            0.6375964879989624,
+            0.049706533551216125
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006455600261688232
+        },
+        {
+          "analytic_center_max_error": null,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4724538326263428,
+            0.48469436168670654,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": 0.016042590141296387,
+          "name": "semantic-sprite-spawn-1-view-0-lit",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "lit",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005829751491546631
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-0-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006882786750793457
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0032522454857826233,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.04518621414899826,
+            0.04518621414899826,
+            0.7529420852661133
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-material-texture",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "material-texture",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007449686527252197
+        },
+        {
+          "analytic_center_max_error": 0.0007933704182505608,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.3075082302093506,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-material-gain",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "material-gain",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004367619752883911
+        },
+        {
+          "analytic_center_max_error": 0.0029360055923461914,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.6307567358016968,
+            0.6375964879989624,
+            0.049706533551216125
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006839752197265625
+        },
+        {
+          "analytic_center_max_error": null,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.46778348088264465,
+            0.48469436168670654,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": 0.013677507638931274,
+          "name": "semantic-sprite-spawn-1-view-1-lit",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "lit",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005829751491546631
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-sprite-spawn-1-view-1-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-sprite",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0033417940139770508,
+          "atlas_frame": 1,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.03954624757170677,
+            0.5972021818161011,
+            0.5332760810852051
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006582975387573242
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 2,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0032522454857826233,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.04518621414899826,
+            0.04518621414899826,
+            0.7529420852661133
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-material-texture",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "material-texture",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.0007933704182505608,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.3075082302093506,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-material-gain",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "material-gain",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00440552830696106
+        },
+        {
+          "analytic_center_max_error": 0.0029360055923461914,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.6307567358016968,
+            0.6375964879989624,
+            0.049706533551216125
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006455600261688232
+        },
+        {
+          "analytic_center_max_error": null,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4724538326263428,
+            0.48469436168670654,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": 0.016042590141296387,
+          "name": "semantic-flipbook-spawn-0-view-0-lit",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "lit",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005829751491546631
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-0-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0033417940139770508,
+          "atlas_frame": 1,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.03954624757170677,
+            0.5972021818161011,
+            0.5332760810852051
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006497979164123535
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 2,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006882786750793457
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006882786750793457
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0032522454857826233,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.04518621414899826,
+            0.04518621414899826,
+            0.7529420852661133
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-material-texture",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "material-texture",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007449686527252197
+        },
+        {
+          "analytic_center_max_error": 0.0007933704182505608,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.3075082302093506,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-material-gain",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "material-gain",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004367619752883911
+        },
+        {
+          "analytic_center_max_error": 0.0029360055923461914,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.6307567358016968,
+            0.6375964879989624,
+            0.049706533551216125
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006839752197265625
+        },
+        {
+          "analytic_center_max_error": null,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.46778348088264465,
+            0.48469436168670654,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": 0.013677507638931274,
+          "name": "semantic-flipbook-spawn-0-view-1-lit",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "lit",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005829751491546631
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-0-view-1-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0033417940139770508,
+          "atlas_frame": 1,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.03954624757170677,
+            0.5972021818161011,
+            0.5332760810852051
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006582975387573242
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 2,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0032522454857826233,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.04518621414899826,
+            0.04518621414899826,
+            0.7529420852661133
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-material-texture",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "material-texture",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007230103015899658
+        },
+        {
+          "analytic_center_max_error": 0.0007933704182505608,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.3075082302093506,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-material-gain",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "material-gain",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00440552830696106
+        },
+        {
+          "analytic_center_max_error": 0.0029360055923461914,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.6307567358016968,
+            0.6375964879989624,
+            0.049706533551216125
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006455600261688232
+        },
+        {
+          "analytic_center_max_error": null,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4724538326263428,
+            0.48469436168670654,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": 0.016042590141296387,
+          "name": "semantic-flipbook-spawn-1-view-0-lit",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "lit",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005829751491546631
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-0-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0033417940139770508,
+          "atlas_frame": 1,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.03954624757170677,
+            0.5972021818161011,
+            0.5332760810852051
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006497979164123535
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 2,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006882786750793457
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.00281510129570961,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.25818273425102234,
+            0.03954624757170677,
+            0.7011021375656128
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006882786750793457
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0032522454857826233,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.04518621414899826,
+            0.04518621414899826,
+            0.7529420852661133
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-material-texture",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "material-texture",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.007449686527252197
+        },
+        {
+          "analytic_center_max_error": 0.0007933704182505608,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.3075082302093506,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-material-gain",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "material-gain",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004367619752883911
+        },
+        {
+          "analytic_center_max_error": 0.0029360055923461914,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.6307567358016968,
+            0.6375964879989624,
+            0.049706533551216125
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.006839752197265625
+        },
+        {
+          "analytic_center_max_error": null,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.46778348088264465,
+            0.48469436168670654,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": 0.013677507638931274,
+          "name": "semantic-flipbook-spawn-1-view-1-lit",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "lit",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.005829751491546631
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.002155497670173645,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.4564112424850464,
+            0.47101685404777527,
+            0.026241211220622063
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "semantic-flipbook-spawn-1-view-1-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "semantic-flipbook",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.005747705698013306
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.003310754895210266
+        },
+        {
+          "analytic_center_max_error": 0.0010260827839374542,
+          "atlas_frame": 1,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.01032982487231493,
+            0.2704980671405792,
+            0.22322818636894226
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004142194986343384
+        },
+        {
+          "analytic_center_max_error": 0.0019887983798980713,
+          "atlas_frame": 2,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.08021978288888931,
+            0.01032982487231493,
+            0.3662528395652771
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00498509407043457
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.003310754895210266
+        },
+        {
+          "analytic_center_max_error": 0.0019887983798980713,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.08021978288888931,
+            0.01032982487231493,
+            0.3662528395652771
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00498509407043457
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.003310754895210266
+        },
+        {
+          "analytic_center_max_error": 0.001525282859802246,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.309469074010849,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004519790410995483
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-0-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.003310754895210266
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.0034514963626861572
+        },
+        {
+          "analytic_center_max_error": 0.0010260827839374542,
+          "atlas_frame": 1,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.01032982487231493,
+            0.2704980671405792,
+            0.22322818636894226
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004179507493972778
+        },
+        {
+          "analytic_center_max_error": 0.0019887983798980713,
+          "atlas_frame": 2,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.08021978288888931,
+            0.01032982487231493,
+            0.3662528395652771
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004945814609527588
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.0034514963626861572
+        },
+        {
+          "analytic_center_max_error": 0.0019887983798980713,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.08021978288888931,
+            0.01032982487231493,
+            0.3662528395652771
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004945814609527588
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.0034514963626861572
+        },
+        {
+          "analytic_center_max_error": 0.001525282859802246,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.309469074010849,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00467345118522644
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-0-view-1-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.0034514963626861572
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.003310754895210266
+        },
+        {
+          "analytic_center_max_error": 0.0010260827839374542,
+          "atlas_frame": 1,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.01032982487231493,
+            0.2704980671405792,
+            0.22322818636894226
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004142194986343384
+        },
+        {
+          "analytic_center_max_error": 0.0019887983798980713,
+          "atlas_frame": 2,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.08021978288888931,
+            0.01032982487231493,
+            0.3662528395652771
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00498509407043457
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.003310754895210266
+        },
+        {
+          "analytic_center_max_error": 0.0019887983798980713,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.08021978288888931,
+            0.01032982487231493,
+            0.3662528395652771
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00498509407043457
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.003310754895210266
+        },
+        {
+          "analytic_center_max_error": 0.001525282859802246,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.309469074010849,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004519790410995483
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 120268,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-0-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.003310754895210266
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 10,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-frame-0",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-0",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.0034514963626861572
+        },
+        {
+          "analytic_center_max_error": 0.0010260827839374542,
+          "atlas_frame": 1,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.01032982487231493,
+            0.2704980671405792,
+            0.22322818636894226
+          ],
+          "dropped_fragments": 0,
+          "frame": 40,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-frame-1",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-1",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004179507493972778
+        },
+        {
+          "analytic_center_max_error": 0.0019887983798980713,
+          "atlas_frame": 2,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.08021978288888931,
+            0.01032982487231493,
+            0.3662528395652771
+          ],
+          "dropped_fragments": 0,
+          "frame": 70,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-frame-2",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "frame-2",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004945814609527588
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-loop",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "loop",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.0034514963626861572
+        },
+        {
+          "analytic_center_max_error": 0.0019887983798980713,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.08021978288888931,
+            0.01032982487231493,
+            0.3662528395652771
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-image-update",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "image-update",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.004945814609527588
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-image-restore",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "image-restore",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.0034514963626861572
+        },
+        {
+          "analytic_center_max_error": 0.001525282859802246,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.29613855481147766,
+            0.309469074010849,
+            0.012983025051653385
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-exposure",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "exposure",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0.00467345118522644
+        },
+        {
+          "analytic_center_max_error": 0,
+          "atlas_frame": 0,
+          "attempted_fragments": 0,
+          "center_linear_rgb": [
+            0,
+            0,
+            0
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-transparent",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "transparent",
+          "state_restore_max_byte_error": null,
+          "whole_image_split_max_error": 0
+        },
+        {
+          "analytic_center_max_error": 0.0008297115564346313,
+          "atlas_frame": 0,
+          "attempted_fragments": 147622,
+          "center_linear_rgb": [
+            0.17464734613895416,
+            0.18116411566734314,
+            0.006512096617370844
+          ],
+          "dropped_fragments": 0,
+          "frame": 100,
+          "invalid_links": 0,
+          "light_center_contrast": null,
+          "name": "legacy-flipbook-spawn-1-view-1-restored",
+          "oit_restore_max_byte_error": 0,
+          "over_sort_pixels": 0,
+          "path": "legacy-flipbook",
+          "phase": "restored",
+          "state_restore_max_byte_error": 0,
+          "whole_image_split_max_error": 0.0034514963626861572
+        }
+      ]
+    },
+    {
+      "root": "target/fireworks-f8/fragment-list-textures-2026-10-25-c",
+      "report_sha256": "15CF6AACA6C1884770A9D8BDB29F14A349DC00D110B97BA056A9138EF88C45F7",
+      "summary": {
+        "probe_passed": true,
+        "cases": 132,
+        "paths": [
+          {
+            "path": "legacy-flipbook",
+            "cases": 36
+          },
+          {
+            "path": "semantic-flipbook",
+            "cases": 48
+          },
+          {
+            "path": "semantic-sprite",
+            "cases": 48
+          }
+        ],
+        "whole_image_split_max_linear_error": 0.007449686527252197,
+        "analytic_center_max_linear_error": 0.0033417940139770508,
+        "oit_restore_max_byte_error": 0,
+        "state_restore_max_byte_error": 0,
+        "controlled_light_min_center_contrast": 0.013677507638931274,
+        "transparent_cases_with_zero_attempts": 12,
+        "dropped_fragments_max": 0,
+        "over_sort_pixels_max": 0,
+        "visited_invalid_links_max": 0
+      }
+    }
+  ],
+  "capture_repeatability": {
+    "count": 396,
+    "matching": 396,
+    "hashes_from": "target/fireworks-f8/fragment-list-textures-2026-10-25-b",
+    "hashes": [
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-exposure-oit.png",
+        "sha256": "568F2F195D3800062E1A4503D9DBEFAB61BB32009A8E2D078706C5E87A08259D"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-exposure-restored.png",
+        "sha256": "568F2F195D3800062E1A4503D9DBEFAB61BB32009A8E2D078706C5E87A08259D"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-exposure-split.png",
+        "sha256": "268ADAD16CEF154D5AC4B01B44889697905C3D4FD3842BE36C1222343FAC4272"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-0-oit.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-0-restored.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-0-split.png",
+        "sha256": "E5A3582BC1EB7EFC5DF34CE293D5FAE16506338EA8F13F33398F1324CFAED3A6"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-1-oit.png",
+        "sha256": "FEEB64B720FE1098E18E5347D6A3676B98F633A06D069285A6122AF59F744573"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-1-restored.png",
+        "sha256": "FEEB64B720FE1098E18E5347D6A3676B98F633A06D069285A6122AF59F744573"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-1-split.png",
+        "sha256": "D4AD46AD21F0DEE7AF4D4843E453099C0A50A5C2CE56740479ED5E6DD305FAF8"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-2-oit.png",
+        "sha256": "B39840B256AA9D76C140E8AACDBDE0CB44FC8AF32DD04646B3562DAB51D66DCC"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-2-restored.png",
+        "sha256": "B39840B256AA9D76C140E8AACDBDE0CB44FC8AF32DD04646B3562DAB51D66DCC"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-frame-2-split.png",
+        "sha256": "6EF95A852248D4C5B8994364FF45EA9072037FF0F8CBA454CF9E729B874FB25E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-image-restore-oit.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-image-restore-restored.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-image-restore-split.png",
+        "sha256": "E5A3582BC1EB7EFC5DF34CE293D5FAE16506338EA8F13F33398F1324CFAED3A6"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-image-update-oit.png",
+        "sha256": "3539A26F192FF6CEFA0C3570E919B46D7F0E358B718A12F667B61B37D1EC8D37"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-image-update-restored.png",
+        "sha256": "3539A26F192FF6CEFA0C3570E919B46D7F0E358B718A12F667B61B37D1EC8D37"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-image-update-split.png",
+        "sha256": "E4EC5642385D574D6358EDA1A745AE637A79EF884C458093F2721F0BBBCAF6B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-loop-oit.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-loop-restored.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-loop-split.png",
+        "sha256": "E5A3582BC1EB7EFC5DF34CE293D5FAE16506338EA8F13F33398F1324CFAED3A6"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-restored-oit.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-restored-restored.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-restored-split.png",
+        "sha256": "E5A3582BC1EB7EFC5DF34CE293D5FAE16506338EA8F13F33398F1324CFAED3A6"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-0-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-exposure-oit.png",
+        "sha256": "3D04E8C10771C72894772FC057C61E1282ACC4EE66EF5CB89C164FC4975F7817"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-exposure-restored.png",
+        "sha256": "3D04E8C10771C72894772FC057C61E1282ACC4EE66EF5CB89C164FC4975F7817"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-exposure-split.png",
+        "sha256": "2074C4250269B8E0FD7A78D5823AAE47BD0B42E13728D2A515AD7193DD8A4029"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-0-oit.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-0-restored.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-0-split.png",
+        "sha256": "1A847A5708AC2E74EB068464744A094BB179D01FD50ED587445447765DBDE14E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-1-oit.png",
+        "sha256": "525237574AF93B01056B5ADE9AC32C711EB9A793C35486F4AF05F1A914903E0D"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-1-restored.png",
+        "sha256": "525237574AF93B01056B5ADE9AC32C711EB9A793C35486F4AF05F1A914903E0D"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-1-split.png",
+        "sha256": "A21652A49635867DCA356004CA313F96AB9F4DEAD3B4F9E4100D3D86B307CD76"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-2-oit.png",
+        "sha256": "6CDB22A595EC3644C39AF4EC8DF8A36CB46E7A50CC933A5B118A621647D3A613"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-2-restored.png",
+        "sha256": "6CDB22A595EC3644C39AF4EC8DF8A36CB46E7A50CC933A5B118A621647D3A613"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-frame-2-split.png",
+        "sha256": "AC62BD3D0502D74915B19701575960DECBFCE549CB8508629868111EE285240A"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-image-restore-oit.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-image-restore-restored.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-image-restore-split.png",
+        "sha256": "1A847A5708AC2E74EB068464744A094BB179D01FD50ED587445447765DBDE14E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-image-update-oit.png",
+        "sha256": "DCA7826522C4DACCC6FBDCFCA9112058CA091D10EA717E8D34C2DBF79B643F95"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-image-update-restored.png",
+        "sha256": "DCA7826522C4DACCC6FBDCFCA9112058CA091D10EA717E8D34C2DBF79B643F95"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-image-update-split.png",
+        "sha256": "97889FCF9C69288487D20B7B5E07D905AB85C28FF1013DEBFDBF8139B5F682D2"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-loop-oit.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-loop-restored.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-loop-split.png",
+        "sha256": "1A847A5708AC2E74EB068464744A094BB179D01FD50ED587445447765DBDE14E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-restored-oit.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-restored-restored.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-restored-split.png",
+        "sha256": "1A847A5708AC2E74EB068464744A094BB179D01FD50ED587445447765DBDE14E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-0-view-1-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-exposure-oit.png",
+        "sha256": "568F2F195D3800062E1A4503D9DBEFAB61BB32009A8E2D078706C5E87A08259D"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-exposure-restored.png",
+        "sha256": "568F2F195D3800062E1A4503D9DBEFAB61BB32009A8E2D078706C5E87A08259D"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-exposure-split.png",
+        "sha256": "268ADAD16CEF154D5AC4B01B44889697905C3D4FD3842BE36C1222343FAC4272"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-0-oit.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-0-restored.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-0-split.png",
+        "sha256": "E5A3582BC1EB7EFC5DF34CE293D5FAE16506338EA8F13F33398F1324CFAED3A6"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-1-oit.png",
+        "sha256": "FEEB64B720FE1098E18E5347D6A3676B98F633A06D069285A6122AF59F744573"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-1-restored.png",
+        "sha256": "FEEB64B720FE1098E18E5347D6A3676B98F633A06D069285A6122AF59F744573"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-1-split.png",
+        "sha256": "D4AD46AD21F0DEE7AF4D4843E453099C0A50A5C2CE56740479ED5E6DD305FAF8"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-2-oit.png",
+        "sha256": "B39840B256AA9D76C140E8AACDBDE0CB44FC8AF32DD04646B3562DAB51D66DCC"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-2-restored.png",
+        "sha256": "B39840B256AA9D76C140E8AACDBDE0CB44FC8AF32DD04646B3562DAB51D66DCC"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-frame-2-split.png",
+        "sha256": "6EF95A852248D4C5B8994364FF45EA9072037FF0F8CBA454CF9E729B874FB25E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-image-restore-oit.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-image-restore-restored.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-image-restore-split.png",
+        "sha256": "E5A3582BC1EB7EFC5DF34CE293D5FAE16506338EA8F13F33398F1324CFAED3A6"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-image-update-oit.png",
+        "sha256": "3539A26F192FF6CEFA0C3570E919B46D7F0E358B718A12F667B61B37D1EC8D37"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-image-update-restored.png",
+        "sha256": "3539A26F192FF6CEFA0C3570E919B46D7F0E358B718A12F667B61B37D1EC8D37"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-image-update-split.png",
+        "sha256": "E4EC5642385D574D6358EDA1A745AE637A79EF884C458093F2721F0BBBCAF6B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-loop-oit.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-loop-restored.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-loop-split.png",
+        "sha256": "E5A3582BC1EB7EFC5DF34CE293D5FAE16506338EA8F13F33398F1324CFAED3A6"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-restored-oit.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-restored-restored.png",
+        "sha256": "C76A727161A57275B702F6040940F97922F959E8CA2D24F92671BF11286B4186"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-restored-split.png",
+        "sha256": "E5A3582BC1EB7EFC5DF34CE293D5FAE16506338EA8F13F33398F1324CFAED3A6"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-0-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-exposure-oit.png",
+        "sha256": "3D04E8C10771C72894772FC057C61E1282ACC4EE66EF5CB89C164FC4975F7817"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-exposure-restored.png",
+        "sha256": "3D04E8C10771C72894772FC057C61E1282ACC4EE66EF5CB89C164FC4975F7817"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-exposure-split.png",
+        "sha256": "2074C4250269B8E0FD7A78D5823AAE47BD0B42E13728D2A515AD7193DD8A4029"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-0-oit.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-0-restored.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-0-split.png",
+        "sha256": "1A847A5708AC2E74EB068464744A094BB179D01FD50ED587445447765DBDE14E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-1-oit.png",
+        "sha256": "525237574AF93B01056B5ADE9AC32C711EB9A793C35486F4AF05F1A914903E0D"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-1-restored.png",
+        "sha256": "525237574AF93B01056B5ADE9AC32C711EB9A793C35486F4AF05F1A914903E0D"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-1-split.png",
+        "sha256": "A21652A49635867DCA356004CA313F96AB9F4DEAD3B4F9E4100D3D86B307CD76"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-2-oit.png",
+        "sha256": "6CDB22A595EC3644C39AF4EC8DF8A36CB46E7A50CC933A5B118A621647D3A613"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-2-restored.png",
+        "sha256": "6CDB22A595EC3644C39AF4EC8DF8A36CB46E7A50CC933A5B118A621647D3A613"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-frame-2-split.png",
+        "sha256": "AC62BD3D0502D74915B19701575960DECBFCE549CB8508629868111EE285240A"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-image-restore-oit.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-image-restore-restored.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-image-restore-split.png",
+        "sha256": "1A847A5708AC2E74EB068464744A094BB179D01FD50ED587445447765DBDE14E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-image-update-oit.png",
+        "sha256": "DCA7826522C4DACCC6FBDCFCA9112058CA091D10EA717E8D34C2DBF79B643F95"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-image-update-restored.png",
+        "sha256": "DCA7826522C4DACCC6FBDCFCA9112058CA091D10EA717E8D34C2DBF79B643F95"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-image-update-split.png",
+        "sha256": "97889FCF9C69288487D20B7B5E07D905AB85C28FF1013DEBFDBF8139B5F682D2"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-loop-oit.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-loop-restored.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-loop-split.png",
+        "sha256": "1A847A5708AC2E74EB068464744A094BB179D01FD50ED587445447765DBDE14E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-restored-oit.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-restored-restored.png",
+        "sha256": "62E02F542CC57CDF0CFB38D80B54E51B2DFBCEDFF5FE8AF13508843AEBB153B1"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-restored-split.png",
+        "sha256": "1A847A5708AC2E74EB068464744A094BB179D01FD50ED587445447765DBDE14E"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "legacy-flipbook-spawn-1-view-1-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-exposure-oit.png",
+        "sha256": "89AFA00193E59C31BB4A715DB4609967C42AD4227120BB64AB90F5CA5C78C2CC"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-exposure-restored.png",
+        "sha256": "89AFA00193E59C31BB4A715DB4609967C42AD4227120BB64AB90F5CA5C78C2CC"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-exposure-split.png",
+        "sha256": "C6957713751310404101FEC7B428492C589D15A8F796781F2AAC00A4A1D1799A"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-0-oit.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-0-restored.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-0-split.png",
+        "sha256": "BE7D1AA2B00FB76A008E03135B308A0346143E0DD8E904D3CCE678688B593307"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-1-oit.png",
+        "sha256": "8010216C75A2C502406CB08449ECB49EC8D7964D3293F084443408FBE105E365"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-1-restored.png",
+        "sha256": "8010216C75A2C502406CB08449ECB49EC8D7964D3293F084443408FBE105E365"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-1-split.png",
+        "sha256": "DC936B677AF85D6895055476705BB9A4444FD37ADF287FCD6153F548CB9B35C5"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-2-oit.png",
+        "sha256": "63248470C7FD906CF7DBC6327A18E0FD447F89A26B8E194B8F806617AB83BD6A"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-2-restored.png",
+        "sha256": "63248470C7FD906CF7DBC6327A18E0FD447F89A26B8E194B8F806617AB83BD6A"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-frame-2-split.png",
+        "sha256": "07EA18DC69B4E15D53B26143837EF8074624EF1001B6BB37F86013AB6182F630"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-image-restore-oit.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-image-restore-restored.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-image-restore-split.png",
+        "sha256": "BE7D1AA2B00FB76A008E03135B308A0346143E0DD8E904D3CCE678688B593307"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-image-update-oit.png",
+        "sha256": "EF997DAAA6CBC0FAC043FE5CCC87BDDB0D72B77079796D81D44CDB3BDC5B34B8"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-image-update-restored.png",
+        "sha256": "EF997DAAA6CBC0FAC043FE5CCC87BDDB0D72B77079796D81D44CDB3BDC5B34B8"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-image-update-split.png",
+        "sha256": "AE44D25F345B9514274078C6414F6C9D3B89912065B7342A558891F04A2B5BF5"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-lit-oit.png",
+        "sha256": "B9C0931C0FCD8AD0CF2B4AD53AD516BA3D07B9165657D3B38A915E8807A2577B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-lit-restored.png",
+        "sha256": "B9C0931C0FCD8AD0CF2B4AD53AD516BA3D07B9165657D3B38A915E8807A2577B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-lit-split.png",
+        "sha256": "0AD2A18A8FA6ADF3469B2F462A533C2B92870B82303FF7E83156A001DF704016"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-loop-oit.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-loop-restored.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-loop-split.png",
+        "sha256": "BE7D1AA2B00FB76A008E03135B308A0346143E0DD8E904D3CCE678688B593307"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-material-gain-oit.png",
+        "sha256": "1EF488BC43BA400A0EC1E85030A9A109D4C60E93D8C3AB9F759FA10E39AC616B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-material-gain-restored.png",
+        "sha256": "1EF488BC43BA400A0EC1E85030A9A109D4C60E93D8C3AB9F759FA10E39AC616B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-material-gain-split.png",
+        "sha256": "00B0B979A385ADDB7ADC5BEEE691A9016D48FE94F65EABF317F499CE58D37E87"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-material-texture-oit.png",
+        "sha256": "CFC9FFDEB52F2054A05BBBE1C6091F3279DA59828ABD1E61569DF98838A2D386"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-material-texture-restored.png",
+        "sha256": "CFC9FFDEB52F2054A05BBBE1C6091F3279DA59828ABD1E61569DF98838A2D386"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-material-texture-split.png",
+        "sha256": "B6B5E76CA623AF160C40E10F21895B8CAC4796DD4DA08334040350C7825268E7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-restored-oit.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-restored-restored.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-restored-split.png",
+        "sha256": "BE7D1AA2B00FB76A008E03135B308A0346143E0DD8E904D3CCE678688B593307"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-0-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-exposure-oit.png",
+        "sha256": "3D2D669D20D02CECB70BDFF7938C00A738B44B2C45B3C93C2C34851C67BD6DE3"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-exposure-restored.png",
+        "sha256": "3D2D669D20D02CECB70BDFF7938C00A738B44B2C45B3C93C2C34851C67BD6DE3"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-exposure-split.png",
+        "sha256": "D93C9466E3E573CEEB9AEA4B6200E13D992681038E02F3BF4597938B2079BA49"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-0-oit.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-0-restored.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-0-split.png",
+        "sha256": "AB0A6864655F79E86E4EDA74CE32971B16749411A1979554FA56D85D1C0582FA"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-1-oit.png",
+        "sha256": "53B60633B6C6C3B76CDF60C836EABF007DB05DB29DA06658BB6A3966C8287DF3"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-1-restored.png",
+        "sha256": "53B60633B6C6C3B76CDF60C836EABF007DB05DB29DA06658BB6A3966C8287DF3"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-1-split.png",
+        "sha256": "0879C3DD34F13E7544D344628865CFD49393E16E865D0FB82C6B2463CAFE478B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-2-oit.png",
+        "sha256": "5B1392465B73D6E953F6900DEA44D350CDAE9B0799D6D94001E563FE5DF276A0"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-2-restored.png",
+        "sha256": "5B1392465B73D6E953F6900DEA44D350CDAE9B0799D6D94001E563FE5DF276A0"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-frame-2-split.png",
+        "sha256": "291D0A9C9319DBD3C7E0D836582E5881267E1D3B27BC7443FEBC81DDD2639787"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-image-restore-oit.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-image-restore-restored.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-image-restore-split.png",
+        "sha256": "AB0A6864655F79E86E4EDA74CE32971B16749411A1979554FA56D85D1C0582FA"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-image-update-oit.png",
+        "sha256": "68F0C7CDC39A5B5986B8A61D25223239EE99F3D12D2DF18E8BDC69D0E2587A40"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-image-update-restored.png",
+        "sha256": "68F0C7CDC39A5B5986B8A61D25223239EE99F3D12D2DF18E8BDC69D0E2587A40"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-image-update-split.png",
+        "sha256": "26C22E562A42681C7E2AA418B372F947584CE5328C91A7356470AC3F26F4BD9C"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-lit-oit.png",
+        "sha256": "912E28019061DEAA43FD8AD8C10C4407335DD039E6487F9F56AEA65F78BD851C"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-lit-restored.png",
+        "sha256": "912E28019061DEAA43FD8AD8C10C4407335DD039E6487F9F56AEA65F78BD851C"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-lit-split.png",
+        "sha256": "7CCC48B08CACBA4D6EAF900DD85ACC9934C5065F5F31FE72CAE87BAD00815D55"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-loop-oit.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-loop-restored.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-loop-split.png",
+        "sha256": "AB0A6864655F79E86E4EDA74CE32971B16749411A1979554FA56D85D1C0582FA"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-material-gain-oit.png",
+        "sha256": "5CC83E0394B161FDF0F49745E9187E3AD3FA8F9194BD5F5199CC2C7DFEE3AF13"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-material-gain-restored.png",
+        "sha256": "5CC83E0394B161FDF0F49745E9187E3AD3FA8F9194BD5F5199CC2C7DFEE3AF13"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-material-gain-split.png",
+        "sha256": "1041233F54FDABFD955DD358166D1C395B8438D78B174B7730C98CA6FD75CCEE"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-material-texture-oit.png",
+        "sha256": "B01E5C11A85D367FBD18FBD1C00778EE18790E9B633FE54FC5A932618D2C5F41"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-material-texture-restored.png",
+        "sha256": "B01E5C11A85D367FBD18FBD1C00778EE18790E9B633FE54FC5A932618D2C5F41"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-material-texture-split.png",
+        "sha256": "DA0ACB10C7616EEF7D5C61C05F8AD7F182482487E4B25CD6D62E55F39F2CC871"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-restored-oit.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-restored-restored.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-restored-split.png",
+        "sha256": "AB0A6864655F79E86E4EDA74CE32971B16749411A1979554FA56D85D1C0582FA"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-0-view-1-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-exposure-oit.png",
+        "sha256": "89AFA00193E59C31BB4A715DB4609967C42AD4227120BB64AB90F5CA5C78C2CC"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-exposure-restored.png",
+        "sha256": "89AFA00193E59C31BB4A715DB4609967C42AD4227120BB64AB90F5CA5C78C2CC"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-exposure-split.png",
+        "sha256": "C6957713751310404101FEC7B428492C589D15A8F796781F2AAC00A4A1D1799A"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-0-oit.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-0-restored.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-0-split.png",
+        "sha256": "BE7D1AA2B00FB76A008E03135B308A0346143E0DD8E904D3CCE678688B593307"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-1-oit.png",
+        "sha256": "8010216C75A2C502406CB08449ECB49EC8D7964D3293F084443408FBE105E365"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-1-restored.png",
+        "sha256": "8010216C75A2C502406CB08449ECB49EC8D7964D3293F084443408FBE105E365"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-1-split.png",
+        "sha256": "DC936B677AF85D6895055476705BB9A4444FD37ADF287FCD6153F548CB9B35C5"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-2-oit.png",
+        "sha256": "63248470C7FD906CF7DBC6327A18E0FD447F89A26B8E194B8F806617AB83BD6A"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-2-restored.png",
+        "sha256": "63248470C7FD906CF7DBC6327A18E0FD447F89A26B8E194B8F806617AB83BD6A"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-frame-2-split.png",
+        "sha256": "07EA18DC69B4E15D53B26143837EF8074624EF1001B6BB37F86013AB6182F630"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-image-restore-oit.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-image-restore-restored.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-image-restore-split.png",
+        "sha256": "BE7D1AA2B00FB76A008E03135B308A0346143E0DD8E904D3CCE678688B593307"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-image-update-oit.png",
+        "sha256": "EF997DAAA6CBC0FAC043FE5CCC87BDDB0D72B77079796D81D44CDB3BDC5B34B8"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-image-update-restored.png",
+        "sha256": "EF997DAAA6CBC0FAC043FE5CCC87BDDB0D72B77079796D81D44CDB3BDC5B34B8"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-image-update-split.png",
+        "sha256": "AE44D25F345B9514274078C6414F6C9D3B89912065B7342A558891F04A2B5BF5"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-lit-oit.png",
+        "sha256": "B9C0931C0FCD8AD0CF2B4AD53AD516BA3D07B9165657D3B38A915E8807A2577B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-lit-restored.png",
+        "sha256": "B9C0931C0FCD8AD0CF2B4AD53AD516BA3D07B9165657D3B38A915E8807A2577B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-lit-split.png",
+        "sha256": "0AD2A18A8FA6ADF3469B2F462A533C2B92870B82303FF7E83156A001DF704016"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-loop-oit.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-loop-restored.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-loop-split.png",
+        "sha256": "BE7D1AA2B00FB76A008E03135B308A0346143E0DD8E904D3CCE678688B593307"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-material-gain-oit.png",
+        "sha256": "1EF488BC43BA400A0EC1E85030A9A109D4C60E93D8C3AB9F759FA10E39AC616B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-material-gain-restored.png",
+        "sha256": "1EF488BC43BA400A0EC1E85030A9A109D4C60E93D8C3AB9F759FA10E39AC616B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-material-gain-split.png",
+        "sha256": "00B0B979A385ADDB7ADC5BEEE691A9016D48FE94F65EABF317F499CE58D37E87"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-material-texture-oit.png",
+        "sha256": "CFC9FFDEB52F2054A05BBBE1C6091F3279DA59828ABD1E61569DF98838A2D386"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-material-texture-restored.png",
+        "sha256": "CFC9FFDEB52F2054A05BBBE1C6091F3279DA59828ABD1E61569DF98838A2D386"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-material-texture-split.png",
+        "sha256": "B6B5E76CA623AF160C40E10F21895B8CAC4796DD4DA08334040350C7825268E7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-restored-oit.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-restored-restored.png",
+        "sha256": "DA6E45CA8162D82B08F55E7F105F42005FF3D5F2CA899C4FF2E2D8295D495391"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-restored-split.png",
+        "sha256": "BE7D1AA2B00FB76A008E03135B308A0346143E0DD8E904D3CCE678688B593307"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-0-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-exposure-oit.png",
+        "sha256": "3D2D669D20D02CECB70BDFF7938C00A738B44B2C45B3C93C2C34851C67BD6DE3"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-exposure-restored.png",
+        "sha256": "3D2D669D20D02CECB70BDFF7938C00A738B44B2C45B3C93C2C34851C67BD6DE3"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-exposure-split.png",
+        "sha256": "D93C9466E3E573CEEB9AEA4B6200E13D992681038E02F3BF4597938B2079BA49"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-0-oit.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-0-restored.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-0-split.png",
+        "sha256": "AB0A6864655F79E86E4EDA74CE32971B16749411A1979554FA56D85D1C0582FA"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-1-oit.png",
+        "sha256": "53B60633B6C6C3B76CDF60C836EABF007DB05DB29DA06658BB6A3966C8287DF3"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-1-restored.png",
+        "sha256": "53B60633B6C6C3B76CDF60C836EABF007DB05DB29DA06658BB6A3966C8287DF3"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-1-split.png",
+        "sha256": "0879C3DD34F13E7544D344628865CFD49393E16E865D0FB82C6B2463CAFE478B"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-2-oit.png",
+        "sha256": "5B1392465B73D6E953F6900DEA44D350CDAE9B0799D6D94001E563FE5DF276A0"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-2-restored.png",
+        "sha256": "5B1392465B73D6E953F6900DEA44D350CDAE9B0799D6D94001E563FE5DF276A0"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-frame-2-split.png",
+        "sha256": "291D0A9C9319DBD3C7E0D836582E5881267E1D3B27BC7443FEBC81DDD2639787"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-image-restore-oit.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-image-restore-restored.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-image-restore-split.png",
+        "sha256": "AB0A6864655F79E86E4EDA74CE32971B16749411A1979554FA56D85D1C0582FA"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-image-update-oit.png",
+        "sha256": "68F0C7CDC39A5B5986B8A61D25223239EE99F3D12D2DF18E8BDC69D0E2587A40"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-image-update-restored.png",
+        "sha256": "68F0C7CDC39A5B5986B8A61D25223239EE99F3D12D2DF18E8BDC69D0E2587A40"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-image-update-split.png",
+        "sha256": "26C22E562A42681C7E2AA418B372F947584CE5328C91A7356470AC3F26F4BD9C"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-lit-oit.png",
+        "sha256": "912E28019061DEAA43FD8AD8C10C4407335DD039E6487F9F56AEA65F78BD851C"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-lit-restored.png",
+        "sha256": "912E28019061DEAA43FD8AD8C10C4407335DD039E6487F9F56AEA65F78BD851C"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-lit-split.png",
+        "sha256": "7CCC48B08CACBA4D6EAF900DD85ACC9934C5065F5F31FE72CAE87BAD00815D55"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-loop-oit.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-loop-restored.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-loop-split.png",
+        "sha256": "AB0A6864655F79E86E4EDA74CE32971B16749411A1979554FA56D85D1C0582FA"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-material-gain-oit.png",
+        "sha256": "5CC83E0394B161FDF0F49745E9187E3AD3FA8F9194BD5F5199CC2C7DFEE3AF13"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-material-gain-restored.png",
+        "sha256": "5CC83E0394B161FDF0F49745E9187E3AD3FA8F9194BD5F5199CC2C7DFEE3AF13"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-material-gain-split.png",
+        "sha256": "1041233F54FDABFD955DD358166D1C395B8438D78B174B7730C98CA6FD75CCEE"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-material-texture-oit.png",
+        "sha256": "B01E5C11A85D367FBD18FBD1C00778EE18790E9B633FE54FC5A932618D2C5F41"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-material-texture-restored.png",
+        "sha256": "B01E5C11A85D367FBD18FBD1C00778EE18790E9B633FE54FC5A932618D2C5F41"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-material-texture-split.png",
+        "sha256": "DA0ACB10C7616EEF7D5C61C05F8AD7F182482487E4B25CD6D62E55F39F2CC871"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-restored-oit.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-restored-restored.png",
+        "sha256": "42949809C0A5E457E81004294BD56AE3B1BBCF85C7E3939C04C91E628CC7801F"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-restored-split.png",
+        "sha256": "AB0A6864655F79E86E4EDA74CE32971B16749411A1979554FA56D85D1C0582FA"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-flipbook-spawn-1-view-1-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-exposure-oit.png",
+        "sha256": "DDA78D4DDD01C24B4CD16EAE1A12C4125F09F897B86387976960D28C8B7C1433"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-exposure-restored.png",
+        "sha256": "DDA78D4DDD01C24B4CD16EAE1A12C4125F09F897B86387976960D28C8B7C1433"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-exposure-split.png",
+        "sha256": "65377A72E151C6C1745BF7EFDCD383D0FF5879F4FA20F451BBC13ADD5C5513EE"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-0-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-0-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-0-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-1-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-1-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-1-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-2-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-2-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-frame-2-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-image-restore-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-image-restore-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-image-restore-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-image-update-oit.png",
+        "sha256": "7221F534E39596F63A77A703F8BBE0D6D34B888E831F1D3398FA851E257C862F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-image-update-restored.png",
+        "sha256": "7221F534E39596F63A77A703F8BBE0D6D34B888E831F1D3398FA851E257C862F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-image-update-split.png",
+        "sha256": "517DA13D29AB11C90880631B94FF6B052E2CC2A5B008A06671FBDD77CA3F6C05"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-lit-oit.png",
+        "sha256": "BC7FB5C01F605CA267C03C33C3734466E03D958FD9C2D86C40BF3CB26B427CC6"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-lit-restored.png",
+        "sha256": "BC7FB5C01F605CA267C03C33C3734466E03D958FD9C2D86C40BF3CB26B427CC6"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-lit-split.png",
+        "sha256": "173DEBA8AE6449FD1775F424E0D6FA2951B4F4203A9CD8381872200FE34C277A"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-loop-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-loop-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-loop-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-material-gain-oit.png",
+        "sha256": "7014703BE705F7FC1FD1BA7DD89A52CD98A004B270D20F72AC4CC4914A798EA1"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-material-gain-restored.png",
+        "sha256": "7014703BE705F7FC1FD1BA7DD89A52CD98A004B270D20F72AC4CC4914A798EA1"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-material-gain-split.png",
+        "sha256": "E079462832723BB5F32A459920AD8C091E6334CD17B82C005F5A078AE6F9E6B8"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-material-texture-oit.png",
+        "sha256": "AD0891F1571ED73CECD7248FFA0936E11AB4081A41F784C02FFCD84750A7DF8D"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-material-texture-restored.png",
+        "sha256": "AD0891F1571ED73CECD7248FFA0936E11AB4081A41F784C02FFCD84750A7DF8D"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-material-texture-split.png",
+        "sha256": "E6A1CE81ED95C2EDF12D1BBF6B473BF5BFFCC27CFAE52D8C301C5F1E89FAFC8D"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-restored-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-restored-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-restored-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-0-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-exposure-oit.png",
+        "sha256": "E9A9499E26131B8810A4C3A9F38F0AA97DD58D2BEC67CE97AD62F0314D50EA22"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-exposure-restored.png",
+        "sha256": "E9A9499E26131B8810A4C3A9F38F0AA97DD58D2BEC67CE97AD62F0314D50EA22"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-exposure-split.png",
+        "sha256": "9AE24E3079ADC09CDABAB585A30FDC1A848E262EBDCB091EA8773989432D23C8"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-0-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-0-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-0-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-1-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-1-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-1-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-2-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-2-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-frame-2-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-image-restore-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-image-restore-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-image-restore-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-image-update-oit.png",
+        "sha256": "D73B80C2E6F8DA810ACFB5686398D877C9FFC65A9A50631C369BEBAEB3EF2107"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-image-update-restored.png",
+        "sha256": "D73B80C2E6F8DA810ACFB5686398D877C9FFC65A9A50631C369BEBAEB3EF2107"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-image-update-split.png",
+        "sha256": "9ED1005673C56B1B5CBF840C4A8B93A8EDCE6225AB83B71AFA80AE09E1585678"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-lit-oit.png",
+        "sha256": "3C70B8B2EE47C68AC04472DE30E9CD127508999CF4C4BD885D35F1C84E3B0737"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-lit-restored.png",
+        "sha256": "3C70B8B2EE47C68AC04472DE30E9CD127508999CF4C4BD885D35F1C84E3B0737"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-lit-split.png",
+        "sha256": "BACC129316672D37C3936C62631EB161BA6081E45DC412866D3425B8A372DD3A"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-loop-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-loop-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-loop-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-material-gain-oit.png",
+        "sha256": "82EB9313DB737C1AAAFAD30D7BFB4387187D7723863828BBC8FBC2FBFE7582A7"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-material-gain-restored.png",
+        "sha256": "82EB9313DB737C1AAAFAD30D7BFB4387187D7723863828BBC8FBC2FBFE7582A7"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-material-gain-split.png",
+        "sha256": "1165E4AE3262C9868C68D2034664B772C42AA6A9D87B098F954750A3A2DC1BB8"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-material-texture-oit.png",
+        "sha256": "175F70DDB5666F8BFC4B129645FA7AC314E55F2D23278CC27BA97A10DFB86212"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-material-texture-restored.png",
+        "sha256": "175F70DDB5666F8BFC4B129645FA7AC314E55F2D23278CC27BA97A10DFB86212"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-material-texture-split.png",
+        "sha256": "2A93E0B46BA3333CD783D7B041EDADA6E7BB03197E44C9A1F6D0F845E91850DC"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-restored-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-restored-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-restored-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-0-view-1-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-exposure-oit.png",
+        "sha256": "DDA78D4DDD01C24B4CD16EAE1A12C4125F09F897B86387976960D28C8B7C1433"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-exposure-restored.png",
+        "sha256": "DDA78D4DDD01C24B4CD16EAE1A12C4125F09F897B86387976960D28C8B7C1433"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-exposure-split.png",
+        "sha256": "65377A72E151C6C1745BF7EFDCD383D0FF5879F4FA20F451BBC13ADD5C5513EE"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-0-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-0-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-0-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-1-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-1-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-1-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-2-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-2-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-frame-2-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-image-restore-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-image-restore-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-image-restore-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-image-update-oit.png",
+        "sha256": "7221F534E39596F63A77A703F8BBE0D6D34B888E831F1D3398FA851E257C862F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-image-update-restored.png",
+        "sha256": "7221F534E39596F63A77A703F8BBE0D6D34B888E831F1D3398FA851E257C862F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-image-update-split.png",
+        "sha256": "517DA13D29AB11C90880631B94FF6B052E2CC2A5B008A06671FBDD77CA3F6C05"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-lit-oit.png",
+        "sha256": "BC7FB5C01F605CA267C03C33C3734466E03D958FD9C2D86C40BF3CB26B427CC6"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-lit-restored.png",
+        "sha256": "BC7FB5C01F605CA267C03C33C3734466E03D958FD9C2D86C40BF3CB26B427CC6"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-lit-split.png",
+        "sha256": "173DEBA8AE6449FD1775F424E0D6FA2951B4F4203A9CD8381872200FE34C277A"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-loop-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-loop-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-loop-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-material-gain-oit.png",
+        "sha256": "7014703BE705F7FC1FD1BA7DD89A52CD98A004B270D20F72AC4CC4914A798EA1"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-material-gain-restored.png",
+        "sha256": "7014703BE705F7FC1FD1BA7DD89A52CD98A004B270D20F72AC4CC4914A798EA1"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-material-gain-split.png",
+        "sha256": "E079462832723BB5F32A459920AD8C091E6334CD17B82C005F5A078AE6F9E6B8"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-material-texture-oit.png",
+        "sha256": "AD0891F1571ED73CECD7248FFA0936E11AB4081A41F784C02FFCD84750A7DF8D"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-material-texture-restored.png",
+        "sha256": "AD0891F1571ED73CECD7248FFA0936E11AB4081A41F784C02FFCD84750A7DF8D"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-material-texture-split.png",
+        "sha256": "E6A1CE81ED95C2EDF12D1BBF6B473BF5BFFCC27CFAE52D8C301C5F1E89FAFC8D"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-restored-oit.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-restored-restored.png",
+        "sha256": "E26E75612B5983026D96FC8A1B2EC5B0129DAD1D2C38E73EF2625E764028371F"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-restored-split.png",
+        "sha256": "F59BB2D509089334A550E73E14D189EB9C2987841855FD67EDE270ECABD121FC"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-0-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-exposure-oit.png",
+        "sha256": "E9A9499E26131B8810A4C3A9F38F0AA97DD58D2BEC67CE97AD62F0314D50EA22"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-exposure-restored.png",
+        "sha256": "E9A9499E26131B8810A4C3A9F38F0AA97DD58D2BEC67CE97AD62F0314D50EA22"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-exposure-split.png",
+        "sha256": "9AE24E3079ADC09CDABAB585A30FDC1A848E262EBDCB091EA8773989432D23C8"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-0-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-0-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-0-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-1-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-1-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-1-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-2-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-2-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-frame-2-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-image-restore-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-image-restore-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-image-restore-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-image-update-oit.png",
+        "sha256": "D73B80C2E6F8DA810ACFB5686398D877C9FFC65A9A50631C369BEBAEB3EF2107"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-image-update-restored.png",
+        "sha256": "D73B80C2E6F8DA810ACFB5686398D877C9FFC65A9A50631C369BEBAEB3EF2107"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-image-update-split.png",
+        "sha256": "9ED1005673C56B1B5CBF840C4A8B93A8EDCE6225AB83B71AFA80AE09E1585678"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-lit-oit.png",
+        "sha256": "3C70B8B2EE47C68AC04472DE30E9CD127508999CF4C4BD885D35F1C84E3B0737"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-lit-restored.png",
+        "sha256": "3C70B8B2EE47C68AC04472DE30E9CD127508999CF4C4BD885D35F1C84E3B0737"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-lit-split.png",
+        "sha256": "BACC129316672D37C3936C62631EB161BA6081E45DC412866D3425B8A372DD3A"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-loop-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-loop-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-loop-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-material-gain-oit.png",
+        "sha256": "82EB9313DB737C1AAAFAD30D7BFB4387187D7723863828BBC8FBC2FBFE7582A7"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-material-gain-restored.png",
+        "sha256": "82EB9313DB737C1AAAFAD30D7BFB4387187D7723863828BBC8FBC2FBFE7582A7"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-material-gain-split.png",
+        "sha256": "1165E4AE3262C9868C68D2034664B772C42AA6A9D87B098F954750A3A2DC1BB8"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-material-texture-oit.png",
+        "sha256": "175F70DDB5666F8BFC4B129645FA7AC314E55F2D23278CC27BA97A10DFB86212"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-material-texture-restored.png",
+        "sha256": "175F70DDB5666F8BFC4B129645FA7AC314E55F2D23278CC27BA97A10DFB86212"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-material-texture-split.png",
+        "sha256": "2A93E0B46BA3333CD783D7B041EDADA6E7BB03197E44C9A1F6D0F845E91850DC"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-restored-oit.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-restored-restored.png",
+        "sha256": "E3F623CE79666C4B01E31CEFC2B1342862448C0D98213E20C90F629ACAEB8986"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-restored-split.png",
+        "sha256": "F9B6AA8B4F7C9B757432D30EA9ED8C854CA39D2AC69775F1425274FACD806C02"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-transparent-oit.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-transparent-restored.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      },
+      {
+        "name": "semantic-sprite-spawn-1-view-1-transparent-split.png",
+        "sha256": "5B64D170C325E9DB3253A13D0C84EA84BFCADE43E906B47276148941D35BF6C7"
+      }
+    ]
+  },
+  "combined_native_regression": {
+    "tests": 6,
+    "passed": 6,
+    "root": "target/fireworks-f8/fragment-list-textures-2026-10-25-b",
+    "prior_reports": [
+      {
+        "kind": "fragment-list",
+        "probe_passed": true,
+        "cases": 16,
+        "sha256": "3C73BE277740905C81AFE5A2AAFE5C4A4D58DDB6EDDD8D11540129A311D833BB"
+      },
+      {
+        "kind": "fragment-list-depth",
+        "probe_passed": true,
+        "cases": 16,
+        "sha256": "50E222A8D9C8A86A27C90FDB0CF54F2FCC9AB9D30F622AC4AC54C78119482E68"
+      },
+      {
+        "kind": "fragment-list-hdr",
+        "probe_passed": true,
+        "cases": 16,
+        "sha256": "5379DEF36D7880AA0F4844426F5B9F0E20A491A14066A653721188B15A94C16A"
+      },
+      {
+        "kind": "fragment-list-lighting",
+        "probe_passed": true,
+        "cases": 12,
+        "sha256": "BF7D7DDAAE7B5852EE744C8B5E6B6933EB9E56DDC18B60B3547FFCBB78304069"
+      },
+      {
+        "kind": "fragment-list-saturation",
+        "probe_passed": true,
+        "cases": 16,
+        "sha256": "141EF37E6545C3ECBBE509D7E0DBA3AD5D1DEAEDFC7AE8CEBB0131B79A23EBD2"
+      }
+    ],
+    "unchanged_prior_images": [
+      {
+        "kind": "fragment-list",
+        "reference": "target/fireworks-f8/fragment-list-hdr-2026-10-23-e/fragment-list",
+        "count": 76,
+        "matching": 76
+      },
+      {
+        "kind": "fragment-list-depth",
+        "reference": "target/fireworks-f8/fragment-list-hdr-2026-10-23-e/fragment-list-depth",
+        "count": 28,
+        "matching": 28
+      },
+      {
+        "kind": "fragment-list-hdr",
+        "reference": "target/fireworks-f8/fragment-list-hdr-2026-10-23-e/fragment-list-hdr",
+        "count": 16,
+        "matching": 16
+      },
+      {
+        "kind": "fragment-list-lighting",
+        "reference": "target/fireworks-f8/fragment-list-hdr-2026-10-23-e/fragment-list-lighting",
+        "count": 48,
+        "matching": 48
+      }
+    ]
+  },
+  "retained_iteration": {
+    "root": "target/fireworks-f8/fragment-list-textures-2026-10-25-a",
+    "result": "132 cases passed before adding explicit light-contrast and automatic-binding restoration assertions; not final evidence."
+  },
+  "validation": {
+    "viewer_ordinary": {
+      "passed": 105,
+      "ignored": 36,
+      "command": "cargo test -p aestra-viewer --locked --offline -- --test-threads=1"
+    },
+    "workspace_clippy": "cargo clippy --workspace --all-targets --features aestra-bench/gpu --locked --offline -- -D warnings",
+    "formatting": "cargo fmt --all -- --check",
+    "diff": "git diff --check",
+    "native_command": "AESTRA_CROSS_POOL_IMAGES=<fresh absolute root>; cargo test -p aestra-viewer fragment_list_ --locked --offline -- --ignored --test-threads=1",
+    "visual_inspection": [
+      "semantic-flipbook-spawn-0-view-0-frame-1-oit.png",
+      "legacy-flipbook-spawn-0-view-0-frame-2-oit.png",
+      "semantic-sprite-spawn-0-view-1-material-texture-oit.png"
+    ],
+    "limitations": "No full workspace tests, Linux, filesystem import/watching, mip/compression, reverse/ping-pong/random/particle-age modes, mixed-transparent ordering, other depth/maps/bloom, resize/multiple cameras, dense/live paced costs or public smoke art acceptance.",
+    "build_note": "Rust reports existing incremental-cache hard-link fallback-to-copy warnings; all listed commands exit successfully."
+  }
+}

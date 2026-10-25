@@ -15,6 +15,11 @@ pub use diagnostics::{ExperimentalOitDiagnosticSample, ExperimentalOitDiagnostic
 /// Experimental 3D alpha sprite/flipbook integration with Bevy's fragment-list OIT.
 /// Requires explicit `Msaa::Off`. Owns Bevy's OIT camera settings while approved.
 /// Does not certify mixed non-OIT draws, overflow, arbitrary materials or smoke art.
+/// Known limitation: the resolve overlays ordinary transparent draws regardless of their depth.
+/// Aestra additive particles, trails and mesh particles do not join these fragment lists;
+/// foreground instances can therefore be incorrectly covered. Healthy diagnostics do not rule
+/// this out. Keep this opt-in disabled for production mixed scenes until unified compositing
+/// or another depth-correct integration is qualified.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct ExperimentalOitSettings {
     pub fragments_per_pixel_average: f32,

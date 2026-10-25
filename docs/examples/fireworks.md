@@ -120,9 +120,19 @@ The default depth-prepass path now passes a partial opaque StandardMaterial wall
 including moving-depth and hide/restore controls. Bounded HDR radiance/exposure and
 the saved lit-smoke material now also pass analytic and correctly ordered split-draw
 controls. This is not smoke-art approval or authored light-route requalification.
-Textured/flipbook, mixed draws, other depth paths, resize/multiple cameras and live
-costs still need qualification.
-See [HDR/lit-material evidence](../../benchmarks/fireworks/fragment-list-hdr-lighting-2026-10-23.md),
+Deterministic RGBA fixtures now also qualify semantic sprites/flipbooks and legacy
+alpha flipbooks, with frame/texture/material changes and zero-alpha controls. These
+are integration fixtures, not realistic smoke assets or a disk hot-reload test.
+The mixed-draw gate now **fails renderer acceptance**: foreground Aestra additive
+sprites, additive/alpha trails and alpha mesh particles render behind OIT smoke,
+even with healthy diagnostics and either pool sort mode. They remain outside the
+fragment lists, and the final resolve overlays their earlier pass. The passing
+expected-failure probe is not production approval. Unified mixed compositing or
+another integration must be qualified before adoption; other depth paths,
+resize/multiple cameras and live costs also remain open.
+See [mixed-pass ordering evidence](../../benchmarks/fireworks/fragment-list-mixed-2026-10-25.md),
+[textured/flipbook evidence](../../benchmarks/fireworks/fragment-list-textures-2026-10-25.md),
+[HDR/lit-material evidence](../../benchmarks/fireworks/fragment-list-hdr-lighting-2026-10-23.md),
 [opaque-depth evidence](../../benchmarks/fireworks/fragment-list-depth-2026-10-23.md),
 [saturation diagnostics](../../benchmarks/fireworks/fragment-list-saturation-2026-10-23.md),
 [prototype scope and evidence](../../benchmarks/fireworks/fragment-list-prototype-2026-10-23.md)

@@ -14,6 +14,12 @@ mod hdr;
 #[path = "cross_pool_lighting.rs"]
 mod lighting;
 
+#[path = "cross_pool_textures.rs"]
+mod textures;
+
+#[path = "cross_pool_mixed.rs"]
+mod mixed;
+
 fn enable(app: &mut App) -> Entity {
     let mut cameras = app.world_mut().query_filtered::<Entity, With<Camera3d>>();
     let camera = cameras.iter(app.world()).next().unwrap();
