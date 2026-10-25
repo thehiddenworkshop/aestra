@@ -60,20 +60,29 @@ fn immutable_v3_contract_has_stable_pretty_serialization() {
     let effect = contract_effect();
     let serialized = effect.to_pretty_ron().expect("v3 contract must serialize");
 
-    assert_eq!(
-        serialized.len(),
-        6_923,
-        "update only for an intentional format change"
-    );
-    assert_eq!(
-        fnv1a64(serialized.as_bytes()),
-        0x41d3_b334_ee6a_e057,
-        "update only for an intentional format change"
-    );
-    assert_eq!(
-        EffectAsset::from_ron(&serialized).expect("serialized v3 contract must reload"),
-        effect
-    );
+    // RON's default pretty newline is OS-dependent. The existing byte golden was
+    // recorded with CRLF; preserve it exactly, normalizing only newline encoding.
+    // Exercise both forms on every runner instead of testing only its native form.
+    for source in [
+        serialized.replace("\r\n", "\n"),
+        canonical_contract_serialization(&serialized),
+    ] {
+        let canonical = canonical_contract_serialization(&source);
+        assert_eq!(
+            canonical.len(),
+            6_923,
+            "update only for an intentional format change"
+        );
+        assert_eq!(
+            fnv1a64(canonical.as_bytes()),
+            0x41d3_b334_ee6a_e057,
+            "update only for an intentional format change"
+        );
+        assert_eq!(
+            EffectAsset::from_ron(&source).expect("serialized v3 contract must reload"),
+            effect
+        );
+    }
 }
 
 #[test]
@@ -95,7 +104,112 @@ fn immutable_v3_contract_evaluation_matches_golden_moments() {
     // Git may materialize text fixtures with CRLF on Windows runners. The snapshot contract is
     // about evaluated particle data, not the checkout's line-ending policy.
     let expected = include_str!("fixtures/v3_contract.moments").replace("\r\n", "\n");
-    assert_eq!(actual, expected);
+    compare_moment_snapshots(&actual, &expected)
+        .unwrap_or_else(|error| panic!("{error}\nactual:\n{actual}\nexpected:\n{expected}"));
+}
+
+#[test]
+fn golden_moment_comparison_accepts_reported_linux_roundoff() {
+    let expected = include_str!("fixtures/v3_contract.moments");
+    let linux = expected
+        .replace("-40.254278", "-40.254277")
+        .replace("252.819920", "252.819921")
+        .replace("97.281041", "97.281040");
+    assert_ne!(linux, expected);
+    assert_eq!(compare_moment_snapshots(&linux, expected), Ok(()));
+    assert_eq!(
+        compare_moment_snapshots(&linux.replace("\r\n", "\n"), expected),
+        Ok(())
+    );
+}
+
+#[test]
+fn golden_moment_comparison_rejects_contract_drift_and_nonfinite_values() {
+    let expected = include_str!("fixtures/v3_contract.moments");
+    for changed in [
+        expected.replacen("count=12", "count=13", 1),
+        expected.replacen("emitters=[12]", "emitters=[13]", 1),
+        expected.replacen("t=0.125", "t=0.126", 1),
+        expected.replacen("-40.254278", "-40.254268", 1),
+        expected.replacen("size=48.000000", "size=48.000010", 1),
+        expected.replacen("alpha=0.000000", "alpha=0.000010", 1),
+        expected.replacen("-40.254278", "NaN", 1),
+        expected.replacen("size=48.000000", "size=inf", 1),
+        expected.replacen("alpha=0.000000", "alpha=-inf", 1),
+        expected.replacen(" pos=", " position=", 1),
+        expected.lines().take(5).collect::<Vec<_>>().join("\n"),
+        format!("{expected}\n{}", expected.lines().next().unwrap()),
+    ] {
+        assert_ne!(changed, expected);
+        assert!(
+            compare_moment_snapshots(&changed, expected).is_err(),
+            "contract drift was accepted: {changed}"
+        );
+    }
+}
+
+fn canonical_contract_serialization(source: &str) -> String {
+    source.replace("\r\n", "\n").replace('\n', "\r\n")
+}
+
+fn compare_moment_snapshots(actual: &str, expected: &str) -> Result<(), String> {
+    // Snapshots print six decimals. Allow at most two last-place decimal units
+    // for cross-platform f32 math; never scale tolerance with aggregate magnitude.
+    const MAX_ABSOLUTE_ERROR: f64 = 0.000_002;
+    let actual: Vec<_> = actual.lines().collect();
+    let expected: Vec<_> = expected.lines().collect();
+    if actual.len() != expected.len() {
+        return Err(format!(
+            "moment count changed: {} != {}",
+            actual.len(),
+            expected.len()
+        ));
+    }
+    for (index, (actual, expected)) in actual.into_iter().zip(expected).enumerate() {
+        let (actual_prefix, actual) =
+            moment_values(actual).ok_or_else(|| format!("malformed actual moment {index}"))?;
+        let (expected_prefix, expected) =
+            moment_values(expected).ok_or_else(|| format!("malformed golden moment {index}"))?;
+        if actual_prefix != expected_prefix {
+            return Err(format!(
+                "moment {index} time/count/emitter counts changed: {actual_prefix} != {expected_prefix}"
+            ));
+        }
+        for ((field, actual), expected) in
+            ["position.x", "position.y", "position.z", "size", "alpha"]
+                .into_iter()
+                .zip(actual)
+                .zip(expected)
+        {
+            if !actual.is_finite()
+                || !expected.is_finite()
+                || (actual - expected).abs() > MAX_ABSOLUTE_ERROR
+            {
+                return Err(format!(
+                    "moment {index} {field}: {actual} != {expected} (absolute tolerance {MAX_ABSOLUTE_ERROR})"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn moment_values(line: &str) -> Option<(&str, [f64; 5])> {
+    let (prefix, values) = line.split_once(" pos=")?;
+    let (position, values) = values.split_once(" size=")?;
+    let (size, alpha) = values.split_once(" alpha=")?;
+    let mut position = position.strip_prefix('(')?.strip_suffix(')')?.split(',');
+    let values = [
+        position.next()?.parse().ok()?,
+        position.next()?.parse().ok()?,
+        position.next()?.parse().ok()?,
+        size.parse().ok()?,
+        alpha.parse().ok()?,
+    ];
+    if position.next().is_some() {
+        return None;
+    }
+    Some((prefix, values))
 }
 
 #[test]
