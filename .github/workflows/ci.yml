@@ -92,6 +92,11 @@ jobs:
     env:
       # Bound concurrent compiler/linker memory on hosted runners.
       CARGO_BUILD_JOBS: "2"
+      # Full Bevy type/variable debug info is costly to compile and link on CI.
+      # Keep source-line backtraces; optimization, assertions and overflow checks
+      # retain their existing dev/test profile settings. Apply to both graphs.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -102,7 +107,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            g++ pkg-config libx11-dev libasound2-dev libudev-dev \
+            g++ pkg-config time libx11-dev libasound2-dev libudev-dev \
             libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev
 
       - name: Install repository Rust toolchain
@@ -121,6 +126,11 @@ jobs:
           cache-bin: false
           cache-on-failure: true
 
+      - name: Record Linux build resources
+        run: |
+          df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
+          free -h
+
       - name: Check Linux workspace including audio-enabled showcase
         run: cargo check --workspace --all-targets --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked
 
@@ -130,11 +140,23 @@ jobs:
       - name: Run Linux workspace and example tests
         # --all-targets runs the fireworks example's tests, not its windowed main.
         # Ignored native GPU probes remain opt-in; no virtual GPU acceptance is inferred.
-        run: cargo test --workspace --all-targets --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked
+        # GNU time preserves Cargo's exit status and records elapsed time/max RSS,
+        # including on a signalled child. Exit 143 alone does not identify its cause.
+        run: /usr/bin/time -v cargo test --workspace --all-targets --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked
 
       - name: Run Linux documentation tests
         # Cargo's --all-targets above excludes doctests. Keep the same feature graph.
-        run: cargo test --workspace --doc --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked
+        run: /usr/bin/time -v cargo test --workspace --doc --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked
+
+      - name: Report Linux resources and compiler cache
+        if: always()
+        # Diagnostics are best-effort only; never mask Cargo/check/lint failures.
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
+          free -h
+          sccache --show-stats
 
   portability:
     name: Portable contracts and shaders
