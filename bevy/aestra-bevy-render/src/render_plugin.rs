@@ -11,6 +11,7 @@ pub struct AestraRenderPlugin;
 
 impl Plugin for AestraRenderPlugin {
     fn build(&self, app: &mut App) {
+        crate::experimental_oit::install(app);
         app.add_systems(
             bevy::prelude::PostUpdate,
             cpu::sync_particle_globals

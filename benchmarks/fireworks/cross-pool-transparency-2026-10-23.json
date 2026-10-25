@@ -1,0 +1,2728 @@
+{
+  "milestone": "F8.1C4C",
+  "date": "2026-10-23",
+  "base_commit": "db29d884",
+  "scope": "Expected native interleaved/moving-pool failures with positive controls; NOT transparency, smoke-art or production-performance approval.",
+  "toolchain": "1.98.1-x86_64-pc-windows-msvc",
+  "bevy": "0.20.0",
+  "os": "Windows",
+  "sources": [
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_draw_smoke.rs",
+      "sha256": "70BEDAD9CFF8102CA9756E40E1A01DB859A471C25EB4AF7329BA50625F424071"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_limits.rs",
+      "sha256": "FBB6A70FFF10FE405127F9BF0C2FCF4818533B87EF9A3D77636F4075EC0E8A7B"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "FD67C41338CC3542FAB697E94DA61A846410DD28D4220CDB72F2B9A4EC6C150B"
+    }
+  ],
+  "repeated_images": {
+    "fresh_runs": 2,
+    "pairs": 136,
+    "all_byte_identical": true,
+    "manifest": [
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-0-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-0-both.png",
+        "sha256": "7D5C075EEE0808B9B0B7C29A14A3B8F3FC5FD70AE79D985E538527C6E1A02D22"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-0-red.png",
+        "sha256": "74D73A81B7E834FE12E58C63E408152ED141799C8041DAB52FE48C5B58597CC9"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-0-restored.png",
+        "sha256": "7D5C075EEE0808B9B0B7C29A14A3B8F3FC5FD70AE79D985E538527C6E1A02D22"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-0-split-control.png",
+        "sha256": "B7DD4818BBC19812E713F0B4B4924B906C1DE957B844F682543C1CA2E14F5A6C"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-1-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-1-both.png",
+        "sha256": "D8A12C1653E37BBBF673E75E805F1BB513363CA4569F8E6858F0B31D042583E1"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-1-red.png",
+        "sha256": "D854A5C25085DE47707D2DE06B3562B58BFB08A083B7BACCA5611462A568AB8B"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-1-restored.png",
+        "sha256": "D8A12C1653E37BBBF673E75E805F1BB513363CA4569F8E6858F0B31D042583E1"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-0-view-1-split-control.png",
+        "sha256": "EBDD0D6FC8972EE6A689A25E1DC3E79C204BA1FAD8B8D9F68369E27B3354A210"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-0-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-0-both.png",
+        "sha256": "7D5C075EEE0808B9B0B7C29A14A3B8F3FC5FD70AE79D985E538527C6E1A02D22"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-0-red.png",
+        "sha256": "74D73A81B7E834FE12E58C63E408152ED141799C8041DAB52FE48C5B58597CC9"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-0-restored.png",
+        "sha256": "7D5C075EEE0808B9B0B7C29A14A3B8F3FC5FD70AE79D985E538527C6E1A02D22"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-0-split-control.png",
+        "sha256": "B7DD4818BBC19812E713F0B4B4924B906C1DE957B844F682543C1CA2E14F5A6C"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-1-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-1-both.png",
+        "sha256": "D8A12C1653E37BBBF673E75E805F1BB513363CA4569F8E6858F0B31D042583E1"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-1-red.png",
+        "sha256": "D854A5C25085DE47707D2DE06B3562B58BFB08A083B7BACCA5611462A568AB8B"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-1-restored.png",
+        "sha256": "D8A12C1653E37BBBF673E75E805F1BB513363CA4569F8E6858F0B31D042583E1"
+      },
+      {
+        "path": "interleaved/sorted-0-spawn-1-view-1-split-control.png",
+        "sha256": "EBDD0D6FC8972EE6A689A25E1DC3E79C204BA1FAD8B8D9F68369E27B3354A210"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-0-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-0-both.png",
+        "sha256": "3002248A539D00F50A0F54B26FE3DB4B4E6523ABC09BE4A42A261686B4019BC7"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-0-red.png",
+        "sha256": "DC7FF1A6AFD4CEAC53C009CADFFA790080B0644AC2489CE99129AEE3C6FB26B6"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-0-restored.png",
+        "sha256": "3002248A539D00F50A0F54B26FE3DB4B4E6523ABC09BE4A42A261686B4019BC7"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-0-split-control.png",
+        "sha256": "B7DD4818BBC19812E713F0B4B4924B906C1DE957B844F682543C1CA2E14F5A6C"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-1-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-1-both.png",
+        "sha256": "D8A12C1653E37BBBF673E75E805F1BB513363CA4569F8E6858F0B31D042583E1"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-1-red.png",
+        "sha256": "D854A5C25085DE47707D2DE06B3562B58BFB08A083B7BACCA5611462A568AB8B"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-1-restored.png",
+        "sha256": "D8A12C1653E37BBBF673E75E805F1BB513363CA4569F8E6858F0B31D042583E1"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-0-view-1-split-control.png",
+        "sha256": "EBDD0D6FC8972EE6A689A25E1DC3E79C204BA1FAD8B8D9F68369E27B3354A210"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-0-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-0-both.png",
+        "sha256": "3002248A539D00F50A0F54B26FE3DB4B4E6523ABC09BE4A42A261686B4019BC7"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-0-red.png",
+        "sha256": "DC7FF1A6AFD4CEAC53C009CADFFA790080B0644AC2489CE99129AEE3C6FB26B6"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-0-restored.png",
+        "sha256": "3002248A539D00F50A0F54B26FE3DB4B4E6523ABC09BE4A42A261686B4019BC7"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-0-split-control.png",
+        "sha256": "B7DD4818BBC19812E713F0B4B4924B906C1DE957B844F682543C1CA2E14F5A6C"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-1-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-1-both.png",
+        "sha256": "D8A12C1653E37BBBF673E75E805F1BB513363CA4569F8E6858F0B31D042583E1"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-1-red.png",
+        "sha256": "D854A5C25085DE47707D2DE06B3562B58BFB08A083B7BACCA5611462A568AB8B"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-1-restored.png",
+        "sha256": "D8A12C1653E37BBBF673E75E805F1BB513363CA4569F8E6858F0B31D042583E1"
+      },
+      {
+        "path": "interleaved/sorted-1-spawn-1-view-1-split-control.png",
+        "sha256": "EBDD0D6FC8972EE6A689A25E1DC3E79C204BA1FAD8B8D9F68369E27B3354A210"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-150-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-150-both.png",
+        "sha256": "CCF90A108CCD34F9B78464423BB9FBE6B54F1E12A55F0C11686906FEAD350838"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-150-red.png",
+        "sha256": "F41AE088941C64B1FF2CEED71168B9030D0BA7FB680823C3044AC3E60EF3549B"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-150-restored.png",
+        "sha256": "CCF90A108CCD34F9B78464423BB9FBE6B54F1E12A55F0C11686906FEAD350838"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-30-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-30-both.png",
+        "sha256": "1C39C04718C6B877F57BD553645AC083BFED5FA89ED30C4BB7A869D7A1305203"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-30-red.png",
+        "sha256": "57C609C7311EB824AA3AF65E3EC84D7A23A4C9E6C15C46CC815892C63D74459C"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-30-restored.png",
+        "sha256": "1C39C04718C6B877F57BD553645AC083BFED5FA89ED30C4BB7A869D7A1305203"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-90-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-90-both.png",
+        "sha256": "AAEB8944E1BD1DF381E726C217F91420ADAC093FD47A50B9829803A131ECD38B"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-90-red.png",
+        "sha256": "D2C6D3F105F0237EF652006813B168777EDE2AE8943735D4BD6A8D37B352764E"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-0-frame-90-restored.png",
+        "sha256": "AAEB8944E1BD1DF381E726C217F91420ADAC093FD47A50B9829803A131ECD38B"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-150-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-150-both.png",
+        "sha256": "AF5B1C1CE5757468D9E4558AB320861816EA01CA246750BFEC5B069B61E696F7"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-150-red.png",
+        "sha256": "DD35B23EA0E5DE3D7314A4D3D323C60AA671F9225445D709F675193CEF2E3678"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-150-restored.png",
+        "sha256": "AF5B1C1CE5757468D9E4558AB320861816EA01CA246750BFEC5B069B61E696F7"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-30-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-30-both.png",
+        "sha256": "34C78540C990DF24F3539B3EE737C1C36119F5A58EFCC1202FD3F700FEECE128"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-30-red.png",
+        "sha256": "D2C6D3F105F0237EF652006813B168777EDE2AE8943735D4BD6A8D37B352764E"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-30-restored.png",
+        "sha256": "34C78540C990DF24F3539B3EE737C1C36119F5A58EFCC1202FD3F700FEECE128"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-90-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-90-both.png",
+        "sha256": "42880C03A3A70CFA9BDE5D06C6B873E062BC088EDE12F1BCC37E722F1B0D5F17"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-90-red.png",
+        "sha256": "57C609C7311EB824AA3AF65E3EC84D7A23A4C9E6C15C46CC815892C63D74459C"
+      },
+      {
+        "path": "moving/sorted-0-spawn-0-view-1-frame-90-restored.png",
+        "sha256": "42880C03A3A70CFA9BDE5D06C6B873E062BC088EDE12F1BCC37E722F1B0D5F17"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-150-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-150-both.png",
+        "sha256": "CCF90A108CCD34F9B78464423BB9FBE6B54F1E12A55F0C11686906FEAD350838"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-150-red.png",
+        "sha256": "F41AE088941C64B1FF2CEED71168B9030D0BA7FB680823C3044AC3E60EF3549B"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-150-restored.png",
+        "sha256": "CCF90A108CCD34F9B78464423BB9FBE6B54F1E12A55F0C11686906FEAD350838"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-30-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-30-both.png",
+        "sha256": "1C39C04718C6B877F57BD553645AC083BFED5FA89ED30C4BB7A869D7A1305203"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-30-red.png",
+        "sha256": "57C609C7311EB824AA3AF65E3EC84D7A23A4C9E6C15C46CC815892C63D74459C"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-30-restored.png",
+        "sha256": "1C39C04718C6B877F57BD553645AC083BFED5FA89ED30C4BB7A869D7A1305203"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-90-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-90-both.png",
+        "sha256": "AAEB8944E1BD1DF381E726C217F91420ADAC093FD47A50B9829803A131ECD38B"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-90-red.png",
+        "sha256": "D2C6D3F105F0237EF652006813B168777EDE2AE8943735D4BD6A8D37B352764E"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-0-frame-90-restored.png",
+        "sha256": "AAEB8944E1BD1DF381E726C217F91420ADAC093FD47A50B9829803A131ECD38B"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-150-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-150-both.png",
+        "sha256": "AF5B1C1CE5757468D9E4558AB320861816EA01CA246750BFEC5B069B61E696F7"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-150-red.png",
+        "sha256": "DD35B23EA0E5DE3D7314A4D3D323C60AA671F9225445D709F675193CEF2E3678"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-150-restored.png",
+        "sha256": "AF5B1C1CE5757468D9E4558AB320861816EA01CA246750BFEC5B069B61E696F7"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-30-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-30-both.png",
+        "sha256": "34C78540C990DF24F3539B3EE737C1C36119F5A58EFCC1202FD3F700FEECE128"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-30-red.png",
+        "sha256": "D2C6D3F105F0237EF652006813B168777EDE2AE8943735D4BD6A8D37B352764E"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-30-restored.png",
+        "sha256": "34C78540C990DF24F3539B3EE737C1C36119F5A58EFCC1202FD3F700FEECE128"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-90-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-90-both.png",
+        "sha256": "42880C03A3A70CFA9BDE5D06C6B873E062BC088EDE12F1BCC37E722F1B0D5F17"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-90-red.png",
+        "sha256": "57C609C7311EB824AA3AF65E3EC84D7A23A4C9E6C15C46CC815892C63D74459C"
+      },
+      {
+        "path": "moving/sorted-0-spawn-1-view-1-frame-90-restored.png",
+        "sha256": "42880C03A3A70CFA9BDE5D06C6B873E062BC088EDE12F1BCC37E722F1B0D5F17"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-150-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-150-both.png",
+        "sha256": "CCF90A108CCD34F9B78464423BB9FBE6B54F1E12A55F0C11686906FEAD350838"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-150-red.png",
+        "sha256": "F41AE088941C64B1FF2CEED71168B9030D0BA7FB680823C3044AC3E60EF3549B"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-150-restored.png",
+        "sha256": "CCF90A108CCD34F9B78464423BB9FBE6B54F1E12A55F0C11686906FEAD350838"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-30-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-30-both.png",
+        "sha256": "1C39C04718C6B877F57BD553645AC083BFED5FA89ED30C4BB7A869D7A1305203"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-30-red.png",
+        "sha256": "57C609C7311EB824AA3AF65E3EC84D7A23A4C9E6C15C46CC815892C63D74459C"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-30-restored.png",
+        "sha256": "1C39C04718C6B877F57BD553645AC083BFED5FA89ED30C4BB7A869D7A1305203"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-90-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-90-both.png",
+        "sha256": "AAEB8944E1BD1DF381E726C217F91420ADAC093FD47A50B9829803A131ECD38B"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-90-red.png",
+        "sha256": "D2C6D3F105F0237EF652006813B168777EDE2AE8943735D4BD6A8D37B352764E"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-0-frame-90-restored.png",
+        "sha256": "AAEB8944E1BD1DF381E726C217F91420ADAC093FD47A50B9829803A131ECD38B"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-150-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-150-both.png",
+        "sha256": "AF5B1C1CE5757468D9E4558AB320861816EA01CA246750BFEC5B069B61E696F7"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-150-red.png",
+        "sha256": "DD35B23EA0E5DE3D7314A4D3D323C60AA671F9225445D709F675193CEF2E3678"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-150-restored.png",
+        "sha256": "AF5B1C1CE5757468D9E4558AB320861816EA01CA246750BFEC5B069B61E696F7"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-30-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-30-both.png",
+        "sha256": "34C78540C990DF24F3539B3EE737C1C36119F5A58EFCC1202FD3F700FEECE128"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-30-red.png",
+        "sha256": "D2C6D3F105F0237EF652006813B168777EDE2AE8943735D4BD6A8D37B352764E"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-30-restored.png",
+        "sha256": "34C78540C990DF24F3539B3EE737C1C36119F5A58EFCC1202FD3F700FEECE128"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-90-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-90-both.png",
+        "sha256": "42880C03A3A70CFA9BDE5D06C6B873E062BC088EDE12F1BCC37E722F1B0D5F17"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-90-red.png",
+        "sha256": "57C609C7311EB824AA3AF65E3EC84D7A23A4C9E6C15C46CC815892C63D74459C"
+      },
+      {
+        "path": "moving/sorted-1-spawn-0-view-1-frame-90-restored.png",
+        "sha256": "42880C03A3A70CFA9BDE5D06C6B873E062BC088EDE12F1BCC37E722F1B0D5F17"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-150-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-150-both.png",
+        "sha256": "CCF90A108CCD34F9B78464423BB9FBE6B54F1E12A55F0C11686906FEAD350838"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-150-red.png",
+        "sha256": "F41AE088941C64B1FF2CEED71168B9030D0BA7FB680823C3044AC3E60EF3549B"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-150-restored.png",
+        "sha256": "CCF90A108CCD34F9B78464423BB9FBE6B54F1E12A55F0C11686906FEAD350838"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-30-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-30-both.png",
+        "sha256": "1C39C04718C6B877F57BD553645AC083BFED5FA89ED30C4BB7A869D7A1305203"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-30-red.png",
+        "sha256": "57C609C7311EB824AA3AF65E3EC84D7A23A4C9E6C15C46CC815892C63D74459C"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-30-restored.png",
+        "sha256": "1C39C04718C6B877F57BD553645AC083BFED5FA89ED30C4BB7A869D7A1305203"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-90-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-90-both.png",
+        "sha256": "AAEB8944E1BD1DF381E726C217F91420ADAC093FD47A50B9829803A131ECD38B"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-90-red.png",
+        "sha256": "D2C6D3F105F0237EF652006813B168777EDE2AE8943735D4BD6A8D37B352764E"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-0-frame-90-restored.png",
+        "sha256": "AAEB8944E1BD1DF381E726C217F91420ADAC093FD47A50B9829803A131ECD38B"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-150-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-150-both.png",
+        "sha256": "AF5B1C1CE5757468D9E4558AB320861816EA01CA246750BFEC5B069B61E696F7"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-150-red.png",
+        "sha256": "DD35B23EA0E5DE3D7314A4D3D323C60AA671F9225445D709F675193CEF2E3678"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-150-restored.png",
+        "sha256": "AF5B1C1CE5757468D9E4558AB320861816EA01CA246750BFEC5B069B61E696F7"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-30-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-30-both.png",
+        "sha256": "34C78540C990DF24F3539B3EE737C1C36119F5A58EFCC1202FD3F700FEECE128"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-30-red.png",
+        "sha256": "D2C6D3F105F0237EF652006813B168777EDE2AE8943735D4BD6A8D37B352764E"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-30-restored.png",
+        "sha256": "34C78540C990DF24F3539B3EE737C1C36119F5A58EFCC1202FD3F700FEECE128"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-90-blue.png",
+        "sha256": "2C8EDF5BC0D03106E6EFAE8F6BC8168C07A7F53E36D282C5DBE8AAC72A2CD1F8"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-90-both.png",
+        "sha256": "42880C03A3A70CFA9BDE5D06C6B873E062BC088EDE12F1BCC37E722F1B0D5F17"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-90-red.png",
+        "sha256": "57C609C7311EB824AA3AF65E3EC84D7A23A4C9E6C15C46CC815892C63D74459C"
+      },
+      {
+        "path": "moving/sorted-1-spawn-1-view-1-frame-90-restored.png",
+        "sha256": "42880C03A3A70CFA9BDE5D06C6B873E062BC088EDE12F1BCC37E722F1B0D5F17"
+      }
+    ]
+  },
+  "runs": [
+    {
+      "run": "b",
+      "reports": [
+        {
+          "kind": "interleaved",
+          "path": "target/fireworks-f8/cross-pool-2026-10-23-b/interleaved/report.json",
+          "sha256": "868C5B39A886AED8E865CDD2F77FF9837540BD3EF3C6D93A073F200C1FA2697D",
+          "report": {
+            "cases": [
+              {
+                "actual_linear_rb": [
+                  0.7454043626785278,
+                  0.1247718408703804
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-0-spawn-0-view-0",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "frozen_two_draw_gpu_costs": {
+                  "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+                    "median_ms": 0.002048,
+                    "p95_ms": 0.002048,
+                    "samples": 200
+                  },
+                  "render/clustering/elapsed_gpu": {
+                    "median_ms": 0.062464,
+                    "p95_ms": 0.069632,
+                    "samples": 200
+                  },
+                  "render/main_transparent_pass_3d/elapsed_gpu": {
+                    "median_ms": 0.003072,
+                    "p95_ms": 0.004096,
+                    "samples": 200
+                  }
+                },
+                "opposite": false,
+                "red_coverage_pixels": 20305,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.1252281665802002,
+                "split_control_restoration_max_linear_error": 0.0026658549904823303,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.004595637321472168
+              },
+              {
+                "actual_linear_rb": [
+                  0.37626221776008606,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-0-spawn-0-view-1",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": true,
+                "red_coverage_pixels": 27442,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.24873778223991394,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.7454043626785278,
+                  0.1247718408703804
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-0-spawn-1-view-0",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": false,
+                "red_coverage_pixels": 20305,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.1252281665802002,
+                "split_control_restoration_max_linear_error": 0.0026658549904823303,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.004595637321472168
+              },
+              {
+                "actual_linear_rb": [
+                  0.37626221776008606,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-0-spawn-1-view-1",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": true,
+                "red_coverage_pixels": 27442,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.24873778223991394,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.7454043626785278,
+                  0.1247718408703804
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-1-spawn-0-view-0",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "frozen_two_draw_gpu_costs": {
+                  "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+                    "median_ms": 0.031744,
+                    "p95_ms": 0.033792,
+                    "samples": 200
+                  },
+                  "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+                    "median_ms": 0.002048,
+                    "p95_ms": 0.002048,
+                    "samples": 200
+                  },
+                  "render/clustering/elapsed_gpu": {
+                    "median_ms": 0.063488,
+                    "p95_ms": 0.070656,
+                    "samples": 200
+                  },
+                  "render/main_transparent_pass_3d/elapsed_gpu": {
+                    "median_ms": 0.003072,
+                    "p95_ms": 0.004096,
+                    "samples": 200
+                  }
+                },
+                "opposite": false,
+                "red_coverage_pixels": 20305,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.1252281665802002,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.004595637321472168
+              },
+              {
+                "actual_linear_rb": [
+                  0.37626221776008606,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-1-spawn-0-view-1",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": true,
+                "red_coverage_pixels": 27442,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.24873778223991394,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.7454043626785278,
+                  0.1247718408703804
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-1-spawn-1-view-0",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": false,
+                "red_coverage_pixels": 20305,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.1252281665802002,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.004595637321472168
+              },
+              {
+                "actual_linear_rb": [
+                  0.37626221776008606,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-1-spawn-1-view-1",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": true,
+                "red_coverage_pixels": 27442,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.24873778223991394,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              }
+            ],
+            "probe_passed": true,
+            "red_depths": [
+              1.1310176849365234,
+              -3.433018207550049
+            ],
+            "red_host_z": 0.25,
+            "renderer_correct": false,
+            "scope": "Expected whole-draw compositing failure, not transparency acceptance. Native ordinary GPU players, linear alpha oracle, split-draw positive control. Frozen tiny-pool timestamps are not show or alternative-compositor costs.",
+            "seed": 3
+          }
+        },
+        {
+          "kind": "moving",
+          "path": "target/fireworks-f8/cross-pool-2026-10-23-b/moving/report.json",
+          "sha256": "085E027E09AAAB25FDA96375B5CCE8369B9EB644C4CB9106CC433AAAA5A12DF3",
+          "report": {
+            "cases": [
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-0-frame-30",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 30,
+                "opposite": false,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-0-frame-90",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 90,
+                "opposite": false,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-0-frame-150",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 150,
+                "opposite": false,
+                "red_coverage_pixels": 25196,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-1-frame-30",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 30,
+                "opposite": true,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-1-frame-90",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 90,
+                "opposite": true,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.008979111909866333,
+                "case": "sorted-0-spawn-0-view-1-frame-150",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 150,
+                "opposite": true,
+                "red_coverage_pixels": 11796,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.008979111909866333
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-0-frame-30",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 30,
+                "opposite": false,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-0-frame-90",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 90,
+                "opposite": false,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-0-frame-150",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 150,
+                "opposite": false,
+                "red_coverage_pixels": 25196,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-1-frame-30",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 30,
+                "opposite": true,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-1-frame-90",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 90,
+                "opposite": true,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.008979111909866333,
+                "case": "sorted-0-spawn-1-view-1-frame-150",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 150,
+                "opposite": true,
+                "red_coverage_pixels": 11796,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.008979111909866333
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-0-frame-30",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 30,
+                "opposite": false,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-0-frame-90",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 90,
+                "opposite": false,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-0-frame-150",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 150,
+                "opposite": false,
+                "red_coverage_pixels": 25196,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-1-frame-30",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 30,
+                "opposite": true,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-1-frame-90",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 90,
+                "opposite": true,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.008979111909866333,
+                "case": "sorted-1-spawn-0-view-1-frame-150",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 150,
+                "opposite": true,
+                "red_coverage_pixels": 11796,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.008979111909866333
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-0-frame-30",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 30,
+                "opposite": false,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-0-frame-90",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 90,
+                "opposite": false,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-0-frame-150",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 150,
+                "opposite": false,
+                "red_coverage_pixels": 25196,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-1-frame-30",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 30,
+                "opposite": true,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-1-frame-90",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 90,
+                "opposite": true,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.008979111909866333,
+                "case": "sorted-1-spawn-1-view-1-frame-150",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 150,
+                "opposite": true,
+                "red_coverage_pixels": 11796,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.008979111909866333
+              }
+            ],
+            "mismatches": 16,
+            "probe_passed": true,
+            "renderer_correct": false,
+            "scope": "Fixed hosts, +Z particle motion through another pool, forward PlaybackOnly at frames 30/90/150, both cameras/spawn orders and Fast/DepthBackToFront. Expected limitation; not production smoke art or performance acceptance."
+          }
+        }
+      ]
+    },
+    {
+      "run": "c",
+      "reports": [
+        {
+          "kind": "interleaved",
+          "path": "target/fireworks-f8/cross-pool-2026-10-23-c/interleaved/report.json",
+          "sha256": "FDE059D4535EF451F1FE3DFDD80B38B705C432C144B060348F4E9E828A43F513",
+          "report": {
+            "cases": [
+              {
+                "actual_linear_rb": [
+                  0.7454043626785278,
+                  0.1247718408703804
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-0-spawn-0-view-0",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "frozen_two_draw_gpu_costs": {
+                  "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+                    "median_ms": 0.002048,
+                    "p95_ms": 0.002048,
+                    "samples": 200
+                  },
+                  "render/clustering/elapsed_gpu": {
+                    "median_ms": 0.063488,
+                    "p95_ms": 0.07168,
+                    "samples": 200
+                  },
+                  "render/main_transparent_pass_3d/elapsed_gpu": {
+                    "median_ms": 0.003072,
+                    "p95_ms": 0.004096,
+                    "samples": 200
+                  }
+                },
+                "opposite": false,
+                "red_coverage_pixels": 20305,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.1252281665802002,
+                "split_control_restoration_max_linear_error": 0.0026658549904823303,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.004595637321472168
+              },
+              {
+                "actual_linear_rb": [
+                  0.37626221776008606,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-0-spawn-0-view-1",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": true,
+                "red_coverage_pixels": 27442,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.24873778223991394,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.7454043626785278,
+                  0.1247718408703804
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-0-spawn-1-view-0",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": false,
+                "red_coverage_pixels": 20305,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.1252281665802002,
+                "split_control_restoration_max_linear_error": 0.0026658549904823303,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.004595637321472168
+              },
+              {
+                "actual_linear_rb": [
+                  0.37626221776008606,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-0-spawn-1-view-1",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": true,
+                "red_coverage_pixels": 27442,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.24873778223991394,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.7454043626785278,
+                  0.1247718408703804
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-1-spawn-0-view-0",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "frozen_two_draw_gpu_costs": {
+                  "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+                    "median_ms": 0.032768,
+                    "p95_ms": 0.034816,
+                    "samples": 200
+                  },
+                  "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+                    "median_ms": 0.002048,
+                    "p95_ms": 0.002048,
+                    "samples": 200
+                  },
+                  "render/clustering/elapsed_gpu": {
+                    "median_ms": 0.064512,
+                    "p95_ms": 0.070656,
+                    "samples": 200
+                  },
+                  "render/main_transparent_pass_3d/elapsed_gpu": {
+                    "median_ms": 0.003072,
+                    "p95_ms": 0.004096,
+                    "samples": 200
+                  }
+                },
+                "opposite": false,
+                "red_coverage_pixels": 20305,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.1252281665802002,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.004595637321472168
+              },
+              {
+                "actual_linear_rb": [
+                  0.37626221776008606,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-1-spawn-0-view-1",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": true,
+                "red_coverage_pixels": 27442,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.24873778223991394,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.7454043626785278,
+                  0.1247718408703804
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-1-spawn-1-view-0",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": false,
+                "red_coverage_pixels": 20305,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.1252281665802002,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.004595637321472168
+              },
+              {
+                "actual_linear_rb": [
+                  0.37626221776008606,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.004595637321472168,
+                "case": "sorted-1-spawn-1-view-1",
+                "expected_linear_rb": [
+                  0.625,
+                  0.25
+                ],
+                "opposite": true,
+                "red_coverage_pixels": 27442,
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.24873778223991394,
+                "split_control_restoration_max_linear_error": 0,
+                "split_draw_control_max_linear_error": 0.0010395646095275879,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              }
+            ],
+            "probe_passed": true,
+            "red_depths": [
+              1.1310176849365234,
+              -3.433018207550049
+            ],
+            "red_host_z": 0.25,
+            "renderer_correct": false,
+            "scope": "Expected whole-draw compositing failure, not transparency acceptance. Native ordinary GPU players, linear alpha oracle, split-draw positive control. Frozen tiny-pool timestamps are not show or alternative-compositor costs.",
+            "seed": 3
+          }
+        },
+        {
+          "kind": "moving",
+          "path": "target/fireworks-f8/cross-pool-2026-10-23-c/moving/report.json",
+          "sha256": "085E027E09AAAB25FDA96375B5CCE8369B9EB644C4CB9106CC433AAAA5A12DF3",
+          "report": {
+            "cases": [
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-0-frame-30",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 30,
+                "opposite": false,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-0-frame-90",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 90,
+                "opposite": false,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-0-frame-150",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 150,
+                "opposite": false,
+                "red_coverage_pixels": 25196,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-1-frame-30",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 30,
+                "opposite": true,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-0-view-1-frame-90",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 90,
+                "opposite": true,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.008979111909866333,
+                "case": "sorted-0-spawn-0-view-1-frame-150",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 150,
+                "opposite": true,
+                "red_coverage_pixels": 11796,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.008979111909866333
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-0-frame-30",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 30,
+                "opposite": false,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-0-frame-90",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 90,
+                "opposite": false,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-0-frame-150",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 150,
+                "opposite": false,
+                "red_coverage_pixels": 25196,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-1-frame-30",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 30,
+                "opposite": true,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-0-spawn-1-view-1-frame-90",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 90,
+                "opposite": true,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.008979111909866333,
+                "case": "sorted-0-spawn-1-view-1-frame-150",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 150,
+                "opposite": true,
+                "red_coverage_pixels": 11796,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": false,
+                  "owned_buffer_bytes": 0,
+                  "pairs": 0
+                },
+                "sorted": false,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.008979111909866333
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-0-frame-30",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 30,
+                "opposite": false,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-0-frame-90",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 90,
+                "opposite": false,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-0-frame-150",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 150,
+                "opposite": false,
+                "red_coverage_pixels": 25196,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-1-frame-30",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 30,
+                "opposite": true,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-0-view-1-frame-90",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 90,
+                "opposite": true,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.008979111909866333,
+                "case": "sorted-1-spawn-0-view-1-frame-150",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 150,
+                "opposite": true,
+                "red_coverage_pixels": 11796,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.008979111909866333
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-0-frame-30",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 30,
+                "opposite": false,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-0-frame-90",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 90,
+                "opposite": false,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.2501583695411682,
+                  0.4969330430030823
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-0-frame-150",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 150,
+                "opposite": false,
+                "red_coverage_pixels": 25196,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-1-frame-30",
+                "expected_linear_rb": [
+                  0.5,
+                  0.25
+                ],
+                "frame": 30,
+                "opposite": true,
+                "red_coverage_pixels": 18924,
+                "red_world_depth": [
+                  -1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.0030669569969177246,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.0030669569969177246,
+                "case": "sorted-1-spawn-1-view-1-frame-90",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 90,
+                "opposite": true,
+                "red_coverage_pixels": 14712,
+                "red_world_depth": [
+                  1
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.0030669569969177246
+              },
+              {
+                "actual_linear_rb": [
+                  0.4969330430030823,
+                  0.2501583695411682
+                ],
+                "adapter": {
+                  "backend": "Vulkan",
+                  "name": "NVIDIA GeForce RTX 4070 SUPER"
+                },
+                "calibration_max_linear_error": 0.008979111909866333,
+                "case": "sorted-1-spawn-1-view-1-frame-150",
+                "expected_linear_rb": [
+                  0.25,
+                  0.5
+                ],
+                "frame": 150,
+                "opposite": true,
+                "red_coverage_pixels": 11796,
+                "red_world_depth": [
+                  3
+                ],
+                "restoration_max_byte_error": 0,
+                "sort": {
+                  "dispatched": true,
+                  "owned_buffer_bytes": 18912,
+                  "pairs": 2
+                },
+                "sorted": true,
+                "source_over_max_linear_error": 0.2498416304588318,
+                "whole_draw_max_linear_error": 0.008979111909866333
+              }
+            ],
+            "mismatches": 16,
+            "probe_passed": true,
+            "renderer_correct": false,
+            "scope": "Fixed hosts, +Z particle motion through another pool, forward PlaybackOnly at frames 30/90/150, both cameras/spawn orders and Fast/DepthBackToFront. Expected limitation; not production smoke art or performance acceptance."
+          }
+        }
+      ]
+    }
+  ],
+  "retained_initial_failure": {
+    "path": "target/fireworks-f8/cross-pool-2026-10-23-a/interleaved/report.json",
+    "sha256": "7F27585EE30A5458A54720BA33FAED0E6F5AEF67B60404B2DADB84D03DBF3435",
+    "description": "Initial fixture used equal pool centers. Four reversed-spawn cases changed draw order on visibility restoration (88-byte maximum error). Retained failure; final fixture separates centers by .25 while particles still straddle blue. No runtime tie-order fix claimed."
+  },
+  "separated_regression": {
+    "sha256": "4F5286939BD59740AAC8F64AAE02B31815E820CFD8B511284B9C5AD21E7B1D1C",
+    "report": {
+      "accepted": true,
+      "cases": [
+        {
+          "case": "spawn-0-view-0",
+          "restoration": [
+            0,
+            0
+          ],
+          "source_over_max_linear_error": 0.00016777217388153076,
+          "wrong_order_max_linear_error": 0.2469424456357956
+        },
+        {
+          "case": "spawn-0-view-1",
+          "restoration": [
+            0,
+            0
+          ],
+          "source_over_max_linear_error": 0.00016777217388153076,
+          "wrong_order_max_linear_error": 0.2469424456357956
+        },
+        {
+          "case": "spawn-1-view-0",
+          "restoration": [
+            0,
+            0
+          ],
+          "source_over_max_linear_error": 0.00016777217388153076,
+          "wrong_order_max_linear_error": 0.2469424456357956
+        },
+        {
+          "case": "spawn-1-view-1",
+          "restoration": [
+            0,
+            0
+          ],
+          "source_over_max_linear_error": 0.00016777217388153076,
+          "wrong_order_max_linear_error": 0.2469424456357956
+        }
+      ],
+      "scope": "separate nonintersecting single-particle sheets; analytic linear source-over oracle; does not certify interleaved smoke pools or moving particle depth bounds"
+    }
+  }
+}

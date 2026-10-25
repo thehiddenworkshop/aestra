@@ -695,6 +695,7 @@ fn native_020_commands_submit_with_real_mesh_view_and_prepass_bindings() {
                 assert!(world.get::<GpuMaterialBindGroup>(entity).is_some());
             }
             let key = GpuSpritePipelineKey {
+                fragment_list_oit: false,
                 mesh_wireframe: case == 5,
                 mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),
                 view: if two_d {

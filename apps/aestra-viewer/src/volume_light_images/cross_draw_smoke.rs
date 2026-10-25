@@ -4,7 +4,34 @@ use aestra_bevy::{CompiledEffectProject, material::MaterialProgramRef};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use serde_json::json;
 
-fn sheet(red: bool) -> Arc<CompiledEffectProject> {
+pub(super) fn sheet(red: bool) -> Arc<CompiledEffectProject> {
+    sheet_with(red, 1, aestra_bevy::EmitterShape::Point, 0.0)
+}
+
+pub(super) fn sheet_with(
+    red: bool,
+    count: u32,
+    shape: aestra_bevy::EmitterShape,
+    speed_z: f32,
+) -> Arc<CompiledEffectProject> {
+    let color = if red { "1.0,0.0,0.0" } else { "0.0,0.0,1.0" };
+    let program = MaterialProgram::from_ron(&format!(
+        r#"(id:"a3574a00-0000-4000-8000-000000f81600",schema_version:1,name:"Source-over sheet",domain:Sprite,
+        render_state_policy:(default:(blend:Alpha,depth_test:LessEqual,depth_write:false,cull_mode:r#None),allowed:[(blend:Alpha,depth_test:LessEqual,depth_write:false,cull_mode:r#None)]),
+        parameters:[],expressions:[
+        (id:"a3574a00-0000-4000-8000-000000f81601",kind:Constant(Vec3(({color})))),
+        (id:"a3574a00-0000-4000-8000-000000f81602",kind:Input(ParticleOpacity))],
+        outputs:(color:"a3574a00-0000-4000-8000-000000f81601",alpha:"a3574a00-0000-4000-8000-000000f81602"))"#
+    )).unwrap();
+    sheet_program(count, shape, speed_z, program)
+}
+
+pub(super) fn sheet_program(
+    count: u32,
+    shape: aestra_bevy::EmitterShape,
+    speed_z: f32,
+    program: MaterialProgram,
+) -> Arc<CompiledEffectProject> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
     let mut effect = EffectAsset::from_ron(
         &fs::read_to_string(root.join("effects/fireworks_particle_smoke_lighting.aestra.ron"))
@@ -16,11 +43,36 @@ fn sheet(red: bool) -> Arc<CompiledEffectProject> {
     effect.particle_outputs.clear();
     effect.point_lights.clear();
     effect.emitters[0].transform.translation = [0.0; 3];
+    effect.emitters[0].max_particles = count;
     for module in &mut effect.emitters[0].modules {
         match &mut module.parameters {
-            ModuleParameters::Initialize { speed, .. } => {
-                speed.min = 0.0;
-                speed.max = 0.0;
+            ModuleParameters::Emission {
+                spawn_rate,
+                burst_count,
+            } => {
+                *spawn_rate = 0.0;
+                *burst_count = count;
+            }
+            ModuleParameters::Shape { shape: value } => *value = shape,
+            ModuleParameters::Initialize {
+                speed,
+                direction,
+                spread_degrees,
+                ..
+            } => {
+                speed.min = speed_z;
+                speed.max = speed_z;
+                *direction = [0.0, 0.0, 1.0];
+                *spread_degrees = 0.0;
+            }
+            ModuleParameters::Motion {
+                gravity,
+                drag,
+                turbulence,
+            } => {
+                *gravity = [0.0; 3];
+                *drag = 0.0;
+                *turbulence = 0.0;
             }
             ModuleParameters::Appearance { size, opacity, .. } => {
                 for key in &mut size.keys {
@@ -33,16 +85,6 @@ fn sheet(red: bool) -> Arc<CompiledEffectProject> {
             _ => {}
         }
     }
-    let color = if red { "1.0,0.0,0.0" } else { "0.0,0.0,1.0" };
-    let program = MaterialProgram::from_ron(&format!(
-        r#"(id:"a3574a00-0000-4000-8000-000000f81600",schema_version:1,name:"Source-over sheet",domain:Sprite,
-        render_state_policy:(default:(blend:Alpha,depth_test:LessEqual,depth_write:false,cull_mode:r#None),allowed:[(blend:Alpha,depth_test:LessEqual,depth_write:false,cull_mode:r#None)]),
-        parameters:[],expressions:[
-        (id:"a3574a00-0000-4000-8000-000000f81601",kind:Constant(Vec3(({color})))),
-        (id:"a3574a00-0000-4000-8000-000000f81602",kind:Input(ParticleOpacity))],
-        outputs:(color:"a3574a00-0000-4000-8000-000000f81601",alpha:"a3574a00-0000-4000-8000-000000f81602"))"#
-    ))
-    .unwrap();
     effect.material_instances[0].program = MaterialProgramRef::Project(program.id);
     let resolved = aestra_project::ResolvedEffectProject {
         root: effect,
@@ -57,7 +99,7 @@ fn sheet(red: bool) -> Arc<CompiledEffectProject> {
     )
 }
 
-fn linear(byte: u8) -> f32 {
+pub(super) fn linear(byte: u8) -> f32 {
     let s = f32::from(byte) / 255.0;
     if s <= 0.04045 {
         s / 12.92

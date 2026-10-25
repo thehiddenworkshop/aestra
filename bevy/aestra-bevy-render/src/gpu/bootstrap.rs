@@ -129,7 +129,7 @@ fn install_shader_assets(app: &App) {
     registry.insert_asset(
         shader_root.join("aestra_sprite_render.wesl"),
         Path::new("aestra_bevy_render/shaders/aestra_sprite_render.wesl"),
-        SPRITE_RENDER_WESL.as_bytes(),
+        super::shader_composition::compose_fragment_list(SPRITE_RENDER_WESL, false).into_bytes(),
     );
     // The unified stateful simulation module (hybrid roadmap M6), composed from the proven aestra-gpu
     // primitives. Plain WGSL (no WESL composition), so it is embedded directly as .wgsl.

@@ -1,0 +1,1837 @@
+{
+  "milestone": "F8.1C4G",
+  "date": "2026-10-23",
+  "scope": "Analytic HDR before fixed Reinhard/exposure; saved lit-smoke material versus normal split-draw reference under controlled host point light. Not public-show/art/bloom/live/dense/mixed-transparent acceptance.",
+  "runs": [
+    {
+      "root": "target/fireworks-f8/fragment-list-hdr-2026-10-23-e",
+      "lighting": {
+        "cases": [
+          {
+            "actual_linear_rgb": [
+              0.05628572031855583,
+              0.05696698650717735,
+              0.05865833908319473
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 0,
+            "name": "spawn-0-view-0-dark",
+            "phase": "dark",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0016769394278526306,
+            "whole_image_split_max_linear_error": 0.003102824091911316
+          },
+          {
+            "actual_linear_rgb": [
+              0.18497340381145477,
+              0.05865833908319473,
+              0.06021600216627121
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-0-view-0-red",
+            "phase": "red",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.003345772624015808,
+            "whole_image_split_max_linear_error": 0.0036657005548477173
+          },
+          {
+            "actual_linear_rgb": [
+              0.05765095725655556,
+              0.05865833908319473,
+              0.19572237133979797
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-0-view-0-blue",
+            "phase": "blue",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0034514963626861572,
+            "whole_image_split_max_linear_error": 0.003737911581993103
+          },
+          {
+            "actual_linear_rgb": [
+              0.056128498166799545,
+              0.056652557104825974,
+              0.05833851546049118
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 0,
+            "name": "spawn-0-view-1-dark",
+            "phase": "dark",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0,
+            "whole_image_split_max_linear_error": 0.003102824091911316
+          },
+          {
+            "actual_linear_rgb": [
+              0.13240711390972137,
+              0.057597652077674866,
+              0.05940459296107292
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-0-view-1-red",
+            "phase": "red",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0016769394278526306,
+            "whole_image_split_max_linear_error": 0.003241017460823059
+          },
+          {
+            "actual_linear_rgb": [
+              0.0567573644220829,
+              0.057597652077674866,
+              0.14007757604122162
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-0-view-1-blue",
+            "phase": "blue",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0028651803731918335,
+            "whole_image_split_max_linear_error": 0.003310754895210266
+          },
+          {
+            "actual_linear_rgb": [
+              0.05628572031855583,
+              0.05696698650717735,
+              0.05865833908319473
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 0,
+            "name": "spawn-1-view-0-dark",
+            "phase": "dark",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0016769394278526306,
+            "whole_image_split_max_linear_error": 0.003102824091911316
+          },
+          {
+            "actual_linear_rgb": [
+              0.18497340381145477,
+              0.05865833908319473,
+              0.06021600216627121
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-1-view-0-red",
+            "phase": "red",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.003345772624015808,
+            "whole_image_split_max_linear_error": 0.0036657005548477173
+          },
+          {
+            "actual_linear_rgb": [
+              0.05765095725655556,
+              0.05865833908319473,
+              0.19572237133979797
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-1-view-0-blue",
+            "phase": "blue",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0034514963626861572,
+            "whole_image_split_max_linear_error": 0.003737911581993103
+          },
+          {
+            "actual_linear_rgb": [
+              0.056128498166799545,
+              0.056652557104825974,
+              0.05833851546049118
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 0,
+            "name": "spawn-1-view-1-dark",
+            "phase": "dark",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0,
+            "whole_image_split_max_linear_error": 0.003102824091911316
+          },
+          {
+            "actual_linear_rgb": [
+              0.13240711390972137,
+              0.057597652077674866,
+              0.05940459296107292
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-1-view-1-red",
+            "phase": "red",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0016769394278526306,
+            "whole_image_split_max_linear_error": 0.003241017460823059
+          },
+          {
+            "actual_linear_rgb": [
+              0.0567573644220829,
+              0.057597652077674866,
+              0.14007757604122162
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-1-view-1-blue",
+            "phase": "blue",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0028651803731918335,
+            "whole_image_split_max_linear_error": 0.003310754895210266
+          }
+        ],
+        "controls": [
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "gain_off_max_byte_error": 0,
+            "gain_restore_max_byte_error": 0,
+            "name": "spawn-0-view-0",
+            "original_player_frame": 30
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "gain_off_max_byte_error": 0,
+            "gain_restore_max_byte_error": 0,
+            "name": "spawn-0-view-1",
+            "original_player_frame": 30
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "gain_off_max_byte_error": 0,
+            "gain_restore_max_byte_error": 0,
+            "name": "spawn-1-view-0",
+            "original_player_frame": 30
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "gain_off_max_byte_error": 0,
+            "gain_restore_max_byte_error": 0,
+            "name": "spawn-1-view-1",
+            "original_player_frame": 30
+          }
+        ],
+        "probe_passed": true,
+        "scope": "Saved fireworks_lit_smoke material in isolated receiver, synthetic host point light, fixed Reinhard HDR, split-draw and gain controls. Not authored light-route, wispy smoke art, bloom or production-show acceptance."
+      },
+      "hdr": {
+        "cases": [
+          {
+            "actual_linear_rgb": [
+              0.5533957481384277,
+              0,
+              0.2013382911682129
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.5555555820465088,
+              0.20000000298023224
+            ],
+            "max_linear_error": 0.0035440921783447266,
+            "name": "spawn-0-view-0-stops--2-0",
+            "restoration_max_byte_error": null,
+            "stops": -2,
+            "wrong_clipped_error": 0.4232053756713867,
+            "wrong_mapped_first_error": 0.14167380332946777
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-0-view-0-stops-0-1",
+            "restoration_max_byte_error": null,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.9559738039970398,
+              0,
+              0.7991028428077698
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.9523809552192688,
+              0.800000011920929
+            ],
+            "max_linear_error": 0.003592550754547119,
+            "name": "spawn-0-view-0-stops-2-2",
+            "restoration_max_byte_error": null,
+            "stops": 2,
+            "wrong_clipped_error": 0.2991028428077698,
+            "wrong_mapped_first_error": 0.5638087391853333
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-0-view-0-stops-0-3",
+            "restoration_max_byte_error": 0,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.5535935163497925,
+              0,
+              0.2013382911682129
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.5555555820465088,
+              0.20000000298023224
+            ],
+            "max_linear_error": 0.0035440921783447266,
+            "name": "spawn-0-view-1-stops--2-4",
+            "restoration_max_byte_error": null,
+            "stops": -2,
+            "wrong_clipped_error": 0.4232053756713867,
+            "wrong_mapped_first_error": 0.14167380332946777
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-0-view-1-stops-0-5",
+            "restoration_max_byte_error": null,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.9559738039970398,
+              0,
+              0.7991028428077698
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.9523809552192688,
+              0.800000011920929
+            ],
+            "max_linear_error": 0.003592550754547119,
+            "name": "spawn-0-view-1-stops-2-6",
+            "restoration_max_byte_error": null,
+            "stops": 2,
+            "wrong_clipped_error": 0.2991028428077698,
+            "wrong_mapped_first_error": 0.5638087391853333
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-0-view-1-stops-0-7",
+            "restoration_max_byte_error": 0,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.5533957481384277,
+              0,
+              0.2013382911682129
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.5555555820465088,
+              0.20000000298023224
+            ],
+            "max_linear_error": 0.0035440921783447266,
+            "name": "spawn-1-view-0-stops--2-8",
+            "restoration_max_byte_error": null,
+            "stops": -2,
+            "wrong_clipped_error": 0.4232053756713867,
+            "wrong_mapped_first_error": 0.14167380332946777
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-1-view-0-stops-0-9",
+            "restoration_max_byte_error": null,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.9559738039970398,
+              0,
+              0.7991028428077698
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.9523809552192688,
+              0.800000011920929
+            ],
+            "max_linear_error": 0.003592550754547119,
+            "name": "spawn-1-view-0-stops-2-10",
+            "restoration_max_byte_error": null,
+            "stops": 2,
+            "wrong_clipped_error": 0.2991028428077698,
+            "wrong_mapped_first_error": 0.5638087391853333
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-1-view-0-stops-0-11",
+            "restoration_max_byte_error": 0,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.5535935163497925,
+              0,
+              0.2013382911682129
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.5555555820465088,
+              0.20000000298023224
+            ],
+            "max_linear_error": 0.0035440921783447266,
+            "name": "spawn-1-view-1-stops--2-12",
+            "restoration_max_byte_error": null,
+            "stops": -2,
+            "wrong_clipped_error": 0.4232053756713867,
+            "wrong_mapped_first_error": 0.14167380332946777
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-1-view-1-stops-0-13",
+            "restoration_max_byte_error": null,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.9559738039970398,
+              0,
+              0.7991028428077698
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.9523809552192688,
+              0.800000011920929
+            ],
+            "max_linear_error": 0.003592550754547119,
+            "name": "spawn-1-view-1-stops-2-14",
+            "restoration_max_byte_error": null,
+            "stops": 2,
+            "wrong_clipped_error": 0.2991028428077698,
+            "wrong_mapped_first_error": 0.5638087391853333
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-1-view-1-stops-0-15",
+            "restoration_max_byte_error": 0,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          }
+        ],
+        "probe_passed": true,
+        "scope": "Known HDR radiance composited before fixed Reinhard exposure, display-referred screenshots, not raw HDR/bloom/full-show acceptance."
+      },
+      "captures": [
+        {
+          "path": "fragment-list-hdr/spawn-0-view-0-stops--2-0.png",
+          "sha256": "DC5C785512D5550F1554A0838E18F29D884DE13B23A2AEC88DA9F1D14E174A51"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-0-view-0-stops-0-1.png",
+          "sha256": "76A444692E8131D3DEF06DE73F69124A60A1333D46B505A6267F4472B71599B8"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-0-view-0-stops-0-3.png",
+          "sha256": "76A444692E8131D3DEF06DE73F69124A60A1333D46B505A6267F4472B71599B8"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-0-view-0-stops-2-2.png",
+          "sha256": "EF1561F378C8536A3E7A5F8AF35FB4960F8FD26DA0FF4A2B36582492DD0C503E"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-0-view-1-stops--2-4.png",
+          "sha256": "4D9F604163BFFD87FC7FCDA2DFC90984BB462F9095EFB2570998612756BBBABC"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-0-view-1-stops-0-5.png",
+          "sha256": "E0A87F672CC37390E09B6BF696DF5443ED74317B1D42D9372266101664FC01BF"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-0-view-1-stops-0-7.png",
+          "sha256": "E0A87F672CC37390E09B6BF696DF5443ED74317B1D42D9372266101664FC01BF"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-0-view-1-stops-2-6.png",
+          "sha256": "69B2F8470C714BFACE388C81BD2E612B590C704EB56474AFF765025BC0673E38"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-1-view-0-stops--2-8.png",
+          "sha256": "DC5C785512D5550F1554A0838E18F29D884DE13B23A2AEC88DA9F1D14E174A51"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-1-view-0-stops-0-11.png",
+          "sha256": "76A444692E8131D3DEF06DE73F69124A60A1333D46B505A6267F4472B71599B8"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-1-view-0-stops-0-9.png",
+          "sha256": "76A444692E8131D3DEF06DE73F69124A60A1333D46B505A6267F4472B71599B8"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-1-view-0-stops-2-10.png",
+          "sha256": "EF1561F378C8536A3E7A5F8AF35FB4960F8FD26DA0FF4A2B36582492DD0C503E"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-1-view-1-stops--2-12.png",
+          "sha256": "4D9F604163BFFD87FC7FCDA2DFC90984BB462F9095EFB2570998612756BBBABC"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-1-view-1-stops-0-13.png",
+          "sha256": "E0A87F672CC37390E09B6BF696DF5443ED74317B1D42D9372266101664FC01BF"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-1-view-1-stops-0-15.png",
+          "sha256": "E0A87F672CC37390E09B6BF696DF5443ED74317B1D42D9372266101664FC01BF"
+        },
+        {
+          "path": "fragment-list-hdr/spawn-1-view-1-stops-2-14.png",
+          "sha256": "69B2F8470C714BFACE388C81BD2E612B590C704EB56474AFF765025BC0673E38"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-background.png",
+          "sha256": "6382CEBF378D1DD7A3E50E56676D51A7061E4DB51560CD51878CF65E5AF2211C"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-blue-oit.png",
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-blue-restored.png",
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-blue-split.png",
+          "sha256": "3E91403323AED38633A1DE46F1A84C549093DD50896110A9ED0663498CD2DEBC"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-dark-oit.png",
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-dark-restored.png",
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-dark-split.png",
+          "sha256": "A9CF3809F20063E8E3B33647E39B8A8941CBE25EDD97BC59346F075E18A9C67C"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-gain-off.png",
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-gain-restored.png",
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-red-oit.png",
+          "sha256": "4F1714D96A8AE1D648FB6495BB32D6E370464E46D6F9DF8D6BB8A067D91C0ACD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-red-restored.png",
+          "sha256": "4F1714D96A8AE1D648FB6495BB32D6E370464E46D6F9DF8D6BB8A067D91C0ACD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-0-red-split.png",
+          "sha256": "D924A562C2406DB849C3FC7E45DC7ECFBB8329CFEB30017A07DADF074FEA8AB2"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-background.png",
+          "sha256": "6382CEBF378D1DD7A3E50E56676D51A7061E4DB51560CD51878CF65E5AF2211C"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-blue-oit.png",
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-blue-restored.png",
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-blue-split.png",
+          "sha256": "E25B500A684ECD6B4F4BF46A89F93E5B99EE1C7CF8F93DEA8DBB068EB55A35EB"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-dark-oit.png",
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-dark-restored.png",
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-dark-split.png",
+          "sha256": "F1E637254E4FDC82C56AE7D5B02F401763F18DB5BBA181658F8D624D1B033C66"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-gain-off.png",
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-gain-restored.png",
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-red-oit.png",
+          "sha256": "B5EECD17D1E2985BE5327A7B0FB4E88EEAC1AB4762EDC2D33B6527DFD10B8A78"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-red-restored.png",
+          "sha256": "B5EECD17D1E2985BE5327A7B0FB4E88EEAC1AB4762EDC2D33B6527DFD10B8A78"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-0-view-1-red-split.png",
+          "sha256": "847BF2DEEE2A6FC55EE35FDE8D5A2C432E11E62894C0BBFCA273E94EA3413433"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-background.png",
+          "sha256": "6382CEBF378D1DD7A3E50E56676D51A7061E4DB51560CD51878CF65E5AF2211C"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-blue-oit.png",
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-blue-restored.png",
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-blue-split.png",
+          "sha256": "3E91403323AED38633A1DE46F1A84C549093DD50896110A9ED0663498CD2DEBC"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-dark-oit.png",
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-dark-restored.png",
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-dark-split.png",
+          "sha256": "A9CF3809F20063E8E3B33647E39B8A8941CBE25EDD97BC59346F075E18A9C67C"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-gain-off.png",
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-gain-restored.png",
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-red-oit.png",
+          "sha256": "4F1714D96A8AE1D648FB6495BB32D6E370464E46D6F9DF8D6BB8A067D91C0ACD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-red-restored.png",
+          "sha256": "4F1714D96A8AE1D648FB6495BB32D6E370464E46D6F9DF8D6BB8A067D91C0ACD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-0-red-split.png",
+          "sha256": "D924A562C2406DB849C3FC7E45DC7ECFBB8329CFEB30017A07DADF074FEA8AB2"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-background.png",
+          "sha256": "6382CEBF378D1DD7A3E50E56676D51A7061E4DB51560CD51878CF65E5AF2211C"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-blue-oit.png",
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-blue-restored.png",
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-blue-split.png",
+          "sha256": "E25B500A684ECD6B4F4BF46A89F93E5B99EE1C7CF8F93DEA8DBB068EB55A35EB"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-dark-oit.png",
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-dark-restored.png",
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-dark-split.png",
+          "sha256": "F1E637254E4FDC82C56AE7D5B02F401763F18DB5BBA181658F8D624D1B033C66"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-gain-off.png",
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-gain-restored.png",
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-red-oit.png",
+          "sha256": "B5EECD17D1E2985BE5327A7B0FB4E88EEAC1AB4762EDC2D33B6527DFD10B8A78"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-red-restored.png",
+          "sha256": "B5EECD17D1E2985BE5327A7B0FB4E88EEAC1AB4762EDC2D33B6527DFD10B8A78"
+        },
+        {
+          "path": "fragment-list-lighting/spawn-1-view-1-red-split.png",
+          "sha256": "847BF2DEEE2A6FC55EE35FDE8D5A2C432E11E62894C0BBFCA273E94EA3413433"
+        }
+      ]
+    },
+    {
+      "lighting": {
+        "cases": [
+          {
+            "actual_linear_rgb": [
+              0.05628572031855583,
+              0.05696698650717735,
+              0.05865833908319473
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 0,
+            "name": "spawn-0-view-0-dark",
+            "phase": "dark",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0016769394278526306,
+            "whole_image_split_max_linear_error": 0.003102824091911316
+          },
+          {
+            "actual_linear_rgb": [
+              0.18497340381145477,
+              0.05865833908319473,
+              0.06021600216627121
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-0-view-0-red",
+            "phase": "red",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.003345772624015808,
+            "whole_image_split_max_linear_error": 0.0036657005548477173
+          },
+          {
+            "actual_linear_rgb": [
+              0.05765095725655556,
+              0.05865833908319473,
+              0.19572237133979797
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-0-view-0-blue",
+            "phase": "blue",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0034514963626861572,
+            "whole_image_split_max_linear_error": 0.003737911581993103
+          },
+          {
+            "actual_linear_rgb": [
+              0.056128498166799545,
+              0.056652557104825974,
+              0.05833851546049118
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 0,
+            "name": "spawn-0-view-1-dark",
+            "phase": "dark",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0,
+            "whole_image_split_max_linear_error": 0.003102824091911316
+          },
+          {
+            "actual_linear_rgb": [
+              0.13240711390972137,
+              0.057597652077674866,
+              0.05940459296107292
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-0-view-1-red",
+            "phase": "red",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0016769394278526306,
+            "whole_image_split_max_linear_error": 0.003241017460823059
+          },
+          {
+            "actual_linear_rgb": [
+              0.0567573644220829,
+              0.057597652077674866,
+              0.14007757604122162
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-0-view-1-blue",
+            "phase": "blue",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0028651803731918335,
+            "whole_image_split_max_linear_error": 0.003310754895210266
+          },
+          {
+            "actual_linear_rgb": [
+              0.05628572031855583,
+              0.05696698650717735,
+              0.05865833908319473
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 0,
+            "name": "spawn-1-view-0-dark",
+            "phase": "dark",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0016769394278526306,
+            "whole_image_split_max_linear_error": 0.003102824091911316
+          },
+          {
+            "actual_linear_rgb": [
+              0.18497340381145477,
+              0.05865833908319473,
+              0.06021600216627121
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-1-view-0-red",
+            "phase": "red",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.003345772624015808,
+            "whole_image_split_max_linear_error": 0.0036657005548477173
+          },
+          {
+            "actual_linear_rgb": [
+              0.05765095725655556,
+              0.05865833908319473,
+              0.19572237133979797
+            ],
+            "attempted_fragments": 85153,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-1-view-0-blue",
+            "phase": "blue",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0034514963626861572,
+            "whole_image_split_max_linear_error": 0.003737911581993103
+          },
+          {
+            "actual_linear_rgb": [
+              0.056128498166799545,
+              0.056652557104825974,
+              0.05833851546049118
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 0,
+            "name": "spawn-1-view-1-dark",
+            "phase": "dark",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0,
+            "whole_image_split_max_linear_error": 0.003102824091911316
+          },
+          {
+            "actual_linear_rgb": [
+              0.13240711390972137,
+              0.057597652077674866,
+              0.05940459296107292
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-1-view-1-red",
+            "phase": "red",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0016769394278526306,
+            "whole_image_split_max_linear_error": 0.003241017460823059
+          },
+          {
+            "actual_linear_rgb": [
+              0.0567573644220829,
+              0.057597652077674866,
+              0.14007757604122162
+            ],
+            "attempted_fragments": 104872,
+            "background_linear_rgb": [
+              0.16513223946094513,
+              0.16513223946094513,
+              0.16513223946094513
+            ],
+            "light_lumens": 24000,
+            "name": "spawn-1-view-1-blue",
+            "phase": "blue",
+            "restoration_max_byte_error": 0,
+            "split_max_linear_error": 0.0028651803731918335,
+            "whole_image_split_max_linear_error": 0.003310754895210266
+          }
+        ],
+        "controls": [
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "gain_off_max_byte_error": 0,
+            "gain_restore_max_byte_error": 0,
+            "name": "spawn-0-view-0",
+            "original_player_frame": 30
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "gain_off_max_byte_error": 0,
+            "gain_restore_max_byte_error": 0,
+            "name": "spawn-0-view-1",
+            "original_player_frame": 30
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "gain_off_max_byte_error": 0,
+            "gain_restore_max_byte_error": 0,
+            "name": "spawn-1-view-0",
+            "original_player_frame": 30
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "gain_off_max_byte_error": 0,
+            "gain_restore_max_byte_error": 0,
+            "name": "spawn-1-view-1",
+            "original_player_frame": 30
+          }
+        ],
+        "probe_passed": true,
+        "scope": "Saved fireworks_lit_smoke material in isolated receiver, synthetic host point light, fixed Reinhard HDR, split-draw and gain controls. Not authored light-route, wispy smoke art, bloom or production-show acceptance."
+      },
+      "root": "target/fireworks-f8/fragment-list-hdr-2026-10-23-f",
+      "captures": [
+        {
+          "sha256": "DC5C785512D5550F1554A0838E18F29D884DE13B23A2AEC88DA9F1D14E174A51",
+          "path": "fragment-list-hdr/spawn-0-view-0-stops--2-0.png"
+        },
+        {
+          "sha256": "76A444692E8131D3DEF06DE73F69124A60A1333D46B505A6267F4472B71599B8",
+          "path": "fragment-list-hdr/spawn-0-view-0-stops-0-1.png"
+        },
+        {
+          "sha256": "76A444692E8131D3DEF06DE73F69124A60A1333D46B505A6267F4472B71599B8",
+          "path": "fragment-list-hdr/spawn-0-view-0-stops-0-3.png"
+        },
+        {
+          "sha256": "EF1561F378C8536A3E7A5F8AF35FB4960F8FD26DA0FF4A2B36582492DD0C503E",
+          "path": "fragment-list-hdr/spawn-0-view-0-stops-2-2.png"
+        },
+        {
+          "sha256": "4D9F604163BFFD87FC7FCDA2DFC90984BB462F9095EFB2570998612756BBBABC",
+          "path": "fragment-list-hdr/spawn-0-view-1-stops--2-4.png"
+        },
+        {
+          "sha256": "E0A87F672CC37390E09B6BF696DF5443ED74317B1D42D9372266101664FC01BF",
+          "path": "fragment-list-hdr/spawn-0-view-1-stops-0-5.png"
+        },
+        {
+          "sha256": "E0A87F672CC37390E09B6BF696DF5443ED74317B1D42D9372266101664FC01BF",
+          "path": "fragment-list-hdr/spawn-0-view-1-stops-0-7.png"
+        },
+        {
+          "sha256": "69B2F8470C714BFACE388C81BD2E612B590C704EB56474AFF765025BC0673E38",
+          "path": "fragment-list-hdr/spawn-0-view-1-stops-2-6.png"
+        },
+        {
+          "sha256": "DC5C785512D5550F1554A0838E18F29D884DE13B23A2AEC88DA9F1D14E174A51",
+          "path": "fragment-list-hdr/spawn-1-view-0-stops--2-8.png"
+        },
+        {
+          "sha256": "76A444692E8131D3DEF06DE73F69124A60A1333D46B505A6267F4472B71599B8",
+          "path": "fragment-list-hdr/spawn-1-view-0-stops-0-11.png"
+        },
+        {
+          "sha256": "76A444692E8131D3DEF06DE73F69124A60A1333D46B505A6267F4472B71599B8",
+          "path": "fragment-list-hdr/spawn-1-view-0-stops-0-9.png"
+        },
+        {
+          "sha256": "EF1561F378C8536A3E7A5F8AF35FB4960F8FD26DA0FF4A2B36582492DD0C503E",
+          "path": "fragment-list-hdr/spawn-1-view-0-stops-2-10.png"
+        },
+        {
+          "sha256": "4D9F604163BFFD87FC7FCDA2DFC90984BB462F9095EFB2570998612756BBBABC",
+          "path": "fragment-list-hdr/spawn-1-view-1-stops--2-12.png"
+        },
+        {
+          "sha256": "E0A87F672CC37390E09B6BF696DF5443ED74317B1D42D9372266101664FC01BF",
+          "path": "fragment-list-hdr/spawn-1-view-1-stops-0-13.png"
+        },
+        {
+          "sha256": "E0A87F672CC37390E09B6BF696DF5443ED74317B1D42D9372266101664FC01BF",
+          "path": "fragment-list-hdr/spawn-1-view-1-stops-0-15.png"
+        },
+        {
+          "sha256": "69B2F8470C714BFACE388C81BD2E612B590C704EB56474AFF765025BC0673E38",
+          "path": "fragment-list-hdr/spawn-1-view-1-stops-2-14.png"
+        },
+        {
+          "sha256": "6382CEBF378D1DD7A3E50E56676D51A7061E4DB51560CD51878CF65E5AF2211C",
+          "path": "fragment-list-lighting/spawn-0-view-0-background.png"
+        },
+        {
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13",
+          "path": "fragment-list-lighting/spawn-0-view-0-blue-oit.png"
+        },
+        {
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13",
+          "path": "fragment-list-lighting/spawn-0-view-0-blue-restored.png"
+        },
+        {
+          "sha256": "3E91403323AED38633A1DE46F1A84C549093DD50896110A9ED0663498CD2DEBC",
+          "path": "fragment-list-lighting/spawn-0-view-0-blue-split.png"
+        },
+        {
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9",
+          "path": "fragment-list-lighting/spawn-0-view-0-dark-oit.png"
+        },
+        {
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9",
+          "path": "fragment-list-lighting/spawn-0-view-0-dark-restored.png"
+        },
+        {
+          "sha256": "A9CF3809F20063E8E3B33647E39B8A8941CBE25EDD97BC59346F075E18A9C67C",
+          "path": "fragment-list-lighting/spawn-0-view-0-dark-split.png"
+        },
+        {
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9",
+          "path": "fragment-list-lighting/spawn-0-view-0-gain-off.png"
+        },
+        {
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13",
+          "path": "fragment-list-lighting/spawn-0-view-0-gain-restored.png"
+        },
+        {
+          "sha256": "4F1714D96A8AE1D648FB6495BB32D6E370464E46D6F9DF8D6BB8A067D91C0ACD",
+          "path": "fragment-list-lighting/spawn-0-view-0-red-oit.png"
+        },
+        {
+          "sha256": "4F1714D96A8AE1D648FB6495BB32D6E370464E46D6F9DF8D6BB8A067D91C0ACD",
+          "path": "fragment-list-lighting/spawn-0-view-0-red-restored.png"
+        },
+        {
+          "sha256": "D924A562C2406DB849C3FC7E45DC7ECFBB8329CFEB30017A07DADF074FEA8AB2",
+          "path": "fragment-list-lighting/spawn-0-view-0-red-split.png"
+        },
+        {
+          "sha256": "6382CEBF378D1DD7A3E50E56676D51A7061E4DB51560CD51878CF65E5AF2211C",
+          "path": "fragment-list-lighting/spawn-0-view-1-background.png"
+        },
+        {
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD",
+          "path": "fragment-list-lighting/spawn-0-view-1-blue-oit.png"
+        },
+        {
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD",
+          "path": "fragment-list-lighting/spawn-0-view-1-blue-restored.png"
+        },
+        {
+          "sha256": "E25B500A684ECD6B4F4BF46A89F93E5B99EE1C7CF8F93DEA8DBB068EB55A35EB",
+          "path": "fragment-list-lighting/spawn-0-view-1-blue-split.png"
+        },
+        {
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F",
+          "path": "fragment-list-lighting/spawn-0-view-1-dark-oit.png"
+        },
+        {
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F",
+          "path": "fragment-list-lighting/spawn-0-view-1-dark-restored.png"
+        },
+        {
+          "sha256": "F1E637254E4FDC82C56AE7D5B02F401763F18DB5BBA181658F8D624D1B033C66",
+          "path": "fragment-list-lighting/spawn-0-view-1-dark-split.png"
+        },
+        {
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F",
+          "path": "fragment-list-lighting/spawn-0-view-1-gain-off.png"
+        },
+        {
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD",
+          "path": "fragment-list-lighting/spawn-0-view-1-gain-restored.png"
+        },
+        {
+          "sha256": "B5EECD17D1E2985BE5327A7B0FB4E88EEAC1AB4762EDC2D33B6527DFD10B8A78",
+          "path": "fragment-list-lighting/spawn-0-view-1-red-oit.png"
+        },
+        {
+          "sha256": "B5EECD17D1E2985BE5327A7B0FB4E88EEAC1AB4762EDC2D33B6527DFD10B8A78",
+          "path": "fragment-list-lighting/spawn-0-view-1-red-restored.png"
+        },
+        {
+          "sha256": "847BF2DEEE2A6FC55EE35FDE8D5A2C432E11E62894C0BBFCA273E94EA3413433",
+          "path": "fragment-list-lighting/spawn-0-view-1-red-split.png"
+        },
+        {
+          "sha256": "6382CEBF378D1DD7A3E50E56676D51A7061E4DB51560CD51878CF65E5AF2211C",
+          "path": "fragment-list-lighting/spawn-1-view-0-background.png"
+        },
+        {
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13",
+          "path": "fragment-list-lighting/spawn-1-view-0-blue-oit.png"
+        },
+        {
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13",
+          "path": "fragment-list-lighting/spawn-1-view-0-blue-restored.png"
+        },
+        {
+          "sha256": "3E91403323AED38633A1DE46F1A84C549093DD50896110A9ED0663498CD2DEBC",
+          "path": "fragment-list-lighting/spawn-1-view-0-blue-split.png"
+        },
+        {
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9",
+          "path": "fragment-list-lighting/spawn-1-view-0-dark-oit.png"
+        },
+        {
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9",
+          "path": "fragment-list-lighting/spawn-1-view-0-dark-restored.png"
+        },
+        {
+          "sha256": "A9CF3809F20063E8E3B33647E39B8A8941CBE25EDD97BC59346F075E18A9C67C",
+          "path": "fragment-list-lighting/spawn-1-view-0-dark-split.png"
+        },
+        {
+          "sha256": "D1150337CDF85A0FF637324FB67D22B21D8F33D29BB889B725DFDBE34085B2C9",
+          "path": "fragment-list-lighting/spawn-1-view-0-gain-off.png"
+        },
+        {
+          "sha256": "F0ADC2923E6C20C70EC4D8AE511178236C07671EB3CD4903EA3C67F9ACD19F13",
+          "path": "fragment-list-lighting/spawn-1-view-0-gain-restored.png"
+        },
+        {
+          "sha256": "4F1714D96A8AE1D648FB6495BB32D6E370464E46D6F9DF8D6BB8A067D91C0ACD",
+          "path": "fragment-list-lighting/spawn-1-view-0-red-oit.png"
+        },
+        {
+          "sha256": "4F1714D96A8AE1D648FB6495BB32D6E370464E46D6F9DF8D6BB8A067D91C0ACD",
+          "path": "fragment-list-lighting/spawn-1-view-0-red-restored.png"
+        },
+        {
+          "sha256": "D924A562C2406DB849C3FC7E45DC7ECFBB8329CFEB30017A07DADF074FEA8AB2",
+          "path": "fragment-list-lighting/spawn-1-view-0-red-split.png"
+        },
+        {
+          "sha256": "6382CEBF378D1DD7A3E50E56676D51A7061E4DB51560CD51878CF65E5AF2211C",
+          "path": "fragment-list-lighting/spawn-1-view-1-background.png"
+        },
+        {
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD",
+          "path": "fragment-list-lighting/spawn-1-view-1-blue-oit.png"
+        },
+        {
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD",
+          "path": "fragment-list-lighting/spawn-1-view-1-blue-restored.png"
+        },
+        {
+          "sha256": "E25B500A684ECD6B4F4BF46A89F93E5B99EE1C7CF8F93DEA8DBB068EB55A35EB",
+          "path": "fragment-list-lighting/spawn-1-view-1-blue-split.png"
+        },
+        {
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F",
+          "path": "fragment-list-lighting/spawn-1-view-1-dark-oit.png"
+        },
+        {
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F",
+          "path": "fragment-list-lighting/spawn-1-view-1-dark-restored.png"
+        },
+        {
+          "sha256": "F1E637254E4FDC82C56AE7D5B02F401763F18DB5BBA181658F8D624D1B033C66",
+          "path": "fragment-list-lighting/spawn-1-view-1-dark-split.png"
+        },
+        {
+          "sha256": "E9408F368621847303BD2B143F8C5B0626468B14F4E2BE2EB328DA8DF0736B8F",
+          "path": "fragment-list-lighting/spawn-1-view-1-gain-off.png"
+        },
+        {
+          "sha256": "58B555B89F9B4C3E78AC9480AC438B3186CD97E53B846BB5246C08298E889CCD",
+          "path": "fragment-list-lighting/spawn-1-view-1-gain-restored.png"
+        },
+        {
+          "sha256": "B5EECD17D1E2985BE5327A7B0FB4E88EEAC1AB4762EDC2D33B6527DFD10B8A78",
+          "path": "fragment-list-lighting/spawn-1-view-1-red-oit.png"
+        },
+        {
+          "sha256": "B5EECD17D1E2985BE5327A7B0FB4E88EEAC1AB4762EDC2D33B6527DFD10B8A78",
+          "path": "fragment-list-lighting/spawn-1-view-1-red-restored.png"
+        },
+        {
+          "sha256": "847BF2DEEE2A6FC55EE35FDE8D5A2C432E11E62894C0BBFCA273E94EA3413433",
+          "path": "fragment-list-lighting/spawn-1-view-1-red-split.png"
+        }
+      ],
+      "hdr": {
+        "cases": [
+          {
+            "actual_linear_rgb": [
+              0.5533957481384277,
+              0,
+              0.2013382911682129
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.5555555820465088,
+              0.20000000298023224
+            ],
+            "max_linear_error": 0.0035440921783447266,
+            "name": "spawn-0-view-0-stops--2-0",
+            "restoration_max_byte_error": null,
+            "stops": -2,
+            "wrong_clipped_error": 0.4232053756713867,
+            "wrong_mapped_first_error": 0.14167380332946777
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-0-view-0-stops-0-1",
+            "restoration_max_byte_error": null,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.9559738039970398,
+              0,
+              0.7991028428077698
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.9523809552192688,
+              0.800000011920929
+            ],
+            "max_linear_error": 0.003592550754547119,
+            "name": "spawn-0-view-0-stops-2-2",
+            "restoration_max_byte_error": null,
+            "stops": 2,
+            "wrong_clipped_error": 0.2991028428077698,
+            "wrong_mapped_first_error": 0.5638087391853333
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-0-view-0-stops-0-3",
+            "restoration_max_byte_error": 0,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.5535935163497925,
+              0,
+              0.2013382911682129
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.5555555820465088,
+              0.20000000298023224
+            ],
+            "max_linear_error": 0.0035440921783447266,
+            "name": "spawn-0-view-1-stops--2-4",
+            "restoration_max_byte_error": null,
+            "stops": -2,
+            "wrong_clipped_error": 0.4232053756713867,
+            "wrong_mapped_first_error": 0.14167380332946777
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-0-view-1-stops-0-5",
+            "restoration_max_byte_error": null,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.9559738039970398,
+              0,
+              0.7991028428077698
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.9523809552192688,
+              0.800000011920929
+            ],
+            "max_linear_error": 0.003592550754547119,
+            "name": "spawn-0-view-1-stops-2-6",
+            "restoration_max_byte_error": null,
+            "stops": 2,
+            "wrong_clipped_error": 0.2991028428077698,
+            "wrong_mapped_first_error": 0.5638087391853333
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-0-view-1-stops-0-7",
+            "restoration_max_byte_error": 0,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.5533957481384277,
+              0,
+              0.2013382911682129
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.5555555820465088,
+              0.20000000298023224
+            ],
+            "max_linear_error": 0.0035440921783447266,
+            "name": "spawn-1-view-0-stops--2-8",
+            "restoration_max_byte_error": null,
+            "stops": -2,
+            "wrong_clipped_error": 0.4232053756713867,
+            "wrong_mapped_first_error": 0.14167380332946777
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-1-view-0-stops-0-9",
+            "restoration_max_byte_error": null,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.9559738039970398,
+              0,
+              0.7991028428077698
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.9523809552192688,
+              0.800000011920929
+            ],
+            "max_linear_error": 0.003592550754547119,
+            "name": "spawn-1-view-0-stops-2-10",
+            "restoration_max_byte_error": null,
+            "stops": 2,
+            "wrong_clipped_error": 0.2991028428077698,
+            "wrong_mapped_first_error": 0.5638087391853333
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 105173,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-1-view-0-stops-0-11",
+            "restoration_max_byte_error": 0,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.5535935163497925,
+              0,
+              0.2013382911682129
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.5555555820465088,
+              0.20000000298023224
+            ],
+            "max_linear_error": 0.0035440921783447266,
+            "name": "spawn-1-view-1-stops--2-12",
+            "restoration_max_byte_error": null,
+            "stops": -2,
+            "wrong_clipped_error": 0.4232053756713867,
+            "wrong_mapped_first_error": 0.14167380332946777
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-1-view-1-stops-0-13",
+            "restoration_max_byte_error": null,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          },
+          {
+            "actual_linear_rgb": [
+              0.9559738039970398,
+              0,
+              0.7991028428077698
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.9523809552192688,
+              0.800000011920929
+            ],
+            "max_linear_error": 0.003592550754547119,
+            "name": "spawn-1-view-1-stops-2-14",
+            "restoration_max_byte_error": null,
+            "stops": 2,
+            "wrong_clipped_error": 0.2991028428077698,
+            "wrong_mapped_first_error": 0.5638087391853333
+          },
+          {
+            "actual_linear_rgb": [
+              0.8307694792747498,
+              0,
+              0.4999096691608429
+            ],
+            "attempted_fragments": 129524,
+            "expected_linear_rb": [
+              0.8333333134651184,
+              0.5
+            ],
+            "max_linear_error": 0.0030669569969177246,
+            "name": "spawn-1-view-1-stops-0-15",
+            "restoration_max_byte_error": 0,
+            "stops": 0,
+            "wrong_clipped_error": 0.44615456461906433,
+            "wrong_mapped_first_error": 0.30288660526275635
+          }
+        ],
+        "probe_passed": true,
+        "scope": "Known HDR radiance composited before fixed Reinhard exposure, display-referred screenshots, not raw HDR/bloom/full-show acceptance."
+      }
+    }
+  ],
+  "summary": {
+    "hdr_cases_per_run": 16,
+    "lighting_cases_per_run": 12,
+    "captures_per_run": 64,
+    "matching_captures": 64,
+    "hdr_max_linear_error": 0.003592550754547119,
+    "hdr_wrong_clamp_min_error": 0.2991028428077698,
+    "hdr_wrong_mapped_first_min_error": 0.14167380332946777,
+    "lighting_center_max_error": 0.0034514963626861572,
+    "lighting_whole_image_max_error": 0.003737911581993103
+  },
+  "base_commit": "a216402f178e109f490d7fc6b4c64fed7c1b5132",
+  "sources": [
+    {
+      "sha256": "DCA8AC1255235F69F2412B9D5BC7E1F29C2EB73FB694A8A0FF19A86A7A86BD8B",
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_draw_smoke.rs"
+    },
+    {
+      "sha256": "05565C5B63E2297E4337C95128FAC4CD614879626702345CD214F49C8EC7A743",
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_limits.rs"
+    },
+    {
+      "sha256": "18A52F92512FA83855B0070DCF05A7AFC92B88D61A6B19A3D78F16A9E6DDBE6C",
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_oit.rs"
+    },
+    {
+      "sha256": "727B01FA3B4301A8EED845B0EB4D1674F9B125F4456BE49A33A5795D9BC7B234",
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_hdr.rs"
+    },
+    {
+      "sha256": "BA0956897899E804F3E743A53801CF1D8C0FA8DE31C03E7EAE445DA9F94BA545",
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_lighting.rs"
+    },
+    {
+      "sha256": "5146E91A97BA56ACC40B61C24AD71444EDC1AD4CF4FACD8014F4806EC6CC6D6F",
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs"
+    },
+    {
+      "sha256": "ED47199076350898859F2B046B339CD2EADDE1BD48B9625EB7AFCA169E100E2C",
+      "path": "assets/test/materials/fireworks_lit_smoke.aestra.material.ron"
+    },
+    {
+      "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5",
+      "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron"
+    },
+    {
+      "sha256": "4D53E8A95331DF1E1729D2678AF4E72AC1A99B265AB9844E94144501C2B1AE4E",
+      "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs"
+    },
+    {
+      "sha256": "166EBC8F4FC862D2EA73A9AF24D7874B07FC60F9F4CAA0F978C53F45F30A3761",
+      "path": "bevy/aestra-bevy-render/src/gpu/material_lighting.wgsl"
+    },
+    {
+      "sha256": "35AB1F026EC6F8D9094BCA47047D75631FC2F49EA706FC7F135472EBC79C4352",
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs"
+    },
+    {
+      "sha256": "78A4C7118FADF254278D9530E491DA81835720D699CF9E535A6D20112F858BF0",
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs"
+    },
+    {
+      "sha256": "38B948752FFAC1452435D1A87B88ED0C2C13F28D58C37C77C871C23464F2D467",
+      "path": "bevy/aestra-bevy-render/src/preview.rs"
+    },
+    {
+      "sha256": "54FA4D05A5CB4173DA7B04B846A32C09492F41561A1EADEB35311FC30288EF8E",
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs"
+    },
+    {
+      "sha256": "F927A8CB67C3ADCC8930C266DE4B304106CC83F2D4F4481A637B5333B0D77CE8",
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs"
+    },
+    {
+      "sha256": "5F37B14A9110414055998D83D63EA0AE6C234DF5C0E209CB9BAF68A98D0DDCDE",
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.wgsl"
+    }
+  ],
+  "regression": {
+    "root": "target/fireworks-f8/fragment-list-hdr-2026-10-23-e",
+    "unchanged_captures": [
+      {
+        "count": 76,
+        "reference": "target/fireworks-f8/fragment-list-depth-2026-10-23-c/fragment-list",
+        "kind": "fragment-list",
+        "matching": 76
+      },
+      {
+        "count": 28,
+        "reference": "target/fireworks-f8/fragment-list-depth-2026-10-23-c/fragment-list-depth",
+        "kind": "fragment-list-depth",
+        "matching": 28
+      }
+    ],
+    "reports": [
+      {
+        "cases": 16,
+        "probe_passed": true,
+        "kind": "fragment-list",
+        "sha256": "642DCB7957A61D0A4301BC4971DAA106896BBD9F7E2EFA2BF895B7E63158C7FD"
+      },
+      {
+        "cases": 16,
+        "probe_passed": true,
+        "kind": "fragment-list-depth",
+        "sha256": "50E222A8D9C8A86A27C90FDB0CF54F2FCC9AB9D30F622AC4AC54C78119482E68"
+      },
+      {
+        "cases": 16,
+        "probe_passed": true,
+        "kind": "fragment-list-hdr",
+        "sha256": "5379DEF36D7880AA0F4844426F5B9F0E20A491A14066A653721188B15A94C16A"
+      },
+      {
+        "cases": 12,
+        "probe_passed": true,
+        "kind": "fragment-list-lighting",
+        "sha256": "BF7D7DDAAE7B5852EE744C8B5E6B6933EB9E56DDC18B60B3547FFCBB78304069"
+      },
+      {
+        "cases": 16,
+        "probe_passed": true,
+        "kind": "fragment-list-saturation",
+        "sha256": "43966077F5349587BF44FEEAE5B400D97A68285851E265B9FB30A29915C4A549"
+      }
+    ]
+  },
+  "environment": {
+    "os": "Windows",
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "target": "480x360 sRGB SDR screenshots from HDR camera",
+    "msaa": "Off",
+    "display": "Reinhard; bloom 0; dither off; fixed relative exposure",
+    "history": "PlaybackOnly",
+    "sorting": "Fast"
+  },
+  "retained_iterations": [
+    {
+      "root": "target/fireworks-f8/fragment-list-hdr-2026-10-23-b",
+      "result": "All five tests passed, using synthetic receiver; not final saved-material acceptance."
+    },
+    {
+      "root": "target/fireworks-f8/fragment-list-hdr-2026-10-23-c",
+      "lighting_probe_passed": false,
+      "other_four_tests_passed": true,
+      "reason": "Saved-material colored-light response did not clear unchanged >.05 minimum contrast with 12000-lumen controlled light. Changed only fixture intensity to 24000 lumens; asset and tolerances unchanged."
+    },
+    {
+      "root": "target/fireworks-f8/fragment-list-hdr-2026-10-23-d",
+      "lighting_probe_passed": true,
+      "result": "Saved-material lighting with final 24000-lumen fixture passed before final e/f repeats."
+    }
+  ],
+  "validation": {
+    "viewer_ordinary": {
+      "passed": 104,
+      "ignored": 35
+    },
+    "new_native_probes": 2,
+    "new_native_repetitions": 2,
+    "combined_native_regression_tests": 5,
+    "workspace_clippy": "--workspace --all-targets --features aestra-bench/gpu --locked --offline -- -D warnings",
+    "formatting": "cargo fmt --all -- --check",
+    "remaining": "No full workspace tests, Linux, bloom/other maps, public-show/art/live/dense/mixed-transparent acceptance in this slice."
+  }
+}

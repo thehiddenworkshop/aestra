@@ -229,6 +229,7 @@ fn native_020_production_pipeline_descriptors_validate_with_explicit_layouts() {
                                 draw_pipeline_key(&draw, format, samples, 0)
                             });
                             let key = GpuSpritePipelineKey {
+                                fragment_list_oit: false,
                                 view: if two_d {
                                     GpuSpriteViewKey::TwoD(
                                         Mesh2dPipelineKey::from_msaa_samples(samples)

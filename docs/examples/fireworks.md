@@ -56,7 +56,7 @@ production-finale density, continuous selected-star lighting or complete F8 acce
 See [`persistent-smoke-show-2026-10-08.md`](../../benchmarks/fireworks/persistent-smoke-show-2026-10-08.md)
 for reproducible controls, matched live costs and the retained failed cue-boundary sample.
 
-## Wispy smoke art draft, transparency probe and rocket deposition (F8.1C4A/B)
+## Wispy smoke art draft, transparency probes and rocket deposition (F8.1C4A–D)
 
 ```powershell
 cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show
@@ -106,10 +106,28 @@ convincing illuminated cloud depth and photographic art approval remain open.
 The new native transparency oracle uses pure-red/blue half-alpha sheets in separate
 players, opposite cameras and reversed spawn orders. It checks linear source-over
 against a deliberately wrong-order control, rather than using repeatability as proof.
-This qualifies separated sheets only. Whole-draw sorting **cannot** interleave two red
-particles around a blue particle from another pool; an ordinary algebraic regression
-records that limitation. Moving local-depth bounds, intersecting pools and general
-cross-draw smoke are not certified, and no global sort/OIT is introduced here.
+This qualifies separated sheets only. Native interleaved- and moving-pool probes now
+confirm the limitation in both Fast and DepthBackToFront: two red particles around a
+blue pool compose incorrectly, and fixed-host draw ordering does not follow a particle
+crossing another pool. Split-draw positive controls match the analytic reference.
+These are expected-failure diagnostics, **not** cross-draw transparency acceptance.
+An experimental camera opt-in now connects eligible native alpha sprite/flipbook draws
+to Bevy's bounded fragment lists. Its unlit semantic-sprite oracles pass, including
+budget/MSAA rejection and disable/re-enable controls. It is **not enabled on this show**:
+deliberate saturation probes now expose global fragment loss and local-sort approximation
+with opt-in bounded GPU diagnostics. Those degraded cases are not accepted blending.
+The default depth-prepass path now passes a partial opaque StandardMaterial wall oracle,
+including moving-depth and hide/restore controls. Bounded HDR radiance/exposure and
+the saved lit-smoke material now also pass analytic and correctly ordered split-draw
+controls. This is not smoke-art approval or authored light-route requalification.
+Textured/flipbook, mixed draws, other depth paths, resize/multiple cameras and live
+costs still need qualification.
+See [HDR/lit-material evidence](../../benchmarks/fireworks/fragment-list-hdr-lighting-2026-10-23.md),
+[opaque-depth evidence](../../benchmarks/fireworks/fragment-list-depth-2026-10-23.md),
+[saturation diagnostics](../../benchmarks/fireworks/fragment-list-saturation-2026-10-23.md),
+[prototype scope and evidence](../../benchmarks/fireworks/fragment-list-prototype-2026-10-23.md)
+and the original limitation probes in
+[`cross-pool-transparency-2026-10-23.md`](../../benchmarks/fireworks/cross-pool-transparency-2026-10-23.md).
 See [`smoke-transparency-art-2026-10-09.md`](../../benchmarks/fireworks/smoke-transparency-art-2026-10-09.md)
 for controls, retained failed art iteration and remaining gates.
 

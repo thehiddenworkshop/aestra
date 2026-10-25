@@ -176,6 +176,9 @@ mod persistent_show;
 #[path = "cross_draw_smoke.rs"]
 mod cross_draw;
 
+#[path = "cross_pool_limits.rs"]
+mod cross_pool_limits;
+
 fn advance(app: &mut App, owner: Entity, target: u64) {
     app.world_mut()
         .get_mut::<EffectPlayer>(owner)
@@ -234,6 +237,7 @@ fn costs(app: &mut App) -> serde_json::Value {
                 || !(path.contains("main_transparent_pass_3d")
                     || path.contains("cluster")
                     || path.contains("alpha_sort")
+                    || path.contains("oit")
                     || path.contains("particle_light"))
             {
                 continue;

@@ -47,6 +47,8 @@ pub use project_assets::AestraTextureRoot;
 pub(crate) use project_assets::{ProjectAssetCache, sync_texture_root};
 #[path = "../../../bevy/aestra-bevy-render/src/cpu.rs"]
 mod cpu;
+#[path = "../../../bevy/aestra-bevy-render/src/experimental_oit.rs"]
+pub mod experimental_oit;
 #[path = "../../../bevy/aestra-bevy-render/src/render_plugin.rs"]
 mod render_plugin;
 pub use render_plugin::AestraRenderPlugin;

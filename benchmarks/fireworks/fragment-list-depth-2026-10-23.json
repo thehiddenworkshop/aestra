@@ -1,0 +1,1046 @@
+{
+  "milestone": "F8.1C4F",
+  "date": "2026-10-23",
+  "scope": "Opaque unlit StandardMaterial box with default Aestra depth prepass, frozen unlit LDR semantic alpha sprites. NOT custom non-prepass/alpha-mask/HDR/lit/mixed-transparent/dense-performance/smoke-art acceptance.",
+  "runs": [
+    {
+      "captures": [
+        {
+          "sha256": "D3B802D8F4BF3A313ADB8AB219394EDE4817E9AA1E118A69A5CDF46324611850",
+          "path": "spawn-0-view-0-clear.png"
+        },
+        {
+          "sha256": "D3B802D8F4BF3A313ADB8AB219394EDE4817E9AA1E118A69A5CDF46324611850",
+          "path": "spawn-0-view-0-restored.png"
+        },
+        {
+          "sha256": "A26CA4D7C9B454DA1D7F009C6F1268152081B5C69848FA2F518B3B752E8C3C44",
+          "path": "spawn-0-view-0-wall--1.png"
+        },
+        {
+          "sha256": "48F990099C206067D72BBEE01F5B292B01D46A9F6FAA6CDC6864EB5C6F5D12A8",
+          "path": "spawn-0-view-0-wall--6.png"
+        },
+        {
+          "sha256": "D0A32B61831EE4A698F6E28AE91AB717061221F8971150983B7C4292737F34ED",
+          "path": "spawn-0-view-0-wall-0.5.png"
+        },
+        {
+          "sha256": "E057DFD955A5D53C431C0175ECA70DC6CA37203A6565BDF8562AEDFF01298558",
+          "path": "spawn-0-view-0-wall-6.png"
+        },
+        {
+          "sha256": "139CA1636A27C6306ED44F31D574A5DBABB30EB284DE6FB360755A86C38619E4",
+          "path": "spawn-0-view-0-wall-only.png"
+        },
+        {
+          "sha256": "EF16D4AB8755B63DE06906C51EF4A73D0D73F83CC2011CBE8681EB2D79403F63",
+          "path": "spawn-0-view-1-clear.png"
+        },
+        {
+          "sha256": "EF16D4AB8755B63DE06906C51EF4A73D0D73F83CC2011CBE8681EB2D79403F63",
+          "path": "spawn-0-view-1-restored.png"
+        },
+        {
+          "sha256": "A366260F98CA0B9539B021EBD0EB0B143A2C3B12E49368B6BE4DCBD6276FD266",
+          "path": "spawn-0-view-1-wall--1.png"
+        },
+        {
+          "sha256": "63DAC1BE7F2A7194BBA23AAC3EFA018FB836CD872EEE64D1AE6F3D577CDF52E4",
+          "path": "spawn-0-view-1-wall--6.png"
+        },
+        {
+          "sha256": "3206EE5ADC3735EB8E64242F01F0B833E05682791E8B8F681F39F1EB9CA82652",
+          "path": "spawn-0-view-1-wall-0.5.png"
+        },
+        {
+          "sha256": "2EEB998D98A121593657D8A77B1047BC04E725AF3FEFB69406A34E0801F9109F",
+          "path": "spawn-0-view-1-wall-6.png"
+        },
+        {
+          "sha256": "0D157C6BE1FD6C3A9E418E96486A54259C458587A8D3CA40B45BB255718799AC",
+          "path": "spawn-0-view-1-wall-only.png"
+        },
+        {
+          "sha256": "D3B802D8F4BF3A313ADB8AB219394EDE4817E9AA1E118A69A5CDF46324611850",
+          "path": "spawn-1-view-0-clear.png"
+        },
+        {
+          "sha256": "D3B802D8F4BF3A313ADB8AB219394EDE4817E9AA1E118A69A5CDF46324611850",
+          "path": "spawn-1-view-0-restored.png"
+        },
+        {
+          "sha256": "A26CA4D7C9B454DA1D7F009C6F1268152081B5C69848FA2F518B3B752E8C3C44",
+          "path": "spawn-1-view-0-wall--1.png"
+        },
+        {
+          "sha256": "48F990099C206067D72BBEE01F5B292B01D46A9F6FAA6CDC6864EB5C6F5D12A8",
+          "path": "spawn-1-view-0-wall--6.png"
+        },
+        {
+          "sha256": "D0A32B61831EE4A698F6E28AE91AB717061221F8971150983B7C4292737F34ED",
+          "path": "spawn-1-view-0-wall-0.5.png"
+        },
+        {
+          "sha256": "E057DFD955A5D53C431C0175ECA70DC6CA37203A6565BDF8562AEDFF01298558",
+          "path": "spawn-1-view-0-wall-6.png"
+        },
+        {
+          "sha256": "139CA1636A27C6306ED44F31D574A5DBABB30EB284DE6FB360755A86C38619E4",
+          "path": "spawn-1-view-0-wall-only.png"
+        },
+        {
+          "sha256": "EF16D4AB8755B63DE06906C51EF4A73D0D73F83CC2011CBE8681EB2D79403F63",
+          "path": "spawn-1-view-1-clear.png"
+        },
+        {
+          "sha256": "EF16D4AB8755B63DE06906C51EF4A73D0D73F83CC2011CBE8681EB2D79403F63",
+          "path": "spawn-1-view-1-restored.png"
+        },
+        {
+          "sha256": "A366260F98CA0B9539B021EBD0EB0B143A2C3B12E49368B6BE4DCBD6276FD266",
+          "path": "spawn-1-view-1-wall--1.png"
+        },
+        {
+          "sha256": "63DAC1BE7F2A7194BBA23AAC3EFA018FB836CD872EEE64D1AE6F3D577CDF52E4",
+          "path": "spawn-1-view-1-wall--6.png"
+        },
+        {
+          "sha256": "3206EE5ADC3735EB8E64242F01F0B833E05682791E8B8F681F39F1EB9CA82652",
+          "path": "spawn-1-view-1-wall-0.5.png"
+        },
+        {
+          "sha256": "2EEB998D98A121593657D8A77B1047BC04E725AF3FEFB69406A34E0801F9109F",
+          "path": "spawn-1-view-1-wall-6.png"
+        },
+        {
+          "sha256": "0D157C6BE1FD6C3A9E418E96486A54259C458587A8D3CA40B45BB255718799AC",
+          "path": "spawn-1-view-1-wall-only.png"
+        }
+      ],
+      "root": "target/fireworks-f8/fragment-list-depth-2026-10-23-b/fragment-list-depth",
+      "report_sha256": "50E222A8D9C8A86A27C90FDB0CF54F2FCC9AB9D30F622AC4AC54C78119482E68",
+      "report": {
+        "cases": [
+          {
+            "attempted_fragments": 105173,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0010395646095275879,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.625,
+              0.03125,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-0-wall--6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": -6,
+            "wrong_unoccluded_error": 0.03125
+          },
+          {
+            "attempted_fragments": 74056,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.125,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-0-wall-0.5",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": 0.5,
+            "wrong_unoccluded_error": 0.2501583695411682
+          },
+          {
+            "attempted_fragments": 92610,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.0625,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-0-wall--1",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": -1,
+            "wrong_unoccluded_error": 0.12396043539047241
+          },
+          {
+            "attempted_fragments": 52588,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0001583695411682129,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0,
+              0.25,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-0-wall-6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": 6,
+            "wrong_unoccluded_error": 0.6239604353904724
+          },
+          {
+            "attempted_fragments": 64762,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0001583695411682129,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0,
+              0.25,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-1-wall--6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": -6,
+            "wrong_unoccluded_error": 0.6239604353904724
+          },
+          {
+            "attempted_fragments": 113362,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.0625,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-1-wall-0.5",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": 0.5,
+            "wrong_unoccluded_error": 0.12396043539047241
+          },
+          {
+            "attempted_fragments": 94808,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.125,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-1-wall--1",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": -1,
+            "wrong_unoccluded_error": 0.2501583695411682
+          },
+          {
+            "attempted_fragments": 129524,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0010395646095275879,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.625,
+              0.03125,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-1-wall-6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": 6,
+            "wrong_unoccluded_error": 0.03125
+          },
+          {
+            "attempted_fragments": 105173,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0010395646095275879,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.625,
+              0.03125,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-0-wall--6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": -6,
+            "wrong_unoccluded_error": 0.03125
+          },
+          {
+            "attempted_fragments": 74056,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.125,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-0-wall-0.5",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": 0.5,
+            "wrong_unoccluded_error": 0.2501583695411682
+          },
+          {
+            "attempted_fragments": 92610,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.0625,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-0-wall--1",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": -1,
+            "wrong_unoccluded_error": 0.12396043539047241
+          },
+          {
+            "attempted_fragments": 52588,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0001583695411682129,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0,
+              0.25,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-0-wall-6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": 6,
+            "wrong_unoccluded_error": 0.6239604353904724
+          },
+          {
+            "attempted_fragments": 64762,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0001583695411682129,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0,
+              0.25,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-1-wall--6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": -6,
+            "wrong_unoccluded_error": 0.6239604353904724
+          },
+          {
+            "attempted_fragments": 113362,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.0625,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-1-wall-0.5",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": 0.5,
+            "wrong_unoccluded_error": 0.12396043539047241
+          },
+          {
+            "attempted_fragments": 94808,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.125,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-1-wall--1",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": -1,
+            "wrong_unoccluded_error": 0.2501583695411682
+          },
+          {
+            "attempted_fragments": 129524,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0010395646095275879,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.625,
+              0.03125,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-1-wall-6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": 6,
+            "wrong_unoccluded_error": 0.03125
+          }
+        ],
+        "controls": [
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "clear_calibration_max_linear_error": 0.0010395646095275879,
+            "name": "spawn-0-view-0",
+            "restoration_max_byte_error": 0,
+            "wall_calibration_max_linear_error": 0.0001583695411682129
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "clear_calibration_max_linear_error": 0.0010395646095275879,
+            "name": "spawn-0-view-1",
+            "restoration_max_byte_error": 0,
+            "wall_calibration_max_linear_error": 0.0001583695411682129
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "clear_calibration_max_linear_error": 0.0010395646095275879,
+            "name": "spawn-1-view-0",
+            "restoration_max_byte_error": 0,
+            "wall_calibration_max_linear_error": 0.0001583695411682129
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "clear_calibration_max_linear_error": 0.0010395646095275879,
+            "name": "spawn-1-view-1",
+            "restoration_max_byte_error": 0,
+            "wall_calibration_max_linear_error": 0.0001583695411682129
+          }
+        ],
+        "probe_passed": true,
+        "scope": "Partial opaque StandardMaterial box, default Aestra DepthPrepass, unlit LDR alpha sprites. Not alpha-mask, non-prepass custom materials, HDR/lit, mixed transparent or production smoke acceptance."
+      }
+    },
+    {
+      "root": "target/fireworks-f8/fragment-list-depth-2026-10-23-c/fragment-list-depth",
+      "report_sha256": "50E222A8D9C8A86A27C90FDB0CF54F2FCC9AB9D30F622AC4AC54C78119482E68",
+      "captures": [
+        {
+          "path": "spawn-0-view-0-clear.png",
+          "sha256": "D3B802D8F4BF3A313ADB8AB219394EDE4817E9AA1E118A69A5CDF46324611850"
+        },
+        {
+          "path": "spawn-0-view-0-restored.png",
+          "sha256": "D3B802D8F4BF3A313ADB8AB219394EDE4817E9AA1E118A69A5CDF46324611850"
+        },
+        {
+          "path": "spawn-0-view-0-wall--1.png",
+          "sha256": "A26CA4D7C9B454DA1D7F009C6F1268152081B5C69848FA2F518B3B752E8C3C44"
+        },
+        {
+          "path": "spawn-0-view-0-wall--6.png",
+          "sha256": "48F990099C206067D72BBEE01F5B292B01D46A9F6FAA6CDC6864EB5C6F5D12A8"
+        },
+        {
+          "path": "spawn-0-view-0-wall-0.5.png",
+          "sha256": "D0A32B61831EE4A698F6E28AE91AB717061221F8971150983B7C4292737F34ED"
+        },
+        {
+          "path": "spawn-0-view-0-wall-6.png",
+          "sha256": "E057DFD955A5D53C431C0175ECA70DC6CA37203A6565BDF8562AEDFF01298558"
+        },
+        {
+          "path": "spawn-0-view-0-wall-only.png",
+          "sha256": "139CA1636A27C6306ED44F31D574A5DBABB30EB284DE6FB360755A86C38619E4"
+        },
+        {
+          "path": "spawn-0-view-1-clear.png",
+          "sha256": "EF16D4AB8755B63DE06906C51EF4A73D0D73F83CC2011CBE8681EB2D79403F63"
+        },
+        {
+          "path": "spawn-0-view-1-restored.png",
+          "sha256": "EF16D4AB8755B63DE06906C51EF4A73D0D73F83CC2011CBE8681EB2D79403F63"
+        },
+        {
+          "path": "spawn-0-view-1-wall--1.png",
+          "sha256": "A366260F98CA0B9539B021EBD0EB0B143A2C3B12E49368B6BE4DCBD6276FD266"
+        },
+        {
+          "path": "spawn-0-view-1-wall--6.png",
+          "sha256": "63DAC1BE7F2A7194BBA23AAC3EFA018FB836CD872EEE64D1AE6F3D577CDF52E4"
+        },
+        {
+          "path": "spawn-0-view-1-wall-0.5.png",
+          "sha256": "3206EE5ADC3735EB8E64242F01F0B833E05682791E8B8F681F39F1EB9CA82652"
+        },
+        {
+          "path": "spawn-0-view-1-wall-6.png",
+          "sha256": "2EEB998D98A121593657D8A77B1047BC04E725AF3FEFB69406A34E0801F9109F"
+        },
+        {
+          "path": "spawn-0-view-1-wall-only.png",
+          "sha256": "0D157C6BE1FD6C3A9E418E96486A54259C458587A8D3CA40B45BB255718799AC"
+        },
+        {
+          "path": "spawn-1-view-0-clear.png",
+          "sha256": "D3B802D8F4BF3A313ADB8AB219394EDE4817E9AA1E118A69A5CDF46324611850"
+        },
+        {
+          "path": "spawn-1-view-0-restored.png",
+          "sha256": "D3B802D8F4BF3A313ADB8AB219394EDE4817E9AA1E118A69A5CDF46324611850"
+        },
+        {
+          "path": "spawn-1-view-0-wall--1.png",
+          "sha256": "A26CA4D7C9B454DA1D7F009C6F1268152081B5C69848FA2F518B3B752E8C3C44"
+        },
+        {
+          "path": "spawn-1-view-0-wall--6.png",
+          "sha256": "48F990099C206067D72BBEE01F5B292B01D46A9F6FAA6CDC6864EB5C6F5D12A8"
+        },
+        {
+          "path": "spawn-1-view-0-wall-0.5.png",
+          "sha256": "D0A32B61831EE4A698F6E28AE91AB717061221F8971150983B7C4292737F34ED"
+        },
+        {
+          "path": "spawn-1-view-0-wall-6.png",
+          "sha256": "E057DFD955A5D53C431C0175ECA70DC6CA37203A6565BDF8562AEDFF01298558"
+        },
+        {
+          "path": "spawn-1-view-0-wall-only.png",
+          "sha256": "139CA1636A27C6306ED44F31D574A5DBABB30EB284DE6FB360755A86C38619E4"
+        },
+        {
+          "path": "spawn-1-view-1-clear.png",
+          "sha256": "EF16D4AB8755B63DE06906C51EF4A73D0D73F83CC2011CBE8681EB2D79403F63"
+        },
+        {
+          "path": "spawn-1-view-1-restored.png",
+          "sha256": "EF16D4AB8755B63DE06906C51EF4A73D0D73F83CC2011CBE8681EB2D79403F63"
+        },
+        {
+          "path": "spawn-1-view-1-wall--1.png",
+          "sha256": "A366260F98CA0B9539B021EBD0EB0B143A2C3B12E49368B6BE4DCBD6276FD266"
+        },
+        {
+          "path": "spawn-1-view-1-wall--6.png",
+          "sha256": "63DAC1BE7F2A7194BBA23AAC3EFA018FB836CD872EEE64D1AE6F3D577CDF52E4"
+        },
+        {
+          "path": "spawn-1-view-1-wall-0.5.png",
+          "sha256": "3206EE5ADC3735EB8E64242F01F0B833E05682791E8B8F681F39F1EB9CA82652"
+        },
+        {
+          "path": "spawn-1-view-1-wall-6.png",
+          "sha256": "2EEB998D98A121593657D8A77B1047BC04E725AF3FEFB69406A34E0801F9109F"
+        },
+        {
+          "path": "spawn-1-view-1-wall-only.png",
+          "sha256": "0D157C6BE1FD6C3A9E418E96486A54259C458587A8D3CA40B45BB255718799AC"
+        }
+      ],
+      "report": {
+        "cases": [
+          {
+            "attempted_fragments": 105173,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0010395646095275879,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.625,
+              0.03125,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-0-wall--6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": -6,
+            "wrong_unoccluded_error": 0.03125
+          },
+          {
+            "attempted_fragments": 74056,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.125,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-0-wall-0.5",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": 0.5,
+            "wrong_unoccluded_error": 0.2501583695411682
+          },
+          {
+            "attempted_fragments": 92610,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.0625,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-0-wall--1",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": -1,
+            "wrong_unoccluded_error": 0.12396043539047241
+          },
+          {
+            "attempted_fragments": 52588,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0001583695411682129,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0,
+              0.25,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-0-wall-6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": 6,
+            "wrong_unoccluded_error": 0.6239604353904724
+          },
+          {
+            "attempted_fragments": 64762,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0001583695411682129,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0,
+              0.25,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-1-wall--6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": -6,
+            "wrong_unoccluded_error": 0.6239604353904724
+          },
+          {
+            "attempted_fragments": 113362,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.0625,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-1-wall-0.5",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": 0.5,
+            "wrong_unoccluded_error": 0.12396043539047241
+          },
+          {
+            "attempted_fragments": 94808,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.125,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-1-wall--1",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": -1,
+            "wrong_unoccluded_error": 0.2501583695411682
+          },
+          {
+            "attempted_fragments": 129524,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0010395646095275879,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.625,
+              0.03125,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-0-view-1-wall-6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": 6,
+            "wrong_unoccluded_error": 0.03125
+          },
+          {
+            "attempted_fragments": 105173,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0010395646095275879,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.625,
+              0.03125,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-0-wall--6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": -6,
+            "wrong_unoccluded_error": 0.03125
+          },
+          {
+            "attempted_fragments": 74056,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.125,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-0-wall-0.5",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": 0.5,
+            "wrong_unoccluded_error": 0.2501583695411682
+          },
+          {
+            "attempted_fragments": 92610,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.0625,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-0-wall--1",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": -1,
+            "wrong_unoccluded_error": 0.12396043539047241
+          },
+          {
+            "attempted_fragments": 52588,
+            "baseline_attempted_fragments": 105173,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0001583695411682129,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0,
+              0.25,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-0-wall-6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": false,
+            "over_sort_pixels": 0,
+            "wall_z": 6,
+            "wrong_unoccluded_error": 0.6239604353904724
+          },
+          {
+            "attempted_fragments": 64762,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0001583695411682129,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0,
+              0.25,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-1-wall--6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": -6,
+            "wrong_unoccluded_error": 0.6239604353904724
+          },
+          {
+            "attempted_fragments": 113362,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.0625,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-1-wall-0.5",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": 0.5,
+            "wrong_unoccluded_error": 0.12396043539047241
+          },
+          {
+            "attempted_fragments": 94808,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0030669569969177246,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.5,
+              0.125,
+              0
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-1-wall--1",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": -1,
+            "wrong_unoccluded_error": 0.2501583695411682
+          },
+          {
+            "attempted_fragments": 129524,
+            "baseline_attempted_fragments": 129524,
+            "capped_max_depth": 3,
+            "covered_max_linear_error": 0.0010395646095275879,
+            "dropped_fragments": 0,
+            "expected_linear_rgb": [
+              0.625,
+              0.03125,
+              0.25
+            ],
+            "invalid_links": 0,
+            "name": "spawn-1-view-1-wall-6",
+            "open_max_linear_error": 0.0010395646095275879,
+            "opposite": true,
+            "over_sort_pixels": 0,
+            "wall_z": 6,
+            "wrong_unoccluded_error": 0.03125
+          }
+        ],
+        "controls": [
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "clear_calibration_max_linear_error": 0.0010395646095275879,
+            "name": "spawn-0-view-0",
+            "restoration_max_byte_error": 0,
+            "wall_calibration_max_linear_error": 0.0001583695411682129
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "clear_calibration_max_linear_error": 0.0010395646095275879,
+            "name": "spawn-0-view-1",
+            "restoration_max_byte_error": 0,
+            "wall_calibration_max_linear_error": 0.0001583695411682129
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "clear_calibration_max_linear_error": 0.0010395646095275879,
+            "name": "spawn-1-view-0",
+            "restoration_max_byte_error": 0,
+            "wall_calibration_max_linear_error": 0.0001583695411682129
+          },
+          {
+            "adapter": {
+              "backend": "Vulkan",
+              "name": "NVIDIA GeForce RTX 4070 SUPER"
+            },
+            "clear_calibration_max_linear_error": 0.0010395646095275879,
+            "name": "spawn-1-view-1",
+            "restoration_max_byte_error": 0,
+            "wall_calibration_max_linear_error": 0.0001583695411682129
+          }
+        ],
+        "probe_passed": true,
+        "scope": "Partial opaque StandardMaterial box, default Aestra DepthPrepass, unlit LDR alpha sprites. Not alpha-mask, non-prepass custom materials, HDR/lit, mixed transparent or production smoke acceptance."
+      }
+    }
+  ],
+  "summary": {
+    "cases_per_run": 16,
+    "captures_per_run": 28,
+    "matching": 28,
+    "covered_max": 0.0030669569969177246,
+    "open_max": 0.0010395646095275879,
+    "min_wrong_control_error": 0.12396043539047241
+  },
+  "initial_iteration": {
+    "root": "target/fireworks-f8/fragment-list-depth-2026-10-23-a",
+    "probe_passed": false,
+    "reason": "Off-axis color patches sampled intentional sprite edge fade, not the calibrated center. Final patches lie within the original central 8x8 plateau; unchanged .01 linear-error threshold."
+  },
+  "base_commit": "a216402f178e109f490d7fc6b4c64fed7c1b5132",
+  "sources": [
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_depth.rs",
+      "sha256": "CF043EF84F277965D9E09501FAA90AEA77E3FA5C6E1169C82F8D867016C48250"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_oit.rs",
+      "sha256": "93083B41AA8969927FD0D45743DB2546514973567834487EAA589033DFA77BEE"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_limits.rs",
+      "sha256": "05565C5B63E2297E4337C95128FAC4CD614879626702345CD214F49C8EC7A743"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_draw_smoke.rs",
+      "sha256": "70BEDAD9CFF8102CA9756E40E1A01DB859A471C25EB4AF7329BA50625F424071"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "5146E91A97BA56ACC40B61C24AD71444EDC1AD4CF4FACD8014F4806EC6CC6D6F"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/render_plugin.rs",
+      "sha256": "6D14D1CED1118E4912C99DD7F32228778A55F674C42D0854D3FF2F3F3A10E025"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+      "sha256": "35AB1F026EC6F8D9094BCA47047D75631FC2F49EA706FC7F135472EBC79C4352"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "78A4C7118FADF254278D9530E491DA81835720D699CF9E535A6D20112F858BF0"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+      "sha256": "4D53E8A95331DF1E1729D2678AF4E72AC1A99B265AB9844E94144501C2B1AE4E"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+      "sha256": "54FA4D05A5CB4173DA7B04B846A32C09492F41561A1EADEB35311FC30288EF8E"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs",
+      "sha256": "F927A8CB67C3ADCC8930C266DE4B304106CC83F2D4F4481A637B5333B0D77CE8"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.wgsl",
+      "sha256": "5F37B14A9110414055998D83D63EA0AE6C234DF5C0E209CB9BAF68A98D0DDCDE"
+    }
+  ],
+  "regression": {
+    "healthy_cases": 16,
+    "healthy_capture_count": 76,
+    "healthy_passed": true,
+    "healthy_matching": 76,
+    "healthy_report_sha256": "2F64396170B7CDC349BFF97C0E474FC8B8565012DDB17B678A06CF90F34D1BF8",
+    "saturation_report_sha256": "C60A7E21DB55EB7CC3DC7C504E8B9AC64FEE3DC92C778DE9B1A69F3807F4E845",
+    "saturation_cases": 16,
+    "root": "target/fireworks-f8/fragment-list-depth-2026-10-23-c",
+    "saturation_passed": true,
+    "healthy_reference": "target/fireworks-f8/fragment-list-saturation-2026-10-23-c/fragment-list"
+  },
+  "environment": {
+    "os": "Windows",
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "target": "480x360 sRGB LDR",
+    "msaa": "Off",
+    "history": "PlaybackOnly",
+    "sorting": "Fast",
+    "depth": "default Aestra DepthPrepass"
+  },
+  "validation": {
+    "viewer_ordinary": {
+      "passed": 102,
+      "ignored": 33
+    },
+    "native_depth_repetitions": 2,
+    "combined_native_regression_tests": 3,
+    "workspace_clippy": "--workspace --all-targets --features aestra-bench/gpu --locked --offline -- -D warnings",
+    "formatting": "cargo fmt --all -- --check",
+    "remaining": "No full workspace tests, Linux, arbitrary custom opaque materials or public HDR/dense/live-show acceptance."
+  }
+}

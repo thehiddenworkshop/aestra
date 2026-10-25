@@ -5,6 +5,11 @@
 //! runtime and preview behavior.
 
 mod capabilities;
+mod experimental_oit;
+pub use experimental_oit::{
+    ExperimentalOitAllocation, ExperimentalOitDiagnosticSample, ExperimentalOitDiagnostics,
+    ExperimentalOitSettings, ExperimentalOitStatistics, ExperimentalOitStatus,
+};
 mod cpu;
 pub mod execution;
 pub mod gpu;

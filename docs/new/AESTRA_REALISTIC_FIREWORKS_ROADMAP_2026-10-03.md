@@ -4748,8 +4748,94 @@ GPU checkpoint restoration, artifact validation and strict workspace Clippy pass
 No new matched performance claim is made. See
 [`distance-smoke-2026-10-09.md`](../../benchmarks/fireworks/distance-smoke-2026-10-09.md).
 
-**Next:** native interleaved/moving-pool failure probes and a measured global-compositing
-decision; author continuous smoke along star paths and review its public HDR/paced costs.
+**F8.1C4C native cross-pool limits (2026-10-23):** the interleaving counterexample now
+runs on the ordinary GPU playback path with two red particles straddling a separate
+blue pool. Both camera directions, both spawn orders and Fast/DepthBackToFront modes
+fail exact linear source-over (.1252–.2487 error); split-draw positive controls match
+within .00104. A fixed-host particle moving through another pool matches before the
+crossing and fails all 16 post-crossing cases (.24984 error). Calibration, exact-frame
+forward PlaybackOnly, changing projected coverage and sort-dispatch metadata prevent
+missing/frozen/unsorted output from masquerading as the expected limitation.
+
+Two final native repetitions match all 136 corresponding PNGs, with byte-exact
+visibility restoration. An initial coincident-center restoration failure is retained
+separately; the final fixture uses distinct centers to isolate interleaving, not to
+claim a tie-order fix. Existing separated-sheet acceptance remains intact. Tiny frozen
+two-draw timestamps are diagnostic only, not public-show or replacement-compositor costs.
+No show art, production renderer behavior or defaults change in this slice. See
+[`cross-pool-transparency-2026-10-23.md`](../../benchmarks/fireworks/cross-pool-transparency-2026-10-23.md)
+and its machine-readable evidence.
+
+**F8.1C4D bounded fragment-list prototype (2026-10-23):** an explicit experimental
+camera component now connects eligible native 3D alpha sprite/flipbook draws to
+Bevy's collection/resolve path. The adapter supplies final premultiplied color and
+skips zero-alpha fragments; portable shaders, simulation/history and defaults remain
+unchanged. Memory approval rejects excessive shared node/head allocations and unsupported
+MSAA/capabilities; allocation snapshots do not map particles or fragments.
+
+Sixteen unlit semantic-sprite oracle cases pass within .003067 maximum linear error;
+two fresh runs match all 76 corresponding PNGs. One-byte budget rejection, active
+MSAA changes, buffer release, component removal and re-enabling pass with byte-exact
+restoration. The non-OIT expected-failure matrix remains unchanged. At 480×360 with
+average capacity four, actual node/head storage is 8.57 MiB. Matched tiny frozen
+captures show an added transparent/resolve cost, not a speedup or production frame
+budget. Legacy/flipbook, lit/HDR, mixed draws, native multi-camera/resize and saturation
+are not accepted by these controls. No public-show flag or asset/default changes.
+See [`fragment-list-prototype-2026-10-23.md`](../../benchmarks/fireworks/fragment-list-prototype-2026-10-23.md).
+
+**F8.1C4E saturation diagnostics (2026-10-23):** an explicitly enabled, single-full-target-
+camera diagnostic now reads GPU aggregate counts before Bevy resets its lists. Only
+16 aggregate bytes/sample cross to the CPU, with three bounded asynchronous slots;
+normal playback does not map fragment/particle data. Camera/configuration generations
+and sequence checks invalidate old results; missing samples are unknown, not healthy.
+The bounded per-pixel traversal stops at exact-sort threshold + 1 and reports over-sort
+pixels among accepted nodes (a lower bound under global loss).
+
+The sixteen-stage native matrix separates a fitting but exhausted 1,728-node allocation
+(103,445–127,796 dropped fragments) from local-sort saturation with ample global storage
+(37,108 over-sort pixels, visibly inaccurate blending). Both camera directions/spawn
+orders restore the healthy source-over result within .00104 linear error. Memory-budget
+rejection clears the diagnostic instead of reporting zero loss. No public-show settings,
+assets or upstream Bevy resolve shader change; approximate-tail behavior is not accepted.
+See [`fragment-list-saturation-2026-10-23.md`](../../benchmarks/fireworks/fragment-list-saturation-2026-10-23.md).
+
+**F8.1C4F opaque-depth oracle (2026-10-23):** a partial opaque unlit StandardMaterial
+box now tests Aestra's default depth-prepass path from both camera directions and
+spawn orders. Four non-monotonic wall depths leave 0–3 layers visible on the covered
+half, while the open half preserves the original blend. An independent world-depth /
+linear source-over oracle rejects missing occlusion; wall-only/clear calibrations,
+GPU fragment counts and hide/restore controls catch stale depth or global masking.
+
+All sixteen cases pass in two final runs within .003067 maximum linear error; all
+28 corresponding PNGs match and hiding the wall restores the original image byte-exactly.
+The combined healthy/lifecycle and saturation native regression also passes. No runtime
+fix, show/default change or smoke-art acceptance is implied. Custom non-prepass opaque
+materials, alpha-mask/coplanar/near-plane and other depth paths remain unqualified.
+See [`fragment-list-depth-2026-10-23.md`](../../benchmarks/fireworks/fragment-list-depth-2026-10-23.md).
+
+**F8.1C4G HDR/lit material oracle (2026-10-23):** the native interleaved fixture now
+checks authored radiance 8/4 against independent source-over followed by fixed Reinhard
+and −2/0/+2 exposure. Wrong SDR-clamping and map-before-blend controls fail. Separately,
+the unchanged saved `fireworks_lit_smoke` material darkens a gray background, receives
+controlled red/blue host lighting and matches correctly ordered one-particle draws
+across the entire image. Scattering gain mute/restore preserves compiled material
+identity and frozen playback; restoring OIT/exposure/gain returns byte-exact images.
+
+Both final repetitions pass 16 HDR and 12 lit cases, with all 64 corresponding PNGs
+matching. Maximum linear errors are .003593 (analytic HDR) and .003738 (whole-image lit
+reference). The five-probe combined native regression passes; prior healthy/depth
+images remain unchanged. This is saved-material integration, not smoke-art, authored
+light-route, bloom or full-show performance acceptance. No production renderer fix,
+asset or public-default changes. The initial saved-material light-contrast failure
+and fixture calibration are retained in the evidence.
+See [`fragment-list-hdr-lighting-2026-10-23.md`](../../benchmarks/fireworks/fragment-list-hdr-lighting-2026-10-23.md).
+
+**Next:** textured/flipbook paths, then mixed additive/trail/non-OIT draws, other depth
+paths, native resize/multiple cameras, and matched dense/live-paced costs. The camera allocation
+guard is not fragment-overflow detection, and zero global drops do not prove exact
+blending beyond the local sort threshold. Keep fragment-list
+compositing experimental until these results justify adoption or a different approach.
+Then author continuous smoke along star paths and review its public HDR/paced costs.
 The six user-provided 2026-10-09 smoke references define the art target: thin radial
 star-path filaments merging into asymmetric wind-drifted haze, later bursts locally
 recoloring older smoke, and separate bright/quiet-phase audience/close reviews. More

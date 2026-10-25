@@ -34,6 +34,7 @@ use bevy::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct GpuSpritePipelineKey {
+    pub(super) fragment_list_oit: bool,
     pub(super) mesh_wireframe: bool,
     pub(super) mesh_layout: Option<MeshVertexBufferLayoutRef>,
     pub(super) view: GpuSpriteViewKey,
@@ -150,7 +151,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
     type Key = GpuSpritePipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        let shader_defs = if matches!(key.view, GpuSpriteViewKey::ThreeD(_))
+        let mut shader_defs = if matches!(key.view, GpuSpriteViewKey::ThreeD(_))
             && key
                 .material
                 .as_ref()
@@ -160,6 +161,13 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
         } else {
             vec![]
         };
+        if key.fragment_list_oit {
+            shader_defs.extend(["AESTRA_FRAGMENT_LIST_OIT".into(), "OIT_ENABLED".into()]);
+            if matches!(key.view, GpuSpriteViewKey::ThreeD(mesh) if mesh.contains(MeshPipelineKey::DEPTH_PREPASS))
+            {
+                shader_defs.push("DEPTH_PREPASS".into());
+            }
+        }
         let (view_layout, target_format, depth_format, msaa_samples) = match key.view {
             GpuSpriteViewKey::TwoD(mesh) => (
                 self.mesh2d.view_layout.clone(),

@@ -130,6 +130,72 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool) -> String {
     )
 }
 
+/// Keep the portable compiler/ABI engine-neutral. Only the native adapter wraps
+/// the final alpha fragment, after material coverage and lighting are evaluated.
+pub(crate) fn compose_fragment_list(wesl: &str, semantic: bool) -> String {
+    let position = if semantic {
+        "fragment_position"
+    } else {
+        "clip_position"
+    };
+    let (entry, input_type) = if semantic {
+        (
+            aestra_gpu::material::MATERIAL_FRAGMENT_ENTRY_POINT,
+            "MaterialFragmentInput",
+        )
+    } else {
+        ("fragment_alpha", "VertexOutput")
+    };
+    let signature = format!("@fragment\nfn {entry}(input: {input_type}) -> @location(0) vec4<f32>");
+    assert_eq!(
+        wesl.matches(&signature).count(),
+        1,
+        "native alpha fragment ABI changed"
+    );
+    let mut source = wesl.replace(
+        &signature,
+        &format!("fn aestra_oit_color(input: {input_type}) -> vec4<f32>"),
+    );
+    let view = if semantic {
+        "@group(0) @binding(0)\nvar<uniform> view: View;"
+    } else {
+        "@group(0) @binding(0) var<uniform> view: View;"
+    };
+    assert_eq!(
+        source.matches(view).count(),
+        1,
+        "native view binding changed"
+    );
+    let lit_view = format!("@if(!AESTRA_SCENE_POINT_LIGHTING)\n{view}");
+    source = if source.contains(&lit_view) {
+        source.replace(
+            &lit_view,
+            &format!("@if(!AESTRA_SCENE_POINT_LIGHTING && !AESTRA_FRAGMENT_LIST_OIT)\n{view}"),
+        )
+    } else {
+        source.replace(view, &format!("@if(!AESTRA_FRAGMENT_LIST_OIT)\n{view}"))
+    };
+    format!(
+        r#"@if(AESTRA_FRAGMENT_LIST_OIT)
+import bevy_core_pipeline::oit::draw::oit_draw;
+@if(AESTRA_FRAGMENT_LIST_OIT && !AESTRA_SCENE_POINT_LIGHTING)
+import bevy_pbr::render::mesh_view_bindings::view;
+{source}
+@fragment
+fn {entry}(input: {input_type}) -> @location(0) vec4<f32> {{
+    let color = aestra_oit_color(input);
+    @if(AESTRA_FRAGMENT_LIST_OIT) {{
+        if color.a <= 0.0 {{ discard; }}
+        // Bevy 0.20 expects premultiplied RGB. The resolve pass owns the output.
+        oit_draw(input.{position}, vec4<f32>(color.rgb * color.a, color.a));
+        discard;
+    }}
+    return color;
+}}
+"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +211,44 @@ mod tests {
         assert!(wesl.contains(march));
         assert!(wesl.contains("return march(AestraVolumeRay("));
         assert!(wesl.contains(SCENE_LIGHTING_WGSL));
+    }
+
+    #[test]
+    fn fragment_list_wraps_legacy_without_changing_additive_or_portable_source() {
+        let source = compose_fragment_list(aestra_gpu::shader::SPRITE_RENDER_WESL, false);
+        assert!(
+            source
+                .contains("oit_draw(input.clip_position, vec4<f32>(color.rgb * color.a, color.a))")
+        );
+        assert!(source.contains("fn aestra_oit_color(input: VertexOutput)"));
+        assert!(source.contains("fn fragment_additive(input: VertexOutput)"));
+        assert!(!aestra_gpu::shader::SPRITE_RENDER_WESL.contains("oit_draw"));
+    }
+
+    #[test]
+    fn fragment_list_semantic_bridge_validates_the_fragment_position_abi() {
+        let program = aestra_core::material::MaterialProgram::additive_sprite("OIT interface");
+        let ir = aestra_compiler::MaterialCompiler.compile(&program).unwrap();
+        let compiled = aestra_gpu::material::MaterialShaderCompiler
+            .compile(
+                &ir,
+                &aestra_gpu::material::MaterialBackendCapabilities::portable_minimum(),
+            )
+            .unwrap();
+        let source = compose_fragment_list(&compiled.shader.wgsl, true);
+        // Check the actual input struct with Naga, not only a generated string.
+        // Native tests separately qualify Bevy's real imported implementation.
+        let source = source.replace("@if(AESTRA_FRAGMENT_LIST_OIT)\nimport bevy_core_pipeline::oit::draw::oit_draw;", "")
+            .replace("@if(AESTRA_FRAGMENT_LIST_OIT && !AESTRA_SCENE_POINT_LIGHTING)\nimport bevy_pbr::render::mesh_view_bindings::view;", "")
+            .replace("@if(!AESTRA_FRAGMENT_LIST_OIT)", "")
+            .replace("@if(AESTRA_FRAGMENT_LIST_OIT)", "");
+        let source = format!("{source}\nfn oit_draw(position: vec4<f32>, color: vec4<f32>) {{}}");
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::default(),
+        )
+        .validate(&module)
+        .unwrap();
     }
 }

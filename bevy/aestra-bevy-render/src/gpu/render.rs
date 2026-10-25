@@ -148,6 +148,7 @@ fn queue_gpu_sprites(
                 &pipeline_cache,
                 &pipeline,
                 GpuSpritePipelineKey {
+                    fragment_list_oit: false,
                     mesh_wireframe: effect.mesh.is_some()
                         && effect.render_mode == GpuRenderMode::Wireframe,
                     mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),
@@ -190,6 +191,7 @@ fn queue_gpu_sprites_3d(
         &ExtractedView,
         Option<&TemporalJitter>,
         Option<&MainPassResolutionOverride>,
+        Has<crate::experimental_oit::OitApproved>,
     )>,
 ) {
     let (pipeline, mut pipelines, pipeline_cache, view_key_cache) = pipeline_resources;
@@ -197,7 +199,7 @@ fn queue_gpu_sprites_3d(
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites3d>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites3d>();
     let semantic_depth_draw_function = draw_functions.id::<DrawSemanticDepthGpuSprites3d>();
-    for (visible_entities, view, jitter, resolution) in &views {
+    for (visible_entities, view, jitter, resolution, oit) in &views {
         let sampled_culling = super::sprite_culling::prepare(view, resolution, jitter.is_some());
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
@@ -245,6 +247,22 @@ fn queue_gpu_sprites_3d(
                 &pipeline_cache,
                 &pipeline,
                 GpuSpritePipelineKey {
+                    fragment_list_oit: oit
+                        && mesh_key.contains(bevy::pbr::MeshPipelineKey::OIT_ENABLED)
+                        && effect.renderer_kind <= 1
+                        && material_for_draw(effect).map_or(
+                            effect.blend == aestra_gpu::GpuBlend::Alpha,
+                            |material| {
+                                material.render_state.blend == aestra_core::BlendMode::Alpha
+                                    && !material.render_state.depth_write
+                                    && matches!(
+                                        material.render_state.depth_test,
+                                        aestra_core::material::MaterialDepthTest::Less
+                                            | aestra_core::material::MaterialDepthTest::LessEqual
+                                    )
+                            },
+                        )
+                        && effect.render_mode == GpuRenderMode::Rendered,
                     mesh_wireframe: effect.mesh.is_some()
                         && effect.render_mode == GpuRenderMode::Wireframe,
                     mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),
