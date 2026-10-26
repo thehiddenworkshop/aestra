@@ -4863,15 +4863,63 @@ problem. Public API documentation now explicitly warns about these known exclusi
 No render behavior, asset or default changes. See
 [`fragment-list-mixed-2026-10-25.md`](../../benchmarks/fireworks/fragment-list-mixed-2026-10-25.md).
 
-**Next — F8.1C4J:** address mixed compositing before attempting adoption or further
-smoke art. Prototype unified depth-ordered collection for eligible Aestra alpha/additive
-sprite, trail and mesh draws (with correct additive emission/no-extinction semantics),
-or choose a different compositor if that cannot be made bounded and interoperable.
-Explicitly retain/reject unsupported blend/depth/custom paths; do not silently claim
-arbitrary host-material support. Convert the foreground cases to positive correctness
-gates and repeat the existing alpha/HDR/texture/depth/saturation controls. More storage
-or pool sorting alone cannot fix the demonstrated pass-order error. Then qualify other depth
-paths, native resize/multiple cameras, and matched dense/live-paced costs. The camera allocation
+**F8.1C4J shared mixed-list prototype (2026-10-25): bounded integration.** Eligible
+rendered Aestra alpha/additive sprites, flipbooks, trails and semantic mesh particles
+now share depth-ordered lists. Additive RGB carries coverage-weighted emission with
+zero extinction, preserving layers behind it; semantic state selects the effective
+blend variant. The previous foreground expected failures are now positive analytic
+and ordinary-sorted-reference checks across six paths, both pool sorts/spawn orders,
+and initial/opposite/restored cameras (144 cases). Isolated green must join the list.
+The .01 linear-light correctness bounds remain; ordinary-pass quantization is not
+confused with byte-strict identical-path restoration.
+
+Six default opaque-prepass controls require zero occluded fragments and byte-exact
+wall-only/restored images. Additional mixed global/local capacity controls expose
+expected degradation, including lost additive emission in Bevy's local approximation;
+this is not overflow acceptance. Ribbons, multiply, depth-writing/overlay/wireframe,
+legacy mesh and foreign/custom draws remain outside the qualified set and can still
+compose incorrectly with the final resolve. No arbitrary-host transparency claim,
+portable ABI change, CPU particle/fragment transport or public-default change.
+See [`fragment-list-unified-mixed-2026-10-25.md`](../../benchmarks/fireworks/fragment-list-unified-mixed-2026-10-25.md).
+
+Both final native runs pass all 144 positive cases and nine controls. Maximum mixed
+patch error is .004696; ordinary whole-image reference error is .005954. All 883
+non-degraded mixed/control PNGs repeat byte-exactly, and all 564 prior accepted
+alpha/depth/HDR/lighting/texture PNGs remain unchanged. The seven-probe native suite,
+renderer/viewer unit suites, real shader qualification, strict Clippy and formatting
+pass. Deliberately exhausted fragment storage remains rejected/degraded evidence,
+not compositor or public smoke acceptance.
+
+**F8.1C4K depth/camera lifecycle (2026-10-25–26): bounded native qualification.**
+New positive oracles cover 48 perspective/orthographic, Less/LessEqual, alpha/additive
+semantic-mesh/opaque-wall depth cases and 14 near-plane clipping/return cases. They
+require independent analytic composition, ordinary whole-image references within
+.01 linear error, zero fully clipped/occluded fragments and byte-exact restoration.
+The production path automatically enables DepthPrepass; an upstream no-prepass branch
+is not presented as a supported/tested host mode.
+
+Two-camera full-offscreen-target tests compare whole images with solo/reactivated
+references while reversing camera order and resizing wide/tall targets. Shared storage
+must match maximum extents, honor the strictest budget, release after rejection/removal,
+and restore images. One-camera size-tagged diagnostics resume after camera removal
+and remain valid through shrink/grow/target rebind. Multi-camera diagnostics stay
+explicitly unavailable, not a zero-overflow success. No production rendering, API,
+asset, playback or default change; this slice adds qualification and evidence.
+See [`fragment-list-camera-depth-2026-10-25.md`](../../benchmarks/fireworks/fragment-list-camera-depth-2026-10-25.md).
+
+All ten final native probe reports pass; a second isolated run of the three new probes
+repeats all 247 PNGs byte-exactly. The 1,447 prior accepted non-degraded images remain
+unchanged. Depth/clipping maximum analytic errors are .004152/.005027; whole-image
+ordinary references stay within .005954. Camera isolation and all restore controls
+are byte-exact. Viewer tests (107 passed, 40 ignored), strict workspace Clippy,
+formatting and diff checks pass. Multi-camera diagnostics and smoke art are still
+not approved by these bounded image/allocation results.
+
+**Next — F8.1C4L:** compare matched dense/live-paced compositor costs and capacity at
+relevant show resolutions before deciding adoption. Arbitrary no-prepass/custom-depth,
+equal-depth ties, viewport subrectangles/resolution overrides, window/minimize lifecycle
+and multi-camera overflow diagnostics remain outside the qualified set. More storage
+or pool sorting alone cannot qualify non-participating draws. The camera allocation
 guard is not fragment-overflow detection, and zero global drops do not prove exact
 blending beyond the local sort threshold. Keep fragment-list
 compositing experimental until these results justify adoption or a different approach.

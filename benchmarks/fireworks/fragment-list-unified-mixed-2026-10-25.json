@@ -1,0 +1,672 @@
+{
+  "milestone": "F8.1C4J",
+  "date": "2026-10-25",
+  "base_commit": "7872ed0e7cd8810deb5d367608bfb2a56026c0bc",
+  "scope": "Bounded experimental shared-list integration for eligible Aestra alpha/additive draws. Positive mixed-depth compositing, default opaque prepass and expected-degradation controls; not public-show adoption, general host transparency or smoke-art approval.",
+  "renderer_acceptance": "PASS within the qualified participant/target/capacity scope; saturation remains expected degradation, not accepted rendering.",
+  "environment": {
+    "os": "Windows",
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1",
+    "adapter": {
+      "name": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan"
+    },
+    "target": "480x360 sRGB",
+    "msaa": "Off",
+    "display": "Tonemapping None; no HDR/bloom mixed-scene claim",
+    "history": "PlaybackOnly",
+    "sample_frame": 30,
+    "source_world_z": {
+      "red": 0,
+      "green": -3
+    },
+    "camera_world_z": [
+      16,
+      -16
+    ],
+    "camera_sequence": "initial, opposite, initial; no player advancement",
+    "warmup": "Capture readiness at frame zero before forward playback",
+    "pool_sorts": [
+      "Fast",
+      "DepthBackToFront"
+    ],
+    "ordinary_reference_sort": "DepthBackToFront"
+  },
+  "implementation": {
+    "eligible_geometry": [
+      "sprite",
+      "flipbook",
+      "trail",
+      "semantic mesh particle"
+    ],
+    "operators": [
+      "alpha source-over",
+      "coverage-weighted additive RGB with zero extinction alpha"
+    ],
+    "semantic_depth": "Less or LessEqual, no depth write",
+    "exclusions": [
+      "ribbon",
+      "multiply",
+      "wireframe",
+      "overlay/disabled depth",
+      "depth-writing",
+      "legacy mesh",
+      "arbitrary foreign/custom material",
+      "fluid"
+    ],
+    "portable_abi_changed": false,
+    "default_opt_in_changed": false,
+    "cpu_particle_or_fragment_transport_added": false,
+    "node_layout": "Existing RGB9E5 + 24-bit depth / 8-bit alpha + next index; no extra operator lane"
+  },
+  "sources": [
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+      "sha256": "2E95E26B1E34065D065EF1B7AA5A0F11F4153162B3DB31C307B34C1702755A41"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+      "sha256": "653B4000C2FB4BB8C8B591A4298C831CFAC0F46C084B479B4E2EDBA1F89D3182"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+      "sha256": "4066DCFCB3C25C423CD29A6EEE8EE84B040008B55969E3C9C89ACBF40D4CE642"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/material_shader.rs",
+      "sha256": "19A34D5F6A3CCBD9625369DF2922801053ECD00FFB1E6E6679D24CFDEBD7E64C"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_mixed.rs",
+      "sha256": "8822F93F7A6F44B9831C9184106C47E9E98AFD0656E4D687FC923171BA68EE28"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_mixed_controls.rs",
+      "sha256": "2FEF6B7E42CC919CA6FD319FA74CD0CF7BC4B064D1A1160829E16172DF75D88D"
+    },
+    {
+      "path": "benchmarks/bevy-upgrade/patches-020/shader_composition.rs",
+      "sha256": "08B259172E1E1125D7777194DD2C1444C98517E9A412D6D8827847EA70F6C1A4"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_oit.rs",
+      "sha256": "264CC87A0FE4E3E762597D27AD724EC3CE9979B2D53A3F17908F5E48EC2897B0"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_hdr.rs",
+      "sha256": "727B01FA3B4301A8EED845B0EB4D1674F9B125F4456BE49A33A5795D9BC7B234"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_limits.rs",
+      "sha256": "05565C5B63E2297E4337C95128FAC4CD614879626702345CD214F49C8EC7A743"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_draw_smoke.rs",
+      "sha256": "583EFFFCB2B7CFC35CEACFE87A5334A83E62F238DF5D98DB7A86E89D5279853A"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images.rs",
+      "sha256": "6C7F9FC24A2BC910211094221C2CCC65A1E2E9FE7AB775FBB4E090466645B09E"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "5146E91A97BA56ACC40B61C24AD71444EDC1AD4CF4FACD8014F4806EC6CC6D6F"
+    }
+  ],
+  "oracle": {
+    "case_count": 144,
+    "foreground_count": 72,
+    "paths": 6,
+    "linear_error_bound": 0.01,
+    "wrong_foreground_model_min_error_required": 0.07,
+    "identical_path_restoration_max_byte_bound": 1,
+    "isolated_source_requires_collected_fragments": true,
+    "global_drops_oversort_invalid_must_be_zero_in_accepted_cases": true
+  },
+  "iterations": [
+    {
+      "root": "target/fireworks-f8/fragment-list-unified-2026-10-25-a",
+      "accepted": false,
+      "reason": "Stopped at new isolated ordinary/OIT <=1 byte comparison; no mixed acceptance claimed."
+    },
+    {
+      "root": "target/fireworks-f8/fragment-list-unified-2026-10-25-b",
+      "accepted": false,
+      "reason": "Same isolated comparison; diagnostic exposed different color-path quantization.",
+      "max_byte_error": 7,
+      "max_linear_error": 0.005953550338745117,
+      "oit_green_center": 0.5028863,
+      "ordinary_green_center": 0.496933
+    },
+    {
+      "root": "target/fireworks-f8/fragment-list-unified-2026-10-25-c",
+      "accepted": "144 positive mixed cases pass before extra controls; not final evidence",
+      "change": "Use existing .01 linear-light oracle bound for isolated ordinary/list comparison; keep analytic/whole-image bounds and byte-strict identical-path restoration unchanged."
+    }
+  ],
+  "accepted_run": {
+    "root": "target/fireworks-f8/fragment-list-unified-2026-10-25-d",
+    "native_command": "cargo test -p aestra-viewer fragment_list_ --locked --offline -- --ignored --test-threads=1",
+    "native_tests_passed": 7,
+    "native_test_seconds": 211.17,
+    "mixed": {
+      "passed": true,
+      "correct": true,
+      "count": 144,
+      "groups": [
+        {
+          "path": "additive-sprite",
+          "cases": 24,
+          "foreground": 12,
+          "all_correct": true,
+          "max_oit_patch_error": 0.002827256917953491,
+          "max_reference_patch_error": 0.005953550338745117,
+          "max_whole_image_error": 0.005953550338745117,
+          "max_isolated_error": 0.005953550338745117,
+          "max_restore_bytes": 0,
+          "max_camera_restore_bytes": 0,
+          "min_foreground_wrong_model_error": 0.25289493799209595,
+          "max_drops": 0,
+          "max_oversort": 0,
+          "max_invalid": 0,
+          "min_isolated_attempts": 26276
+        },
+        {
+          "path": "additive-trail",
+          "cases": 24,
+          "foreground": 12,
+          "all_correct": true,
+          "max_oit_patch_error": 0.003702610731124878,
+          "max_reference_patch_error": 0.005953550338745117,
+          "max_whole_image_error": 0.005953550338745117,
+          "max_isolated_error": 0.005953550338745117,
+          "max_restore_bytes": 0,
+          "max_camera_restore_bytes": 0,
+          "min_foreground_wrong_model_error": 0.22109773755073547,
+          "max_drops": 0,
+          "max_oversort": 0,
+          "max_invalid": 0,
+          "min_isolated_attempts": 7360
+        },
+        {
+          "path": "alpha-mesh",
+          "cases": 24,
+          "foreground": 12,
+          "all_correct": true,
+          "max_oit_patch_error": 0.003126293420791626,
+          "max_reference_patch_error": 0.005953550338745117,
+          "max_whole_image_error": 0.005953550338745117,
+          "max_isolated_error": 0.005953550338745117,
+          "max_restore_bytes": 0,
+          "max_camera_restore_bytes": 0,
+          "min_foreground_wrong_model_error": 0.25289493799209595,
+          "max_drops": 0,
+          "max_oversort": 0,
+          "max_invalid": 0,
+          "min_isolated_attempts": 33124
+        },
+        {
+          "path": "alpha-trail",
+          "cases": 24,
+          "foreground": 12,
+          "all_correct": true,
+          "max_oit_patch_error": 0.00469595193862915,
+          "max_reference_patch_error": 0.005953550338745117,
+          "max_whole_image_error": 0.005953550338745117,
+          "max_isolated_error": 0.005953550338745117,
+          "max_restore_bytes": 0,
+          "max_camera_restore_bytes": 0,
+          "min_foreground_wrong_model_error": 0.223992258310318,
+          "max_drops": 0,
+          "max_oversort": 0,
+          "max_invalid": 0,
+          "min_isolated_attempts": 7360
+        },
+        {
+          "path": "semantic-additive-mesh",
+          "cases": 24,
+          "foreground": 12,
+          "all_correct": true,
+          "max_oit_patch_error": 0.002827256917953491,
+          "max_reference_patch_error": 0.005953550338745117,
+          "max_whole_image_error": 0.005953550338745117,
+          "max_isolated_error": 0.005953550338745117,
+          "max_restore_bytes": 0,
+          "max_camera_restore_bytes": 0,
+          "min_foreground_wrong_model_error": 0.25289493799209595,
+          "max_drops": 0,
+          "max_oversort": 0,
+          "max_invalid": 0,
+          "min_isolated_attempts": 33124
+        },
+        {
+          "path": "semantic-additive-sprite",
+          "cases": 24,
+          "foreground": 12,
+          "all_correct": true,
+          "max_oit_patch_error": 0.00016777217388153076,
+          "max_reference_patch_error": 0.005953550338745117,
+          "max_whole_image_error": 0.005953550338745117,
+          "max_isolated_error": 0.005953550338745117,
+          "max_restore_bytes": 0,
+          "max_camera_restore_bytes": 0,
+          "min_foreground_wrong_model_error": 0.25289493799209595,
+          "max_drops": 0,
+          "max_oversort": 0,
+          "max_invalid": 0,
+          "min_isolated_attempts": 26276
+        }
+      ],
+      "controls": [
+        {
+          "attempted_fragments": 0,
+          "control": "opaque-default-prepass",
+          "covered_max_byte_error": 0,
+          "path": "additive-sprite",
+          "restore_max_byte_error": 0,
+          "wall_linear_rgb": [
+            0,
+            0,
+            0.2501583397388458
+          ]
+        },
+        {
+          "attempted_fragments": 0,
+          "control": "opaque-default-prepass",
+          "covered_max_byte_error": 0,
+          "path": "additive-trail",
+          "restore_max_byte_error": 0,
+          "wall_linear_rgb": [
+            0,
+            0,
+            0.2501583397388458
+          ]
+        },
+        {
+          "attempted_fragments": 0,
+          "control": "opaque-default-prepass",
+          "covered_max_byte_error": 0,
+          "path": "alpha-trail",
+          "restore_max_byte_error": 0,
+          "wall_linear_rgb": [
+            0,
+            0,
+            0.2501583397388458
+          ]
+        },
+        {
+          "attempted_fragments": 0,
+          "control": "opaque-default-prepass",
+          "covered_max_byte_error": 0,
+          "path": "alpha-mesh",
+          "restore_max_byte_error": 0,
+          "wall_linear_rgb": [
+            0,
+            0,
+            0.2501583397388458
+          ]
+        },
+        {
+          "attempted_fragments": 0,
+          "control": "opaque-default-prepass",
+          "covered_max_byte_error": 0,
+          "path": "semantic-additive-sprite",
+          "restore_max_byte_error": 0,
+          "wall_linear_rgb": [
+            0,
+            0,
+            0.2501583397388458
+          ]
+        },
+        {
+          "attempted_fragments": 93296,
+          "average": 0.0010000000474974513,
+          "capped_max_depth": 1,
+          "control": "global-exhausted",
+          "dropped_fragments": 93124,
+          "expected_degradation": true,
+          "invalid_links": 0,
+          "node_capacity": 172,
+          "over_sort_pixels": 0,
+          "path": "semantic-additive-sprite",
+          "sorted_max": 8,
+          "whole_image_linear_error": 0.5028865933418274
+        },
+        {
+          "attempted_fragments": 93296,
+          "average": 4,
+          "capped_max_depth": 2,
+          "control": "local-approximation",
+          "dropped_fragments": 0,
+          "expected_degradation": true,
+          "invalid_links": 0,
+          "node_capacity": 691200,
+          "over_sort_pixels": 37108,
+          "path": "semantic-additive-sprite",
+          "sorted_max": 1,
+          "whole_image_linear_error": 0.5028865933418274
+        },
+        {
+          "attempted_fragments": 93296,
+          "average": 4,
+          "capped_max_depth": 2,
+          "control": "restored",
+          "dropped_fragments": 0,
+          "expected_degradation": false,
+          "invalid_links": 0,
+          "node_capacity": 691200,
+          "over_sort_pixels": 0,
+          "path": "semantic-additive-sprite",
+          "sorted_max": 8,
+          "whole_image_linear_error": 0
+        },
+        {
+          "attempted_fragments": 0,
+          "control": "opaque-default-prepass",
+          "covered_max_byte_error": 0,
+          "path": "semantic-additive-mesh",
+          "restore_max_byte_error": 0,
+          "wall_linear_rgb": [
+            0,
+            0,
+            0.2501583397388458
+          ]
+        }
+      ],
+      "report_sha256": "3C7DD0AB98B08DEA9C252F57FDC54508CAC8824DF619511B2620EEE62635F947"
+    },
+    "regressions": [
+      {
+        "probe": "fragment-list",
+        "passed": true,
+        "cases": 16,
+        "png_count": 76,
+        "png_manifest_sha256": "EA766F1FAA8502AD784B11ED09E5D288BDFA10D3EBC78B2E5D1B0F7602F04355",
+        "report_sha256": "DB341A03BFAD074EBEEC77B525FCFBF47A7759B1C329866D5B09AF7606CC6C64"
+      },
+      {
+        "probe": "fragment-list-depth",
+        "passed": true,
+        "cases": 16,
+        "png_count": 28,
+        "png_manifest_sha256": "7779B6673F3B8CBC4FB6D1F37AECF27D2BF5B6611A5997F7A21502946351010A",
+        "report_sha256": "50E222A8D9C8A86A27C90FDB0CF54F2FCC9AB9D30F622AC4AC54C78119482E68"
+      },
+      {
+        "probe": "fragment-list-hdr",
+        "passed": true,
+        "cases": 16,
+        "png_count": 16,
+        "png_manifest_sha256": "C094823A1B6505D60517F576F0BFD988D06C6A1B529C631AB63C8D628FB432AA",
+        "report_sha256": "5379DEF36D7880AA0F4844426F5B9F0E20A491A14066A653721188B15A94C16A"
+      },
+      {
+        "probe": "fragment-list-lighting",
+        "passed": true,
+        "cases": 12,
+        "png_count": 48,
+        "png_manifest_sha256": "CB996079054D2CA360BBE6E12B9AC53515B96B0D094995EF49B031FCD550360D",
+        "report_sha256": "BF7D7DDAAE7B5852EE744C8B5E6B6933EB9E56DDC18B60B3547FFCBB78304069"
+      },
+      {
+        "probe": "fragment-list-saturation",
+        "passed": true,
+        "cases": 16,
+        "png_count": 16,
+        "png_manifest_sha256": "7366E0819519E1B3A12A7BC8EB2FF6509E1B4B3F0F7EF90847690C850D8DE030",
+        "report_sha256": "D6CA18E1163AC1514B805DD5F10CFB91295C7929F385F492BE22B98F49B930B4"
+      },
+      {
+        "probe": "fragment-list-textures",
+        "passed": true,
+        "cases": 132,
+        "png_count": 396,
+        "png_manifest_sha256": "763DE5580905CC984C25875E0F3E3E271D5ACCEC3EF878D3536890F1380F734B",
+        "report_sha256": "15CF6AACA6C1884770A9D8BDB29F14A349DC00D110B97BA056A9138EF88C45F7"
+      },
+      {
+        "probe": "fragment-list-mixed-unified",
+        "passed": true,
+        "cases": 144,
+        "png_count": 885,
+        "png_manifest_sha256": "565D07D78999E18C4E872F5D6F2F4D22F8C647B23CABD5BACE969F7086E8C73D",
+        "report_sha256": "3C7DD0AB98B08DEA9C252F57FDC54508CAC8824DF619511B2620EEE62635F947"
+      }
+    ]
+  },
+  "repeated_run": {
+    "root": "target/fireworks-f8/fragment-list-unified-2026-10-25-e/fragment-list-mixed-unified",
+    "passed": true,
+    "correct": true,
+    "cases": 144,
+    "controls": [
+      {
+        "attempted_fragments": 0,
+        "control": "opaque-default-prepass",
+        "covered_max_byte_error": 0,
+        "path": "additive-sprite",
+        "restore_max_byte_error": 0,
+        "wall_linear_rgb": [
+          0,
+          0,
+          0.2501583397388458
+        ]
+      },
+      {
+        "attempted_fragments": 0,
+        "control": "opaque-default-prepass",
+        "covered_max_byte_error": 0,
+        "path": "additive-trail",
+        "restore_max_byte_error": 0,
+        "wall_linear_rgb": [
+          0,
+          0,
+          0.2501583397388458
+        ]
+      },
+      {
+        "attempted_fragments": 0,
+        "control": "opaque-default-prepass",
+        "covered_max_byte_error": 0,
+        "path": "alpha-trail",
+        "restore_max_byte_error": 0,
+        "wall_linear_rgb": [
+          0,
+          0,
+          0.2501583397388458
+        ]
+      },
+      {
+        "attempted_fragments": 0,
+        "control": "opaque-default-prepass",
+        "covered_max_byte_error": 0,
+        "path": "alpha-mesh",
+        "restore_max_byte_error": 0,
+        "wall_linear_rgb": [
+          0,
+          0,
+          0.2501583397388458
+        ]
+      },
+      {
+        "attempted_fragments": 0,
+        "control": "opaque-default-prepass",
+        "covered_max_byte_error": 0,
+        "path": "semantic-additive-sprite",
+        "restore_max_byte_error": 0,
+        "wall_linear_rgb": [
+          0,
+          0,
+          0.2501583397388458
+        ]
+      },
+      {
+        "attempted_fragments": 93296,
+        "average": 0.0010000000474974513,
+        "capped_max_depth": 1,
+        "control": "global-exhausted",
+        "dropped_fragments": 93124,
+        "expected_degradation": true,
+        "invalid_links": 0,
+        "node_capacity": 172,
+        "over_sort_pixels": 0,
+        "path": "semantic-additive-sprite",
+        "sorted_max": 8,
+        "whole_image_linear_error": 0.5028865933418274
+      },
+      {
+        "attempted_fragments": 93296,
+        "average": 4,
+        "capped_max_depth": 2,
+        "control": "local-approximation",
+        "dropped_fragments": 0,
+        "expected_degradation": true,
+        "invalid_links": 0,
+        "node_capacity": 691200,
+        "over_sort_pixels": 37108,
+        "path": "semantic-additive-sprite",
+        "sorted_max": 1,
+        "whole_image_linear_error": 0.5028865933418274
+      },
+      {
+        "attempted_fragments": 93296,
+        "average": 4,
+        "capped_max_depth": 2,
+        "control": "restored",
+        "dropped_fragments": 0,
+        "expected_degradation": false,
+        "invalid_links": 0,
+        "node_capacity": 691200,
+        "over_sort_pixels": 0,
+        "path": "semantic-additive-sprite",
+        "sorted_max": 8,
+        "whole_image_linear_error": 0
+      },
+      {
+        "attempted_fragments": 0,
+        "control": "opaque-default-prepass",
+        "covered_max_byte_error": 0,
+        "path": "semantic-additive-mesh",
+        "restore_max_byte_error": 0,
+        "wall_linear_rgb": [
+          0,
+          0,
+          0.2501583397388458
+        ]
+      }
+    ],
+    "report_sha256": "3C7DD0AB98B08DEA9C252F57FDC54508CAC8824DF619511B2620EEE62635F947",
+    "png_count": 885,
+    "png_manifest_sha256": "19CE39C7A9619B43070C99C339F747D5932B6A837005A5BE2132CC7609443282",
+    "all_changed": [
+      "semantic-additive-sprite-capacity-global-exhausted.png"
+    ],
+    "healthy_compared": 883,
+    "healthy_changed": [],
+    "max_patch_error": 0.00469595193862915,
+    "max_whole_image_error": 0.005953550338745117,
+    "max_restore_bytes": 0,
+    "max_camera_restore_bytes": 0,
+    "native_command": "cargo test -p aestra-viewer fragment_list_mixed_draws_match --locked --offline -- --ignored --test-threads=1",
+    "native_tests_passed": 1,
+    "native_test_seconds": 124.29
+  },
+  "image_comparison": {
+    "old_root": "target/fireworks-f8/fragment-list-mixed-2026-10-25-f",
+    "prior_accepted": [
+      {
+        "probe": "fragment-list",
+        "compared": 76,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-depth",
+        "compared": 28,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-hdr",
+        "compared": 16,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-lighting",
+        "compared": 48,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-textures",
+        "compared": 396,
+        "changed": []
+      }
+    ],
+    "prior_pngs_compared": 564,
+    "prior_pngs_changed": 0,
+    "mixed_non_degraded_pngs_compared": 883,
+    "mixed_non_degraded_changed": 0,
+    "deliberately_degraded_pngs_excluded": 2,
+    "global_exhaustion_image_changed": true,
+    "explanation": "Global overflow loses arrival-order-dependent fragments. Aggregate correctness failure is required; these pixels are not deterministic/accepted output."
+  },
+  "manifest_format": "For each report directory: PNG basenames sorted ascending, UTF-8 concatenation of basename + TAB + uppercase file SHA256 + LF. Digest covers all PNGs including deliberate degradation. Raw report paths are local generated artifacts, not committed images.",
+  "validation": [
+    {
+      "command": "cargo test -p aestra-bevy-render --lib --locked --offline -- --test-threads=1",
+      "passed": 170,
+      "ignored": 3
+    },
+    {
+      "command": "cargo test -p aestra-viewer --locked --offline -- --test-threads=1",
+      "passed": 106,
+      "ignored": 37
+    },
+    {
+      "command": "cargo test --manifest-path benchmarks/bevy-upgrade/patches-020/Cargo.toml --target-dir target/bevy-020-qualification --test shader_composition --locked --offline",
+      "passed": 8,
+      "ignored": 1,
+      "note": "Includes real Bevy ShaderCache alpha/additive compilation; legacy, semantic unlit and saved lit smoke; 12 invocations across OIT/operator flags. Ignored standalone native pipeline test not rerun."
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --features aestra-bench/gpu --locked --offline -- -D warnings",
+      "passed": true
+    },
+    {
+      "command": "cargo clippy --manifest-path benchmarks/bevy-upgrade/patches-020/Cargo.toml --target-dir target/bevy-020-qualification --test shader_composition --locked --offline -- -D warnings",
+      "passed": true
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "passed": true
+    },
+    {
+      "command": "cargo fmt --manifest-path benchmarks/bevy-upgrade/patches-020/Cargo.toml -- --check",
+      "passed": true
+    },
+    {
+      "command": "git diff --check",
+      "passed": true
+    }
+  ],
+  "remaining": [
+    "non-default depth and near-plane paths",
+    "resize/multiple-camera lifecycle",
+    "arbitrary non-participant/host material interoperation",
+    "local/global saturation is degraded, including lost additive emission",
+    "matched dense/live-paced costs",
+    "continuous wind-dispersed star-path smoke, local relighting and public HDR art review"
+  ],
+  "not_claimed": [
+    "full workspace tests",
+    "Linux GPU validation",
+    "HDR/bloom mixed-scene acceptance",
+    "dense live performance certification",
+    "photographic smoke-art or public-default adoption"
+  ],
+  "warnings": "Existing incremental hard-link fallback-to-copy warnings are environmental; no source Clippy warning failures."
+}

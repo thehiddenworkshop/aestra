@@ -1,4 +1,6 @@
-//! Expected mixed-pass ordering failures. Passing this probe is NOT renderer acceptance.
+//! Bounded mixed alpha/additive compositing oracle; not public-show acceptance.
+#[path = "cross_pool_mixed_controls.rs"]
+mod controls;
 use super::hdr::{center, healthy, image_difference, replace_blue};
 use super::*;
 use crate::volume_light_images::outputs::cross_draw::sheet_configured;
@@ -14,11 +16,27 @@ enum MixedKind {
     AdditiveTrail,
     AlphaTrail,
     AlphaMesh,
+    SemanticAdditiveSprite,
+    AdditiveMesh,
 }
 
 impl MixedKind {
     fn additive(self) -> bool {
-        matches!(self, Self::AdditiveSprite | Self::AdditiveTrail)
+        matches!(
+            self,
+            Self::AdditiveSprite
+                | Self::AdditiveTrail
+                | Self::SemanticAdditiveSprite
+                | Self::AdditiveMesh
+        )
+    }
+
+    fn mesh(self) -> bool {
+        matches!(self, Self::AlphaMesh | Self::AdditiveMesh)
+    }
+
+    fn semantic(self) -> bool {
+        self.mesh() || matches!(self, Self::SemanticAdditiveSprite)
     }
 
     fn trail(self) -> bool {
@@ -31,6 +49,8 @@ impl MixedKind {
             Self::AdditiveTrail => "additive-trail",
             Self::AlphaTrail => "alpha-trail",
             Self::AlphaMesh => "alpha-mesh",
+            Self::SemanticAdditiveSprite => "semantic-additive-sprite",
+            Self::AdditiveMesh => "semantic-additive-mesh",
         }
     }
 }
@@ -39,13 +59,20 @@ const MESH: AssetId = AssetId::from_u128(0xa3574a00000040008000000000f81910);
 
 fn fixture(kind: MixedKind) -> Arc<CompiledEffectProject> {
     let mut program = super::hdr::program("0.0,1.0,0.0", false);
-    if matches!(kind, MixedKind::AlphaMesh) {
+    if kind.mesh() {
         program.domain = aestra_bevy::material::MaterialDomain::Mesh;
     }
+    if kind.additive() {
+        program.render_state_policy.default.blend = BlendMode::Additive;
+        program.render_state_policy.allowed = vec![program.render_state_policy.default];
+    }
     sheet_configured(1, EmitterShape::Point, 0.0, program, |effect| {
-        if !matches!(kind, MixedKind::AlphaMesh) {
+        if kind.semantic() && kind.additive() {
+            effect.material_instances[0].render_state.blend = BlendMode::Additive;
+        }
+        if !kind.semantic() {
             // Deliberately use the legacy path for additive sprites/strips; the mesh
-            // exercises a semantic alpha material excluded by renderer kind instead.
+            // exercises a semantic material through actual mesh geometry instead.
             let mut material = MaterialDefinition::sprite(
                 "Mixed green draw",
                 if kind.additive() {
@@ -98,7 +125,7 @@ fn fixture(kind: MixedKind) -> Arc<CompiledEffectProject> {
                 tile_length: 1.0,
                 end_cap: TrailEndCap::Flat,
             };
-        } else if matches!(kind, MixedKind::AlphaMesh) {
+        } else if kind.mesh() {
             effect.assets = vec![AssetDefinition {
                 id: MESH,
                 name: "In-memory plane".into(),
@@ -157,13 +184,12 @@ fn mixed_pass_fixture_and_oracle_distinguish_front_additive_and_alpha_draws() {
         MixedKind::AdditiveTrail,
         MixedKind::AlphaTrail,
         MixedKind::AlphaMesh,
+        MixedKind::SemanticAdditiveSprite,
+        MixedKind::AdditiveMesh,
     ] {
         let project = fixture(kind);
         assert_eq!(project.root.max_particles, 1);
-        assert_eq!(
-            project.root.material_instances.is_empty(),
-            !matches!(kind, MixedKind::AlphaMesh)
-        );
+        assert_eq!(project.root.material_instances.is_empty(), !kind.semantic());
         let renderer = &project.root.emitters[0].renderers[0];
         assert_eq!(
             matches!(renderer.kind, aestra_bevy::RendererPlanKind::Trail { .. }),
@@ -174,15 +200,18 @@ fn mixed_pass_fixture_and_oracle_distinguish_front_additive_and_alpha_draws() {
 }
 
 #[test]
-#[ignore = "native expected mixed OIT/ordinary-pass ordering failure; run alone"]
-fn fragment_list_mixed_draws_expose_foreground_ordering_failure_without_overflow() {
-    let root = root("fragment-list-mixed");
+#[ignore = "native shared-list alpha/additive sprite/trail/mesh oracle; run alone"]
+fn fragment_list_mixed_draws_match_ordered_alpha_and_additive_operators() {
+    let root = root("fragment-list-mixed-unified");
     let mut cases = Vec::new();
+    let mut controls = Vec::new();
     for kind in [
         MixedKind::AdditiveSprite,
         MixedKind::AdditiveTrail,
         MixedKind::AlphaTrail,
         MixedKind::AlphaMesh,
+        MixedKind::SemanticAdditiveSprite,
+        MixedKind::AdditiveMesh,
     ] {
         let green_project = fixture(kind);
         for sorted in [false, true] {
@@ -198,7 +227,7 @@ fn fragment_list_mixed_draws_expose_foreground_ordering_failure_without_overflow
                         .unwrap()
                         .translation
                         .z = -3.0;
-                    if matches!(kind, MixedKind::AlphaMesh) {
+                    if kind.mesh() {
                         let mesh = app
                             .world_mut()
                             .resource_mut::<Assets<Mesh>>()
@@ -262,9 +291,9 @@ fn fragment_list_mixed_draws_expose_foreground_ordering_failure_without_overflow
                             .resource::<ExperimentalOitDiagnostics>()
                             .snapshot()
                             .unwrap();
-                        assert_eq!(
-                            green_attempts.attempted_fragments, 0,
-                            "mixed source unexpectedly entered fragment lists"
+                        assert!(
+                            green_attempts.attempted_fragments > 0,
+                            "mixed source did not join shared fragment lists"
                         );
                         assert!(green_attempts.sequence > diagnostic.sequence);
                         assert_eq!(green_attempts.dropped_fragments, 0);
@@ -287,9 +316,23 @@ fn fragment_list_mixed_draws_expose_foreground_ordering_failure_without_overflow
                             .resource_mut::<AestraSettings>()
                             .transparent_order = TransparentOrderMode::DepthBackToFront;
                         let green_normal = capture(&mut app, &target);
+                        green_only
+                            .save(root.join(format!("{prefix}-green-only.png")))
+                            .unwrap();
+                        green_normal
+                            .save(root.join(format!("{prefix}-green-normal.png")))
+                            .unwrap();
+                        // The ordinary LDR hardware blend and RGB9E5 list resolve
+                        // quantize differently (including at low-coverage edges).
+                        // Compare in linear light with the same bound as the oracle;
+                        // identical-path restoration below remains byte-strict.
                         assert!(
-                            delta(&green_only, &green_normal).1 <= 1,
-                            "OIT changed the isolated non-OIT source"
+                            image_difference(&green_only, &green_normal) < 0.01,
+                            "{prefix} OIT changed the isolated source color: {:?}, linear error {}, centers {:?} / {:?}",
+                            delta(&green_only, &green_normal),
+                            image_difference(&green_only, &green_normal),
+                            g,
+                            center(&green_normal)
                         );
                         app.world_mut().entity_mut(red).insert(Visibility::Visible);
                         let reference = capture(&mut app, &target);
@@ -307,17 +350,24 @@ fn fragment_list_mixed_draws_expose_foreground_ordering_failure_without_overflow
                         let forced_background_error =
                             patch_error(&image, &red_only, &green_only, kind.additive(), false);
                         assert!(
-                            forced_background_error < 0.01,
-                            "{prefix} unexpected resolve behavior {forced_background_error}"
+                            actual_error < 0.01,
+                            "{prefix} mixed compositing error {actual_error}"
+                        );
+                        assert!(
+                            image_difference(&image, &reference) < 0.01,
+                            "{prefix} whole-image reference mismatch"
                         );
                         if front {
                             assert!(
-                                actual_error > 0.07,
-                                "must expose wrong foreground ordering, not accept it"
+                                forced_background_error > 0.07,
+                                "wrong forced-background model must fail"
                             );
-                        } else {
-                            assert!(actual_error < 0.01);
-                            assert!(image_difference(&image, &reference) < 0.01);
+                            if kind.additive() {
+                                assert!(
+                                    patch_error(&image, &red_only, &green_only, false, true) > 0.07,
+                                    "additive emission must not extinguish the red layer behind it"
+                                );
+                            }
                         }
                         app.world_mut()
                             .resource_mut::<AestraSettings>()
@@ -333,6 +383,17 @@ fn fragment_list_mixed_draws_expose_foreground_ordering_failure_without_overflow
                         healthy(&app);
                         let restoration = delta(&image, &restored).1;
                         assert!(restoration <= 1);
+                        if !sorted && !reversed && opposite && step == 0 {
+                            controls.extend(controls::qualify(
+                                &mut app,
+                                camera,
+                                [red, green],
+                                &target,
+                                &image,
+                                kind,
+                                &root,
+                            ));
+                        }
                         if step == 0 {
                             original = Some(image.clone());
                         }
@@ -358,11 +419,12 @@ fn fragment_list_mixed_draws_expose_foreground_ordering_failure_without_overflow
                             "reference_patch_max_error":reference_error,"oit_patch_max_error":actual_error,
                             "forced_background_patch_max_error":forced_background_error,
                             "whole_image_reference_max_error":image_difference(&image,&reference),
+                            "isolated_normal_max_linear_error":image_difference(&green_only,&green_normal),
                             "oit_restore_max_byte_error":restoration,"camera_restore_max_byte_error":camera_restore,
                             "attempted_fragments":attempts,"isolated_mixed_attempted_fragments":green_attempts.attempted_fragments,
                             "allocation_rejection":null,"dropped_fragments":diagnostic.dropped_fragments,
                             "over_sort_pixels":diagnostic.over_sort_pixels,"visited_invalid_links":diagnostic.invalid_links,
-                            "renderer_correct":!front}));
+                            "renderer_correct":true}));
                         assert_eq!(app.world().get::<EffectPlayer>(green).unwrap().frame(), 30);
                         assert!(!app.world().get::<EffectPlayer>(green).unwrap().playing);
                         assert_eq!(
@@ -377,7 +439,7 @@ fn fragment_list_mixed_draws_expose_foreground_ordering_failure_without_overflow
     }
     write_report(
         &root,
-        &json!({"probe_passed":true,"renderer_correct":false,"cases":cases,
-        "scope":"Expected mixed-pass foreground failure, not compositor adoption. Healthy counters and pool sorting do not repair resolve-after-transparent ordering."}),
+        &json!({"probe_passed":true,"renderer_correct":true,"cases":cases,"controls":controls,
+        "scope":"Bounded shared-list alpha/additive sprite/trail/semantic-mesh correctness; not arbitrary host-material, saturation or public-show adoption."}),
     );
 }

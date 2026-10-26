@@ -111,7 +111,8 @@ confirm the limitation in both Fast and DepthBackToFront: two red particles arou
 blue pool compose incorrectly, and fixed-host draw ordering does not follow a particle
 crossing another pool. Split-draw positive controls match the analytic reference.
 These are expected-failure diagnostics, **not** cross-draw transparency acceptance.
-An experimental camera opt-in now connects eligible native alpha sprite/flipbook draws
+An experimental camera opt-in now connects eligible native alpha/additive sprite,
+flipbook, trail and semantic mesh-particle draws
 to Bevy's bounded fragment lists. Its unlit semantic-sprite oracles pass, including
 budget/MSAA rejection and disable/re-enable controls. It is **not enabled on this show**:
 deliberate saturation probes now expose global fragment loss and local-sort approximation
@@ -123,14 +124,23 @@ controls. This is not smoke-art approval or authored light-route requalification
 Deterministic RGBA fixtures now also qualify semantic sprites/flipbooks and legacy
 alpha flipbooks, with frame/texture/material changes and zero-alpha controls. These
 are integration fixtures, not realistic smoke assets or a disk hot-reload test.
-The mixed-draw gate now **fails renderer acceptance**: foreground Aestra additive
-sprites, additive/alpha trails and alpha mesh particles render behind OIT smoke,
-even with healthy diagnostics and either pool sort mode. They remain outside the
-fragment lists, and the final resolve overlays their earlier pass. The passing
-expected-failure probe is not production approval. Unified mixed compositing or
-another integration must be qualified before adoption; other depth paths,
-resize/multiple cameras and live costs also remain open.
-See [mixed-pass ordering evidence](../../benchmarks/fireworks/fragment-list-mixed-2026-10-25.md),
+The bounded mixed-draw gate now checks **positive** depth-ordered alpha/additive
+composition: eligible Aestra draws share the lists, and additive emission uses zero
+extinction so it does not dim layers behind it. Foreground/background, ordinary sorted
+references, isolated-source and camera/OIT restoration controls cover both pool-sort
+modes. This supersedes the earlier expected-failure diagnostic, not its historical
+evidence. It is not arbitrary-host transparency acceptance: ribbons, multiply,
+depth-writing/overlay/wireframe and foreign/custom paths remain outside the qualified
+set. Ordinary non-participating draws can still be incorrectly covered by the final
+resolve. Local-sort saturation can lose additive emission; healthy allocation alone
+is not exact rendering. Bounded tests additionally cover perspective/orthographic
+prepass occlusion, Less/LessEqual, a near-clipped semantic mesh, offscreen target
+resizing and two-camera shared-buffer isolation/release. Multi-camera overflow
+diagnostics remain unavailable; arbitrary depth/custom projections, sub-viewports,
+resolution overrides, window lifecycle and live costs are not certified.
+See [depth/camera-lifecycle evidence](../../benchmarks/fireworks/fragment-list-camera-depth-2026-10-25.md),
+[shared mixed-list evidence](../../benchmarks/fireworks/fragment-list-unified-mixed-2026-10-25.md),
+[original mixed-pass failure](../../benchmarks/fireworks/fragment-list-mixed-2026-10-25.md),
 [textured/flipbook evidence](../../benchmarks/fireworks/fragment-list-textures-2026-10-25.md),
 [HDR/lit-material evidence](../../benchmarks/fireworks/fragment-list-hdr-lighting-2026-10-23.md),
 [opaque-depth evidence](../../benchmarks/fireworks/fragment-list-depth-2026-10-23.md),

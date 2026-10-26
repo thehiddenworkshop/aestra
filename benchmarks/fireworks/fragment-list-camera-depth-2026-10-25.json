@@ -1,0 +1,1836 @@
+{
+  "milestone": "F8.1C4K",
+  "started": "2026-10-25",
+  "completed": "2026-10-26",
+  "base_commit": "7872ed0e7cd8810deb5d367608bfb2a56026c0bc",
+  "working_tree_prerequisite": "Includes the preceding uncommitted F8.1C4J shared-list implementation; this milestone itself adds tests/docs only.",
+  "scope": "Bounded default-prepass depth comparisons, perspective/orthographic occlusion, perspective near-plane mesh clipping, full offscreen target resizing and two-camera list isolation. Not compositor adoption or smoke-art/performance approval.",
+  "production_behavior_changed": false,
+  "public_defaults_changed": false,
+  "environment": {
+    "os": "Windows",
+    "adapter": {
+      "name": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan"
+    },
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1",
+    "color_target": "Rgba8UnormSrgb",
+    "msaa": "Off",
+    "tonemapping": "None",
+    "bloom": false,
+    "history": "PlaybackOnly",
+    "sample_frame": 30
+  },
+  "sources": [
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_cameras.rs",
+      "sha256": "BD54C30C2485493E3EB85CA35093FB4BCC74D15413B3CF7BE1035D41B96A5F44"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_depth_variants.rs",
+      "sha256": "B74674775DDCACFECA40C19BC668F633C1AF8690DC1D63B8E3068ECC4529D9B1"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_oit.rs",
+      "sha256": "3544A490D03C2873D3249177EEEF173C8C414ED00649C3E46FC0979546DADB1F"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_limits.rs",
+      "sha256": "05565C5B63E2297E4337C95128FAC4CD614879626702345CD214F49C8EC7A743"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_draw_smoke.rs",
+      "sha256": "583EFFFCB2B7CFC35CEACFE87A5334A83E62F238DF5D98DB7A86E89D5279853A"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_hdr.rs",
+      "sha256": "727B01FA3B4301A8EED845B0EB4D1674F9B125F4456BE49A33A5795D9BC7B234"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "5146E91A97BA56ACC40B61C24AD71444EDC1AD4CF4FACD8014F4806EC6CC6D6F"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images.rs",
+      "sha256": "6C7F9FC24A2BC910211094221C2CCC65A1E2E9FE7AB775FBB4E090466645B09E"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+      "sha256": "2E95E26B1E34065D065EF1B7AA5A0F11F4153162B3DB31C307B34C1702755A41"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs",
+      "sha256": "F927A8CB67C3ADCC8930C266DE4B304106CC83F2D4F4481A637B5333B0D77CE8"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/render_plugin.rs",
+      "sha256": "6D14D1CED1118E4912C99DD7F32228778A55F674C42D0854D3FF2F3F3A10E025"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+      "sha256": "653B4000C2FB4BB8C8B591A4298C831CFAC0F46C084B479B4E2EDBA1F89D3182"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+      "sha256": "4066DCFCB3C25C423CD29A6EEE8EE84B040008B55969E3C9C89ACBF40D4CE642"
+    }
+  ],
+  "contract": {
+    "depth_prepass": "Production AestraRenderPlugin ensures DepthPrepass; no-prepass fallback is not a supported mode qualified here.",
+    "depth_variants": {
+      "cases": 48,
+      "comparisons": [
+        "Less",
+        "LessEqual"
+      ],
+      "operators": [
+        "Alpha",
+        "Additive"
+      ],
+      "projections": [
+        "Perspective default",
+        "Orthographic FixedVertical 16"
+      ],
+      "camera_sides": [
+        16,
+        -16
+      ],
+      "world_z": {
+        "red": 0,
+        "green": -3,
+        "walls": [
+          -6,
+          -1,
+          2
+        ]
+      },
+      "linear_bound": 0.01,
+      "exact_restore_bytes": 0,
+      "fully_occluded_attempts": 0,
+      "no_equal_depth_tie_claim": true
+    },
+    "near_plane": {
+      "cases": 14,
+      "near": 1,
+      "rotation_y_degrees": 45,
+      "green_scale": 0.1,
+      "camera_z": 16,
+      "distances": [
+        -0.5,
+        0.7,
+        1,
+        1.4,
+        1,
+        0.7,
+        -0.5
+      ],
+      "operators": [
+        "Alpha",
+        "Additive"
+      ],
+      "linear_bound": 0.01,
+      "exact_oit_and_clipping_restore_bytes": 0,
+      "fully_clipped_attempts": 0,
+      "per_pixel_reference": "Isolated red and green contributions with independent alpha/additive composition; ordinary sorted whole-image positive reference."
+    },
+    "cameras": {
+      "stages": 13,
+      "first_target_sizes": [
+        [
+          480,
+          360
+        ],
+        [
+          640,
+          240
+        ],
+        [
+          240,
+          640
+        ],
+        [
+          480,
+          360
+        ]
+      ],
+      "second_target_size": [
+        320,
+        480
+      ],
+      "second_orders": [
+        1,
+        -1
+      ],
+      "single_camera_resizes": [
+        [
+          256,
+          256
+        ],
+        [
+          800,
+          360
+        ],
+        [
+          480,
+          360
+        ]
+      ],
+      "image_isolation": "Every paired image versus solo-camera and reactivated-camera references byte-exact over the whole image.",
+      "shared_capacity": "Component-wise maximum extent, 4 nodes/pixel and one head/pixel; 52 bytes/pixel.",
+      "budget": "Strictest participant budget rejects all managed cameras; restore and removal checked.",
+      "released_node_head_bytes_max": 16,
+      "diagnostics": "Unavailable with two OIT cameras, including inactive configured-camera isolation controls; fresh camera/size-tagged samples required after removal and single-target resize. No fabricated healthy multi-camera counters."
+    }
+  },
+  "iterations": [
+    {
+      "root": "target/fireworks-f8/fragment-list-camera-depth-2026-10-25-a",
+      "role": "Initial 48 depth cases, 8 one-way near-plane cases and basic camera lifecycle pass; superseded by stronger controls."
+    },
+    {
+      "root": "target/fireworks-f8/fragment-list-camera-depth-2026-10-25-b",
+      "role": "Supporting 10-probe regression; added whole-image camera isolation. Superseded by final clipping-return and single-camera resize controls plus mechanical Clippy enumeration fix."
+    }
+  ],
+  "accepted_run": {
+    "root": "target/fireworks-f8/fragment-list-camera-depth-2026-10-25-c",
+    "command": "cargo test -p aestra-viewer fragment_list_ --locked --offline -- --ignored --test-threads=1",
+    "all_ten_reports_passed": true,
+    "reports": [
+      {
+        "probe": "fragment-list",
+        "passed": true,
+        "cases": 16,
+        "stages": 0,
+        "report_sha256": "5119C57181F3AAB3C87B1CD7E20A1DE6411A53062A554E10EAA593ADEBDA2A0C"
+      },
+      {
+        "probe": "fragment-list-camera-lifecycle",
+        "passed": true,
+        "cases": 0,
+        "stages": 13,
+        "report_sha256": "7A9EB188804220CC25D716ECFAA30B1C4D32CE08B528FA203C4326FEBCCF743A"
+      },
+      {
+        "probe": "fragment-list-depth",
+        "passed": true,
+        "cases": 16,
+        "stages": 0,
+        "report_sha256": "50E222A8D9C8A86A27C90FDB0CF54F2FCC9AB9D30F622AC4AC54C78119482E68"
+      },
+      {
+        "probe": "fragment-list-depth-variants",
+        "passed": true,
+        "cases": 48,
+        "stages": 0,
+        "report_sha256": "EC13C3DB251FA7918D1601AA25D704B731941FD211D12026EF99F7D6AE92ACAA"
+      },
+      {
+        "probe": "fragment-list-hdr",
+        "passed": true,
+        "cases": 16,
+        "stages": 0,
+        "report_sha256": "5379DEF36D7880AA0F4844426F5B9F0E20A491A14066A653721188B15A94C16A"
+      },
+      {
+        "probe": "fragment-list-lighting",
+        "passed": true,
+        "cases": 12,
+        "stages": 0,
+        "report_sha256": "BF7D7DDAAE7B5852EE744C8B5E6B6933EB9E56DDC18B60B3547FFCBB78304069"
+      },
+      {
+        "probe": "fragment-list-mixed-unified",
+        "passed": true,
+        "cases": 144,
+        "stages": 0,
+        "report_sha256": "3C7DD0AB98B08DEA9C252F57FDC54508CAC8824DF619511B2620EEE62635F947"
+      },
+      {
+        "probe": "fragment-list-near-plane",
+        "passed": true,
+        "cases": 14,
+        "stages": 0,
+        "report_sha256": "53D5C1CF5AF4B4A5E09548E6E6E59D194E4FC68B2BE1FC4B23A2EC9222B9C231"
+      },
+      {
+        "probe": "fragment-list-saturation",
+        "passed": true,
+        "cases": 16,
+        "stages": 0,
+        "report_sha256": "8FF7C41B88FCB2C30514883999B2CC56E62B9737D6DB37577F0E6422199BA83E"
+      },
+      {
+        "probe": "fragment-list-textures",
+        "passed": true,
+        "cases": 132,
+        "stages": 0,
+        "report_sha256": "15CF6AACA6C1884770A9D8BDB29F14A349DC00D110B97BA056A9138EF88C45F7"
+      }
+    ],
+    "new_probes": [
+      {
+        "probe": "fragment-list-camera-lifecycle",
+        "passed": true,
+        "repeated_passed": true,
+        "pngs": 33,
+        "changed": [],
+        "report_sha256": "7A9EB188804220CC25D716ECFAA30B1C4D32CE08B528FA203C4326FEBCCF743A",
+        "repeat_report_sha256": "7A9EB188804220CC25D716ECFAA30B1C4D32CE08B528FA203C4326FEBCCF743A",
+        "png_manifest_sha256": "927F224767BB4D25DD62D46C96F22AB8E03DCE6A0B1AB462B64497A11177F880",
+        "report": {
+          "probe_passed": true,
+          "scope": "Full-target offscreen images; frozen alpha sheets, not multi-camera overflow diagnostics or live show costs.",
+          "stages": [
+            {
+              "allocation": {
+                "bytes": 8985600,
+                "extent": [
+                  480,
+                  360
+                ],
+                "heads": 172800,
+                "nodes": 691200
+              },
+              "diagnostics": "healthy single camera",
+              "stage": "single"
+            },
+            {
+              "allocation": {
+                "bytes": 11980800,
+                "extent": [
+                  480,
+                  480
+                ],
+                "heads": 230400,
+                "nodes": 921600
+              },
+              "diagnostics": "unavailable: multiple cameras",
+              "first_patch_error": 0.0030669569969177246,
+              "first_size": [
+                480,
+                360
+              ],
+              "reactivation_bytes": 0,
+              "second_order": 1,
+              "second_patch_error": 0.0030669569969177246,
+              "stage": "two-original",
+              "whole_image_isolation_bytes": 0
+            },
+            {
+              "allocation": {
+                "bytes": 15974400,
+                "extent": [
+                  640,
+                  480
+                ],
+                "heads": 307200,
+                "nodes": 1228800
+              },
+              "diagnostics": "unavailable: multiple cameras",
+              "first_patch_error": 0.008979111909866333,
+              "first_size": [
+                640,
+                240
+              ],
+              "reactivation_bytes": 0,
+              "second_order": 1,
+              "second_patch_error": 0.0030669569969177246,
+              "stage": "wide-first",
+              "whole_image_isolation_bytes": 0
+            },
+            {
+              "allocation": {
+                "bytes": 10649600,
+                "extent": [
+                  320,
+                  640
+                ],
+                "heads": 204800,
+                "nodes": 819200
+              },
+              "diagnostics": "unavailable: multiple cameras",
+              "first_patch_error": 0.0030669569969177246,
+              "first_size": [
+                240,
+                640
+              ],
+              "reactivation_bytes": 0,
+              "second_order": -1,
+              "second_patch_error": 0.0030669569969177246,
+              "stage": "tall-first",
+              "whole_image_isolation_bytes": 0
+            },
+            {
+              "allocation": {
+                "bytes": 11980800,
+                "extent": [
+                  480,
+                  480
+                ],
+                "heads": 230400,
+                "nodes": 921600
+              },
+              "diagnostics": "unavailable: multiple cameras",
+              "first_patch_error": 0.0030669569969177246,
+              "first_size": [
+                480,
+                360
+              ],
+              "reactivation_bytes": 0,
+              "second_order": 1,
+              "second_patch_error": 0.0030669569969177246,
+              "stage": "two-restored",
+              "whole_image_isolation_bytes": 0
+            },
+            {
+              "diagnostics": "unavailable: rejected",
+              "stage": "shared-budget-rejected",
+              "storage_bytes": 16
+            },
+            {
+              "allocation": {
+                "bytes": 11980800,
+                "extent": [
+                  480,
+                  480
+                ],
+                "heads": 230400,
+                "nodes": 921600
+              },
+              "restore_bytes": 0,
+              "stage": "shared-budget-restored"
+            },
+            {
+              "allocation": {
+                "bytes": 8985600,
+                "extent": [
+                  480,
+                  360
+                ],
+                "heads": 172800,
+                "nodes": 691200
+              },
+              "diagnostics": "healthy fresh single-camera sample",
+              "restore_bytes": 0,
+              "stage": "second-removed"
+            },
+            {
+              "allocation": {
+                "bytes": 3407872,
+                "extent": [
+                  256,
+                  256
+                ],
+                "heads": 65536,
+                "nodes": 262144
+              },
+              "diagnostics": "fresh sample with current target size",
+              "patch_error": 0.0030669569969177246,
+              "size": [
+                256,
+                256
+              ],
+              "stage": "single-resize"
+            },
+            {
+              "allocation": {
+                "bytes": 14976000,
+                "extent": [
+                  800,
+                  360
+                ],
+                "heads": 288000,
+                "nodes": 1152000
+              },
+              "diagnostics": "fresh sample with current target size",
+              "patch_error": 0.0030669569969177246,
+              "size": [
+                800,
+                360
+              ],
+              "stage": "single-resize"
+            },
+            {
+              "allocation": {
+                "bytes": 8985600,
+                "extent": [
+                  480,
+                  360
+                ],
+                "heads": 172800,
+                "nodes": 691200
+              },
+              "diagnostics": "fresh sample with current target size",
+              "patch_error": 0.0030669569969177246,
+              "size": [
+                480,
+                360
+              ],
+              "stage": "single-resize"
+            },
+            {
+              "allocation": {
+                "bytes": 8985600,
+                "extent": [
+                  480,
+                  360
+                ],
+                "heads": 172800,
+                "nodes": 691200
+              },
+              "restore_bytes": 0,
+              "stage": "target-rebind-restore"
+            },
+            {
+              "diagnostics": "unavailable",
+              "stage": "last-opt-in-removed",
+              "storage_bytes": 16
+            }
+          ]
+        }
+      },
+      {
+        "probe": "fragment-list-depth-variants",
+        "passed": true,
+        "repeated_passed": true,
+        "pngs": 144,
+        "changed": [],
+        "report_sha256": "EC13C3DB251FA7918D1601AA25D704B731941FD211D12026EF99F7D6AE92ACAA",
+        "repeat_report_sha256": "EC13C3DB251FA7918D1601AA25D704B731941FD211D12026EF99F7D6AE92ACAA",
+        "png_manifest_sha256": "DC5779834D567963649BE79423E0F92B418691BAA563F0C535B7129E61FA89B4",
+        "report": {
+          "cases": [
+            {
+              "additive": false,
+              "attempted_fragments": 70232,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.25,
+                0.0625
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-0-Less-wall--6",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 37108,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-0-Less-wall--1",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 0,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-0-Less-wall-2",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 70232,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.25,
+                0.0625
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-0-LessEqual-wall--6",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 37108,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-0-LessEqual-wall--1",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 0,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-0-LessEqual-wall-2",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 70232,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.25,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-1-Less-wall--6",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 37108,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-1-Less-wall--1",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 0,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-1-Less-wall-2",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 70232,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.25,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-1-LessEqual-wall--6",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 37108,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-1-LessEqual-wall--1",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 0,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-0-add-1-LessEqual-wall-2",
+              "opposite": false,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 0,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-0-Less-wall--6",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 71824,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0.5,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-0-Less-wall--1",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0028865933418273926,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 108932,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.25,
+                0.5,
+                0.0625
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-0-Less-wall-2",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0037986040115356445,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 0,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-0-LessEqual-wall--6",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 71824,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0.5,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-0-LessEqual-wall--1",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0028865933418273926,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 108932,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.25,
+                0.5,
+                0.0625
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-0-LessEqual-wall-2",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0037986040115356445,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 0,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-1-Less-wall--6",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 71824,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0.5,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-1-Less-wall--1",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0028865933418273926,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 108932,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.5,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-1-Less-wall-2",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 0,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-1-LessEqual-wall--6",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 71824,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0.5,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-1-LessEqual-wall--1",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0028865933418273926,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 108932,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.5,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-0-view-1-add-1-LessEqual-wall-2",
+              "opposite": true,
+              "orthographic": false,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 57848,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.25,
+                0.0625
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-0-Less-wall--6",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.004152178764343262,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 25448,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-0-Less-wall--1",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 0,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-0-Less-wall-2",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 57848,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.25,
+                0.0625
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-0-LessEqual-wall--6",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.004152178764343262,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 25448,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-0-LessEqual-wall--1",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 0,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-0-LessEqual-wall-2",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 57848,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.25,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-1-Less-wall--6",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.004152178764343262,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 25448,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-1-Less-wall--1",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 0,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-1-Less-wall-2",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 57848,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.25,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-1-LessEqual-wall--6",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.004152178764343262,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 25448,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-1-LessEqual-wall--1",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 0,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-0-add-1-LessEqual-wall-2",
+              "opposite": false,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 0,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-0-Less-wall--6",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 32400,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0.5,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-0-Less-wall--1",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0028865933418273926,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 57848,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.25,
+                0.5,
+                0.0625
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-0-Less-wall-2",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0037986040115356445,
+              "reference_patch_error": 0.0037986040115356445,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 0,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-0-LessEqual-wall--6",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 32400,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0.5,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-0-LessEqual-wall--1",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0028865933418273926,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "attempted_fragments": 57848,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.25,
+                0.5,
+                0.0625
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-0-LessEqual-wall-2",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0037986040115356445,
+              "reference_patch_error": 0.0037986040115356445,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 0,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-1-Less-wall--6",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 32400,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0,
+                0.5,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-1-Less-wall--1",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0028865933418273926,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 57848,
+              "depth_test": "Less",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.5,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-1-Less-wall-2",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 0,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-1-LessEqual-wall--6",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0001583695411682129,
+              "reference_patch_error": 0.0001583695411682129,
+              "restore_bytes": 0,
+              "wall_z": -6,
+              "whole_reference_error": 0
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 32400,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0,
+                0.5,
+                0.25
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-1-LessEqual-wall--1",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0028865933418273926,
+              "reference_patch_error": 0.0030669569969177246,
+              "restore_bytes": 0,
+              "wall_z": -1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "attempted_fragments": 57848,
+              "depth_test": "LessEqual",
+              "dropped": 0,
+              "expected": [
+                0.5,
+                0.5,
+                0.125
+              ],
+              "invalid": 0,
+              "name": "ortho-1-view-1-add-1-LessEqual-wall-2",
+              "opposite": true,
+              "orthographic": true,
+              "oversort": 0,
+              "patch_error": 0.0030669569969177246,
+              "reference_patch_error": 0.008979111909866333,
+              "restore_bytes": 0,
+              "wall_z": 2,
+              "whole_reference_error": 0.005953550338745117
+            }
+          ],
+          "probe_passed": true,
+          "scope": "DepthPrepass, separated planes only; no equal-depth tie or no-prepass qualification."
+        }
+      },
+      {
+        "probe": "fragment-list-near-plane",
+        "passed": true,
+        "repeated_passed": true,
+        "pngs": 70,
+        "changed": [],
+        "report_sha256": "53D5C1CF5AF4B4A5E09548E6E6E59D194E4FC68B2BE1FC4B23A2EC9222B9C231",
+        "repeat_report_sha256": "53D5C1CF5AF4B4A5E09548E6E6E59D194E4FC68B2BE1FC4B23A2EC9222B9C231",
+        "png_manifest_sha256": "EB77D8A8AAF651EF3050DECDA15854B18ACFBA90478E6F7F98EAA33DC0420937",
+        "report": {
+          "cases": [
+            {
+              "additive": false,
+              "analytic_error": 0,
+              "clipping_restore_bytes": null,
+              "distance": -0.5,
+              "green_pixels": 0,
+              "isolated_attempts": 0,
+              "name": "add-0-step-0-distance--0.5",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 0,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "analytic_error": 0,
+              "clipping_restore_bytes": null,
+              "distance": 0.699999988079071,
+              "green_pixels": 0,
+              "isolated_attempts": 0,
+              "name": "add-0-step-1-distance-0.7",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "analytic_error": 0.005026832222938538,
+              "clipping_restore_bytes": null,
+              "distance": 1,
+              "green_pixels": 29684,
+              "isolated_attempts": 29684,
+              "name": "add-0-step-2-distance-1",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "analytic_error": 0.005026832222938538,
+              "clipping_restore_bytes": null,
+              "distance": 1.399999976158142,
+              "green_pixels": 47370,
+              "isolated_attempts": 47370,
+              "name": "add-0-step-3-distance-1.4",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 3,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "analytic_error": 0.005026832222938538,
+              "clipping_restore_bytes": 0,
+              "distance": 1,
+              "green_pixels": 29684,
+              "isolated_attempts": 29684,
+              "name": "add-0-step-4-distance-1",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 4,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "analytic_error": 0,
+              "clipping_restore_bytes": 0,
+              "distance": 0.699999988079071,
+              "green_pixels": 0,
+              "isolated_attempts": 0,
+              "name": "add-0-step-5-distance-0.7",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 5,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": false,
+              "analytic_error": 0,
+              "clipping_restore_bytes": 0,
+              "distance": -0.5,
+              "green_pixels": 0,
+              "isolated_attempts": 0,
+              "name": "add-0-step-6-distance--0.5",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 6,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "analytic_error": 0,
+              "clipping_restore_bytes": null,
+              "distance": -0.5,
+              "green_pixels": 0,
+              "isolated_attempts": 0,
+              "name": "add-1-step-0-distance--0.5",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 0,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "analytic_error": 0,
+              "clipping_restore_bytes": null,
+              "distance": 0.699999988079071,
+              "green_pixels": 0,
+              "isolated_attempts": 0,
+              "name": "add-1-step-1-distance-0.7",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 1,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "analytic_error": 0,
+              "clipping_restore_bytes": null,
+              "distance": 1,
+              "green_pixels": 29684,
+              "isolated_attempts": 29684,
+              "name": "add-1-step-2-distance-1",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 2,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "analytic_error": 0,
+              "clipping_restore_bytes": null,
+              "distance": 1.399999976158142,
+              "green_pixels": 47370,
+              "isolated_attempts": 47370,
+              "name": "add-1-step-3-distance-1.4",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 3,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "analytic_error": 0,
+              "clipping_restore_bytes": 0,
+              "distance": 1,
+              "green_pixels": 29684,
+              "isolated_attempts": 29684,
+              "name": "add-1-step-4-distance-1",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 4,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "analytic_error": 0,
+              "clipping_restore_bytes": 0,
+              "distance": 0.699999988079071,
+              "green_pixels": 0,
+              "isolated_attempts": 0,
+              "name": "add-1-step-5-distance-0.7",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 5,
+              "whole_reference_error": 0.005953550338745117
+            },
+            {
+              "additive": true,
+              "analytic_error": 0,
+              "clipping_restore_bytes": 0,
+              "distance": -0.5,
+              "green_pixels": 0,
+              "isolated_attempts": 0,
+              "name": "add-1-step-6-distance--0.5",
+              "near": 1,
+              "restore_bytes": 0,
+              "step": 6,
+              "whole_reference_error": 0.005953550338745117
+            }
+          ],
+          "probe_passed": true,
+          "scope": "Perspective near=1, rotated plane; not arbitrary mesh/depth material qualification."
+        }
+      }
+    ]
+  },
+  "repeated_run": {
+    "root": "target/fireworks-f8/fragment-list-camera-depth-2026-10-26-a",
+    "commands": [
+      "cargo test -p aestra-viewer fragment_list_camera_lifecycle --locked --offline -- --ignored --test-threads=1",
+      "cargo test -p aestra-viewer fragment_list_depth_variants --locked --offline -- --ignored --test-threads=1",
+      "cargo test -p aestra-viewer fragment_list_near_plane --locked --offline -- --ignored --test-threads=1"
+    ],
+    "serial": true,
+    "passed": 3,
+    "reported_seconds": [
+      4.5,
+      33.08,
+      8.1
+    ]
+  },
+  "repeated_image_comparison": {
+    "pngs_compared": 247,
+    "changed": 0,
+    "per_probe": [
+      {
+        "probe": "fragment-list-camera-lifecycle",
+        "pngs": 33,
+        "changed": [],
+        "report_sha256": "7A9EB188804220CC25D716ECFAA30B1C4D32CE08B528FA203C4326FEBCCF743A",
+        "repeat_report_sha256": "7A9EB188804220CC25D716ECFAA30B1C4D32CE08B528FA203C4326FEBCCF743A",
+        "png_manifest_sha256": "927F224767BB4D25DD62D46C96F22AB8E03DCE6A0B1AB462B64497A11177F880"
+      },
+      {
+        "probe": "fragment-list-depth-variants",
+        "pngs": 144,
+        "changed": [],
+        "report_sha256": "EC13C3DB251FA7918D1601AA25D704B731941FD211D12026EF99F7D6AE92ACAA",
+        "repeat_report_sha256": "EC13C3DB251FA7918D1601AA25D704B731941FD211D12026EF99F7D6AE92ACAA",
+        "png_manifest_sha256": "DC5779834D567963649BE79423E0F92B418691BAA563F0C535B7129E61FA89B4"
+      },
+      {
+        "probe": "fragment-list-near-plane",
+        "pngs": 70,
+        "changed": [],
+        "report_sha256": "53D5C1CF5AF4B4A5E09548E6E6E59D194E4FC68B2BE1FC4B23A2EC9222B9C231",
+        "repeat_report_sha256": "53D5C1CF5AF4B4A5E09548E6E6E59D194E4FC68B2BE1FC4B23A2EC9222B9C231",
+        "png_manifest_sha256": "EB77D8A8AAF651EF3050DECDA15854B18ACFBA90478E6F7F98EAA33DC0420937"
+      }
+    ],
+    "manifest_format": "PNG basenames sorted ascending; SHA256 of UTF-8 concatenated basename + TAB + uppercase file SHA256 + LF. All new images included."
+  },
+  "prior_image_comparison": {
+    "root": "target/fireworks-f8/fragment-list-unified-2026-10-25-d",
+    "compared": 1447,
+    "changed": 0,
+    "probes": [
+      {
+        "probe": "fragment-list",
+        "compared": 76,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-depth",
+        "compared": 28,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-hdr",
+        "compared": 16,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-lighting",
+        "compared": 48,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-textures",
+        "compared": 396,
+        "changed": []
+      },
+      {
+        "probe": "fragment-list-mixed-unified",
+        "compared": 883,
+        "changed": []
+      }
+    ],
+    "exclusions": "The deliberate saturation probe and the two mixed capacity degradation images are not repeatability acceptance."
+  },
+  "validation": {
+    "viewer_unit": {
+      "passed": 107,
+      "ignored": 40,
+      "command": "cargo test -p aestra-viewer --locked --offline -- --test-threads=1"
+    },
+    "strict_workspace_clippy": {
+      "passed": true,
+      "command": "cargo clippy --workspace --all-targets --features aestra-bench/gpu --locked --offline -- -D warnings"
+    },
+    "formatting": {
+      "passed": true,
+      "command": "cargo fmt --all -- --check"
+    },
+    "diff_check": {
+      "passed": true,
+      "command": "git diff --check"
+    },
+    "notes": "Existing hard-link fallback-to-copy and Git LF/CRLF notices are environmental. No full workspace test or Linux native run claimed."
+  },
+  "remaining": [
+    "matched dense/live-paced GPU costs and capacity at show resolutions",
+    "unsupported transparent non-participants",
+    "saturated local/global lists are degraded",
+    "no-prepass/custom projections/equal-depth ties not certified",
+    "sub-viewports/resolution overrides/window minimize lifecycle not certified",
+    "more than two cameras and multi-camera overflow diagnostics not certified",
+    "HDR/bloom mixed-scene and realistic smoke-art approval"
+  ]
+}

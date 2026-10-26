@@ -143,6 +143,85 @@ fn lit_smoke() -> String {
 }
 
 #[test]
+fn fragment_list_alpha_additive_variants_compile_with_real_bevy_imports() {
+    for (semantic, lit) in [(false, false), (true, false), (true, true)] {
+        let portable = if !semantic {
+            aestra_gpu::shader::SPRITE_RENDER_WESL.to_owned()
+        } else if lit {
+            lit_smoke()
+        } else {
+            let program = aestra_core::material::MaterialProgram::additive_sprite("Mixed OIT");
+            let ir = aestra_compiler::MaterialCompiler.compile(&program).unwrap();
+            aestra_gpu::material::MaterialShaderCompiler
+                .compile(
+                    &ir,
+                    &aestra_gpu::material::MaterialBackendCapabilities::portable_minimum(),
+                )
+                .unwrap()
+                .shader
+                .wgsl
+        };
+        let source = composition::compose_fragment_list(
+            &composition::compose_material(&portable, lit),
+            semantic,
+        );
+        // Prove the exact source compiled below is also produced from Windows
+        // and mixed-line-ending inputs, including the lit-material view rewrite.
+        let lf = portable.replace("\r\n", "\n");
+        for input in [
+            lf.replace('\n', "\r\n"),
+            lf.replace("@fragment\n", "@fragment\r\n"),
+        ] {
+            let variant = composition::compose_fragment_list(
+                &composition::compose_material(&input, lit),
+                semantic,
+            );
+            assert_eq!(variant, source);
+        }
+        for oit in [false, true] {
+            for additive in [false, true] {
+                let mut defs = vec![ShaderDefVal::Bool(
+                    "AVAILABLE_STORAGE_BUFFER_BINDINGS__GE_3".into(),
+                    true,
+                )];
+                if lit {
+                    defs.push("AESTRA_SCENE_POINT_LIGHTING".into());
+                }
+                if oit {
+                    defs.extend([
+                        "AESTRA_FRAGMENT_LIST_OIT".into(),
+                        "OIT_ENABLED".into(),
+                        "DEPTH_PREPASS".into(),
+                    ]);
+                    if additive {
+                        defs.push("AESTRA_FRAGMENT_LIST_ADDITIVE".into());
+                    }
+                }
+                let compiled = compile(source.clone(), &defs);
+                assert!(compiled.module.entry_points.iter().any(|e| e.name
+                    == if semantic {
+                        "fragment_material"
+                    } else {
+                        "fragment_additive"
+                    }));
+                assert_eq!(
+                    compiled
+                        .module
+                        .global_variables
+                        .iter()
+                        .filter(|(_, var)| var
+                            .binding
+                            .as_ref()
+                            .is_some_and(|b| b.group == 0 && b.binding == 0))
+                        .count(),
+                    1
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn generated_lit_smoke_keeps_one_view_binding_and_neutral_2d_branch() {
     let portable = lit_smoke();
     assert_eq!(composition::compose_material(&portable, false), portable);

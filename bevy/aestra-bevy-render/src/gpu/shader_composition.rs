@@ -94,6 +94,9 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool) -> String {
     if !enabled {
         return wgsl.to_owned();
     }
+    // include_str! shader bytes may use CRLF after a Windows checkout. Match
+    // generated declarations independently of checkout formatting, not of ABI.
+    let wgsl = wgsl.replace("\r\n", "\n");
     // The portable compiler owns this callback ABI. Fail loudly if its definition changes;
     // silently leaving a neutral shader would make a newly authored lit material look broken.
     let start = wgsl
@@ -131,7 +134,7 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool) -> String {
 }
 
 /// Keep the portable compiler/ABI engine-neutral. Only the native adapter wraps
-/// the final alpha fragment, after material coverage and lighting are evaluated.
+/// the final alpha/additive fragments, after material coverage and lighting are evaluated.
 pub(crate) fn compose_fragment_list(wesl: &str, semantic: bool) -> String {
     let position = if semantic {
         "fragment_position"
@@ -146,16 +149,45 @@ pub(crate) fn compose_fragment_list(wesl: &str, semantic: bool) -> String {
     } else {
         ("fragment_alpha", "VertexOutput")
     };
-    let signature = format!("@fragment\nfn {entry}(input: {input_type}) -> @location(0) vec4<f32>");
-    assert_eq!(
-        wesl.matches(&signature).count(),
-        1,
-        "native alpha fragment ABI changed"
-    );
-    let mut source = wesl.replace(
-        &signature,
-        &format!("fn aestra_oit_color(input: {input_type}) -> vec4<f32>"),
-    );
+    let mut entries = vec![(entry, "aestra_oit_color")];
+    if !semantic {
+        entries.push(("fragment_additive", "aestra_oit_additive_color"));
+    }
+    // Shader files retain checkout line endings. Canonicalize before matching
+    // entry points and multi-line bindings; keep the exact-once ABI guards.
+    let mut source = wesl.replace("\r\n", "\n");
+    let mut wrappers = String::new();
+    for (entry, color_function) in entries {
+        let signature =
+            format!("@fragment\nfn {entry}(input: {input_type}) -> @location(0) vec4<f32>");
+        assert_eq!(
+            source.matches(&signature).count(),
+            1,
+            "native fragment ABI changed: {entry}"
+        );
+        source = source.replace(
+            &signature,
+            &format!("fn {color_function}(input: {input_type}) -> vec4<f32>"),
+        );
+        wrappers.push_str(&format!(
+            r#"
+@fragment
+fn {entry}(input: {input_type}) -> @location(0) vec4<f32> {{
+    let color = {color_function}(input);
+    @if(AESTRA_FRAGMENT_LIST_OIT) {{
+        if color.a <= 0.0 {{ discard; }}
+        // Store coverage-weighted RGB, but use alpha for extinction, not emission
+        // intensity: additive light must not absorb later layers.
+        var extinction = color.a;
+        @if(AESTRA_FRAGMENT_LIST_ADDITIVE) {{ extinction = 0.0; }}
+        oit_draw(input.{position}, vec4<f32>(color.rgb * color.a, extinction));
+        discard;
+    }}
+    return color;
+}}
+"#
+        ));
+    }
     let view = if semantic {
         "@group(0) @binding(0)\nvar<uniform> view: View;"
     } else {
@@ -181,17 +213,7 @@ import bevy_core_pipeline::oit::draw::oit_draw;
 @if(AESTRA_FRAGMENT_LIST_OIT && !AESTRA_SCENE_POINT_LIGHTING)
 import bevy_pbr::render::mesh_view_bindings::view;
 {source}
-@fragment
-fn {entry}(input: {input_type}) -> @location(0) vec4<f32> {{
-    let color = aestra_oit_color(input);
-    @if(AESTRA_FRAGMENT_LIST_OIT) {{
-        if color.a <= 0.0 {{ discard; }}
-        // Bevy 0.20 expects premultiplied RGB. The resolve pass owns the output.
-        oit_draw(input.{position}, vec4<f32>(color.rgb * color.a, color.a));
-        discard;
-    }}
-    return color;
-}}
+{wrappers}
 "#
     )
 }
@@ -214,15 +236,52 @@ mod tests {
     }
 
     #[test]
-    fn fragment_list_wraps_legacy_without_changing_additive_or_portable_source() {
+    fn fragment_list_wraps_alpha_and_additive_without_changing_portable_source() {
         let source = compose_fragment_list(aestra_gpu::shader::SPRITE_RENDER_WESL, false);
         assert!(
-            source
-                .contains("oit_draw(input.clip_position, vec4<f32>(color.rgb * color.a, color.a))")
+            source.contains(
+                "oit_draw(input.clip_position, vec4<f32>(color.rgb * color.a, extinction))"
+            )
         );
         assert!(source.contains("fn aestra_oit_color(input: VertexOutput)"));
         assert!(source.contains("fn fragment_additive(input: VertexOutput)"));
+        assert!(source.contains("fn aestra_oit_additive_color(input: VertexOutput)"));
+        assert_eq!(
+            source
+                .matches("@if(AESTRA_FRAGMENT_LIST_ADDITIVE) { extinction = 0.0; }")
+                .count(),
+            2
+        );
         assert!(!aestra_gpu::shader::SPRITE_RENDER_WESL.contains("oit_draw"));
+    }
+
+    #[test]
+    fn fragment_list_legacy_composition_is_independent_of_checkout_line_endings() {
+        // include_str! preserves checkout bytes, unlike Rust source literals.
+        let lf = aestra_gpu::shader::SPRITE_RENDER_WESL.replace("\r\n", "\n");
+        let expected = compose_fragment_list(&lf, false);
+        for input in [
+            lf.replace('\n', "\r\n"),
+            lf.replace("@fragment\n", "@fragment\r\n"),
+        ] {
+            assert_eq!(compose_fragment_list(&input, false), expected);
+        }
+    }
+
+    #[test]
+    fn fragment_list_still_rejects_changed_or_duplicate_fragment_signatures() {
+        let lf = aestra_gpu::shader::SPRITE_RENDER_WESL.replace("\r\n", "\n");
+        for input in [
+            lf.replace(
+                "fragment_alpha(input: VertexOutput)",
+                "fragment_alpha(input: UnexpectedInput)",
+            ),
+            format!(
+                "{lf}\n@fragment\nfn fragment_alpha(input: VertexOutput) -> @location(0) vec4<f32> {{}}"
+            ),
+        ] {
+            assert!(std::panic::catch_unwind(|| compose_fragment_list(&input, false)).is_err());
+        }
     }
 
     #[test]
@@ -235,13 +294,21 @@ mod tests {
                 &aestra_gpu::material::MaterialBackendCapabilities::portable_minimum(),
             )
             .unwrap();
-        let source = compose_fragment_list(&compiled.shader.wgsl, true);
+        let lf = compiled.shader.wgsl.replace("\r\n", "\n");
+        let source = compose_fragment_list(&lf, true);
+        for input in [
+            lf.replace('\n', "\r\n"),
+            lf.replace("@fragment\n", "@fragment\r\n"),
+        ] {
+            assert_eq!(compose_fragment_list(&input, true), source);
+        }
         // Check the actual input struct with Naga, not only a generated string.
         // Native tests separately qualify Bevy's real imported implementation.
         let source = source.replace("@if(AESTRA_FRAGMENT_LIST_OIT)\nimport bevy_core_pipeline::oit::draw::oit_draw;", "")
             .replace("@if(AESTRA_FRAGMENT_LIST_OIT && !AESTRA_SCENE_POINT_LIGHTING)\nimport bevy_pbr::render::mesh_view_bindings::view;", "")
             .replace("@if(!AESTRA_FRAGMENT_LIST_OIT)", "")
-            .replace("@if(AESTRA_FRAGMENT_LIST_OIT)", "");
+            .replace("@if(AESTRA_FRAGMENT_LIST_OIT)", "")
+            .replace("@if(AESTRA_FRAGMENT_LIST_ADDITIVE)", "");
         let source = format!("{source}\nfn oit_draw(position: vec4<f32>, color: vec4<f32>) {{}}");
         let module = naga::front::wgsl::parse_str(&source).unwrap();
         naga::valid::Validator::new(

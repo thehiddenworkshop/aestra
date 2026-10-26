@@ -12,14 +12,18 @@ use bevy::{
 };
 pub use diagnostics::{ExperimentalOitDiagnosticSample, ExperimentalOitDiagnostics};
 
-/// Experimental 3D alpha sprite/flipbook integration with Bevy's fragment-list OIT.
+/// Experimental 3D alpha/additive integration with Bevy's fragment-list OIT.
 /// Requires explicit `Msaa::Off`. Owns Bevy's OIT camera settings while approved.
-/// Does not certify mixed non-OIT draws, overflow, arbitrary materials or smoke art.
+/// Eligible rendered Aestra sprites, flipbooks, trails and semantic mesh particles
+/// share depth-ordered lists. Semantic state must use Less/LessEqual without depth
+/// writes. Additive RGB is coverage-weighted emission with zero extinction alpha.
+/// Does not certify overflow, arbitrary materials, all depth paths or smoke art.
 /// Known limitation: the resolve overlays ordinary transparent draws regardless of their depth.
-/// Aestra additive particles, trails and mesh particles do not join these fragment lists;
-/// foreground instances can therefore be incorrectly covered. Healthy diagnostics do not rule
-/// this out. Keep this opt-in disabled for production mixed scenes until unified compositing
-/// or another depth-correct integration is qualified.
+/// Ribbons, multiply, depth-writing/overlay/wireframe, legacy meshes and foreign/custom
+/// draws are not qualified participants; foreground instances can be incorrectly covered.
+/// Healthy diagnostics do not rule this out. Local-sort saturation also approximates
+/// already weighted RGB, which can lose additive emission. Keep this opt-in disabled
+/// for production mixed scenes pending broader interoperability and cost qualification.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct ExperimentalOitSettings {
     pub fragments_per_pixel_average: f32,

@@ -6,7 +6,8 @@ use super::draw_preparation::{
 };
 use super::draw_resources::{PrepareAlphaSort, TrailCompactionSystems};
 use super::pipeline::{
-    GpuSpritePipeline, GpuSpritePipelineKey, GpuSpriteViewKey, draw_pipeline_key, material_for_draw,
+    GpuSpritePipeline, GpuSpritePipelineKey, GpuSpriteViewKey, draw_pipeline_key,
+    fragment_list_eligible, material_for_draw,
 };
 pub(super) use super::view_phases::visible_gpu_draws;
 use super::view_phases::{PhaseDraw, reject_sampled_sprite, retire_invisible_draws};
@@ -249,20 +250,12 @@ fn queue_gpu_sprites_3d(
                 GpuSpritePipelineKey {
                     fragment_list_oit: oit
                         && mesh_key.contains(bevy::pbr::MeshPipelineKey::OIT_ENABLED)
-                        && effect.renderer_kind <= 1
-                        && material_for_draw(effect).map_or(
-                            effect.blend == aestra_gpu::GpuBlend::Alpha,
-                            |material| {
-                                material.render_state.blend == aestra_core::BlendMode::Alpha
-                                    && !material.render_state.depth_write
-                                    && matches!(
-                                        material.render_state.depth_test,
-                                        aestra_core::material::MaterialDepthTest::Less
-                                            | aestra_core::material::MaterialDepthTest::LessEqual
-                                    )
-                            },
-                        )
-                        && effect.render_mode == GpuRenderMode::Rendered,
+                        && fragment_list_eligible(
+                            effect.renderer_kind,
+                            effect.blend,
+                            effect.render_mode,
+                            material_for_draw(effect).map(|material| material.render_state),
+                        ),
                     mesh_wireframe: effect.mesh.is_some()
                         && effect.render_mode == GpuRenderMode::Wireframe,
                     mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),

@@ -4,7 +4,7 @@ use super::{
     mesh_inputs::MeshInputs,
 };
 use crate::material_layout::material_bind_group_layout;
-use aestra_core::material::{MaterialCullMode, MaterialDepthTest};
+use aestra_core::material::{MaterialCullMode, MaterialDepthTest, MaterialRenderState};
 use aestra_gpu::{
     GpuBlend, GpuParticle, GpuRenderGlobals, GpuRenderParams, GpuRenderer,
     material::{
@@ -191,6 +191,9 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             aestra_core::BlendMode::Additive => GpuBlend::Additive,
             aestra_core::BlendMode::Multiply => GpuBlend::Multiply,
         });
+        if key.fragment_list_oit && blend_mode == GpuBlend::Additive {
+            shader_defs.push("AESTRA_FRAGMENT_LIST_ADDITIVE".into());
+        }
         let blend = match key.render_mode {
             GpuRenderMode::Wireframe => BlendState::ALPHA_BLENDING,
             GpuRenderMode::Rendered => match blend_mode {
@@ -398,6 +401,35 @@ pub(super) fn material_for_draw(effect: &GpuDrawInstance) -> Option<&GpuSemantic
     })
 }
 
+/// Only explicitly supported geometry/operators join the experimental shared list.
+/// Non-participants still render normally; their ordering against OIT is not certified.
+pub(super) fn fragment_list_eligible(
+    renderer_kind: u32,
+    blend: GpuBlend,
+    mode: GpuRenderMode,
+    state: Option<MaterialRenderState>,
+) -> bool {
+    if mode != GpuRenderMode::Rendered
+        || !matches!(renderer_kind, 0 | 1 | 2 | 4)
+        || (renderer_kind == 2 && state.is_none())
+    {
+        return false;
+    }
+    state.map_or(
+        matches!(blend, GpuBlend::Alpha | GpuBlend::Additive),
+        |state| {
+            matches!(
+                state.blend,
+                aestra_core::BlendMode::Alpha | aestra_core::BlendMode::Additive
+            ) && !state.depth_write
+                && matches!(
+                    state.depth_test,
+                    MaterialDepthTest::Less | MaterialDepthTest::LessEqual
+                )
+        },
+    )
+}
+
 pub(super) fn draw_pipeline_key(
     effect: &GpuDrawInstance,
     target_format: TextureFormat,
@@ -464,6 +496,83 @@ mod tests {
     use aestra_core::material::{MaterialProgram, MaterialRenderState};
     use aestra_gpu::material::{MaterialBackendCapabilities, MaterialShaderCompiler};
 
+    #[test]
+    fn fragment_list_eligibility_keeps_unsupported_operators_and_geometry_out() {
+        let rendered = GpuRenderMode::Rendered;
+        for kind in [0, 1, 4] {
+            for blend in [GpuBlend::Alpha, GpuBlend::Additive] {
+                assert!(fragment_list_eligible(kind, blend, rendered, None));
+            }
+            assert!(!fragment_list_eligible(
+                kind,
+                GpuBlend::Multiply,
+                rendered,
+                None
+            ));
+        }
+        assert!(!fragment_list_eligible(2, GpuBlend::Alpha, rendered, None));
+        for blend in [
+            aestra_core::BlendMode::Alpha,
+            aestra_core::BlendMode::Additive,
+        ] {
+            let state = MaterialRenderState {
+                blend,
+                ..MaterialRenderState::additive_sprite()
+            };
+            for kind in [0, 1, 2, 4] {
+                // Semantic state overrides the legacy draw blend, including for meshes.
+                assert!(fragment_list_eligible(
+                    kind,
+                    GpuBlend::Multiply,
+                    rendered,
+                    Some(state)
+                ));
+                assert!(!fragment_list_eligible(
+                    kind,
+                    GpuBlend::Alpha,
+                    GpuRenderMode::Wireframe,
+                    Some(state)
+                ));
+                for depth_test in [MaterialDepthTest::Disabled, MaterialDepthTest::Always] {
+                    assert!(!fragment_list_eligible(
+                        kind,
+                        GpuBlend::Alpha,
+                        rendered,
+                        Some(MaterialRenderState {
+                            depth_test,
+                            ..state
+                        })
+                    ));
+                }
+                assert!(!fragment_list_eligible(
+                    kind,
+                    GpuBlend::Alpha,
+                    rendered,
+                    Some(MaterialRenderState {
+                        depth_write: true,
+                        ..state
+                    })
+                ));
+                assert!(!fragment_list_eligible(
+                    kind,
+                    GpuBlend::Alpha,
+                    rendered,
+                    Some(MaterialRenderState {
+                        blend: aestra_core::BlendMode::Multiply,
+                        ..state
+                    })
+                ));
+            }
+            for kind in [3, 5, u32::MAX] {
+                assert!(!fragment_list_eligible(
+                    kind,
+                    GpuBlend::Alpha,
+                    rendered,
+                    Some(state)
+                ));
+            }
+        }
+    }
     #[test]
     fn semantic_pipeline_identity_ignores_instance_uniform_bytes() {
         let program = MaterialProgram::additive_sprite("Pipeline identity");

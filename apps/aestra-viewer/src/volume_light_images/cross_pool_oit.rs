@@ -20,6 +20,12 @@ mod textures;
 #[path = "cross_pool_mixed.rs"]
 mod mixed;
 
+#[path = "cross_pool_depth_variants.rs"]
+mod depth_variants;
+
+#[path = "cross_pool_cameras.rs"]
+mod cameras;
+
 fn enable(app: &mut App) -> Entity {
     let mut cameras = app.world_mut().query_filtered::<Entity, With<Camera3d>>();
     let camera = cameras.iter(app.world()).next().unwrap();
