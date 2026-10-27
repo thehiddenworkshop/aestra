@@ -7,6 +7,44 @@ mod shader_support;
 use bevy::shader::ShaderDefVal;
 use shader_support::{Compiled, compile};
 use std::path::Path;
+mod overflow_sort;
+
+#[test]
+fn native_overflow_link_sort_compiles_with_real_view_and_settings() {
+    let source = include_str!("../../../bevy/aestra-bevy-render/src/experimental_oit/sort.wesl");
+    let compiled = compile(source.to_owned(), &[]);
+    entry_points(&compiled, &[("main", naga::ShaderStage::Compute)]);
+}
+
+#[test]
+fn native_aestra_resolve_compiles_with_real_oit_packing_and_depth_variants() {
+    let source = include_str!("../../../bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl");
+    for sorted_max in [1, 8, 32] {
+        for prepass in [false, true] {
+            let mut defs = vec![
+                ShaderDefVal::UInt("SORTED_FRAGMENT_MAX_COUNT".into(), sorted_max),
+                "AVAILABLE_STORAGE_BUFFER_BINDINGS__GE_3".into(),
+            ];
+            if prepass {
+                defs.push("DEPTH_PREPASS".into());
+            }
+            let compiled = compile(source.to_owned(), &defs);
+            entry_points(&compiled, &[("fragment", naga::ShaderStage::Fragment)]);
+            assert_eq!(
+                compiled
+                    .module
+                    .global_variables
+                    .iter()
+                    .filter(|(_, v)| v
+                        .binding
+                        .as_ref()
+                        .is_some_and(|b| b.group == 0 && b.binding == 0))
+                    .count(),
+                1
+            );
+        }
+    }
+}
 
 fn entry_points(compiled: &Compiled, expected: &[(&str, naga::ShaderStage)]) {
     let actual: Vec<_> = compiled

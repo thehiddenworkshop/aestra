@@ -4,6 +4,32 @@ use aestra_runtime::ScheduledEffectInstance;
 use bevy::{camera::visibility::RenderLayers, prelude::*};
 use std::{collections::BTreeMap, sync::Arc};
 
+type PresentationTemplates = BTreeMap<
+    Entity,
+    (
+        Arc<aestra_runtime::CompiledEffectProject>,
+        BTreeMap<aestra_core::EffectId, PresentedEffect>,
+    ),
+>;
+
+fn project_templates<'a>(
+    cache: &'a mut PresentationTemplates,
+    root: Entity,
+    project: &Arc<aestra_runtime::CompiledEffectProject>,
+) -> &'a BTreeMap<aestra_core::EffectId, PresentedEffect> {
+    let entry = cache
+        .entry(root)
+        .or_insert_with(|| (project.clone(), BTreeMap::new()));
+    if !Arc::ptr_eq(&entry.0, project) || entry.1.is_empty() {
+        entry.0 = project.clone();
+        entry.1 = std::iter::once(&project.root)
+            .chain(project.dependencies.values())
+            .map(|effect| (effect.source, PresentedEffect::new(effect.clone())))
+            .collect();
+    }
+    &entry.1
+}
+
 /// A plugin-owned presentation following a clip path in one root player.
 /// All instances are direct children of the root entity: historical ancestry is
 /// already included in their immutable transform context, not Bevy parenting.
@@ -11,6 +37,9 @@ use std::{collections::BTreeMap, sync::Arc};
 pub struct EffectClipInstance {
     pub root: Entity,
     pub path: Vec<EffectClipId>,
+    /// Optional CPU construction scope, excluding GPU artifact/buffer preparation.
+    /// Available when `GpuPlaybackDiagnostics` profiling is enabled at creation.
+    pub preparation_cpu_time: Option<std::time::Duration>,
     epoch: u32,
     revision: u64,
     overrides: Vec<aestra_runtime::CompiledParameterOverride>,
@@ -40,6 +69,7 @@ fn output_boundary(scheduled: &ScheduledEffectInstance, player: &EffectPlayer) -
         .max(0.0)
 }
 
+#[allow(clippy::type_complexity)]
 pub(super) fn sync_project_instances(
     mut commands: Commands,
     roots: Query<(Entity, &EffectPlayer, Option<&RenderLayers>)>,
@@ -52,12 +82,22 @@ pub(super) fn sync_project_instances(
         ),
         Without<EffectPlayer>,
     >,
+    diagnostics: Option<Res<crate::gpu::GpuPlaybackDiagnostics>>,
+    mut templates: Local<PresentationTemplates>,
 ) {
+    // Ownership is root/project scoped. Retire templates with their player, and
+    // invalidate on artifact replacement even when stable effect IDs are reused.
+    templates.retain(|root, _| {
+        roots
+            .get(*root)
+            .is_ok_and(|(_, p, _)| p.project().is_some())
+    });
     let mut wanted = BTreeMap::new();
     for (root, player, layers) in &roots {
         let Some(project) = player.project() else {
             continue;
         };
+        project_templates(&mut templates, root, project);
         // Instance time also supports hosts supplying an external simulation clock.
         for scheduled in project.instances_with(
             player.instance().time(),
@@ -141,7 +181,11 @@ pub(super) fn sync_project_instances(
         wanted.remove(&key);
     }
     for ((root, path), (scheduled, player, layers)) in wanted {
-        let mut presented = PresentedEffect::new(scheduled.effect.clone());
+        let preparation_started = diagnostics
+            .as_ref()
+            .is_some_and(|d| d.profiling_enabled())
+            .then(std::time::Instant::now);
+        let mut presented = templates[&root].1[&scheduled.effect.source].fresh_instance();
         presented
             .instance
             .apply_compiled_parameter_overrides(&scheduled.parameter_overrides);
@@ -167,6 +211,7 @@ pub(super) fn sync_project_instances(
                 playback_epoch: player.instance().history_epoch(),
             },
             EffectClipInstance {
+                preparation_cpu_time: preparation_started.map(|s| s.elapsed()),
                 root,
                 path,
                 epoch: player.instance().history_epoch(),
@@ -564,5 +609,48 @@ mod tests {
         app.update();
         assert!(snapshots(&mut app, roots[0]).is_empty());
         assert_eq!(snapshots(&mut app, roots[1]).len(), 2);
+    }
+
+    #[test]
+    fn project_template_ownership_retires_when_the_last_root_is_removed() {
+        let project = fixture();
+        let weak = Arc::downgrade(&project);
+        let mut app = App::new();
+        app.add_systems(Update, sync_project_instances);
+        let mut player = EffectPlayer::from_project(project);
+        player.seek_simulation_time(1.0);
+        let root = app.world_mut().spawn(player).id();
+        app.update();
+        assert!(weak.upgrade().is_some());
+        app.world_mut().entity_mut(root).despawn();
+        app.update();
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn replacing_a_project_with_the_same_effect_ids_invalidates_its_prototypes() {
+        let project = fixture();
+        let root = World::new().spawn_empty().id();
+        let mut cache = PresentationTemplates::new();
+        let leaf_id = project
+            .dependencies
+            .values()
+            .find(|e| e.name == "Leaf")
+            .unwrap()
+            .source;
+        let original = project_templates(&mut cache, root, &project)[&leaf_id].fresh_instance();
+        let mut changed = project.clone();
+        let leaf = Arc::make_mut(
+            Arc::make_mut(&mut changed)
+                .dependencies
+                .get_mut(&leaf_id)
+                .unwrap(),
+        );
+        leaf.name = "Changed program artifact".into();
+        let replacement = project_templates(&mut cache, root, &changed)[&leaf_id].fresh_instance();
+        assert_eq!(original.effect().source, replacement.effect().source);
+        assert!(!Arc::ptr_eq(original.effect(), replacement.effect()));
+        assert_eq!(replacement.effect().name, "Changed program artifact");
+        assert!(Arc::ptr_eq(&cache[&root].0, &changed));
     }
 }

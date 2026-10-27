@@ -1,0 +1,2439 @@
+{
+  "milestone": "F8.1C4M2",
+  "date": "2026-10-26",
+  "base_commit": "70176c4c86ae50fc78dde06a644f0d0eef6a9cdd",
+  "prerequisite": "Uncommitted C4L cost harness and C4M1 premultiplied resolve/oracle; historical evidence retained.",
+  "scope": "Exact accepted-list ordering on qualified full-target opt-in views, with bounded native image/chain controls and repeated live cost observations. Not public-show adoption or smoke-art approval.",
+  "public_defaults_changed": false,
+  "renderer_adoption": false,
+  "environment": {
+    "os": "Windows",
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1"
+  },
+  "implementation": {
+    "algorithm": "Overflow-only in-place bottom-up linked merge sort, then existing premultiplied resolve",
+    "work": "O(N log N) per overflowing pixel list, O(1) private state. Short-list validation O(N); unchanged local fast sort below threshold.",
+    "storage": "Reuses the existing 12-byte nodes and heads, native dynamic View/settings uniforms; no new fragment/index/uniform data buffer or production readback.",
+    "ownership": "Aestra-approved full-target cameras only; diagnostics before sort, sort before native resolve. Bind group released when no views approved. Optional render resources/low storage-binding limits handled.",
+    "local_threshold": "Existing 1..32 setting now selects the local fast path; no longer an accepted-layer quality cap.",
+    "bounds": "Validate chains before rewriting, stop at allocated node capacity, clear malformed/cyclic heads. Valid merge passes scale with counted list length. This is a storage/work bound, not a hardware-independent worst-case GPU-time guarantee.",
+    "ordering": "Descending native packed reverse depth/alpha, canonical color tie breaker. Physical equal-depth semantics and finer-than-24-bit depth separation not certified.",
+    "cold_behavior": "Native resolver remains while specialization is pending; sorting can be pending independently. No repaired first-cold-frame guarantee."
+  },
+  "sources": [
+    {
+      "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+      "sha256": "EF69340AC7C70CE863B7FE5F1F488C5732C01D52F8A02CB851A361FC8C1857BD"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images.rs",
+      "sha256": "6C7F9FC24A2BC910211094221C2CCC65A1E2E9FE7AB775FBB4E090466645B09E"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_overflow.rs",
+      "sha256": "32868DA754D2835BB37261050CFB1AA322E2D5223F862DB51D5FF763056E58D9"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_saturation.rs",
+      "sha256": "1721119ACA3E2FD2E06F7ED51C278CAD55CEFEE31D1C28DCCFA1F01508D05267"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/fragment_list_live_costs.rs",
+      "sha256": "3E189B5D11DB06D21F9139022B9F3DF27149BAD616CC70585F90E3B417CE3DDA"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "7B0943863431881AD1F8C5C2E357ED591FD7C9485D20EB6618FEBADB8BBE8A01"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/smoke_live_costs.rs",
+      "sha256": "7DFD2609C59B599CEEF6D8C85BCC20D7CF5366C264588205F98AD59DD51BE83E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_chrysanthemum.aestra.ron",
+      "sha256": "B4223D30FD5870D3FCF7D48AB857785D2E625C734001156EC6E024DEC9235C43"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_persistent_smoke.aestra.ron",
+      "sha256": "0BA33D317842C3DDC7582B12FAAA72A8DEF330FAFBF400A94512A50455BCBCD0"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron",
+      "sha256": "5AECB28110A3295AD9E010EE001D4B1CF0B38900FBDB9473383ECE0F0CC6D12E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle.aestra.ron",
+      "sha256": "4414A563BBFC7C7A02447AD044EAF7DA7189C6DE24EED4EA88E57C7610C21D63"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_persistent_smoke.aestra.ron",
+      "sha256": "E03E96E5037B7D6ABDFB1CAFB138BA11FB02B4446555A69FA862A151CB0C624B"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron",
+      "sha256": "5ED106ECFED6A58F3AC59ACB7B4F991B5890929F2BCEA00AA64EFDC36ADAFD70"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette.aestra.ron",
+      "sha256": "4E9A0E1BAF488865215E84016C031E7992E4530DE957FC49537225E181C68F56"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_persistent_smoke.aestra.ron",
+      "sha256": "0F9FC062EB024C40173DDED37A53CF4E86ADCA5984954DC4EE2C06A440B4946E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron",
+      "sha256": "1CA9DE6B0D3FFA093D6479B07952113AA7F5B42A58D993D0141CDAAD2CB5B8AB"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break.aestra.ron",
+      "sha256": "91CD5B6C696F37C988F59E33802EE99AD6C15C3A67D9692055D7F078D0AA7E78"
+    },
+    {
+      "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron",
+      "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_particle_smoke_overlap.aestra.ron",
+      "sha256": "60C11B199D1E37EF105EF237A5575CD390C6E07FA53B716F1D13F59DD3C3F532"
+    },
+    {
+      "path": "assets/test/effects/fireworks_peony.aestra.ron",
+      "sha256": "2D1CB90697E9227E2FD8FA03385653CCFCA60927409B9E753692F32B779B0C32"
+    },
+    {
+      "path": "assets/test/effects/fireworks_pistil.aestra.ron",
+      "sha256": "EDED6581E2E7791DABDCDEFD8FCBBD3BC17E30D55E5875AE5AE12E7185EA5D49"
+    },
+    {
+      "path": "assets/test/effects/fireworks_reference_hero.aestra.ron",
+      "sha256": "89C5FDCE6152F0BEB789C16ACF523261F5770257BAA415E8B421BE454B457092"
+    },
+    {
+      "path": "assets/test/effects/fireworks_secondary_volley.aestra.ron",
+      "sha256": "E32D3BC3293AC9B8226499822B1763135E55EDF7530B69C5C0FAAB2D06036838"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+      "sha256": "ED38F17F3A103DA58673EF753C550C291BBB6C7BB6C1C3FE5FDD3540B64634E5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+      "sha256": "FC22EB440F76FC4030A6C67C5B9A71AB45CE5AAC08AA1538976C0F31F9E4979C"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show.aestra.ron",
+      "sha256": "DD2BC77CC19AAA84CFCDCCB24A5C1554B168F5EA664541EA4C28882E09A4C011"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron",
+      "sha256": "1EC41EB51EDBF14CED1631C3DEEE50B1FC4459F1F03B2BA3262FB8D2AF6105B6"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_lighting.aestra.ron",
+      "sha256": "1AA6948E412DF8C7211DE9347449980C650254935983B5831613252EA51D790F"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron",
+      "sha256": "0A32D0AA5DDA578830A7D1359633FB1A33C6F0EADCF59FB92E9611845E0C3E40"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_persistent_smoke.aestra.ron",
+      "sha256": "CB5629E77DDF49ABFC995C425386FEAA3CD73972FA58001BA60B2BF8D3BE9AEF"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron",
+      "sha256": "5AB53A9C477B2987DA245F73A1A448496B08777B3A61932168EFBD78049F1A32"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe.aestra.ron",
+      "sha256": "C8CA64F617ABD86EFA1273C991676D58DB732A602D42ABF8092E0EDA7D19CA00"
+    },
+    {
+      "path": "assets/test/effects/fireworks_willow.aestra.ron",
+      "sha256": "D4151B1932ABDED733F2BE7F9A2AB571CF91FBB7FA7E3C857E2FB6A0DD762914"
+    },
+    {
+      "path": "assets/test/materials/fireworks_hero_star.aestra.material.ron",
+      "sha256": "5350E4C64BB017B8D14B947969E1E34EBF0DE2AD504FE80314589C1AC79EA932"
+    },
+    {
+      "path": "assets/test/materials/fireworks_hero_trail.aestra.material.ron",
+      "sha256": "9BEECD239E416DC39F25F6E659EDB9C311B55B45AA0D329EBDEF9175D5C26D24"
+    },
+    {
+      "path": "assets/test/materials/fireworks_lit_smoke.aestra.material.ron",
+      "sha256": "ED47199076350898859F2B046B339CD2EADDE1BD48B9625EB7AFCA169E100E2C"
+    },
+    {
+      "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron",
+      "sha256": "C1E37B06BB5E9DE3109FC87784122A23604A902884037DF5F9E752C432661CC4"
+    },
+    {
+      "path": "assets/test/materials/fireworks_smoke.aestra.material.ron",
+      "sha256": "E1A26E654787835D33AFEFFEC767FB0829F8ACB15A9268B081E341231B424140"
+    },
+    {
+      "path": "assets/test/materials/fireworks_star.aestra.material.ron",
+      "sha256": "950D8B2257BA202B3A5B495C4776B6A608AFF0C85581E34E4B93A699DB504BF9"
+    },
+    {
+      "path": "assets/test/materials/fireworks_strobe_star.aestra.material.ron",
+      "sha256": "BE51C63C89FE9079B07B94787DBC746665B097EFE0E314DEAFF4EFA3E7A81608"
+    },
+    {
+      "path": "assets/test/materials/fireworks_trail.aestra.material.ron",
+      "sha256": "01BA1D32EFE6B032A6949661F9422FFAFA2B40FC06AEC6E1E209BA6B434B3492"
+    },
+    {
+      "path": "assets/test/materials/fireworks_wispy_smoke.aestra.material.ron",
+      "sha256": "642E3704EBC4F37110E00A1146A1641B6CB53C3E37EB451C4CBB0C4EF99E1395"
+    },
+    {
+      "path": "benchmarks/bevy-upgrade/patches-020/overflow_sort.rs",
+      "sha256": "0CB4261291886395051BFB5845180B77C80D62B3378A33AAC8DC156D50F2EECE"
+    },
+    {
+      "path": "benchmarks/bevy-upgrade/patches-020/shader_composition.rs",
+      "sha256": "97F65AA0346109CCD6CF479DAADC61EA38BE24C6A53E88682531E9A2398024B3"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+      "sha256": "6686585426EBEFA6F132299E04C923AB797DC9FABD55AD68E8943C9AE8ED8165"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs",
+      "sha256": "9BAD19218428978DF4421AD040CA891C4566994FEC11693C06E9F30A6E570F0F"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.rs",
+      "sha256": "709755DF6255C5A84663EFFA8AF27528FF6BD8014B5B2DF7F8BABE7D658E33E2"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl",
+      "sha256": "14C603D2F2B6BEC2592A65478A8B3501B2646339ACD704101F6C3A252BB389FF"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.rs",
+      "sha256": "BD6F0AD27A0D0B69693020E816E4D7A666994CB8F31EAA24BD3C1052B3989174"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.wesl",
+      "sha256": "77EF295C7B268F5D1C3337BDE7E01F73129512660E94E0849A1BD7DF4C9E3FCD"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+      "sha256": "653B4000C2FB4BB8C8B591A4298C831CFAC0F46C084B479B4E2EDBA1F89D3182"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+      "sha256": "1A96DD860178958FEBA5B712FE22C4B183DF901D61DD42436E60BBA5009ED2F0"
+    }
+  ],
+  "chain_contract": {
+    "command": "cargo test --manifest-path benchmarks/bevy-upgrade/patches-020/Cargo.toml --target-dir target/bevy-020-qualification --test shader_composition native_overflow_links_ --locked --offline -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_seconds": 1.18,
+    "production_shader": true,
+    "lists": 48,
+    "thresholds": [
+      1,
+      8,
+      32
+    ],
+    "max_list_length": 4097,
+    "permutations": [
+      "ascending",
+      "descending",
+      "seeded shuffled"
+    ],
+    "checks": [
+      "exact canonical order above threshold",
+      "unchanged chains below threshold",
+      "no lost/duplicated suffix",
+      "payload bits preserved",
+      "unreachable canary nodes preserved",
+      "empty/padded pixels",
+      "packed-depth ties",
+      "out-of-range and cyclic heads cleared"
+    ],
+    "readback": "Test-only synthetic nodes/heads, not a runtime readback path"
+  },
+  "dense": {
+    "command": "cargo test -p aestra-viewer oit_dense_overflow_ --locked --offline -- --ignored --test-threads=1",
+    "positive_cases_per_run": 36,
+    "interleaved_cases_per_run": 12,
+    "max_linear_error_bound": 0.01,
+    "old_interleaved_max_error_range": [
+      0.013249874114990234,
+      0.30734264850616455
+    ],
+    "new_interleaved_max_error": 0.0029075145721435547,
+    "runs": [
+      {
+        "source_note": "Preliminary host source before optional-resource/capability guards; identical production sort shader. Second run uses final source.",
+        "root": "target/fireworks-f8/fragment-list-order-2026-10-26-a/fragment-list-dense-overflow",
+        "report_sha256": "D8A942A26DE882B18FA8B55C996E99F899AB26B9B475631B4EE7751BE501CFD4",
+        "pngs": 52,
+        "png_manifest_sha256": "6E760F8FC456918DA8A8BF691C1CAF8FA20BAAAD758D9D244F22AE55B7B5727F",
+        "probe_passed": true,
+        "renderer_correct": true,
+        "residual_order_errors": 0,
+        "ownership_controls": [
+          {
+            "restored_managed_error": 0.004107832908630371,
+            "unmanaged_diagnostics": "unavailable",
+            "unmanaged_native_error": 0.8663303852081299,
+            "unmanaged_status": "none"
+          }
+        ]
+      },
+      {
+        "root": "target/fireworks-f8/fragment-list-order-2026-10-26-b/fragment-list-dense-overflow",
+        "report_sha256": "D8A942A26DE882B18FA8B55C996E99F899AB26B9B475631B4EE7751BE501CFD4",
+        "pngs": 52,
+        "png_manifest_sha256": "6E760F8FC456918DA8A8BF691C1CAF8FA20BAAAD758D9D244F22AE55B7B5727F",
+        "probe_passed": true,
+        "renderer_correct": true,
+        "residual_order_errors": 0,
+        "ownership_controls": [
+          {
+            "restored_managed_error": 0.004107832908630371,
+            "unmanaged_diagnostics": "unavailable",
+            "unmanaged_native_error": 0.8663303852081299,
+            "unmanaged_status": "none"
+          }
+        ]
+      }
+    ],
+    "repeat": {
+      "compared": 52,
+      "missing": [],
+      "changed": []
+    },
+    "references_unchanged": {
+      "compared": 13,
+      "missing": [],
+      "changed": []
+    },
+    "old_math_images_unchanged": [
+      {
+        "compared": 16,
+        "missing": [],
+        "changed": []
+      },
+      {
+        "compared": 16,
+        "missing": [],
+        "changed": []
+      }
+    ],
+    "scope": "480x360 HDR floating intermediate/sRGB capture, flat semantic planes, frame 30/seed 1, opposite cameras/reversed creation, local thresholds 1/8/32, 40 smoke/40 additive/41 interleaved layers, average16/64MiB to isolate local overflow; zero global drops/invalid links"
+  },
+  "regression": {
+    "command": "cargo test -p aestra-viewer fragment_list_ --locked --offline -- --ignored --test-threads=1",
+    "root": "target/fireworks-f8/fragment-list-order-2026-10-26-b",
+    "exit_code": 0,
+    "passed": 10,
+    "test_seconds": 259.03,
+    "probes": [
+      {
+        "probe": "fragment-list",
+        "passed": true,
+        "pngs": 76,
+        "report_sha256": "42468251474A31D829E337E98640FD7611165A673BA314F2FC82D72C8F0FD370",
+        "png_manifest_sha256": "EA766F1FAA8502AD784B11ED09E5D288BDFA10D3EBC78B2E5D1B0F7602F04355",
+        "prior_healthy_compared": 76,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-camera-lifecycle",
+        "passed": true,
+        "pngs": 33,
+        "report_sha256": "7A9EB188804220CC25D716ECFAA30B1C4D32CE08B528FA203C4326FEBCCF743A",
+        "png_manifest_sha256": "927F224767BB4D25DD62D46C96F22AB8E03DCE6A0B1AB462B64497A11177F880",
+        "prior_healthy_compared": 33,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-dense-overflow",
+        "passed": true,
+        "pngs": 52,
+        "report_sha256": "D8A942A26DE882B18FA8B55C996E99F899AB26B9B475631B4EE7751BE501CFD4",
+        "png_manifest_sha256": "6E760F8FC456918DA8A8BF691C1CAF8FA20BAAAD758D9D244F22AE55B7B5727F",
+        "prior_healthy_compared": 0,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-depth",
+        "passed": true,
+        "pngs": 28,
+        "report_sha256": "50E222A8D9C8A86A27C90FDB0CF54F2FCC9AB9D30F622AC4AC54C78119482E68",
+        "png_manifest_sha256": "7779B6673F3B8CBC4FB6D1F37AECF27D2BF5B6611A5997F7A21502946351010A",
+        "prior_healthy_compared": 28,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-depth-variants",
+        "passed": true,
+        "pngs": 144,
+        "report_sha256": "EC13C3DB251FA7918D1601AA25D704B731941FD211D12026EF99F7D6AE92ACAA",
+        "png_manifest_sha256": "DC5779834D567963649BE79423E0F92B418691BAA563F0C535B7129E61FA89B4",
+        "prior_healthy_compared": 144,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-hdr",
+        "passed": true,
+        "pngs": 16,
+        "report_sha256": "5379DEF36D7880AA0F4844426F5B9F0E20A491A14066A653721188B15A94C16A",
+        "png_manifest_sha256": "C094823A1B6505D60517F576F0BFD988D06C6A1B529C631AB63C8D628FB432AA",
+        "prior_healthy_compared": 16,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-lighting",
+        "passed": true,
+        "pngs": 48,
+        "report_sha256": "BF7D7DDAAE7B5852EE744C8B5E6B6933EB9E56DDC18B60B3547FFCBB78304069",
+        "png_manifest_sha256": "CB996079054D2CA360BBE6E12B9AC53515B96B0D094995EF49B031FCD550360D",
+        "prior_healthy_compared": 48,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-mixed-unified",
+        "passed": true,
+        "pngs": 885,
+        "report_sha256": "8DB9BE5C12EC56CEE836AE4D0F1370282712168E0B64FD9E6B51BC59A74E2467",
+        "png_manifest_sha256": "09478E5D6F39ABFDCD0BAC8407D739FF24A6E9A2E4448F9694327D463E9338E5",
+        "prior_healthy_compared": 883,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-near-plane",
+        "passed": true,
+        "pngs": 70,
+        "report_sha256": "53D5C1CF5AF4B4A5E09548E6E6E59D194E4FC68B2BE1FC4B23A2EC9222B9C231",
+        "png_manifest_sha256": "EB77D8A8AAF651EF3050DECDA15854B18ACFBA90478E6F7F98EAA33DC0420937",
+        "prior_healthy_compared": 70,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-saturation",
+        "passed": true,
+        "pngs": 16,
+        "report_sha256": "EE6E4BA7F5B66E44CEFCF31A6E0B7338104C83A1BE3448C764BD1EA0B5B76791",
+        "png_manifest_sha256": "71D1E0B84886B065457363D5E71FD7A64D18B75587BFF394E37F0ED33B4F42C4",
+        "prior_healthy_compared": 0,
+        "prior_changed": [],
+        "missing": []
+      },
+      {
+        "probe": "fragment-list-textures",
+        "passed": true,
+        "pngs": 396,
+        "report_sha256": "15CF6AACA6C1884770A9D8BDB29F14A349DC00D110B97BA056A9138EF88C45F7",
+        "png_manifest_sha256": "763DE5580905CC984C25875E0F3E3E271D5ACCEC3EF878D3536890F1380F734B",
+        "prior_healthy_compared": 396,
+        "prior_changed": [],
+        "missing": []
+      }
+    ],
+    "prior_accepted_pngs_unchanged": 1694,
+    "scope": "Depth, camera lifecycle, clipping, HDR, lighting, textured/flipbook, mixed paths, global loss; diagnostic/global/local capacity images excluded from prior 1694 count. Local-overflow saturation now positively asserts the image bound."
+  },
+  "live": {
+    "root": "target/fireworks-f8/fragment-list-order-live-2026-10-26-a",
+    "command": "cargo test -p aestra-viewer oit_live_paced_matched_cost_and_capacity --locked --offline -- --ignored --test-threads=1",
+    "exit_code": 0,
+    "test_seconds": 232.97,
+    "index_sha256": "704F0B51A46DB52BF51C262A8F15366AF10C52BE6A400E9517D4004736961754",
+    "probe_passed": true,
+    "admitted_cost_lanes": 20,
+    "rejected_default_1080p_lanes": 4,
+    "independent_capacity_lanes": 12,
+    "capacity_observations": 2826,
+    "observations_above_local_threshold": 2826,
+    "max_global_drops": 0,
+    "max_invalid_links": 0,
+    "matching_cost_capacity_populations": true,
+    "peak_populations": {
+      "persistent_show": 617,
+      "four_coincident_cohorts": 256
+    },
+    "max_pending_pipeline_updates": 0,
+    "max_observed_checkpoint_bytes": 0,
+    "unknown_checkpoint_windows": 0,
+    "max_observed_native_fixed_ticks": 2,
+    "method": "Unchanged C4L 24-case counterbalanced two-repetition matrix. Forward PlaybackOnly frames360..600, 240 absolute-deadline60Hz host updates, no seek/frame skips. 540p/1080p ordinary/default/provisioned OIT, same saved high show/four-cohort inputs. Cost scans off, independently initialized capacity scans on.",
+    "interpretation": "Async samples deduplicated by source time/sequence, not frame-ID joined. Do not sum pass percentiles or infer frame-aligned isolated overhead from median differences. Full render graph excludes game/audio/presentation and much preparation; app.update is not GPU completion.",
+    "legacy_capacity_field": "Raw observed_exact_capacity retains C4L's within-local-prefix/no-drop predicate. It remains false here; over_sort counts merge-sort work and neither predicate is an image oracle.",
+    "storage_bytes_by_resolution": {
+      "960x540": 26956800,
+      "1920x1080": 107827200
+    },
+    "summaries": [
+      {
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "mode": "oit-default",
+        "admitted": 0,
+        "whole_median_ms": null,
+        "whole_p95_ms": null,
+        "sort_median_ms": null,
+        "sort_p95_ms": null,
+        "resolve_p95_ms": null,
+        "deadline_misses": null
+      },
+      {
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "mode": "oit-provisioned",
+        "admitted": 2,
+        "whole_median_ms": [
+          5.303296,
+          5.379072
+        ],
+        "whole_p95_ms": [
+          6.385664,
+          6.437888
+        ],
+        "sort_median_ms": [
+          1.803264,
+          1.839104
+        ],
+        "sort_p95_ms": [
+          2.57536,
+          2.62656
+        ],
+        "resolve_p95_ms": [
+          2.096128,
+          2.125824
+        ],
+        "deadline_misses": [
+          0,
+          0
+        ]
+      },
+      {
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "mode": "sorted",
+        "admitted": 2,
+        "whole_median_ms": [
+          2.6112,
+          3.643392
+        ],
+        "whole_p95_ms": [
+          4.381696,
+          6.641664
+        ],
+        "sort_median_ms": null,
+        "sort_p95_ms": null,
+        "resolve_p95_ms": null,
+        "deadline_misses": [
+          0,
+          0
+        ]
+      },
+      {
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "mode": "oit-default",
+        "admitted": 2,
+        "whole_median_ms": [
+          4.043776,
+          4.099072
+        ],
+        "whole_p95_ms": [
+          5.849088,
+          5.922816
+        ],
+        "sort_median_ms": [
+          1.714176,
+          1.723392
+        ],
+        "sort_p95_ms": [
+          2.925568,
+          2.988032
+        ],
+        "resolve_p95_ms": [
+          0.425984,
+          0.431104
+        ],
+        "deadline_misses": [
+          0,
+          0
+        ]
+      },
+      {
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "mode": "oit-provisioned",
+        "admitted": 2,
+        "whole_median_ms": [
+          3.8912,
+          4.534272
+        ],
+        "whole_p95_ms": [
+          6.684672,
+          6.815744
+        ],
+        "sort_median_ms": [
+          1.354752,
+          1.528832
+        ],
+        "sort_p95_ms": [
+          2.081792,
+          2.224128
+        ],
+        "resolve_p95_ms": [
+          2.2016,
+          2.248704
+        ],
+        "deadline_misses": [
+          0,
+          76
+        ]
+      },
+      {
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "mode": "sorted",
+        "admitted": 2,
+        "whole_median_ms": [
+          2.172928,
+          2.459648
+        ],
+        "whole_p95_ms": [
+          3.876864,
+          4.267008
+        ],
+        "sort_median_ms": null,
+        "sort_p95_ms": null,
+        "resolve_p95_ms": null,
+        "deadline_misses": [
+          0,
+          0
+        ]
+      },
+      {
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "mode": "oit-default",
+        "admitted": 0,
+        "whole_median_ms": null,
+        "whole_p95_ms": null,
+        "sort_median_ms": null,
+        "sort_p95_ms": null,
+        "resolve_p95_ms": null,
+        "deadline_misses": null
+      },
+      {
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "mode": "oit-provisioned",
+        "admitted": 2,
+        "whole_median_ms": [
+          4.199424,
+          4.279296
+        ],
+        "whole_p95_ms": [
+          7.955456,
+          8.134656
+        ],
+        "sort_median_ms": [
+          0.396288,
+          0.406528
+        ],
+        "sort_p95_ms": [
+          0.59904,
+          0.627712
+        ],
+        "resolve_p95_ms": [
+          1.000448,
+          1.078272
+        ],
+        "deadline_misses": [
+          10,
+          11
+        ]
+      },
+      {
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "mode": "sorted",
+        "admitted": 2,
+        "whole_median_ms": [
+          3.520512,
+          3.596288
+        ],
+        "whole_p95_ms": [
+          8.178688,
+          9.52832
+        ],
+        "sort_median_ms": null,
+        "sort_p95_ms": null,
+        "resolve_p95_ms": null,
+        "deadline_misses": [
+          11,
+          96
+        ]
+      },
+      {
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "mode": "oit-default",
+        "admitted": 2,
+        "whole_median_ms": [
+          3.852288,
+          3.951616
+        ],
+        "whole_p95_ms": [
+          8.394752,
+          8.566784
+        ],
+        "sort_median_ms": [
+          0.412672,
+          0.413696
+        ],
+        "sort_p95_ms": [
+          0.533504,
+          0.534528
+        ],
+        "resolve_p95_ms": [
+          0.162816,
+          0.165888
+        ],
+        "deadline_misses": [
+          12,
+          23
+        ]
+      },
+      {
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "mode": "oit-provisioned",
+        "admitted": 2,
+        "whole_median_ms": [
+          4.476928,
+          5.505024
+        ],
+        "whole_p95_ms": [
+          9.664512,
+          9.714688
+        ],
+        "sort_median_ms": [
+          0.294912,
+          0.413696
+        ],
+        "sort_p95_ms": [
+          0.427008,
+          0.60928
+        ],
+        "resolve_p95_ms": [
+          0.995328,
+          1.185792
+        ],
+        "deadline_misses": [
+          21,
+          240
+        ]
+      },
+      {
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "mode": "sorted",
+        "admitted": 2,
+        "whole_median_ms": [
+          3.622912,
+          3.84
+        ],
+        "whole_p95_ms": [
+          8.198144,
+          9.363456
+        ],
+        "sort_median_ms": null,
+        "sort_p95_ms": null,
+        "resolve_p95_ms": null,
+        "deadline_misses": [
+          12,
+          43
+        ]
+      }
+    ],
+    "cases": [
+      {
+        "name": "four-coincident-cohorts-1920x1080-oit-default-r1",
+        "sha256": "BEA74FD87DB3F3EE0E2BC54123AF8270FB3679D6288946763CE4ED3425B8D415",
+        "admitted": false,
+        "rejection": "shared OIT storage exceeds camera/device budget",
+        "mode": "oit-default",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 1,
+        "allocation": null,
+        "cost": {
+          "whole": null,
+          "sort": null,
+          "resolve": null,
+          "transparent": null,
+          "app_update": null,
+          "late": null,
+          "pending": null,
+          "alive": null,
+          "end_frames": null,
+          "checkpoint_bytes": null,
+          "unknown_windows": null,
+          "max_fixed_ticks": null
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null,
+        "configuration_metadata_from_filename": true
+      },
+      {
+        "name": "four-coincident-cohorts-1920x1080-oit-default-r2",
+        "sha256": "FE0479BD0D64A560196B1106C2101DF98A641122658818B8413675490C68D342",
+        "admitted": false,
+        "rejection": "shared OIT storage exceeds camera/device budget",
+        "mode": "oit-default",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 2,
+        "allocation": null,
+        "cost": {
+          "whole": null,
+          "sort": null,
+          "resolve": null,
+          "transparent": null,
+          "app_update": null,
+          "late": null,
+          "pending": null,
+          "alive": null,
+          "end_frames": null,
+          "checkpoint_bytes": null,
+          "unknown_windows": null,
+          "max_fixed_ticks": null
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null,
+        "configuration_metadata_from_filename": true
+      },
+      {
+        "name": "four-coincident-cohorts-1920x1080-oit-provisioned-r1",
+        "sha256": "D2A5C5EEFBC5E113C292E1FD9652F43EE2FB3718C004F546EBBD731B5A6F0762",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-provisioned",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 107827200,
+          "heads": 2073600,
+          "nodes": 8294400
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 6.920192,
+            "median_ms": 5.379072,
+            "p95_ms": 6.385664,
+            "p99_ms": 6.606848,
+            "samples": 240
+          },
+          "sort": {
+            "max_ms": 3.58912,
+            "median_ms": 1.839104,
+            "p95_ms": 2.57536,
+            "p99_ms": 2.878464,
+            "samples": 240
+          },
+          "resolve": {
+            "max_ms": 2.395136,
+            "median_ms": 1.51424,
+            "p95_ms": 2.096128,
+            "p99_ms": 2.295808,
+            "samples": 240
+          },
+          "transparent": {
+            "max_ms": 0.21504,
+            "median_ms": 0.160768,
+            "p95_ms": 0.208896,
+            "p99_ms": 0.212992,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 1.9124999999999999,
+            "median_ms": 1.1858000000000002,
+            "p95_ms": 1.5901,
+            "p99_ms": 1.6754,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 3123648,
+          "max_capped_depth": 33,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 18359,
+          "observations": 239,
+          "observations_over_sort": 239,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 256,
+        "capacity_end_frames": [
+          600,
+          600,
+          600,
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "four-coincident-cohorts-1920x1080-oit-provisioned-r2",
+        "sha256": "F61A0188D860A548ED18C945757C420F929D8036A670CFFCCB1383BE8B051508",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-provisioned",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 107827200,
+          "heads": 2073600,
+          "nodes": 8294400
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 7.560192,
+            "median_ms": 5.303296,
+            "p95_ms": 6.437888,
+            "p99_ms": 6.708224,
+            "samples": 240
+          },
+          "sort": {
+            "max_ms": 3.546112,
+            "median_ms": 1.803264,
+            "p95_ms": 2.62656,
+            "p99_ms": 3.252224,
+            "samples": 240
+          },
+          "resolve": {
+            "max_ms": 2.419712,
+            "median_ms": 1.508352,
+            "p95_ms": 2.125824,
+            "p99_ms": 2.274304,
+            "samples": 240
+          },
+          "transparent": {
+            "max_ms": 0.214016,
+            "median_ms": 0.137216,
+            "p95_ms": 0.207872,
+            "p99_ms": 0.212992,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 1.7358,
+            "median_ms": 1.1413,
+            "p95_ms": 1.3331,
+            "p99_ms": 1.5229,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 3123648,
+          "max_capped_depth": 33,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 18359,
+          "observations": 240,
+          "observations_over_sort": 240,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 256,
+        "capacity_end_frames": [
+          600,
+          600,
+          600,
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "four-coincident-cohorts-1920x1080-sorted-r1",
+        "sha256": "E34D7916DBF20F28F3F7602F4E5E5BD6A96DEF5F3D4EEC356AADDE5537E11F17",
+        "admitted": true,
+        "rejection": null,
+        "mode": "sorted",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 16,
+          "heads": 1,
+          "nodes": 1
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 7.762944,
+            "median_ms": 3.643392,
+            "p95_ms": 6.641664,
+            "p99_ms": 7.501824,
+            "samples": 240
+          },
+          "sort": null,
+          "resolve": null,
+          "transparent": {
+            "max_ms": 0.63488,
+            "median_ms": 0.160768,
+            "p95_ms": 0.277504,
+            "p99_ms": 0.444416,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 2.4526,
+            "median_ms": 1.1506999999999998,
+            "p95_ms": 1.5381,
+            "p99_ms": 1.8757,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null
+      },
+      {
+        "name": "four-coincident-cohorts-1920x1080-sorted-r2",
+        "sha256": "28ED33926BFFD8F043C525327F8712DC06113BA2A1F32FA04D57F9CAEABC772C",
+        "admitted": true,
+        "rejection": null,
+        "mode": "sorted",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 16,
+          "heads": 1,
+          "nodes": 1
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 4.535296,
+            "median_ms": 2.6112,
+            "p95_ms": 4.381696,
+            "p99_ms": 4.422656,
+            "samples": 240
+          },
+          "sort": null,
+          "resolve": null,
+          "transparent": {
+            "max_ms": 0.390144,
+            "median_ms": 0.200704,
+            "p95_ms": 0.367616,
+            "p99_ms": 0.372736,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 1.5654,
+            "median_ms": 1.1175,
+            "p95_ms": 1.306,
+            "p99_ms": 1.3991,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null
+      },
+      {
+        "name": "four-coincident-cohorts-960x540-oit-default-r1",
+        "sha256": "BEE61D2B64B8C106AFB4FECC91D4316A490F199442D7059BBB521445F2F61D2E",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-default",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 26956800,
+          "heads": 518400,
+          "nodes": 2073600
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 6.2208,
+            "median_ms": 4.099072,
+            "p95_ms": 5.849088,
+            "p99_ms": 5.99552,
+            "samples": 240
+          },
+          "sort": {
+            "max_ms": 3.280896,
+            "median_ms": 1.723392,
+            "p95_ms": 2.925568,
+            "p99_ms": 3.017728,
+            "samples": 240
+          },
+          "resolve": {
+            "max_ms": 0.485376,
+            "median_ms": 0.25088,
+            "p95_ms": 0.425984,
+            "p99_ms": 0.457728,
+            "samples": 240
+          },
+          "transparent": {
+            "max_ms": 0.106496,
+            "median_ms": 0.068608,
+            "p95_ms": 0.101376,
+            "p99_ms": 0.105472,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 2.5205,
+            "median_ms": 1.1721,
+            "p95_ms": 1.3836,
+            "p99_ms": 1.7078,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 780428,
+          "max_capped_depth": 9,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 5082,
+          "observations": 240,
+          "observations_over_sort": 240,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 256,
+        "capacity_end_frames": [
+          600,
+          600,
+          600,
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "four-coincident-cohorts-960x540-oit-default-r2",
+        "sha256": "D862A4D9B5D678C5757D163E4B42019CE0B7338386F6AAB8C1E7B328DDC9CF1D",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-default",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 26956800,
+          "heads": 518400,
+          "nodes": 2073600
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 6.279168,
+            "median_ms": 4.043776,
+            "p95_ms": 5.922816,
+            "p99_ms": 6.10816,
+            "samples": 240
+          },
+          "sort": {
+            "max_ms": 3.258368,
+            "median_ms": 1.714176,
+            "p95_ms": 2.988032,
+            "p99_ms": 3.13344,
+            "samples": 240
+          },
+          "resolve": {
+            "max_ms": 0.48128,
+            "median_ms": 0.257024,
+            "p95_ms": 0.431104,
+            "p99_ms": 0.47104,
+            "samples": 240
+          },
+          "transparent": {
+            "max_ms": 0.111616,
+            "median_ms": 0.067584,
+            "p95_ms": 0.103424,
+            "p99_ms": 0.105472,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 2.1136000000000004,
+            "median_ms": 1.0840999999999998,
+            "p95_ms": 1.3242,
+            "p99_ms": 1.7178,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 780428,
+          "max_capped_depth": 9,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 5082,
+          "observations": 240,
+          "observations_over_sort": 240,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 256,
+        "capacity_end_frames": [
+          600,
+          600,
+          600,
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "four-coincident-cohorts-960x540-oit-provisioned-r1",
+        "sha256": "28FE04665E3BA5032F81D104B1439D4C032EF0243545A4F2E15FF85BA2E2CDF8",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-provisioned",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 26956800,
+          "heads": 518400,
+          "nodes": 2073600
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 7.384064,
+            "median_ms": 4.534272,
+            "p95_ms": 6.815744,
+            "p99_ms": 6.934528,
+            "samples": 240
+          },
+          "sort": {
+            "max_ms": 2.722816,
+            "median_ms": 1.528832,
+            "p95_ms": 2.224128,
+            "p99_ms": 2.372608,
+            "samples": 240
+          },
+          "resolve": {
+            "max_ms": 2.363392,
+            "median_ms": 1.205248,
+            "p95_ms": 2.248704,
+            "p99_ms": 2.316288,
+            "samples": 240
+          },
+          "transparent": {
+            "max_ms": 0.216064,
+            "median_ms": 0.059392,
+            "p95_ms": 0.202752,
+            "p99_ms": 0.206848,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 1.7368,
+            "median_ms": 1.0495,
+            "p95_ms": 1.3639999999999999,
+            "p99_ms": 1.5012,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 780428,
+          "max_capped_depth": 33,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 4580,
+          "observations": 240,
+          "observations_over_sort": 240,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 256,
+        "capacity_end_frames": [
+          600,
+          600,
+          600,
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "four-coincident-cohorts-960x540-oit-provisioned-r2",
+        "sha256": "FEDDB1568840B6084412B596AD38CFD3B01F45A6D5F909543727FDA3F1EAE626",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-provisioned",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 26956800,
+          "heads": 518400,
+          "nodes": 2073600
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 6.996992,
+            "median_ms": 3.8912,
+            "p95_ms": 6.684672,
+            "p99_ms": 6.854656,
+            "samples": 230
+          },
+          "sort": {
+            "max_ms": 2.225152,
+            "median_ms": 1.354752,
+            "p95_ms": 2.081792,
+            "p99_ms": 2.130944,
+            "samples": 230
+          },
+          "resolve": {
+            "max_ms": 2.331648,
+            "median_ms": 0.959488,
+            "p95_ms": 2.2016,
+            "p99_ms": 2.285568,
+            "samples": 230
+          },
+          "transparent": {
+            "max_ms": 0.173056,
+            "median_ms": 0.049152,
+            "p95_ms": 0.164864,
+            "p99_ms": 0.171008,
+            "samples": 230
+          },
+          "app_update": {
+            "max_ms": 122.6356,
+            "median_ms": 2.0683,
+            "p95_ms": 20.2915,
+            "p99_ms": 59.6893,
+            "samples": 240
+          },
+          "late": 76,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 780428,
+          "max_capped_depth": 33,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 4580,
+          "observations": 233,
+          "observations_over_sort": 233,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 256,
+        "capacity_end_frames": [
+          600,
+          600,
+          600,
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "four-coincident-cohorts-960x540-sorted-r1",
+        "sha256": "828A70E4E3B49D29C6AFDE7A50FEDECCEB8D430E8C413D1147F724A43D083DA5",
+        "admitted": true,
+        "rejection": null,
+        "mode": "sorted",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 16,
+          "heads": 1,
+          "nodes": 1
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 4.383744,
+            "median_ms": 2.459648,
+            "p95_ms": 4.267008,
+            "p99_ms": 4.352,
+            "samples": 240
+          },
+          "sort": null,
+          "resolve": null,
+          "transparent": {
+            "max_ms": 0.119808,
+            "median_ms": 0.060416,
+            "p95_ms": 0.11264,
+            "p99_ms": 0.118784,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 1.7646000000000002,
+            "median_ms": 1.2672,
+            "p95_ms": 1.4534,
+            "p99_ms": 1.521,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null
+      },
+      {
+        "name": "four-coincident-cohorts-960x540-sorted-r2",
+        "sha256": "C4CBC488976D9094286BC0C62DC8F1E14AA9626BECC8B92FC04D536439BD7532",
+        "admitted": true,
+        "rejection": null,
+        "mode": "sorted",
+        "workload": "four-coincident-cohorts",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 16,
+          "heads": 1,
+          "nodes": 1
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 3.961856,
+            "median_ms": 2.172928,
+            "p95_ms": 3.876864,
+            "p99_ms": 3.905536,
+            "samples": 240
+          },
+          "sort": null,
+          "resolve": null,
+          "transparent": {
+            "max_ms": 0.10752,
+            "median_ms": 0.05632,
+            "p95_ms": 0.101376,
+            "p99_ms": 0.106496,
+            "samples": 240
+          },
+          "app_update": {
+            "max_ms": 1.4758,
+            "median_ms": 1.0896000000000001,
+            "p95_ms": 1.2978,
+            "p99_ms": 1.3375,
+            "samples": 240
+          },
+          "late": 0,
+          "pending": 0,
+          "alive": 256,
+          "end_frames": [
+            600,
+            600,
+            600,
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 1
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null
+      },
+      {
+        "name": "persistent-show-1920x1080-oit-default-r1",
+        "sha256": "39A541A0844B2A57E4A055621374A681AE11F0DDC490A973272E39264C278B90",
+        "admitted": false,
+        "rejection": "shared OIT storage exceeds camera/device budget",
+        "mode": "oit-default",
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 1,
+        "allocation": null,
+        "cost": {
+          "whole": null,
+          "sort": null,
+          "resolve": null,
+          "transparent": null,
+          "app_update": null,
+          "late": null,
+          "pending": null,
+          "alive": null,
+          "end_frames": null,
+          "checkpoint_bytes": null,
+          "unknown_windows": null,
+          "max_fixed_ticks": null
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null,
+        "configuration_metadata_from_filename": true
+      },
+      {
+        "name": "persistent-show-1920x1080-oit-default-r2",
+        "sha256": "7D5BC885BBD2372F7E04D854D7639F92DD3BB539861A6435A1BDE559C23C7E78",
+        "admitted": false,
+        "rejection": "shared OIT storage exceeds camera/device budget",
+        "mode": "oit-default",
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 2,
+        "allocation": null,
+        "cost": {
+          "whole": null,
+          "sort": null,
+          "resolve": null,
+          "transparent": null,
+          "app_update": null,
+          "late": null,
+          "pending": null,
+          "alive": null,
+          "end_frames": null,
+          "checkpoint_bytes": null,
+          "unknown_windows": null,
+          "max_fixed_ticks": null
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null,
+        "configuration_metadata_from_filename": true
+      },
+      {
+        "name": "persistent-show-1920x1080-oit-provisioned-r1",
+        "sha256": "65D37D88688FA0EE6FA3EF0E19CF86326DD60FA703CEA3D3A9218A246835D592",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-provisioned",
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 107827200,
+          "heads": 2073600,
+          "nodes": 8294400
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 9.0112,
+            "median_ms": 4.279296,
+            "p95_ms": 8.134656,
+            "p99_ms": 8.7296,
+            "samples": 234
+          },
+          "sort": {
+            "max_ms": 0.8192,
+            "median_ms": 0.396288,
+            "p95_ms": 0.627712,
+            "p99_ms": 0.729088,
+            "samples": 234
+          },
+          "resolve": {
+            "max_ms": 1.14176,
+            "median_ms": 0.83456,
+            "p95_ms": 1.078272,
+            "p99_ms": 1.087488,
+            "samples": 234
+          },
+          "transparent": {
+            "max_ms": 0.201728,
+            "median_ms": 0.08192,
+            "p95_ms": 0.190464,
+            "p99_ms": 0.200704,
+            "samples": 234
+          },
+          "app_update": {
+            "max_ms": 72.9393,
+            "median_ms": 1.3527,
+            "p95_ms": 3.7631,
+            "p99_ms": 12.3102,
+            "samples": 240
+          },
+          "late": 10,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 1350142,
+          "max_capped_depth": 33,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 18246,
+          "observations": 236,
+          "observations_over_sort": 236,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 617,
+        "capacity_end_frames": [
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "persistent-show-1920x1080-oit-provisioned-r2",
+        "sha256": "037E5BF6ED78CEFD45F93FB8F2EC15CCB1277F213B726364D8C331BB0BB08909",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-provisioned",
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 107827200,
+          "heads": 2073600,
+          "nodes": 8294400
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 8.32512,
+            "median_ms": 4.199424,
+            "p95_ms": 7.955456,
+            "p99_ms": 8.220672,
+            "samples": 235
+          },
+          "sort": {
+            "max_ms": 0.724992,
+            "median_ms": 0.406528,
+            "p95_ms": 0.59904,
+            "p99_ms": 0.642048,
+            "samples": 235
+          },
+          "resolve": {
+            "max_ms": 1.065984,
+            "median_ms": 0.840704,
+            "p95_ms": 1.000448,
+            "p99_ms": 1.03424,
+            "samples": 235
+          },
+          "transparent": {
+            "max_ms": 0.175104,
+            "median_ms": 0.083968,
+            "p95_ms": 0.164864,
+            "p99_ms": 0.17408,
+            "samples": 235
+          },
+          "app_update": {
+            "max_ms": 72.7988,
+            "median_ms": 1.294,
+            "p95_ms": 7.4,
+            "p99_ms": 12.081299999999999,
+            "samples": 240
+          },
+          "late": 11,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 1350142,
+          "max_capped_depth": 33,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 18246,
+          "observations": 237,
+          "observations_over_sort": 237,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 617,
+        "capacity_end_frames": [
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "persistent-show-1920x1080-sorted-r1",
+        "sha256": "6A38A567B5DE083D7E061565989DD33B2306708A9BE0BAE38C8C9DEB9F3A4A3E",
+        "admitted": true,
+        "rejection": null,
+        "mode": "sorted",
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 16,
+          "heads": 1,
+          "nodes": 1
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 11.875328,
+            "median_ms": 3.596288,
+            "p95_ms": 9.52832,
+            "p99_ms": 11.703296,
+            "samples": 223
+          },
+          "sort": null,
+          "resolve": null,
+          "transparent": {
+            "max_ms": 0.272384,
+            "median_ms": 0.069632,
+            "p95_ms": 0.114688,
+            "p99_ms": 0.119808,
+            "samples": 223
+          },
+          "app_update": {
+            "max_ms": 72.63699999999999,
+            "median_ms": 1.9116,
+            "p95_ms": 24.6904,
+            "p99_ms": 32.686,
+            "samples": 240
+          },
+          "late": 96,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null
+      },
+      {
+        "name": "persistent-show-1920x1080-sorted-r2",
+        "sha256": "AA6D806A7128B9A2A67BA8D21027A814FD2827CFD5187037BA494DCE17EDFDA0",
+        "admitted": true,
+        "rejection": null,
+        "mode": "sorted",
+        "workload": "persistent-show",
+        "resolution": [
+          1920,
+          1080
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 16,
+          "heads": 1,
+          "nodes": 1
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 9.070592,
+            "median_ms": 3.520512,
+            "p95_ms": 8.178688,
+            "p99_ms": 8.679424,
+            "samples": 235
+          },
+          "sort": null,
+          "resolve": null,
+          "transparent": {
+            "max_ms": 0.207872,
+            "median_ms": 0.069632,
+            "p95_ms": 0.193536,
+            "p99_ms": 0.205824,
+            "samples": 235
+          },
+          "app_update": {
+            "max_ms": 72.2352,
+            "median_ms": 1.3316999999999999,
+            "p95_ms": 8.364099999999999,
+            "p99_ms": 12.4569,
+            "samples": 240
+          },
+          "late": 11,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null
+      },
+      {
+        "name": "persistent-show-960x540-oit-default-r1",
+        "sha256": "9853189B42551ECB1038524782D26982B30A7A27681CCB3F3215DEC4A580AA41",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-default",
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 26956800,
+          "heads": 518400,
+          "nodes": 2073600
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 9.382912,
+            "median_ms": 3.852288,
+            "p95_ms": 8.394752,
+            "p99_ms": 8.962048,
+            "samples": 228
+          },
+          "sort": {
+            "max_ms": 0.57344,
+            "median_ms": 0.412672,
+            "p95_ms": 0.533504,
+            "p99_ms": 0.551936,
+            "samples": 228
+          },
+          "resolve": {
+            "max_ms": 0.191488,
+            "median_ms": 0.108544,
+            "p95_ms": 0.162816,
+            "p99_ms": 0.1792,
+            "samples": 228
+          },
+          "transparent": {
+            "max_ms": 0.086016,
+            "median_ms": 0.031744,
+            "p95_ms": 0.0768,
+            "p99_ms": 0.082944,
+            "samples": 228
+          },
+          "app_update": {
+            "max_ms": 81.92389999999999,
+            "median_ms": 1.3484,
+            "p95_ms": 8.104099999999999,
+            "p99_ms": 12.2857,
+            "samples": 240
+          },
+          "late": 12,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 337481,
+          "max_capped_depth": 9,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 8140,
+          "observations": 230,
+          "observations_over_sort": 230,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 617,
+        "capacity_end_frames": [
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "persistent-show-960x540-oit-default-r2",
+        "sha256": "4AF0AD31136694A17BC4E8354BB23179A3282E926C7BF98E3B743D10AF93242B",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-default",
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 26956800,
+          "heads": 518400,
+          "nodes": 2073600
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 9.510912,
+            "median_ms": 3.951616,
+            "p95_ms": 8.566784,
+            "p99_ms": 9.18528,
+            "samples": 228
+          },
+          "sort": {
+            "max_ms": 0.582656,
+            "median_ms": 0.413696,
+            "p95_ms": 0.534528,
+            "p99_ms": 0.561152,
+            "samples": 228
+          },
+          "resolve": {
+            "max_ms": 0.197632,
+            "median_ms": 0.10752,
+            "p95_ms": 0.165888,
+            "p99_ms": 0.18432,
+            "samples": 228
+          },
+          "transparent": {
+            "max_ms": 0.084992,
+            "median_ms": 0.031744,
+            "p95_ms": 0.075776,
+            "p99_ms": 0.082944,
+            "samples": 228
+          },
+          "app_update": {
+            "max_ms": 75.3491,
+            "median_ms": 1.3098,
+            "p95_ms": 13.9893,
+            "p99_ms": 20.990000000000002,
+            "samples": 240
+          },
+          "late": 23,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 337481,
+          "max_capped_depth": 9,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 8140,
+          "observations": 230,
+          "observations_over_sort": 230,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 617,
+        "capacity_end_frames": [
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "persistent-show-960x540-oit-provisioned-r1",
+        "sha256": "8E0EDAB3AB5BB77222B22416C50C4D778A5B74D5A0C9373AA5652A8F6FBF43CE",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-provisioned",
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 26956800,
+          "heads": 518400,
+          "nodes": 2073600
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 13.405184,
+            "median_ms": 4.476928,
+            "p95_ms": 9.714688,
+            "p99_ms": 10.457088,
+            "samples": 231
+          },
+          "sort": {
+            "max_ms": 0.555008,
+            "median_ms": 0.294912,
+            "p95_ms": 0.427008,
+            "p99_ms": 0.449536,
+            "samples": 231
+          },
+          "resolve": {
+            "max_ms": 3.874816,
+            "median_ms": 0.833536,
+            "p95_ms": 0.995328,
+            "p99_ms": 2.88768,
+            "samples": 231
+          },
+          "transparent": {
+            "max_ms": 0.0768,
+            "median_ms": 0.032768,
+            "p95_ms": 0.06656,
+            "p99_ms": 0.07168,
+            "samples": 231
+          },
+          "app_update": {
+            "max_ms": 74.2788,
+            "median_ms": 1.5798999999999999,
+            "p95_ms": 14.0569,
+            "p99_ms": 19.7845,
+            "samples": 240
+          },
+          "late": 21,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 337481,
+          "max_capped_depth": 33,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 4567,
+          "observations": 227,
+          "observations_over_sort": 227,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 617,
+        "capacity_end_frames": [
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "persistent-show-960x540-oit-provisioned-r2",
+        "sha256": "FDF7F45265C104DD3D85626D170DFD9AAB1ED7CBB8154F574B561302937B11D4",
+        "admitted": true,
+        "rejection": null,
+        "mode": "oit-provisioned",
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 26956800,
+          "heads": 518400,
+          "nodes": 2073600
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 13.418496,
+            "median_ms": 5.505024,
+            "p95_ms": 9.664512,
+            "p99_ms": 11.234304,
+            "samples": 195
+          },
+          "sort": {
+            "max_ms": 0.649216,
+            "median_ms": 0.413696,
+            "p95_ms": 0.60928,
+            "p99_ms": 0.636928,
+            "samples": 195
+          },
+          "resolve": {
+            "max_ms": 2.748416,
+            "median_ms": 0.961536,
+            "p95_ms": 1.185792,
+            "p99_ms": 2.091008,
+            "samples": 195
+          },
+          "transparent": {
+            "max_ms": 0.075776,
+            "median_ms": 0.044032,
+            "p95_ms": 0.07168,
+            "p99_ms": 0.074752,
+            "samples": 195
+          },
+          "app_update": {
+            "max_ms": 393.5107,
+            "median_ms": 12.831499999999998,
+            "p95_ms": 33.2633,
+            "p99_ms": 52.8357,
+            "samples": 240
+          },
+          "late": 240,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": {
+          "invalid_links": 0,
+          "max_attempted": 337481,
+          "max_capped_depth": 33,
+          "max_dropped": 0,
+          "max_over_sort_pixels": 4567,
+          "observations": 234,
+          "observations_over_sort": 234,
+          "observations_with_drops": 0,
+          "observed_exact_capacity": false
+        },
+        "capacity_alive": 617,
+        "capacity_end_frames": [
+          600
+        ],
+        "capacity_pending": 0
+      },
+      {
+        "name": "persistent-show-960x540-sorted-r1",
+        "sha256": "FF7CA0CA47903FC4E6865BD9034119B4721FF39E23FB4021251A5CDE0CACBC4A",
+        "admitted": true,
+        "rejection": null,
+        "mode": "sorted",
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 1,
+        "allocation": {
+          "bytes": 16,
+          "heads": 1,
+          "nodes": 1
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 11.392,
+            "median_ms": 3.84,
+            "p95_ms": 9.363456,
+            "p99_ms": 10.80832,
+            "samples": 232
+          },
+          "sort": null,
+          "resolve": null,
+          "transparent": {
+            "max_ms": 0.049152,
+            "median_ms": 0.024576,
+            "p95_ms": 0.043008,
+            "p99_ms": 0.04608,
+            "samples": 232
+          },
+          "app_update": {
+            "max_ms": 73.49640000000001,
+            "median_ms": 1.4848000000000001,
+            "p95_ms": 17.3923,
+            "p99_ms": 26.727899999999998,
+            "samples": 240
+          },
+          "late": 43,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null
+      },
+      {
+        "name": "persistent-show-960x540-sorted-r2",
+        "sha256": "753FD2387C1C7544F0B99152C9E8414E01E0BA64CE502216F4A97BA842295C9B",
+        "admitted": true,
+        "rejection": null,
+        "mode": "sorted",
+        "workload": "persistent-show",
+        "resolution": [
+          960,
+          540
+        ],
+        "repetition": 2,
+        "allocation": {
+          "bytes": 16,
+          "heads": 1,
+          "nodes": 1
+        },
+        "cost": {
+          "whole": {
+            "max_ms": 9.444352,
+            "median_ms": 3.622912,
+            "p95_ms": 8.198144,
+            "p99_ms": 8.873984,
+            "samples": 228
+          },
+          "sort": null,
+          "resolve": null,
+          "transparent": {
+            "max_ms": 0.082944,
+            "median_ms": 0.027648,
+            "p95_ms": 0.072704,
+            "p99_ms": 0.079872,
+            "samples": 228
+          },
+          "app_update": {
+            "max_ms": 73.0227,
+            "median_ms": 1.3497,
+            "p95_ms": 8.6079,
+            "p99_ms": 13.916599999999999,
+            "samples": 240
+          },
+          "late": 12,
+          "pending": 0,
+          "alive": 617,
+          "end_frames": [
+            600
+          ],
+          "checkpoint_bytes": 0,
+          "unknown_windows": 0,
+          "max_fixed_ticks": 2
+        },
+        "capacity": null,
+        "capacity_alive": null,
+        "capacity_end_frames": null,
+        "capacity_pending": null
+      }
+    ],
+    "warnings": "Setup repeats LogPlugin/global-subscriber errors, Vulkan Galaxy overlay and no-tonemapping/dither notices, plus existing incremental hard-link fallback warnings. Measured windows have no pending shaders. Deadline misses remain reported, including 240/240 in one 540p show provisioned run; no 60FPS guarantee."
+  },
+  "validation": {
+    "renderer_lib": {
+      "passed": 172,
+      "ignored": 3
+    },
+    "viewer": {
+      "passed": 109,
+      "ignored": 42
+    },
+    "real_shader_composition": {
+      "passed": 12,
+      "ignored": 2
+    },
+    "strict_workspace_all_targets_gpu_clippy": "passed",
+    "strict_isolated_shader_composition_clippy": "passed",
+    "workspace_format": "passed",
+    "isolated_format": "passed",
+    "diff_check": "passed"
+  },
+  "limitations": [
+    "global node exhaustion still drops fragments",
+    "ordinary foreign/custom/non-participating transparent draws still lack shared depth ordering",
+    "sub-viewports, resolution overrides, arbitrary projections/depth and window lifecycle unqualified",
+    "multi-camera overflow diagnostics unavailable",
+    "pathological single-pixel overdraw/worst-case game-frame budget unqualified",
+    "bounded planes/long-chain test not photographic smoke acceptance",
+    "host scheduling variability prevents 60Hz pacing acceptance"
+  ],
+  "next": "Guarded public-host opt-in HDR smoke-show qualification, participant audit and full-show pacing/costs; then continuous star-path smoke and art review. No additional replay optimization or automatic default migration."
+}

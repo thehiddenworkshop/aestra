@@ -59,7 +59,29 @@ impl PresentedEffect {
         self.instance.set_history_policy(policy);
     }
     pub fn new(effect: Arc<CompiledEffect>) -> Self {
-        let mut presented = Self {
+        let mut presented = Self::unbound(effect, BTreeMap::new());
+        presented.rebuild_automatic_material_bindings();
+        presented
+    }
+
+    /// Creates a fresh default instance sharing only this presentation's immutable
+    /// compiled material programs. Clocks, parameters, seeds, history, output identity,
+    /// resource overrides and explicit runtime bindings are independent and reset.
+    /// Useful for project-owned prototypes prepared before starting playback.
+    pub fn fresh_instance(&self) -> Self {
+        let mut presented = Self::unbound(
+            self.effect().clone(),
+            self.compiled_material_programs.clone(),
+        );
+        presented.resolve_automatic_material_bindings();
+        presented
+    }
+
+    fn unbound(
+        effect: Arc<CompiledEffect>,
+        programs: BTreeMap<MaterialProgramId, Arc<CompiledMaterialProgram>>,
+    ) -> Self {
+        Self {
             instance: EffectInstance::new(effect),
             output_identity: Arc::new(()),
             seek_quality: SeekQuality::Exact,
@@ -67,14 +89,12 @@ impl PresentedEffect {
             texture_overrides: BTreeMap::new(),
             mesh_overrides: BTreeMap::new(),
             material_bindings: BTreeMap::new(),
-            compiled_material_programs: BTreeMap::new(),
+            compiled_material_programs: programs,
             automatic_material_bindings: BTreeMap::new(),
             cpu_samples: Vec::new(),
             gpu_samples: Vec::new(),
             cpu_evaluation_time: None,
-        };
-        presented.rebuild_automatic_material_bindings();
-        presented
+        }
     }
 
     pub fn effect(&self) -> &Arc<CompiledEffect> {
@@ -186,7 +206,6 @@ impl PresentedEffect {
 
     fn rebuild_automatic_material_bindings(&mut self) {
         self.compiled_material_programs.clear();
-        self.automatic_material_bindings.clear();
         let effect = Arc::clone(self.effect());
         for program in &effect.material_programs {
             match compile_material_program(program) {
@@ -199,6 +218,12 @@ impl PresentedEffect {
                 ),
             }
         }
+        self.resolve_automatic_material_bindings();
+    }
+
+    fn resolve_automatic_material_bindings(&mut self) {
+        self.automatic_material_bindings.clear();
+        let effect = Arc::clone(self.effect());
         for emitter in &effect.emitters {
             let context = MaterialBindingContext::for_emitter(&self.instance, emitter.source);
             for renderer in &emitter.renderers {
@@ -262,6 +287,45 @@ impl PresentedEffect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fresh_instances_share_programs_but_reset_mutable_state_and_output_identity() {
+        let mut compiled = aestra_compiler::EffectCompiler::default()
+            .compile(&aestra_core::EffectAsset::new("Prototype", 3.0))
+            .unwrap();
+        compiled
+            .material_programs
+            .push(aestra_core::material::MaterialProgram::additive_sprite(
+                "Shared",
+            ));
+        let effect = Arc::new(compiled);
+        let mut prototype = PresentedEffect::new(effect.clone());
+        assert_eq!(prototype.compiled_material_programs.len(), 1);
+        prototype.instance.set_seed(999);
+        prototype.instance.set_playback_time(2.0);
+        prototype.set_render_mode(EffectRenderMode::Wireframe);
+        prototype.set_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+        prototype
+            .texture_overrides
+            .insert(AssetId::from_u128(123), Handle::default());
+        let mut a = prototype.fresh_instance();
+        let b = prototype.fresh_instance();
+        for (id, program) in &prototype.compiled_material_programs {
+            assert!(Arc::ptr_eq(program, &a.compiled_material_programs[id]));
+            assert!(Arc::ptr_eq(program, &b.compiled_material_programs[id]));
+        }
+        assert!(!Arc::ptr_eq(&a.output_identity, &b.output_identity));
+        assert!(!Arc::ptr_eq(&a.output_identity, &prototype.output_identity));
+        assert_eq!(a.simulation_time(), 0.0);
+        assert_eq!(a.instance.seed(), EffectInstance::new(effect).seed());
+        assert_eq!(a.render_mode(), EffectRenderMode::Rendered);
+        assert!(a.texture_overrides.is_empty());
+        assert!(a.material_bindings.is_empty());
+        a.instance.set_seed(10);
+        a.instance.set_playback_time(1.0);
+        assert_eq!(b.simulation_time(), 0.0);
+        assert_ne!(a.instance.seed(), b.instance.seed());
+        assert_eq!(prototype.simulation_time(), 2.0);
+    }
     #[test]
     fn resource_overrides_are_owned_by_one_presentation_not_the_shared_effect() {
         let effect = Arc::new(

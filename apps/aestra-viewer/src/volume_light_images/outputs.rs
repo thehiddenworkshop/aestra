@@ -170,6 +170,9 @@ mod cohorts;
 #[path = "smoke_live_costs.rs"]
 mod live_costs;
 
+#[path = "fragment_list_live_costs.rs"]
+mod oit_live_costs;
+
 #[path = "persistent_smoke_show.rs"]
 mod persistent_show;
 

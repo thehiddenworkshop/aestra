@@ -11,7 +11,7 @@ use std::{path::PathBuf, sync::Arc};
 mod paths;
 
 pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
-pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-art-show | --persistent-smoke-show | --smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-art-show plays the separate F8.1C4 smaller distributed wisp draft; --persistent-smoke-show plays the opt-in F8.1C3 authored show candidate, not final art approval. --smoke-lighting plays F8.3B fluid; --particle-smoke-lighting plays F8.3C sprites; --smoke-persistence plays F8.1A billows; --smoke-cohorts plays F8.1B death-linked shell smoke (these labs are not the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
+pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-art-show | --persistent-smoke-show | --smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--experimental-oit] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--experimental-oit requires a show candidate; it audits renderer eligibility, uses Msaa::Off and an explicit 128 MiB shared transparency guard, and exits on admission failure. It is not default-show adoption.\n--smoke-art-show plays the separate F8.1C4 smaller distributed wisp draft; --persistent-smoke-show plays the opt-in F8.1C3 authored show candidate, not final art approval. --smoke-lighting plays F8.3B fluid; --particle-smoke-lighting plays F8.3C sprites; --smoke-persistence plays F8.1A billows; --smoke-cohorts plays F8.1B death-linked shell smoke (these labs are not the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
 
 #[derive(Resource)]
 pub struct ShowProject(pub Arc<CompiledEffectProject>);
@@ -29,6 +29,7 @@ pub struct Options {
     pub smoke_cohorts: bool,
     pub persistent_smoke_show: bool,
     pub smoke_art_show: bool,
+    pub experimental_oit: bool,
 }
 
 impl Options {
@@ -68,6 +69,7 @@ impl Options {
             smoke_cohorts: false,
             persistent_smoke_show: false,
             smoke_art_show: false,
+            experimental_oit: false,
             history: PlaybackHistoryPolicy::PlaybackOnly,
             project_root,
             effect_path: "effects/fireworks_show.aestra.ron".into(),
@@ -82,6 +84,10 @@ impl Options {
         let mut fluid_lab = false;
         let mut particle_lab = false;
         while let Some(arg) = args.next() {
+            if arg == "--experimental-oit" {
+                options.experimental_oit = true;
+                continue;
+            }
             if arg == "--smoke-art-show" {
                 options.smoke_art_show = true;
                 continue;
@@ -172,6 +178,9 @@ impl Options {
             || ((options.persistent_smoke_show || options.smoke_art_show) && options.smoke_lighting)
         {
             return Err("Choose one show candidate or smoke lab".into());
+        }
+        if options.experimental_oit && !(options.smoke_art_show || options.persistent_smoke_show) {
+            return Err("--experimental-oit requires --smoke-art-show or --persistent-smoke-show; labs/default show are not qualified".into());
         }
         options.project_root = options
             .project_root

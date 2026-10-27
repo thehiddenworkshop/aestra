@@ -103,6 +103,120 @@ bursts. These are development-build, asynchronous window captures, not exact-fra
 references or a production performance measurement. Continuous smoke along star paths,
 convincing illuminated cloud depth and photographic art approval remain open.
 
+### Experimental shared transparency in the public host (F8.1C4N)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --experimental-oit
+cargo run --release --locked -p aestra-bevy --example fireworks -- --persistent-smoke-show --experimental-oit
+```
+
+This explicit opt-in preserves the show's HDR, Tony display transform, bloom, environment,
+sound bindings, tier policy and controls. The normal show/candidates still use ordinary
+transparency without the flag. The option requires one of the two show-candidate flags;
+the small smoke labs and default show are outside its admission policy.
+
+Before opening a window, the host audits the compiled root and every dependency using
+the renderer's shared `ExperimentalOitSettings::supports_renderer` predicate. The saved
+candidates contain 39 renderer definitions: 27 sprites and 12 trails. Both candidates
+at all three tiers preserve their compiled effects exactly. This host requires resolved
+semantic materials and rejects unsupported geometry/material operators or extension stages;
+it does not silently exclude an incompatible draw from its transparency claim. Host ground
+and receiver structures remain opaque. Arbitrary foreign/custom transparency is not certified.
+
+The audience camera explicitly uses `Msaa::Off`, average four fragments/pixel, local
+threshold 32 and a 128 MiB shared node/head guard. At 1280x720 this allocates 47,923,200
+bytes (45.70 MiB); at 1080p it needs 102.83 MiB. These are node/head bytes, not total
+VRAM. Actual camera/device admission is required before playback starts. Budget/backend
+rejection pauses playback and exits with a reason, including rejection after resizing;
+there is no silent ordinary-rendering fallback or automatic reduction in resolution.
+Global fragment loss is a separate possibility; the memory guard is not a loss detector.
+
+An optional development qualification hook records the actual window's full show:
+
+```powershell
+$env:AESTRA_EXAMPLE_REPORT = "$PWD/target/fireworks-f8/my-host-run-1.json"
+$env:AESTRA_EXAMPLE_REPORT_IMAGES = "0"
+cargo run --locked -p aestra-bevy --example fireworks --features fireworks-audio -- --smoke-art-show --experimental-oit --no-audio
+```
+
+Use a fresh absolute report filename. The hook exits after the show and ten cleanup
+updates, fixes playback/camera/light controls during recording (Esc still exits), and
+records wall/Bevy clocks, pauses, pipeline preparation, backend, camera profile and
+host-update intervals including vsync. It is not an isolated GPU or exact present-time
+measurement. Normal interactive controls are unaffected when the hook is absent.
+
+Set `AESTRA_EXAMPLE_REPORT_IMAGES=1` in a **separate run** for screenshots at nominal
+8/15/17.45/25/32 seconds and opt-in asynchronous OIT capacity scans. Capture request times
+are recorded; delivered window images are not exact-frame references. The image lane
+adds readbacks/scans and must not be used as a pacing-cost lane. Do not combine this
+hook with the older single-image `AESTRA_EXAMPLE_CAPTURE` hook. Remove the report env
+variables to return to normal interactive use.
+
+See [public-host HDR evidence](../../benchmarks/fireworks/fragment-list-public-host-2026-10-26.md)
+for the development-build pilot, retained preparation/pacing limits and image review.
+This flag is not default-show migration, a guaranteed 60 FPS result, or photographic
+smoke-art approval. Full-show pacing remains an explicit measurement gate.
+
+### Preparing future clip pipelines (F8.1C4O)
+
+The two saved smoke-show candidates now prepare future shell material pipelines before
+starting the clock, in ordinary and experimental modes. The public host API is:
+
+```rust,ignore
+use aestra_bevy::{EffectPipelinePreparation, EffectPipelinePreparationStatus};
+// Attach to the actual active Camera3d, with its final HDR/MSAA/OIT settings.
+commands.entity(camera).insert(EffectPipelinePreparation::for_project(&project));
+// In the host's loading gate, query that component and wait for:
+// EffectPipelinePreparationStatus::Ready { .. }
+```
+
+`new(presentations)` also accepts explicit host material bindings. Preparation reuses
+the live material shader cache and view pipeline specialization. It creates no clip
+entities, particle buffers, cues or simulation warm-up, and never seeks the show.
+Every compiled dependency is included even when its first clip starts later. Clip
+parameter overrides change uniform values, so they share the prepared program keys.
+Replacing a request invalidates its status; rendering reevaluates the actual view key.
+Keep the camera active while waiting: status describes its latest extracted configuration.
+
+The initial API supports rendered 3D sprites, trails and flipbooks. Meshes, ribbons and
+extension stages fail explicitly instead of reporting partial readiness. Asset residency,
+arbitrary material replacement and simulation readiness are separate responsibilities.
+The example also retains its compute/global-pipeline and device-admission loading gates.
+
+Full-show reports opt into `gpu::GpuPlaybackDiagnostics`, a bounded latest-frame CPU
+command-encoding ledger. Reports distinguish blocked owners, requested versus encoded
+simulation time, and clip presentation versus the host schedule. This does not wait for
+GPU completion or claim that a particular screenshot contains that exact simulation tick.
+Runtime catch-up pacing remains unchanged. A measured attempt to give particle-only
+coupling the full exact-tick allowance reduced encoding lag but had poor tail latency
+and flash delivery; it was reverted. Preparation readiness does not guarantee that
+simulation catch-up or actual display presentation stays within a frame budget.
+Final high-tier controls have zero late pipelines and exact clip scheduling, but
+50–67 ms sampled encoding lag and 28–32.5 ms p95 host intervals remain open. See
+[preparation and registration evidence](../../benchmarks/fireworks/prepared-public-host-2026-10-26.md).
+
+### Clip activation profiling and program reuse (F8.1C4P)
+
+Project playback now prepares default presentation prototypes for all dependencies
+during initial loading. Later clips share immutable compiled semantic programs via
+`PresentedEffect::fresh_instance()`, with independent instance state and bindings.
+The cache is per root/project artifact, invalidated by project replacement and
+retired with its root. Hosts constructing presentations directly can prepare their
+own prototype and use the same API. Compilation moves to loading; it is not eliminated.
+
+For a separate profiling run, set `AESTRA_EXAMPLE_PROFILE=1` alongside the full-show
+report environment variables, with images disabled. This enables Bevy GPU diagnostics
+and optional CPU playback/encoding/activation timers. The report includes per-owner
+simulation windows/work counts and clip construction durations. GPU results are
+asynchronous; CPU activation excludes render-thread GPU allocation and submission.
+Set the flag to `0` for plain pacing controls. Profiling and image/capacity scans
+cannot be combined. Normal interactive playback leaves these CPU timers off.
+
+The measured high-tier wispy construction cost fell from 22–32 ms per clip to
+0.005–0.020 ms; the largest playback CPU window fell from 76 ms to 0.23 ms.
+GPU simulation and whole-host pacing remain separate open gates. See
+[profile and repeated controls](../../benchmarks/fireworks/profiled-public-host-2026-10-26.md).
+
 The new native transparency oracle uses pure-red/blue half-alpha sheets in separate
 players, opposite cameras and reversed spawn orders. It checks linear source-over
 against a deliberately wrong-order control, rather than using repeatability as proof.
@@ -114,7 +228,7 @@ These are expected-failure diagnostics, **not** cross-draw transparency acceptan
 An experimental camera opt-in now connects eligible native alpha/additive sprite,
 flipbook, trail and semantic mesh-particle draws
 to Bevy's bounded fragment lists. Its unlit semantic-sprite oracles pass, including
-budget/MSAA rejection and disable/re-enable controls. It is **not enabled on this show**:
+budget/MSAA rejection and disable/re-enable controls. It is **not enabled by default on this show**:
 deliberate saturation probes now expose global fragment loss and local-sort approximation
 with opt-in bounded GPU diagnostics. Those degraded cases are not accepted blending.
 The default depth-prepass path now passes a partial opaque StandardMaterial wall oracle,
@@ -132,12 +246,35 @@ modes. This supersedes the earlier expected-failure diagnostic, not its historic
 evidence. It is not arbitrary-host transparency acceptance: ribbons, multiply,
 depth-writing/overlay/wireframe and foreign/custom paths remain outside the qualified
 set. Ordinary non-participating draws can still be incorrectly covered by the final
-resolve. Local-sort saturation can lose additive emission; healthy allocation alone
-is not exact rendering. Bounded tests additionally cover perspective/orthographic
+resolve. The Aestra-owned resolve now preserves premultiplied RGB on local overflow,
+including additive emission with zero extinction; it is installed only on approved
+opt-in cameras. Full-target overflow lists now receive an in-place GPU link merge
+sort before resolve, removing arrival-order early blending for accepted fragments.
+The existing local limit is a fast-path threshold, not a quality cap on those lists.
+Global fragment loss remains possible. Healthy allocation alone is not exact rendering.
+Bounded tests additionally cover perspective/orthographic
 prepass occlusion, Less/LessEqual, a near-clipped semantic mesh, offscreen target
 resizing and two-camera shared-buffer isolation/release. Multi-camera overflow
 diagnostics remain unavailable; arbitrary depth/custom projections, sub-viewports,
-resolution overrides, window lifecycle and live costs are not certified.
+resolution overrides, window lifecycle and full-finale live costs are not certified.
+The earlier paced 540p/1080p benchmark exposed dense local overflow even at 32 slots;
+it motivated this ordering repair. Over-sort counters now identify merge-sort work,
+not necessarily approximate blending. Default storage still rejects 1080p; explicit provisioning
+costs about 103 MiB of node/head storage. These are bounded 6..10-second native workload
+measurements, not production/full-show acceptance. Public defaults stay unchanged.
+See [paced costs and capacity](../../benchmarks/fireworks/fragment-list-live-2026-10-26.md).
+The dense overflow oracle now qualifies both the color repair and bounded ordering:
+40 homogeneous smoke layers and 40 additive layers pass the unchanged .01 linear error
+bound at local thresholds 1/8/32. The 41-layer interleaved cases now pass too,
+with maximum error below .003 and byte-exact repeats of all 52 captures.
+The native unmanaged-camera control retains Bevy's resolver; opt-in removal/restoration
+is checked separately. During cold specialization the native pipeline remains active
+until the Aestra variant is ready, so this is not a first-frame color guarantee.
+C4M1 completed the math/oracle slice; C4M2 removes its interleaved-order failure without
+new fragment storage. The same production shader also passes sparse GPU lists through
+4,097 nodes. This remains an experimental compositor, not show migration or art approval.
+See [ordering and current costs](../../benchmarks/fireworks/fragment-list-order-2026-10-26.md)
+and the retained [earlier overflow failures](../../benchmarks/fireworks/fragment-list-overflow-2026-10-26.md).
 See [depth/camera-lifecycle evidence](../../benchmarks/fireworks/fragment-list-camera-depth-2026-10-25.md),
 [shared mixed-list evidence](../../benchmarks/fireworks/fragment-list-unified-mixed-2026-10-25.md),
 [original mixed-pass failure](../../benchmarks/fireworks/fragment-list-mixed-2026-10-25.md),

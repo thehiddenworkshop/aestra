@@ -108,9 +108,9 @@ fn event_signature(effect: &aestra_runtime::CompiledEffect, index: usize) -> u64
 }
 
 #[derive(Clone)]
-struct MaterialShaderVariants {
-    single_sampled: Handle<Shader>,
-    multisampled: Handle<Shader>,
+pub(super) struct MaterialShaderVariants {
+    pub(super) single_sampled: Handle<Shader>,
+    pub(super) multisampled: Handle<Shader>,
 }
 
 #[derive(Resource, Default)]
@@ -216,9 +216,14 @@ pub(crate) fn prepare_gpu_effects(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
     mut players: UnpreparedPlayers,
+    playback_diagnostics: Option<Res<super::playback_diagnostics::GpuPlaybackDiagnostics>>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::prepare_instance").entered();
     for (entity, mut player, runtime, render_layers) in &mut players {
+        let activation_start = playback_diagnostics
+            .as_ref()
+            .is_some_and(|d| d.profiling_enabled())
+            .then(std::time::Instant::now);
         if !matches!(
             runtime.active,
             ActiveBackend::Gpu | ActiveBackend::GpuReadback
@@ -852,6 +857,14 @@ pub(crate) fn prepare_gpu_effects(
                     unreachable!("non-GPU players do not allocate GPU buffers")
                 }
             });
+        if let Some(started) = activation_start {
+            commands
+                .entity(entity)
+                .insert(super::playback_diagnostics::GpuActivationTiming {
+                    cpu_preparation_ns: started.elapsed().as_nanos().min(u128::from(u64::MAX))
+                        as u64,
+                });
+        }
     }
 }
 
@@ -1112,7 +1125,39 @@ fn prepare_semantic_material(
 ) -> Result<GpuSemanticMaterialBinding, MaterialBindingError> {
     let prepared = binding.prepare()?;
     let program = binding.program().clone();
-    let shader_variants = shader_cache
+    let shader_variants = prepare_material_shaders(&program, shaders, shader_cache);
+    let textures = prepared
+        .textures
+        .into_iter()
+        .map(|(_, asset)| {
+            effect.texture_override(asset).cloned().unwrap_or_else(|| {
+                effect
+                    .effect()
+                    .assets
+                    .iter()
+                    .find(|candidate| candidate.source == asset)
+                    .map(|asset| texture_cache.load(asset_server, &asset.path))
+                    .unwrap_or_else(|| fallback_textures.missing.clone())
+            })
+        })
+        .collect();
+    Ok(GpuSemanticMaterialBinding {
+        program,
+        render_state: binding.render_state(),
+        shader: shader_variants.single_sampled,
+        multisampled_shader: shader_variants.multisampled,
+        uniforms: prepared.uniforms.into(),
+        textures,
+        fallback_texture: fallback_textures.missing.clone(),
+    })
+}
+
+pub(super) fn prepare_material_shaders(
+    program: &aestra_gpu::material::CompiledMaterialProgram,
+    shaders: &mut Assets<Shader>,
+    shader_cache: &mut MaterialShaderCache,
+) -> MaterialShaderVariants {
+    shader_cache
         .0
         .entry(program.program_fingerprint)
         .or_insert_with(|| {
@@ -1142,31 +1187,7 @@ fn prepare_semantic_material(
                 multisampled,
             }
         })
-        .clone();
-    let textures = prepared
-        .textures
-        .into_iter()
-        .map(|(_, asset)| {
-            effect.texture_override(asset).cloned().unwrap_or_else(|| {
-                effect
-                    .effect()
-                    .assets
-                    .iter()
-                    .find(|candidate| candidate.source == asset)
-                    .map(|asset| texture_cache.load(asset_server, &asset.path))
-                    .unwrap_or_else(|| fallback_textures.missing.clone())
-            })
-        })
-        .collect();
-    Ok(GpuSemanticMaterialBinding {
-        program,
-        render_state: binding.render_state(),
-        shader: shader_variants.single_sampled,
-        multisampled_shader: shader_variants.multisampled,
-        uniforms: prepared.uniforms.into(),
-        textures,
-        fallback_texture: fallback_textures.missing.clone(),
-    })
+        .clone()
 }
 
 const fn gpu_blend(blend: aestra_core::BlendMode) -> GpuBlend {

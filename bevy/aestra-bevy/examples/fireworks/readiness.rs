@@ -1,5 +1,5 @@
 //! Bevy host warm-up: don't spend the beginning of a play-once show compiling pipelines.
-use aestra_bevy::EffectPlayer;
+use aestra_bevy::{EffectPipelinePreparation, EffectPipelinePreparationStatus, EffectPlayer};
 use bevy::{
     prelude::*,
     render::{
@@ -15,6 +15,11 @@ pub struct Readiness {
     ready: bool,
     settled: u8,
     error: Option<String>,
+}
+impl Readiness {
+    pub fn pipelines_ready(&self) -> bool {
+        self.ready && self.error.is_none()
+    }
 }
 
 pub fn install(app: &mut App) {
@@ -56,16 +61,38 @@ pub fn start(
     mut players: Query<&mut EffectPlayer>,
     time: Res<Time>,
     mut exit: MessageWriter<AppExit>,
+    admission: Option<Res<super::oit::Admission>>,
+    preparations: Query<&EffectPipelinePreparation>,
 ) {
-    if state.started {
-        return;
-    }
     if let Some(error) = &state.error {
         error!("Fireworks shader preparation failed: {error}");
         exit.write(AppExit::error());
         return;
     }
-    state.settled = if state.ready {
+    if state.started {
+        return;
+    }
+    if admission.is_some_and(|a| !a.ready) {
+        state.settled = 0;
+        if time.elapsed_secs() > 60.0 {
+            error!("Fireworks native OIT admission timed out");
+            exit.write(AppExit::error());
+        }
+        return;
+    }
+    let mut prepared = true;
+    for preparation in &preparations {
+        match preparation.status() {
+            EffectPipelinePreparationStatus::Ready { .. } => {}
+            EffectPipelinePreparationStatus::Pending => prepared = false,
+            EffectPipelinePreparationStatus::Failed(error) => {
+                error!("Fireworks project preparation failed: {error}");
+                exit.write(AppExit::error());
+                return;
+            }
+        }
+    }
+    state.settled = if state.ready && prepared {
         state.settled.saturating_add(1)
     } else {
         0
@@ -84,6 +111,36 @@ pub fn start(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quiet_global_cache_cannot_start_a_project_with_pending_future_pipelines() {
+        let mut app = App::new();
+        app.init_resource::<Readiness>()
+            .init_resource::<Time>()
+            .add_message::<AppExit>()
+            .add_systems(Update, start);
+        app.world_mut().resource_mut::<Readiness>().ready = true;
+        app.world_mut().spawn(EffectPipelinePreparation::new([]));
+        for _ in 0..5 {
+            app.update();
+        }
+        assert!(!app.world().resource::<Readiness>().started);
+    }
+
+    #[test]
+    fn missing_native_admission_times_out_instead_of_waiting_forever() {
+        let mut app = App::new();
+        let mut time = Time::<()>::default();
+        time.advance_by(std::time::Duration::from_secs(61));
+        app.insert_resource(time)
+            .init_resource::<Readiness>()
+            .init_resource::<super::super::oit::Admission>()
+            .add_message::<AppExit>()
+            .add_systems(Update, start);
+        app.update();
+        assert!(!app.world().resource::<Readiness>().started);
+        assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
+    }
 
     #[test]
     fn lazy_shader_loading_retries_but_validation_failures_are_fatal() {

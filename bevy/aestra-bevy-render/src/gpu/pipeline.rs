@@ -409,24 +409,11 @@ pub(super) fn fragment_list_eligible(
     mode: GpuRenderMode,
     state: Option<MaterialRenderState>,
 ) -> bool {
-    if mode != GpuRenderMode::Rendered
-        || !matches!(renderer_kind, 0 | 1 | 2 | 4)
-        || (renderer_kind == 2 && state.is_none())
-    {
-        return false;
-    }
-    state.map_or(
+    crate::experimental_oit::eligible(
+        renderer_kind,
         matches!(blend, GpuBlend::Alpha | GpuBlend::Additive),
-        |state| {
-            matches!(
-                state.blend,
-                aestra_core::BlendMode::Alpha | aestra_core::BlendMode::Additive
-            ) && !state.depth_write
-                && matches!(
-                    state.depth_test,
-                    MaterialDepthTest::Less | MaterialDepthTest::LessEqual
-                )
-        },
+        mode == GpuRenderMode::Rendered,
+        state,
     )
 }
 

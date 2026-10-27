@@ -75,6 +75,10 @@ fn fragment_list_saturation_reports_runtime_loss_separately_from_budget_rejectio
                         assert_eq!(sample.dropped_fragments, 0);
                         assert!(sample.over_sort_pixels > 0);
                         assert_eq!(sample.capped_max_depth, 2);
+                        assert!(
+                            source_error < 0.01,
+                            "overflow link sorting must preserve order"
+                        );
                     }
                     _ => {
                         assert_eq!(sample.dropped_fragments, 0);
@@ -163,6 +167,6 @@ fn fragment_list_saturation_reports_runtime_loss_separately_from_budget_rejectio
     write_report(
         &root,
         &json!({"probe_passed":true,"cases":cases,
-        "scope":"Expected global-drop/local-approximation diagnostics for one full-target camera, frozen unlit LDR sprites. No overflow image determinism or production smoke acceptance."}),
+        "scope":"Expected global-drop failure and positive local-overflow link-sort control for one full-target camera, frozen unlit LDR sprites. Historical local-approximation stage name retained. Not production smoke acceptance."}),
     );
 }

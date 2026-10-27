@@ -1,6 +1,10 @@
 //! Bounded, opt-in fragment-list experiment. Not production transparency acceptance.
 #[path = "experimental_oit/diagnostics.rs"]
 mod diagnostics;
+#[path = "experimental_oit/resolve.rs"]
+mod resolve;
+#[path = "experimental_oit/sort.rs"]
+mod sort;
 use bevy::{
     core_pipeline::oit::OrderIndependentTransparencySettings,
     extract::extract_component::{ExtractComponent, ExtractComponentPlugin},
@@ -21,12 +25,16 @@ pub use diagnostics::{ExperimentalOitDiagnosticSample, ExperimentalOitDiagnostic
 /// Known limitation: the resolve overlays ordinary transparent draws regardless of their depth.
 /// Ribbons, multiply, depth-writing/overlay/wireframe, legacy meshes and foreign/custom
 /// draws are not qualified participants; foreground instances can be incorrectly covered.
-/// Healthy diagnostics do not rule this out. Local-sort saturation also approximates
-/// already weighted RGB, which can lose additive emission. Keep this opt-in disabled
+/// Healthy diagnostics do not rule this out. The adapter resolve preserves already
+/// premultiplied RGB on overflow. On full-target views, an overflow-only GPU link
+/// merge sort orders accepted layers before resolve; global fragment loss remains.
+/// Keep this opt-in disabled
 /// for production mixed scenes pending broader interoperability and cost qualification.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct ExperimentalOitSettings {
     pub fragments_per_pixel_average: f32,
+    /// Local fast-path threshold (1..32). Longer accepted lists use an in-place
+    /// link merge sort, rather than reducing quality to this many layers.
     pub sorted_fragment_max_count: u32,
     /// Budget for shared node/head storage across all opted-in cameras, not per effect.
     /// The strictest camera budget wins. No automatic quality or MSAA reduction.
@@ -41,6 +49,55 @@ impl Default for ExperimentalOitSettings {
             max_storage_bytes: 32 * 1024 * 1024,
         }
     }
+}
+
+impl ExperimentalOitSettings {
+    /// Static eligibility for a rendered 3D draw, shared with the native pipeline.
+    /// This does not certify asset loading, camera/device support, dynamic material
+    /// overrides, foreign draws, capacity, or physical equal-depth semantics.
+    pub fn supports_renderer(
+        kind: &aestra_runtime::RendererPlanKind,
+        legacy_blend: aestra_core::BlendMode,
+        state: Option<aestra_core::material::MaterialRenderState>,
+    ) -> bool {
+        use aestra_runtime::RendererPlanKind;
+        let kind = match kind {
+            RendererPlanKind::Sprite => 0,
+            RendererPlanKind::Trail { .. } => 1,
+            RendererPlanKind::Mesh { .. } => 2,
+            RendererPlanKind::Ribbon { .. } => 3,
+            RendererPlanKind::Flipbook { .. } => 4,
+        };
+        eligible(
+            kind,
+            matches!(
+                legacy_blend,
+                aestra_core::BlendMode::Alpha | aestra_core::BlendMode::Additive
+            ),
+            true,
+            state,
+        )
+    }
+}
+
+pub(crate) fn eligible(
+    kind: u32,
+    legacy_alpha_or_additive: bool,
+    rendered: bool,
+    state: Option<aestra_core::material::MaterialRenderState>,
+) -> bool {
+    use aestra_core::{BlendMode, material::MaterialDepthTest};
+    if !rendered || !matches!(kind, 0 | 1 | 2 | 4) || (kind == 2 && state.is_none()) {
+        return false;
+    }
+    state.map_or(legacy_alpha_or_additive, |state| {
+        matches!(state.blend, BlendMode::Alpha | BlendMode::Additive)
+            && !state.depth_write
+            && matches!(
+                state.depth_test,
+                MaterialDepthTest::Less | MaterialDepthTest::LessEqual
+            )
+    })
 }
 
 /// Approval/allocation estimate, not a fragment-overflow or exactness guarantee.
@@ -74,6 +131,8 @@ pub(crate) struct OitApproved;
 
 pub(crate) fn install(app: &mut App) {
     diagnostics::install(app);
+    resolve::install(app);
+    sort::install(app);
     let statistics = ExperimentalOitStatistics::default();
     app.insert_resource(statistics.clone());
     app.add_plugins(ExtractComponentPlugin::<OitApproved, RenderApp>::default())

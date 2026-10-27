@@ -4915,13 +4915,170 @@ are byte-exact. Viewer tests (107 passed, 40 ignored), strict workspace Clippy,
 formatting and diff checks pass. Multi-camera diagnostics and smoke art are still
 not approved by these bounded image/allocation results.
 
-**Next — F8.1C4L:** compare matched dense/live-paced compositor costs and capacity at
-relevant show resolutions before deciding adoption. Arbitrary no-prepass/custom-depth,
+**F8.1C4L live-paced cost/capacity gate (2026-10-26): measured; adoption blocked.**
+A new explicit benchmark uses unchanged high-tier saved persistent-show and four-root
+cohort fixtures at 960x540/1920x1080, sorted/default/provisioned OIT and two counterbalanced
+repetitions (24 cases). Forward PlaybackOnly runs frames 360..600 with 240 absolute-deadline
+60 Hz host updates; no seek/replay or skipped frame. Cost lanes disable OIT scans;
+independently initialized matching capacity lanes enable them. Timestamp/count arrivals
+are deduplicated, not frame-ID joined, and pass/source percentiles are not summed.
+
+All 20 admitted cost lanes and 12 capacity lanes complete. The four default 1080p
+cases are explicitly rejected by the 32 MiB guard and never labeled OIT timings.
+Provisioned node/head storage is 25.71/102.83 MiB at 540p/1080p. Population peaks match
+between lanes; pipeline readiness stays valid and observed checkpoint work is zero.
+Dense 1080p whole-render-graph medians are 2.61–2.68 ms sorted versus 5.39–5.42 ms
+provisioned OIT; these are two-run observations, not full-game/end-to-end budgets.
+Show deadline misses remain visible rather than being reported as guaranteed 60 FPS.
+
+All 2,828 capacity observations have zero global drops/invalid links, but **every one
+exceeds the local sort threshold**, including at 32 slots. More storage or a larger
+exact prefix alone is not adoption evidence. Keep public defaults unchanged.
+See [`fragment-list-live-2026-10-26.md`](../../benchmarks/fireworks/fragment-list-live-2026-10-26.md).
+Native benchmark completion, 108 viewer tests (41 ignored), strict workspace Clippy,
+formatting and diff checks pass. Completion accepts the measurements, not saturated
+compositing or public smoke art.
+
+**F8.1C4M1 dense overflow math/oracle (2026-10-26): implemented; ordering not accepted.**
+An Aestra-owned resolve uses the existing Bevy node ABI/layouts only for approved
+opt-in cameras. Both overflow branches now consume already-premultiplied RGB directly,
+instead of applying extinction alpha again and erasing additive emission. Global storage,
+the 1..32 local sort range, default settings and ordinary/portable paths are unchanged.
+No CPU fragment transport or global native shader replacement is introduced. The native
+pipeline keeps clearing lists while a cold Aestra specialization compiles.
+
+The calibrated flat-mesh oracle compares analytic linear color and correctly sorted
+one-particle GPU reference draws at opposite views/reversed spawn orders. All 24
+40-layer homogeneous smoke/additive cases pass the unchanged .01 bound at local
+limits 1/8/32. The same fixture with the adapter disabled fails the color gates.
+Global capacity is deliberately provisioned at average 16 to isolate local overflow;
+zero drops/invalid links do not certify image correctness. Native unmanaged-camera
+and managed restoration controls prove resolve ownership is scoped. These flat planes
+qualify compositing math, not realistic smoke art.
+
+At M1, all 12 41-layer interleaved alpha/emission cases exceeded the image bound.
+Early blending remains arrival-order dependent; repeatability is not correctness.
+See [`fragment-list-overflow-2026-10-26.md`](../../benchmarks/fireworks/fragment-list-overflow-2026-10-26.md)
+for matched before/after evidence, rejected fixture iterations and remaining limits.
+
+**F8.1C4M2 accepted-list ordering (2026-10-26): implemented.**
+An overflow-only GPU compute pass reorders existing per-pixel node links with a bottom-up
+merge sort before resolve. Work is O(N log N) per overflowing list with O(1) private
+state; there is no larger per-pixel array, repeated quadratic selection, new fragment
+buffer, CPU transport or replay work. The 1..32 setting becomes the local fast-path
+threshold. Native 12-byte nodes and global storage budgets remain unchanged. Diagnostics
+run before sorting and over-sort now counts fallback work, not approximate blending.
+
+Both dense runs pass all 36 analytic/split-draw cases, including the twelve formerly
+failing interleaved cases (maximum error .002908). All 52 captures repeat byte-exactly.
+The production shader separately passes 48 sparse/shuffled chains through 4,097 nodes
+at three thresholds, preserving payloads/canaries and safely clearing invalid/cyclic
+heads. Sorting uses native packed reverse depth with a canonical color tie breaker;
+this is not a physical equal-depth transparency guarantee. Storage capacity bounds
+traversal, not worst-case GPU time under pathological single-pixel overdraw.
+
+All ten existing native probes pass, with 1,694 prior accepted PNGs unchanged. The
+24-case live repeat completes 20 admitted cost lanes/12 capacity lanes, four explicit
+default-1080p budget rejections, and 2,826 zero-drop/invalid observations. Matched
+cost/capacity populations remain 617 show/256 cohorts. Dense 1080p provisioned OIT
+whole-render medians are 5.30–5.38 ms; link-sort medians are 1.80–1.84 ms. Host deadline
+misses vary substantially, including 240/240 in one show run: 60 Hz pacing and public
+show migration are not accepted. Viewer/renderer/shader tests, strict Clippy and
+formatting checks pass. No threshold is relaxed to count completion.
+
+See [`fragment-list-order-2026-10-26.md`](../../benchmarks/fireworks/fragment-list-order-2026-10-26.md)
+for regressions and repeated current live costs/capacity. C4L timings are historical
+pre-repair observations. The guarded public-host pilot is now implemented below;
+continuous star-path smoke and photographic art tuning remain open.
+
+**F8.1C4N public-host HDR opt-in (2026-10-26): implemented; pilot admission accepted,
+default migration/pacing/art not accepted.** `fireworks --smoke-art-show --experimental-oit`
+(also `--persistent-smoke-show`) audits every compiled dependency through the same
+eligibility predicate used by the native renderer. Both candidates at all three tiers
+preserve their compiled effects exactly: 39 renderer definitions, 27 sprites/12 trails.
+The camera keeps fixed HDR/Tony/bloom/environment/sound bindings, explicitly selects
+Msaa::Off and a 128 MiB guard, and awaits native admission. Budget/backend rejection
+pauses/exits instead of silent fallback; missing initial admission times out. Camera
+node/head storage at the tested 1280x720 is 47,923,200 bytes. Public defaults stay unchanged.
+
+Six serial real-window development-build runs complete the full 37-second show and ten
+cleanup updates: high ordinary control, high/medium/low OIT pacing lanes, then separate
+high-tier image/capacity lanes for both candidates. Controls are fixed during optional
+report recording; normal interactive use is unchanged. Both capacity lanes are loss-free
+across 3,990 observations, with no invalid links. Eight nominal-time screenshots and two
+additional bright snapshots are retained. The latter ordinary/OIT captures land in
+different burst/light phases and are explicitly not a pixel-comparison oracle.
+
+Cost-lane medians are 16.64–16.67 ms, but p95 is 32.45–32.94 ms, with 11–12 late pipeline
+preparation updates. Ordinary uses default Sample4 MSAA versus Off for OIT; these are
+actual host configurations, not an isolated compositor-overhead experiment. Audio is
+compiled/tested but native runs are silent. Smoke remains draft artwork. The initial
+interactive/compile-overlapped pilot is retained but excluded from pacing/count matching.
+Host tests pass with/without audio (28/24), renderer tests pass (172, three ignored),
+and strict workspace Clippy/formatting checks pass. See
+[`fragment-list-public-host-2026-10-26.md`](../../benchmarks/fireworks/fragment-list-public-host-2026-10-26.md).
+
+**F8.1C4O public project pipeline preparation (2026-10-26): implemented;
+loading gate accepted, pacing/registration still open.** The public
+`EffectPipelinePreparation` component prepares root/dependency sprite/trail/flipbook
+material pipelines for the actual active Camera3d HDR/MSAA/OIT configuration. Future
+clips need no hidden playback, seeks, particle allocations or cues. Semantic shader
+handles share the live renderer cache; mesh/ribbon/extension requests fail explicitly.
+The smoke-show candidates await both project preparation and existing compute/device
+admission. An opt-in bounded CPU encoding ledger measures requested versus encoded
+times without GPU waits/readbacks; it does not certify completion or visible pixels.
+
+Three final high-tier ordinary/OIT controls across both candidates complete the full
+37-second show with four prepared pipeline variants, zero late pipeline updates,
+no blocked/missing scheduled owners, exact clip times and 13 accepted flashes.
+However, requested-versus-encoded lag reaches 50–67 ms and p95 host intervals remain
+28.19–32.49 ms. A larger particle-only catch-up allowance was tested at all tiers:
+it reduced encoding lag to one tick, but p95 rose to 45.56–62.68 ms, clock totals
+diverged and high-tier short flash admissions fell to 9. That attempt was reverted;
+all six raw experimental reports and ten images remain as rejected evidence.
+Runtime pacing, authored effects and defaults are unchanged. Final renderer tests:
+176 passed/three ignored; audio-enabled example: 29 passed; strict workspace
+Clippy/formatting/diff checks pass. See
+[`prepared-public-host-2026-10-26.md`](../../benchmarks/fireworks/prepared-public-host-2026-10-26.md).
+
+**F8.1C4P clip activation profiling/program reuse (2026-10-26): implemented;
+CPU activation gate accepted, whole-host pacing still open.** A separate public-host
+profiling lane reuses existing GPU timestamps and adds optional CPU playback,
+command-encoding, artifact-preparation and clip-construction scopes. Direct measurement
+locates 22.18–32.02 ms per new clip in repeated semantic material compilation, with
+three simultaneous births producing a 76.27 ms playback CPU window.
+
+Root/project-owned presentation prototypes now compile during initial preparation.
+`PresentedEffect::fresh_instance()` shares immutable programs while resetting instance
+state, output identity, overrides and explicit runtime bindings. Normal clip setup still
+applies seeds/parameters/history policy. Artifact replacement invalidates prototypes
+even with stable IDs; root retirement releases ownership. This is a per-root cache,
+not global sharing or GPU buffer pooling. Initial compilation cost remains.
+
+The matched cached profile measures 0.0048–0.0198 ms clip construction and a 0.231 ms
+maximum playback CPU window, with no playback windows above 16.67 ms. Simulation GPU
+p95 remains 8.37 ms versus 8.94 ms before; no general GPU optimization is claimed.
+All four cached full-show runs retain zero late pipelines, exact clip scheduling and
+13 accepted flashes. Two plain wispy repetitions still have p95 31.21/31.68 ms and
+33–100 ms maximum sampled encoding lag; persistent OIT has p95 27.19 ms and 16.67 ms
+lag. These are not stable-60-FPS or universal one-tick registration acceptance.
+PlaybackOnly observed checkpoint capture remains zero; runtime budgets, authored
+assets and renderer defaults are unchanged. Final checks: 178 renderer tests passed
+(three ignored), 65 host tests and 29 audio-enabled example tests passed; strict
+workspace Clippy/formatting/diff checks pass. See
+[`profiled-public-host-2026-10-26.md`](../../benchmarks/fireworks/profiled-public-host-2026-10-26.md).
+
+**Next:** measure render-thread allocation and coupled simulation upload/dispatch work,
+including repeated event-list/parameter buffer allocation, before revisiting bounded
+live catch-up policy. Preserve registration, short flash delivery and PlaybackOnly;
+continue continuous star-path smoke/HDR art review after that gate. Do not replace
+the default show or claim stable 60 FPS from these CPU activation measurements.
+Arbitrary no-prepass/custom-depth,
 equal-depth ties, viewport subrectangles/resolution overrides, window/minimize lifecycle
 and multi-camera overflow diagnostics remain outside the qualified set. More storage
 or pool sorting alone cannot qualify non-participating draws. The camera allocation
 guard is not fragment-overflow detection, and zero global drops do not prove exact
-blending beyond the local sort threshold. Keep fragment-list
+blending or absence of global loss. Keep fragment-list
 compositing experimental until these results justify adoption or a different approach.
 Then author continuous smoke along star paths and review its public HDR/paced costs.
 The six user-provided 2026-10-09 smoke references define the art target: thin radial

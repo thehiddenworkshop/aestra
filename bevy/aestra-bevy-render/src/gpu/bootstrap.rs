@@ -27,6 +27,8 @@ use bevy::{
 use std::path::{Path, PathBuf};
 
 pub(crate) fn install(app: &mut App) {
+    let playback_diagnostics = super::playback_diagnostics::GpuPlaybackDiagnostics::default();
+    app.insert_resource(playback_diagnostics.clone());
     let alpha_statistics = GpuAlphaSortStatistics::default();
     app.insert_resource(alpha_statistics.clone());
     install_shader_assets(app);
@@ -43,6 +45,7 @@ pub(crate) fn install(app: &mut App) {
     app.insert_resource(timing_mailbox.clone())
         .add_systems(PreUpdate, simulation_timing::receive_timings);
     preparation::install(app);
+    super::pipeline_preparation::install(app);
     extraction::install(app);
     extraction::install_device_publication(app);
     visibility_updates::install(app);
@@ -54,6 +57,7 @@ pub(crate) fn install(app: &mut App) {
         return;
     };
     render_app
+        .insert_resource(playback_diagnostics)
         .insert_resource(alpha_statistics)
         .insert_resource(preparation_mailboxes)
         .insert_resource(geometry_mailbox)

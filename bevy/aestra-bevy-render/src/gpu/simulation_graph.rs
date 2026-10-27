@@ -77,7 +77,22 @@ pub(super) fn run_simulation(
     gpu_resources: SimulationGpuResources,
     state: SimulationState,
     mut light_readiness: ResMut<PresentedOwners>,
+    playback_diagnostics: Res<super::playback_diagnostics::GpuPlaybackDiagnostics>,
+    prepared_owners: Query<(&bevy::render::sync_world::MainEntity, &GpuEffectBuffers)>,
 ) {
+    let mut playback_recording = playback_diagnostics.begin();
+    if let Some(recording) = &mut playback_recording {
+        recording
+            .samples
+            .extend(prepared_owners.iter().map(|(owner, effect)| {
+                super::playback_diagnostics::GpuPlaybackSample {
+                    owner: owner.id(),
+                    requested_time: effect.simulation_time,
+                    encoded_time: None,
+                    cpu_encoding_ns: None,
+                }
+            }));
+    }
     light_readiness.owners.clear();
     let _span = bevy::log::info_span!("aestra::gpu::simulate").entered();
     let Some(pipeline) = pipeline else {
@@ -156,6 +171,9 @@ pub(super) fn run_simulation(
             .map(|h| h.1.checkpoints.bytes())
             .sum::<u64>();
     for (entity, main_entity, effect, bind_group, extracted_stages) in &effects {
+        let mut owner_recording = playback_recording
+            .as_mut()
+            .and_then(|r| r.owner(main_entity.id()));
         let mut fully_presented = effect.stateful_dispatch.is_empty();
         let paged = if effect.trail_plan.paged() {
             let Some(pipelines) = paged_pipelines else {
@@ -304,6 +322,16 @@ pub(super) fn run_simulation(
                 );
                 if stateful_work.presented && light_readiness.enabled {
                     light_readiness.owners.insert(entity);
+                }
+                if stateful_work.presented
+                    && let Some(recording) = &mut owner_recording
+                {
+                    let reached = persistent_states
+                        .iter()
+                        .map(|state| state.last_tick)
+                        .min()
+                        .unwrap_or(0);
+                    recording.encoded(stateful_tick_time(reached));
                 }
                 if let Some((batch, index)) = timing_batch.as_mut().zip(timing_index) {
                     let trail_observations = observer.as_ref().map_or(0, |o| o.observations);
@@ -494,6 +522,7 @@ pub(super) fn run_simulation(
                 },
             );
         }
+        let mut trails_recorded = true;
         for observation in 0..observation_count {
             if let Some((times, _, globals, _)) = &replay {
                 render_context.command_encoder().copy_buffer_to_buffer(
@@ -569,6 +598,7 @@ pub(super) fn run_simulation(
                     diagnostics,
                 )
             {
+                trails_recorded = false;
                 continue;
             }
             if let Some((_, times, _, state)) = &replay {
@@ -588,6 +618,12 @@ pub(super) fn run_simulation(
                     allocated = allocated - previous + history.checkpoints.bytes();
                 }
             }
+        }
+        if effect.stateful_dispatch.is_empty()
+            && trails_recorded
+            && let Some(recording) = &mut owner_recording
+        {
+            recording.encoded(observed_time);
         }
         // Mixed effect (some analytic, some stateful emitters): the analytic reset+simulate above ran
         // (its `simulate` skipped the stateful emitters' slots), so now fill those slots with the
@@ -655,6 +691,17 @@ pub(super) fn run_simulation(
                     None,
                 );
                 fully_presented = work.presented;
+                if work.presented
+                    && trails_recorded
+                    && let Some(recording) = &mut owner_recording
+                {
+                    let reached = persistent_states
+                        .iter()
+                        .map(|state| state.last_tick)
+                        .min()
+                        .unwrap_or(0);
+                    recording.encoded(observed_time.min(stateful_tick_time(reached)));
+                }
             }
         }
         if fully_presented && light_readiness.enabled {

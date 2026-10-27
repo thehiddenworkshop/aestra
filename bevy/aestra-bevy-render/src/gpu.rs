@@ -50,6 +50,12 @@ mod particle_outputs;
 mod particle_statistics;
 mod physics;
 mod pipeline;
+mod pipeline_preparation;
+pub use pipeline_preparation::{EffectPipelinePreparation, EffectPipelinePreparationStatus};
+mod playback_diagnostics;
+pub use playback_diagnostics::{
+    GpuActivationTiming, GpuPlaybackDiagnostics, GpuPlaybackFrame, GpuPlaybackSample,
+};
 mod preparation;
 mod preparation_context;
 mod preparation_observation;

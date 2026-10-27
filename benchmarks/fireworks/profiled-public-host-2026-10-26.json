@@ -1,0 +1,2515 @@
+{
+  "milestone": "F8.1C4P",
+  "date": "2026-10-26",
+  "base_commit": "70176c4c86ae50fc78dde06a644f0d0eef6a9cdd",
+  "prerequisites": "Uncommitted C4L/C4M/C4N/C4O retained.",
+  "scope": "Profile the public host and remove measured clip-time CPU material recompilation. Not general GPU optimization, stable 60 FPS, exact display registration, default migration or photographic approval.",
+  "result": {
+    "cpu_activation_gate_accepted": true,
+    "program_reuse_implemented": true,
+    "pacing_accepted": false,
+    "universal_single_tick_registration_accepted": false,
+    "authored_effects_changed": false,
+    "runtime_catchup_policy_changed": false,
+    "renderer_defaults_changed": false
+  },
+  "implementation": {
+    "api": "PresentedEffect::fresh_instance()",
+    "cache": "Default presentation prototypes for root and all compiled dependencies, scoped per root/Arc<CompiledEffectProject>. Rebuilt on project artifact replacement, retired when root/project playback is removed.",
+    "sharing": "Immutable compiled material programs only; new EffectInstance, automatic runtime bindings and output identity; default clocks/seed/parameters/history; explicit bindings/resource overrides reset. Normal clip configuration applies authored parameters, seeds and policy.",
+    "tradeoffs": "Compilation moves to initial project preparation. Independent roots currently have separate prototype sets; not a global program cache or GPU buffer pooling."
+  },
+  "profiling": {
+    "flag": "AESTRA_EXAMPLE_PROFILE=1 with AESTRA_EXAMPLE_REPORT",
+    "images_allowed": false,
+    "default_cpu_timers": false,
+    "plugin": "Bevy RenderDiagnosticsPlugin",
+    "public_timers": [
+      "GpuPlaybackDiagnostics::set_profiling_enabled",
+      "GpuActivationTiming",
+      "EffectClipInstance::preparation_cpu_time"
+    ],
+    "transport": "Existing asynchronous GPU timestamps, latest-frame CPU encoding ledger and per-owner CPU scopes; no new particle readback or GPU waits.",
+    "limitations": "Scheduled CPU wall windows can include interleaving. Initial activation timer excludes render-thread GPU allocation/submission. GPU measurements are asynchronous; per-owner complete-window metadata can omit retired/query-budget-omitted owners. Nested/repeated paths are not independent totals; use outer simulation scope for aggregate comparisons."
+  },
+  "environment": {
+    "os": "Windows",
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1",
+    "profile": "dev: application opt-level1/dependencies opt-level3",
+    "features": [
+      "fireworks-audio"
+    ],
+    "sound_playback": false,
+    "history": "PlaybackOnly",
+    "resolution": [
+      1280,
+      720
+    ],
+    "hdr": true,
+    "tonemapping": "TonyMcMapface",
+    "bloom": 0.15,
+    "msaa": "Off",
+    "oit_guard_bytes": 134217728,
+    "seconds": 37,
+    "cleanup_updates": 10,
+    "compilation_or_other_native_gpu_probes_during_windows": false
+  },
+  "measured_baseline": {
+    "path": "target/fireworks-f8/profile-host-2026-10-26-b/uncached-wispy-high-oit.json",
+    "sha256": "500A100531480A56CF477562A510BE5043F13A5567FDBF77DEA1BFCBF1AA0B6D",
+    "report": {
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "adoption_accepted": false,
+      "audio_enabled": false,
+      "backend": "Gpu",
+      "bevy_game_seconds": 36.98487990000002,
+      "bevy_real_seconds": 36.98487990000002,
+      "bloom_intensity": 0.15000000596046448,
+      "camera_physical_size": [
+        1280,
+        720
+      ],
+      "capacity": null,
+      "captures": [],
+      "completed": true,
+      "duration": 37,
+      "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 11613,
+        "frames": 2018,
+        "max_clip_schedule_error_seconds": 0,
+        "max_requested_minus_encoded_seconds": 0.1833343505859375,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+          "encoded_seconds": 17.016666412353516,
+          "requested_seconds": 17.200000762939453
+        }
+      },
+      "experimental_oit": true,
+      "final_seconds": 37,
+      "flashes_accepted": 13,
+      "flashes_peak": 3,
+      "hdr": true,
+      "history": "PlaybackOnly",
+      "host_intervals_including_vsync": {
+        "max_ms": 91.5409,
+        "median_ms": 16.6735,
+        "over_16_67ms": 1009,
+        "over_20ms": 551,
+        "over_33_33ms": 103,
+        "p95_ms": 33.3853,
+        "p99_ms": 37.540499999999994,
+        "samples": 2013
+      },
+      "lane": "profiling-timestamps-no-images",
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "msaa": "Off",
+      "native_gpu": true,
+      "node_head_allocated_bytes": 47923200,
+      "oit_estimated_bytes": 47923200,
+      "oit_rejection": null,
+      "paused_updates": 0,
+      "peak_async_alive": 2125,
+      "pending_pipeline_updates": 0,
+      "player_speed": 1,
+      "prepared_view": "Ready { pipelines: 4 }",
+      "profile": {
+        "activations": [
+          {
+            "cpu_clip_construction_ms": 24.495,
+            "cpu_preparation_ms": 0.9776,
+            "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+            "root_seconds": 0
+          },
+          {
+            "cpu_clip_construction_ms": 22.8614,
+            "cpu_preparation_ms": 0.1258,
+            "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+            "root_seconds": 2.299999952316284
+          },
+          {
+            "cpu_clip_construction_ms": 32.0247,
+            "cpu_preparation_ms": 0.0645,
+            "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+            "root_seconds": 4.599999904632568
+          },
+          {
+            "cpu_clip_construction_ms": 23.2259,
+            "cpu_preparation_ms": 0.3724,
+            "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+            "root_seconds": 4.599999904632568
+          },
+          {
+            "cpu_clip_construction_ms": 22.5524,
+            "cpu_preparation_ms": 0.9219,
+            "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+            "root_seconds": 7.900000095367432
+          },
+          {
+            "cpu_clip_construction_ms": 22.539199999999997,
+            "cpu_preparation_ms": 0.839,
+            "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+            "root_seconds": 7.900000095367432
+          },
+          {
+            "cpu_clip_construction_ms": 23.392,
+            "cpu_preparation_ms": 0.8482,
+            "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+            "root_seconds": 7.900000095367432
+          },
+          {
+            "cpu_clip_construction_ms": 22.1783,
+            "cpu_preparation_ms": 0.1582,
+            "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+            "root_seconds": 12
+          },
+          {
+            "cpu_clip_construction_ms": 23.5966,
+            "cpu_preparation_ms": 0.2099,
+            "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+            "root_seconds": 12
+          },
+          {
+            "cpu_clip_construction_ms": 30.5935,
+            "cpu_preparation_ms": 0.0516,
+            "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+            "root_seconds": 16
+          },
+          {
+            "cpu_clip_construction_ms": 22.3058,
+            "cpu_preparation_ms": 0.1106,
+            "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+            "root_seconds": 16
+          },
+          {
+            "cpu_clip_construction_ms": 23.1418,
+            "cpu_preparation_ms": 0.8777,
+            "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+            "root_seconds": 16
+          },
+          {
+            "cpu_clip_construction_ms": 23.6202,
+            "cpu_preparation_ms": 0.2504,
+            "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+            "root_seconds": 17.016666412353516
+          }
+        ],
+        "cpu_playback_scope_ms": {
+          "max_ms": 76.2683,
+          "median_ms": 0.10110000000000001,
+          "over_16_67ms": 6,
+          "over_20ms": 6,
+          "over_33_33ms": 4,
+          "p95_ms": 0.1502,
+          "p99_ms": 0.1881,
+          "samples": 2023
+        },
+        "cpu_simulation_encoding_scope_ms": {
+          "max_ms": 12.5297,
+          "median_ms": 1.3642,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 5.471,
+          "p99_ms": 6.0556,
+          "samples": 2018
+        },
+        "gpu_phases_ms": {
+          "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+            "max_ms": 0.836608,
+            "median_ms": 0.243712,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.434176,
+            "p99_ms": 0.601088,
+            "samples": 1785
+          },
+          "render/aestra::gpu::simulate/aestra::gpu::trail_history/elapsed_gpu": {
+            "max_ms": 0.411648,
+            "median_ms": 0.027648,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.151552,
+            "p99_ms": 0.25088,
+            "samples": 1785
+          },
+          "render/aestra::gpu::simulate/elapsed_gpu": {
+            "max_ms": 17.337344,
+            "median_ms": 2.532352,
+            "over_16_67ms": 1,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 8.935424,
+            "p99_ms": 12.371968,
+            "samples": 1909
+          },
+          "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+            "max_ms": 1.07008,
+            "median_ms": 0.249856,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.472064,
+            "p99_ms": 0.67584,
+            "samples": 1909
+          },
+          "render/aestra_oit_overflow_sort/elapsed_gpu": {
+            "max_ms": 0.529408,
+            "median_ms": 0.021504,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.131072,
+            "p99_ms": 0.287744,
+            "samples": 1909
+          },
+          "render/auxiliary_views/elapsed_gpu": {
+            "max_ms": 0.01536,
+            "median_ms": 0.002048,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.006144,
+            "p99_ms": 0.013312,
+            "samples": 1909
+          },
+          "render/bin_unpacking/elapsed_gpu": {
+            "max_ms": 0.200704,
+            "median_ms": 0.01024,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.017408,
+            "p99_ms": 0.019456,
+            "samples": 1909
+          },
+          "render/bloom/elapsed_gpu": {
+            "max_ms": 0.848896,
+            "median_ms": 0.08704,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.254976,
+            "p99_ms": 0.364544,
+            "samples": 1909
+          },
+          "render/clustering/elapsed_gpu": {
+            "max_ms": 0.512,
+            "median_ms": 0.072704,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.151552,
+            "p99_ms": 0.191488,
+            "samples": 1909
+          },
+          "render/early prepass/elapsed_gpu": {
+            "max_ms": 0.008192,
+            "median_ms": 0.002048,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.00512,
+            "p99_ms": 0.006144,
+            "samples": 1909
+          },
+          "render/early_mesh_preprocessing/elapsed_gpu": {
+            "max_ms": 0.052224,
+            "median_ms": 0.012288,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.023552,
+            "p99_ms": 0.026624,
+            "samples": 1909
+          },
+          "render/main_opaque_pass_3d/elapsed_gpu": {
+            "max_ms": 0.094208,
+            "median_ms": 0.023552,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.068608,
+            "p99_ms": 0.084992,
+            "samples": 1909
+          },
+          "render/main_transparent_pass_3d/elapsed_gpu": {
+            "max_ms": 0.764928,
+            "median_ms": 0.047104,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.144384,
+            "p99_ms": 0.260096,
+            "samples": 1785
+          },
+          "render/oit_resolve/elapsed_gpu": {
+            "max_ms": 1.933312,
+            "median_ms": 0.252928,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.38752,
+            "p99_ms": 1.742848,
+            "samples": 1909
+          },
+          "render/per_view_shadow_pass/elapsed_gpu": {
+            "max_ms": 0.01024,
+            "median_ms": 0.001024,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.002048,
+            "p99_ms": 0.002048,
+            "samples": 1909
+          },
+          "render/tonemapping/elapsed_gpu": {
+            "max_ms": 0.072704,
+            "median_ms": 0.01536,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.044032,
+            "p99_ms": 0.064512,
+            "samples": 1909
+          },
+          "render/ui/elapsed_gpu": {
+            "max_ms": 0.03072,
+            "median_ms": 0.004096,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.022528,
+            "p99_ms": 0.0256,
+            "samples": 1909
+          },
+          "render/uniform_allocation/elapsed_gpu": {
+            "max_ms": 0.198656,
+            "median_ms": 0.011264,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.019456,
+            "p99_ms": 0.022528,
+            "samples": 1909
+          },
+          "render/upscaling/elapsed_gpu": {
+            "max_ms": 0.47616,
+            "median_ms": 0.011264,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.047104,
+            "p99_ms": 0.0512,
+            "samples": 1909
+          }
+        },
+        "owners": {
+          "Fireworks Crackle — Wispy Smoke Art Candidate": {
+            "checkpoint_capture_bytes": 0,
+            "cpu_encoding_ms": {
+              "max_ms": 1.15,
+              "median_ms": 0.3046,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.5812,
+              "p99_ms": 0.743,
+              "samples": 2687
+            },
+            "gpu_simulation_ms": {
+              "max_ms": 2.405376,
+              "median_ms": 0.623616,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 1.124352,
+              "p99_ms": 1.562624,
+              "samples": 2515
+            },
+            "max_fixed_ticks": 3,
+            "observed_fixed_ticks": 2827,
+            "trail_observations": 3337,
+            "trail_workgroups": 23359
+          },
+          "Fireworks Crossette — Wispy Smoke Art Candidate": {
+            "checkpoint_capture_bytes": 0,
+            "cpu_encoding_ms": {
+              "max_ms": 1.5411,
+              "median_ms": 0.4498,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.8176,
+              "p99_ms": 0.973,
+              "samples": 2657
+            },
+            "gpu_simulation_ms": {
+              "max_ms": 2.813952,
+              "median_ms": 0.759808,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 1.14688,
+              "p99_ms": 1.96608,
+              "samples": 2484
+            },
+            "max_fixed_ticks": 3,
+            "observed_fixed_ticks": 2855,
+            "trail_observations": 3335,
+            "trail_workgroups": 30015
+          },
+          "Fireworks Multi-break — Wispy Smoke Art Candidate": {
+            "checkpoint_capture_bytes": 0,
+            "cpu_encoding_ms": {
+              "max_ms": 1.1279,
+              "median_ms": 0.2727,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.5271,
+              "p99_ms": 0.6337,
+              "samples": 4493
+            },
+            "gpu_simulation_ms": {
+              "max_ms": 2.415616,
+              "median_ms": 0.422912,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 1.004544,
+              "p99_ms": 1.426432,
+              "samples": 4100
+            },
+            "max_fixed_ticks": 3,
+            "observed_fixed_ticks": 4505,
+            "trail_observations": 5383,
+            "trail_workgroups": 32298
+          },
+          "Fireworks Strobe — Wispy Smoke Art Candidate": {
+            "checkpoint_capture_bytes": 0,
+            "cpu_encoding_ms": {
+              "max_ms": 0.7291,
+              "median_ms": 0.207,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.3951,
+              "p99_ms": 0.5351,
+              "samples": 1750
+            },
+            "gpu_simulation_ms": {
+              "max_ms": 1.370112,
+              "median_ms": 0.449536,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.823296,
+              "p99_ms": 1.130496,
+              "samples": 1639
+            },
+            "max_fixed_ticks": 3,
+            "observed_fixed_ticks": 1918,
+            "trail_observations": 2232,
+            "trail_workgroups": 11160
+          }
+        },
+        "scope": "Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshot/capacity scan."
+      },
+      "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+      "seed": 17428930557923820000,
+      "static_renderers": 39,
+      "static_sprites": 27,
+      "static_trails": 12,
+      "tier": "high",
+      "tonemapping": "TonyMcMapface",
+      "wall_playback_seconds": 37.1348798
+    },
+    "log": {
+      "path": "target/fireworks-f8-profile-b-uncached.log",
+      "sha256": "2959C62DD9CE061074E8686ECCB4D58916DDFEBED1F441916B904EA33F308275"
+    },
+    "provenance": {
+      "sources": [
+        {
+          "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+          "sha256": "EF69340AC7C70CE863B7FE5F1F488C5732C01D52F8A02CB851A361FC8C1857BD"
+        },
+        {
+          "path": "apps/aestra-viewer/src/volume_light_images.rs",
+          "sha256": "6C7F9FC24A2BC910211094221C2CCC65A1E2E9FE7AB775FBB4E090466645B09E"
+        },
+        {
+          "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_overflow.rs",
+          "sha256": "32868DA754D2835BB37261050CFB1AA322E2D5223F862DB51D5FF763056E58D9"
+        },
+        {
+          "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_saturation.rs",
+          "sha256": "1721119ACA3E2FD2E06F7ED51C278CAD55CEFEE31D1C28DCCFA1F01508D05267"
+        },
+        {
+          "path": "apps/aestra-viewer/src/volume_light_images/fragment_list_live_costs.rs",
+          "sha256": "3E189B5D11DB06D21F9139022B9F3DF27149BAD616CC70585F90E3B417CE3DDA"
+        },
+        {
+          "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+          "sha256": "7B0943863431881AD1F8C5C2E357ED591FD7C9485D20EB6618FEBADB8BBE8A01"
+        },
+        {
+          "path": "apps/aestra-viewer/src/volume_light_images/smoke_live_costs.rs",
+          "sha256": "7DFD2609C59B599CEEF6D8C85BCC20D7CF5366C264588205F98AD59DD51BE83E"
+        },
+        {
+          "path": "assets/test/effects/fireworks_chrysanthemum.aestra.ron",
+          "sha256": "B4223D30FD5870D3FCF7D48AB857785D2E625C734001156EC6E024DEC9235C43"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crackle_persistent_smoke.aestra.ron",
+          "sha256": "0BA33D317842C3DDC7582B12FAAA72A8DEF330FAFBF400A94512A50455BCBCD0"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron",
+          "sha256": "5AECB28110A3295AD9E010EE001D4B1CF0B38900FBDB9473383ECE0F0CC6D12E"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crackle.aestra.ron",
+          "sha256": "4414A563BBFC7C7A02447AD044EAF7DA7189C6DE24EED4EA88E57C7610C21D63"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crossette_persistent_smoke.aestra.ron",
+          "sha256": "E03E96E5037B7D6ABDFB1CAFB138BA11FB02B4446555A69FA862A151CB0C624B"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron",
+          "sha256": "5ED106ECFED6A58F3AC59ACB7B4F991B5890929F2BCEA00AA64EFDC36ADAFD70"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crossette.aestra.ron",
+          "sha256": "4E9A0E1BAF488865215E84016C031E7992E4530DE957FC49537225E181C68F56"
+        },
+        {
+          "path": "assets/test/effects/fireworks_multi_break_persistent_smoke.aestra.ron",
+          "sha256": "0F9FC062EB024C40173DDED37A53CF4E86ADCA5984954DC4EE2C06A440B4946E"
+        },
+        {
+          "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron",
+          "sha256": "1CA9DE6B0D3FFA093D6479B07952113AA7F5B42A58D993D0141CDAAD2CB5B8AB"
+        },
+        {
+          "path": "assets/test/effects/fireworks_multi_break.aestra.ron",
+          "sha256": "91CD5B6C696F37C988F59E33802EE99AD6C15C3A67D9692055D7F078D0AA7E78"
+        },
+        {
+          "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron",
+          "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5"
+        },
+        {
+          "path": "assets/test/effects/fireworks_particle_smoke_overlap.aestra.ron",
+          "sha256": "60C11B199D1E37EF105EF237A5575CD390C6E07FA53B716F1D13F59DD3C3F532"
+        },
+        {
+          "path": "assets/test/effects/fireworks_peony.aestra.ron",
+          "sha256": "2D1CB90697E9227E2FD8FA03385653CCFCA60927409B9E753692F32B779B0C32"
+        },
+        {
+          "path": "assets/test/effects/fireworks_pistil.aestra.ron",
+          "sha256": "EDED6581E2E7791DABDCDEFD8FCBBD3BC17E30D55E5875AE5AE12E7185EA5D49"
+        },
+        {
+          "path": "assets/test/effects/fireworks_reference_hero.aestra.ron",
+          "sha256": "89C5FDCE6152F0BEB789C16ACF523261F5770257BAA415E8B421BE454B457092"
+        },
+        {
+          "path": "assets/test/effects/fireworks_secondary_volley.aestra.ron",
+          "sha256": "E32D3BC3293AC9B8226499822B1763135E55EDF7530B69C5C0FAAB2D06036838"
+        },
+        {
+          "path": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+          "sha256": "ED38F17F3A103DA58673EF753C550C291BBB6C7BB6C1C3FE5FDD3540B64634E5"
+        },
+        {
+          "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+          "sha256": "FC22EB440F76FC4030A6C67C5B9A71AB45CE5AAC08AA1538976C0F31F9E4979C"
+        },
+        {
+          "path": "assets/test/effects/fireworks_show.aestra.ron",
+          "sha256": "DD2BC77CC19AAA84CFCDCCB24A5C1554B168F5EA664541EA4C28882E09A4C011"
+        },
+        {
+          "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron",
+          "sha256": "1EC41EB51EDBF14CED1631C3DEEE50B1FC4459F1F03B2BA3262FB8D2AF6105B6"
+        },
+        {
+          "path": "assets/test/effects/fireworks_smoke_lighting.aestra.ron",
+          "sha256": "1AA6948E412DF8C7211DE9347449980C650254935983B5831613252EA51D790F"
+        },
+        {
+          "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron",
+          "sha256": "0A32D0AA5DDA578830A7D1359633FB1A33C6F0EADCF59FB92E9611845E0C3E40"
+        },
+        {
+          "path": "assets/test/effects/fireworks_strobe_persistent_smoke.aestra.ron",
+          "sha256": "CB5629E77DDF49ABFC995C425386FEAA3CD73972FA58001BA60B2BF8D3BE9AEF"
+        },
+        {
+          "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron",
+          "sha256": "5AB53A9C477B2987DA245F73A1A448496B08777B3A61932168EFBD78049F1A32"
+        },
+        {
+          "path": "assets/test/effects/fireworks_strobe.aestra.ron",
+          "sha256": "C8CA64F617ABD86EFA1273C991676D58DB732A602D42ABF8092E0EDA7D19CA00"
+        },
+        {
+          "path": "assets/test/effects/fireworks_willow.aestra.ron",
+          "sha256": "D4151B1932ABDED733F2BE7F9A2AB571CF91FBB7FA7E3C857E2FB6A0DD762914"
+        },
+        {
+          "path": "assets/test/materials/fireworks_hero_star.aestra.material.ron",
+          "sha256": "5350E4C64BB017B8D14B947969E1E34EBF0DE2AD504FE80314589C1AC79EA932"
+        },
+        {
+          "path": "assets/test/materials/fireworks_hero_trail.aestra.material.ron",
+          "sha256": "9BEECD239E416DC39F25F6E659EDB9C311B55B45AA0D329EBDEF9175D5C26D24"
+        },
+        {
+          "path": "assets/test/materials/fireworks_lit_smoke.aestra.material.ron",
+          "sha256": "ED47199076350898859F2B046B339CD2EADDE1BD48B9625EB7AFCA169E100E2C"
+        },
+        {
+          "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron",
+          "sha256": "C1E37B06BB5E9DE3109FC87784122A23604A902884037DF5F9E752C432661CC4"
+        },
+        {
+          "path": "assets/test/materials/fireworks_smoke.aestra.material.ron",
+          "sha256": "E1A26E654787835D33AFEFFEC767FB0829F8ACB15A9268B081E341231B424140"
+        },
+        {
+          "path": "assets/test/materials/fireworks_star.aestra.material.ron",
+          "sha256": "950D8B2257BA202B3A5B495C4776B6A608AFF0C85581E34E4B93A699DB504BF9"
+        },
+        {
+          "path": "assets/test/materials/fireworks_strobe_star.aestra.material.ron",
+          "sha256": "BE51C63C89FE9079B07B94787DBC746665B097EFE0E314DEAFF4EFA3E7A81608"
+        },
+        {
+          "path": "assets/test/materials/fireworks_trail.aestra.material.ron",
+          "sha256": "01BA1D32EFE6B032A6949661F9422FFAFA2B40FC06AEC6E1E209BA6B434B3492"
+        },
+        {
+          "path": "assets/test/materials/fireworks_wispy_smoke.aestra.material.ron",
+          "sha256": "642E3704EBC4F37110E00A1146A1641B6CB53C3E37EB451C4CBB0C4EF99E1395"
+        },
+        {
+          "path": "benchmarks/bevy-upgrade/patches-020/overflow_sort.rs",
+          "sha256": "0CB4261291886395051BFB5845180B77C80D62B3378A33AAC8DC156D50F2EECE"
+        },
+        {
+          "path": "benchmarks/bevy-upgrade/patches-020/shader_composition.rs",
+          "sha256": "97F65AA0346109CCD6CF479DAADC61EA38BE24C6A53E88682531E9A2398024B3"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+          "sha256": "6BC7116499755C3A9AD4FE3B57C3363DBF6514CD44965021FABA2759445A95A9"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs",
+          "sha256": "9BAD19218428978DF4421AD040CA891C4566994FEC11693C06E9F30A6E570F0F"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.rs",
+          "sha256": "709755DF6255C5A84663EFFA8AF27528FF6BD8014B5B2DF7F8BABE7D658E33E2"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl",
+          "sha256": "14C603D2F2B6BEC2592A65478A8B3501B2646339ACD704101F6C3A252BB389FF"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.rs",
+          "sha256": "BD6F0AD27A0D0B69693020E816E4D7A666994CB8F31EAA24BD3C1052B3989174"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.wesl",
+          "sha256": "77EF295C7B268F5D1C3337BDE7E01F73129512660E94E0849A1BD7DF4C9E3FCD"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu.rs",
+          "sha256": "9A4DFEE0B1F1B77D7FDD19C05535B0FC3EE46CED4C6A393C0C31690B8CC6EC1D"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/bootstrap.rs",
+          "sha256": "25DC0661A6C90CC4D9731B6551B863E48A89E9BC6972EF1403B7B204C981F14D"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs",
+          "sha256": "E185E1D04273710E52D47346B401BEB5D5E73621EB6E17BE2D424121F8E53F3B"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/pipeline_preparation.rs",
+          "sha256": "996DA1060750AAEF7098137AF4550852572C1C0395D326DE33EB01F362EA4473"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+          "sha256": "508637BD35061511932F2B8A2EA137436EDA6A1E127511A9230FD2EB56C932AA"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/playback_diagnostics.rs",
+          "sha256": "D57560B7EC54830629133996B1FA170D056A3F41977632D8C440BCFBC977A8D6"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation.rs",
+          "sha256": "B6C253E6D2F21768CFD483022AE9E3E811BEE26D689DB5EF7C69340803EF5E4B"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+          "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+          "sha256": "1A96DD860178958FEBA5B712FE22C4B183DF901D61DD42436E60BBA5009ED2F0"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_graph.rs",
+          "sha256": "C22F0367F20A3EB6924F9EAB2296B95CE30162952193A088A4E0C07177736C1B"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/pipeline_preparation.rs",
+          "sha256": "4D6F06DA418C2399CC60BCC3673CF46EA81F3490FFE8C167AE81056DF9BE2D61"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/presented_effect.rs",
+          "sha256": "3963486E0ADDE58C197EC8FE0107043AE10ADC0FDB869F962CE27021FFD0A1EE"
+        },
+        {
+          "path": "bevy/aestra-bevy/Cargo.toml",
+          "sha256": "146082B7A8469282BB34049352022406DFEC271C5EFCB848393D031D9CD6C2DA"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks.rs",
+          "sha256": "2F77FC9E298A56B071DEAAA76691E3C9C5EFC687DF09A22B191D374F9FA73E66"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/audio.rs",
+          "sha256": "93AA2FCD7213BEDCE4A5438482FE8DCB9CD95F5B103EAB6D0D010935B7C45813"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/oit_tests.rs",
+          "sha256": "B7E31D03E1D8848931DEF06437345CEED4EDDD53E53E4F115AF02D34D9B1B375"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/oit.rs",
+          "sha256": "F838F0B9AE01E92DD8C68B5C40692F6E547F5AFB6DDAE76CE1A8A911529141EE"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/paths.rs",
+          "sha256": "A89CA2C5BED30EAD922CD29DB513A47AE36CAC0220F5B4EF619D092B6FB0F823"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/project.rs",
+          "sha256": "A90BE1682926EE4CBDF7B33A97BF8EC473F5FC43502705FEB0B7587D2BB7CC03"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/readiness.rs",
+          "sha256": "EA53B31FF266C5E28ADCC2D44A0512CDB53A5CAA0F152A5F22D4EAB34C122BB4"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/report_profile.rs",
+          "sha256": "EA2F3EE6C34F35F4A4D5A668A380F1B573003FD65EE89E315FCA3932A3F7710E"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/report.rs",
+          "sha256": "DD46BB1B5CDACEE9575F8FD196483FDC57E9AD6EDB35415E8AE5D0A18E2CC00D"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/lib.rs",
+          "sha256": "C0875A3E2423468E9DE0F8AA2603032FDCB49F31FF854DEC7D9314AA17144345"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/project.rs",
+          "sha256": "678017F086779C61274AC4F26A6E3DC67693CDC38393FB3ADC4166026052F0B8"
+        },
+        {
+          "path": "Cargo.lock",
+          "sha256": "7C23AE9878199DE28D2A800DAEA196BDA44A24B759638606F1C3EB732BD75C4F"
+        },
+        {
+          "path": "Cargo.toml",
+          "sha256": "9ED441D49D2EAD9E9FC45687216BE62A1F5C04295F37CB48C4D5508026071DF9"
+        }
+      ],
+      "binary": {
+        "sha256": "03B8625770240DFBE5D1E92D002DA1B3C35B99995A574FC8CE30FD8A8A7EBE5A",
+        "bytes": 125632000
+      }
+    }
+  },
+  "cached": {
+    "sources": [
+      {
+        "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+        "sha256": "EF69340AC7C70CE863B7FE5F1F488C5732C01D52F8A02CB851A361FC8C1857BD"
+      },
+      {
+        "path": "apps/aestra-viewer/src/volume_light_images.rs",
+        "sha256": "6C7F9FC24A2BC910211094221C2CCC65A1E2E9FE7AB775FBB4E090466645B09E"
+      },
+      {
+        "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_overflow.rs",
+        "sha256": "32868DA754D2835BB37261050CFB1AA322E2D5223F862DB51D5FF763056E58D9"
+      },
+      {
+        "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_saturation.rs",
+        "sha256": "1721119ACA3E2FD2E06F7ED51C278CAD55CEFEE31D1C28DCCFA1F01508D05267"
+      },
+      {
+        "path": "apps/aestra-viewer/src/volume_light_images/fragment_list_live_costs.rs",
+        "sha256": "3E189B5D11DB06D21F9139022B9F3DF27149BAD616CC70585F90E3B417CE3DDA"
+      },
+      {
+        "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+        "sha256": "7B0943863431881AD1F8C5C2E357ED591FD7C9485D20EB6618FEBADB8BBE8A01"
+      },
+      {
+        "path": "apps/aestra-viewer/src/volume_light_images/smoke_live_costs.rs",
+        "sha256": "7DFD2609C59B599CEEF6D8C85BCC20D7CF5366C264588205F98AD59DD51BE83E"
+      },
+      {
+        "path": "assets/test/effects/fireworks_chrysanthemum.aestra.ron",
+        "sha256": "B4223D30FD5870D3FCF7D48AB857785D2E625C734001156EC6E024DEC9235C43"
+      },
+      {
+        "path": "assets/test/effects/fireworks_crackle_persistent_smoke.aestra.ron",
+        "sha256": "0BA33D317842C3DDC7582B12FAAA72A8DEF330FAFBF400A94512A50455BCBCD0"
+      },
+      {
+        "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron",
+        "sha256": "5AECB28110A3295AD9E010EE001D4B1CF0B38900FBDB9473383ECE0F0CC6D12E"
+      },
+      {
+        "path": "assets/test/effects/fireworks_crackle.aestra.ron",
+        "sha256": "4414A563BBFC7C7A02447AD044EAF7DA7189C6DE24EED4EA88E57C7610C21D63"
+      },
+      {
+        "path": "assets/test/effects/fireworks_crossette_persistent_smoke.aestra.ron",
+        "sha256": "E03E96E5037B7D6ABDFB1CAFB138BA11FB02B4446555A69FA862A151CB0C624B"
+      },
+      {
+        "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron",
+        "sha256": "5ED106ECFED6A58F3AC59ACB7B4F991B5890929F2BCEA00AA64EFDC36ADAFD70"
+      },
+      {
+        "path": "assets/test/effects/fireworks_crossette.aestra.ron",
+        "sha256": "4E9A0E1BAF488865215E84016C031E7992E4530DE957FC49537225E181C68F56"
+      },
+      {
+        "path": "assets/test/effects/fireworks_multi_break_persistent_smoke.aestra.ron",
+        "sha256": "0F9FC062EB024C40173DDED37A53CF4E86ADCA5984954DC4EE2C06A440B4946E"
+      },
+      {
+        "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron",
+        "sha256": "1CA9DE6B0D3FFA093D6479B07952113AA7F5B42A58D993D0141CDAAD2CB5B8AB"
+      },
+      {
+        "path": "assets/test/effects/fireworks_multi_break.aestra.ron",
+        "sha256": "91CD5B6C696F37C988F59E33802EE99AD6C15C3A67D9692055D7F078D0AA7E78"
+      },
+      {
+        "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron",
+        "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5"
+      },
+      {
+        "path": "assets/test/effects/fireworks_particle_smoke_overlap.aestra.ron",
+        "sha256": "60C11B199D1E37EF105EF237A5575CD390C6E07FA53B716F1D13F59DD3C3F532"
+      },
+      {
+        "path": "assets/test/effects/fireworks_peony.aestra.ron",
+        "sha256": "2D1CB90697E9227E2FD8FA03385653CCFCA60927409B9E753692F32B779B0C32"
+      },
+      {
+        "path": "assets/test/effects/fireworks_pistil.aestra.ron",
+        "sha256": "EDED6581E2E7791DABDCDEFD8FCBBD3BC17E30D55E5875AE5AE12E7185EA5D49"
+      },
+      {
+        "path": "assets/test/effects/fireworks_reference_hero.aestra.ron",
+        "sha256": "89C5FDCE6152F0BEB789C16ACF523261F5770257BAA415E8B421BE454B457092"
+      },
+      {
+        "path": "assets/test/effects/fireworks_secondary_volley.aestra.ron",
+        "sha256": "E32D3BC3293AC9B8226499822B1763135E55EDF7530B69C5C0FAAB2D06036838"
+      },
+      {
+        "path": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+        "sha256": "ED38F17F3A103DA58673EF753C550C291BBB6C7BB6C1C3FE5FDD3540B64634E5"
+      },
+      {
+        "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+        "sha256": "FC22EB440F76FC4030A6C67C5B9A71AB45CE5AAC08AA1538976C0F31F9E4979C"
+      },
+      {
+        "path": "assets/test/effects/fireworks_show.aestra.ron",
+        "sha256": "DD2BC77CC19AAA84CFCDCCB24A5C1554B168F5EA664541EA4C28882E09A4C011"
+      },
+      {
+        "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron",
+        "sha256": "1EC41EB51EDBF14CED1631C3DEEE50B1FC4459F1F03B2BA3262FB8D2AF6105B6"
+      },
+      {
+        "path": "assets/test/effects/fireworks_smoke_lighting.aestra.ron",
+        "sha256": "1AA6948E412DF8C7211DE9347449980C650254935983B5831613252EA51D790F"
+      },
+      {
+        "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron",
+        "sha256": "0A32D0AA5DDA578830A7D1359633FB1A33C6F0EADCF59FB92E9611845E0C3E40"
+      },
+      {
+        "path": "assets/test/effects/fireworks_strobe_persistent_smoke.aestra.ron",
+        "sha256": "CB5629E77DDF49ABFC995C425386FEAA3CD73972FA58001BA60B2BF8D3BE9AEF"
+      },
+      {
+        "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron",
+        "sha256": "5AB53A9C477B2987DA245F73A1A448496B08777B3A61932168EFBD78049F1A32"
+      },
+      {
+        "path": "assets/test/effects/fireworks_strobe.aestra.ron",
+        "sha256": "C8CA64F617ABD86EFA1273C991676D58DB732A602D42ABF8092E0EDA7D19CA00"
+      },
+      {
+        "path": "assets/test/effects/fireworks_willow.aestra.ron",
+        "sha256": "D4151B1932ABDED733F2BE7F9A2AB571CF91FBB7FA7E3C857E2FB6A0DD762914"
+      },
+      {
+        "path": "assets/test/materials/fireworks_hero_star.aestra.material.ron",
+        "sha256": "5350E4C64BB017B8D14B947969E1E34EBF0DE2AD504FE80314589C1AC79EA932"
+      },
+      {
+        "path": "assets/test/materials/fireworks_hero_trail.aestra.material.ron",
+        "sha256": "9BEECD239E416DC39F25F6E659EDB9C311B55B45AA0D329EBDEF9175D5C26D24"
+      },
+      {
+        "path": "assets/test/materials/fireworks_lit_smoke.aestra.material.ron",
+        "sha256": "ED47199076350898859F2B046B339CD2EADDE1BD48B9625EB7AFCA169E100E2C"
+      },
+      {
+        "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron",
+        "sha256": "C1E37B06BB5E9DE3109FC87784122A23604A902884037DF5F9E752C432661CC4"
+      },
+      {
+        "path": "assets/test/materials/fireworks_smoke.aestra.material.ron",
+        "sha256": "E1A26E654787835D33AFEFFEC767FB0829F8ACB15A9268B081E341231B424140"
+      },
+      {
+        "path": "assets/test/materials/fireworks_star.aestra.material.ron",
+        "sha256": "950D8B2257BA202B3A5B495C4776B6A608AFF0C85581E34E4B93A699DB504BF9"
+      },
+      {
+        "path": "assets/test/materials/fireworks_strobe_star.aestra.material.ron",
+        "sha256": "BE51C63C89FE9079B07B94787DBC746665B097EFE0E314DEAFF4EFA3E7A81608"
+      },
+      {
+        "path": "assets/test/materials/fireworks_trail.aestra.material.ron",
+        "sha256": "01BA1D32EFE6B032A6949661F9422FFAFA2B40FC06AEC6E1E209BA6B434B3492"
+      },
+      {
+        "path": "assets/test/materials/fireworks_wispy_smoke.aestra.material.ron",
+        "sha256": "642E3704EBC4F37110E00A1146A1641B6CB53C3E37EB451C4CBB0C4EF99E1395"
+      },
+      {
+        "path": "benchmarks/bevy-upgrade/patches-020/overflow_sort.rs",
+        "sha256": "0CB4261291886395051BFB5845180B77C80D62B3378A33AAC8DC156D50F2EECE"
+      },
+      {
+        "path": "benchmarks/bevy-upgrade/patches-020/shader_composition.rs",
+        "sha256": "97F65AA0346109CCD6CF479DAADC61EA38BE24C6A53E88682531E9A2398024B3"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+        "sha256": "6BC7116499755C3A9AD4FE3B57C3363DBF6514CD44965021FABA2759445A95A9"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs",
+        "sha256": "9BAD19218428978DF4421AD040CA891C4566994FEC11693C06E9F30A6E570F0F"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.rs",
+        "sha256": "709755DF6255C5A84663EFFA8AF27528FF6BD8014B5B2DF7F8BABE7D658E33E2"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl",
+        "sha256": "14C603D2F2B6BEC2592A65478A8B3501B2646339ACD704101F6C3A252BB389FF"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.rs",
+        "sha256": "BD6F0AD27A0D0B69693020E816E4D7A666994CB8F31EAA24BD3C1052B3989174"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.wesl",
+        "sha256": "77EF295C7B268F5D1C3337BDE7E01F73129512660E94E0849A1BD7DF4C9E3FCD"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu.rs",
+        "sha256": "9A4DFEE0B1F1B77D7FDD19C05535B0FC3EE46CED4C6A393C0C31690B8CC6EC1D"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/bootstrap.rs",
+        "sha256": "25DC0661A6C90CC4D9731B6551B863E48A89E9BC6972EF1403B7B204C981F14D"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs",
+        "sha256": "E185E1D04273710E52D47346B401BEB5D5E73621EB6E17BE2D424121F8E53F3B"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/pipeline_preparation.rs",
+        "sha256": "996DA1060750AAEF7098137AF4550852572C1C0395D326DE33EB01F362EA4473"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+        "sha256": "508637BD35061511932F2B8A2EA137436EDA6A1E127511A9230FD2EB56C932AA"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/playback_diagnostics.rs",
+        "sha256": "D57560B7EC54830629133996B1FA170D056A3F41977632D8C440BCFBC977A8D6"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/preparation.rs",
+        "sha256": "B6C253E6D2F21768CFD483022AE9E3E811BEE26D689DB5EF7C69340803EF5E4B"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+        "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+        "sha256": "1A96DD860178958FEBA5B712FE22C4B183DF901D61DD42436E60BBA5009ED2F0"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/simulation_graph.rs",
+        "sha256": "C22F0367F20A3EB6924F9EAB2296B95CE30162952193A088A4E0C07177736C1B"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/tests/pipeline_preparation.rs",
+        "sha256": "4D6F06DA418C2399CC60BCC3673CF46EA81F3490FFE8C167AE81056DF9BE2D61"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/presented_effect.rs",
+        "sha256": "C5CC03D0C07D885AA6B886E635D2ADF0C2CF0358339428E862AF946BC69A4559"
+      },
+      {
+        "path": "bevy/aestra-bevy/Cargo.toml",
+        "sha256": "146082B7A8469282BB34049352022406DFEC271C5EFCB848393D031D9CD6C2DA"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks.rs",
+        "sha256": "2F77FC9E298A56B071DEAAA76691E3C9C5EFC687DF09A22B191D374F9FA73E66"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks/audio.rs",
+        "sha256": "93AA2FCD7213BEDCE4A5438482FE8DCB9CD95F5B103EAB6D0D010935B7C45813"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks/oit_tests.rs",
+        "sha256": "B7E31D03E1D8848931DEF06437345CEED4EDDD53E53E4F115AF02D34D9B1B375"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks/oit.rs",
+        "sha256": "F838F0B9AE01E92DD8C68B5C40692F6E547F5AFB6DDAE76CE1A8A911529141EE"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks/paths.rs",
+        "sha256": "A89CA2C5BED30EAD922CD29DB513A47AE36CAC0220F5B4EF619D092B6FB0F823"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks/project.rs",
+        "sha256": "A90BE1682926EE4CBDF7B33A97BF8EC473F5FC43502705FEB0B7587D2BB7CC03"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks/readiness.rs",
+        "sha256": "EA53B31FF266C5E28ADCC2D44A0512CDB53A5CAA0F152A5F22D4EAB34C122BB4"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks/report_profile.rs",
+        "sha256": "E39796EA0175A7F0D13988C590D92D32608B7D263DCFDF53BCCFE27132FE107D"
+      },
+      {
+        "path": "bevy/aestra-bevy/examples/fireworks/report.rs",
+        "sha256": "DD46BB1B5CDACEE9575F8FD196483FDC57E9AD6EDB35415E8AE5D0A18E2CC00D"
+      },
+      {
+        "path": "bevy/aestra-bevy/src/lib.rs",
+        "sha256": "C0875A3E2423468E9DE0F8AA2603032FDCB49F31FF854DEC7D9314AA17144345"
+      },
+      {
+        "path": "bevy/aestra-bevy/src/project.rs",
+        "sha256": "6BA860C6E64732CFC168DEF49B2B1D59D527A76F4669B264D70FCA31CDC9C002"
+      },
+      {
+        "path": "Cargo.lock",
+        "sha256": "7C23AE9878199DE28D2A800DAEA196BDA44A24B759638606F1C3EB732BD75C4F"
+      },
+      {
+        "path": "Cargo.toml",
+        "sha256": "9ED441D49D2EAD9E9FC45687216BE62A1F5C04295F37CB48C4D5508026071DF9"
+      }
+    ],
+    "runs": [
+      {
+        "path": "target/fireworks-f8/profile-host-2026-10-26-c/cached-persistent-high-oit.json",
+        "sha256": "0D7725091BE3F8D7C0A7BE4E22615C0BC92CF895425CC772A2DF5E87C12A6EE5",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.98520540000005,
+          "bevy_real_seconds": 36.98520540000005,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_persistent_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 13420,
+            "frames": 2176,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.016667604446411133,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Crossette — Persistent Smoke Candidate",
+              "encoded_seconds": 3.299999952316284,
+              "requested_seconds": 3.3166675567626953
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 57.8127,
+            "median_ms": 16.613200000000003,
+            "over_16_67ms": 1010,
+            "over_20ms": 377,
+            "over_33_33ms": 22,
+            "p95_ms": 27.1939,
+            "p99_ms": 33.3223,
+            "samples": 2165
+          },
+          "lane": "host-pacing-no-scans-no-screenshots",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 1872,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1351088
+        }
+      },
+      {
+        "path": "target/fireworks-f8/profile-host-2026-10-26-c/cached-wispy-high-oit-profile.json",
+        "sha256": "336CB9D039EE0E4E53C5602AF9B14131B19AFDC505E38B6F0B1E487D99928A58",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.985142600000096,
+          "bevy_real_seconds": 36.985142600000096,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 12331,
+            "frames": 2086,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.05000114440917969,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "encoded_seconds": 17.516666412353516,
+              "requested_seconds": 17.566667556762695
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 65.9856,
+            "median_ms": 16.647599999999997,
+            "over_16_67ms": 1022,
+            "over_20ms": 484,
+            "over_33_33ms": 45,
+            "p95_ms": 30.8837,
+            "p99_ms": 35.395500000000006,
+            "samples": 2075
+          },
+          "lane": "profiling-timestamps-no-images",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 2126,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "profile": {
+            "activations": [
+              {
+                "cpu_clip_construction_ms": 0.0145,
+                "cpu_preparation_ms": 0.9452,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 0.01666666753590107
+              },
+              {
+                "cpu_clip_construction_ms": 0.0132,
+                "cpu_preparation_ms": 0.1415,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 2.299999952316284
+              },
+              {
+                "cpu_clip_construction_ms": 0.007700000000000001,
+                "cpu_preparation_ms": 0.05,
+                "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+                "root_seconds": 4.599999904632568
+              },
+              {
+                "cpu_clip_construction_ms": 0.0159,
+                "cpu_preparation_ms": 0.2615,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 4.599999904632568
+              },
+              {
+                "cpu_clip_construction_ms": 0.0048,
+                "cpu_preparation_ms": 0.9501,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_clip_construction_ms": 0.0053,
+                "cpu_preparation_ms": 0.8575,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_clip_construction_ms": 0.0123,
+                "cpu_preparation_ms": 0.8029,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_clip_construction_ms": 0.0063,
+                "cpu_preparation_ms": 0.1646,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 12
+              },
+              {
+                "cpu_clip_construction_ms": 0.0172,
+                "cpu_preparation_ms": 0.3009,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 12
+              },
+              {
+                "cpu_clip_construction_ms": 0.0066,
+                "cpu_preparation_ms": 0.0594,
+                "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+                "root_seconds": 16.03333282470703
+              },
+              {
+                "cpu_clip_construction_ms": 0.0073,
+                "cpu_preparation_ms": 0.1651,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 16.03333282470703
+              },
+              {
+                "cpu_clip_construction_ms": 0.0117,
+                "cpu_preparation_ms": 0.9384,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 16.03333282470703
+              },
+              {
+                "cpu_clip_construction_ms": 0.0198,
+                "cpu_preparation_ms": 0.2582,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 17.016666412353516
+              }
+            ],
+            "cpu_playback_scope_ms": {
+              "max_ms": 0.231,
+              "median_ms": 0.09670000000000001,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.1396,
+              "p99_ms": 0.1718,
+              "samples": 2085
+            },
+            "cpu_simulation_encoding_scope_ms": {
+              "max_ms": 9.8841,
+              "median_ms": 1.343,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 5.3059,
+              "p99_ms": 6.1682,
+              "samples": 2086
+            },
+            "gpu_phases_ms": {
+              "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+                "max_ms": 0.904192,
+                "median_ms": 0.256,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.441344,
+                "p99_ms": 0.543744,
+                "samples": 1859
+              },
+              "render/aestra::gpu::simulate/aestra::gpu::trail_history/elapsed_gpu": {
+                "max_ms": 1.015808,
+                "median_ms": 0.0256,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.154624,
+                "p99_ms": 0.29696,
+                "samples": 1859
+              },
+              "render/aestra::gpu::simulate/elapsed_gpu": {
+                "max_ms": 18.089984,
+                "median_ms": 2.601984,
+                "over_16_67ms": 1,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 8.368128,
+                "p99_ms": 13.008896,
+                "samples": 1985
+              },
+              "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+                "max_ms": 1.09056,
+                "median_ms": 0.249856,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.473088,
+                "p99_ms": 0.669696,
+                "samples": 1985
+              },
+              "render/aestra_oit_overflow_sort/elapsed_gpu": {
+                "max_ms": 0.841728,
+                "median_ms": 0.03072,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.13312,
+                "p99_ms": 0.340992,
+                "samples": 1985
+              },
+              "render/auxiliary_views/elapsed_gpu": {
+                "max_ms": 0.470016,
+                "median_ms": 0.002048,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.00512,
+                "p99_ms": 0.006144,
+                "samples": 1985
+              },
+              "render/bin_unpacking/elapsed_gpu": {
+                "max_ms": 0.2816,
+                "median_ms": 0.011264,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.018432,
+                "p99_ms": 0.019456,
+                "samples": 1985
+              },
+              "render/bloom/elapsed_gpu": {
+                "max_ms": 0.827392,
+                "median_ms": 0.099328,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.25088,
+                "p99_ms": 0.349184,
+                "samples": 1985
+              },
+              "render/clustering/elapsed_gpu": {
+                "max_ms": 0.602112,
+                "median_ms": 0.075776,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.149504,
+                "p99_ms": 0.183296,
+                "samples": 1985
+              },
+              "render/early prepass/elapsed_gpu": {
+                "max_ms": 0.009216,
+                "median_ms": 0.002048,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.00512,
+                "p99_ms": 0.006144,
+                "samples": 1985
+              },
+              "render/early_mesh_preprocessing/elapsed_gpu": {
+                "max_ms": 0.349184,
+                "median_ms": 0.012288,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.021504,
+                "p99_ms": 0.024576,
+                "samples": 1985
+              },
+              "render/main_opaque_pass_3d/elapsed_gpu": {
+                "max_ms": 0.082944,
+                "median_ms": 0.024576,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.067584,
+                "p99_ms": 0.075776,
+                "samples": 1985
+              },
+              "render/main_transparent_pass_3d/elapsed_gpu": {
+                "max_ms": 0.575488,
+                "median_ms": 0.047104,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.129024,
+                "p99_ms": 0.248832,
+                "samples": 1859
+              },
+              "render/oit_resolve/elapsed_gpu": {
+                "max_ms": 1.947648,
+                "median_ms": 0.260096,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 1.414144,
+                "p99_ms": 1.779712,
+                "samples": 1985
+              },
+              "render/per_view_shadow_pass/elapsed_gpu": {
+                "max_ms": 0.008192,
+                "median_ms": 0.001024,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.002048,
+                "p99_ms": 0.003072,
+                "samples": 1985
+              },
+              "render/tonemapping/elapsed_gpu": {
+                "max_ms": 0.18432,
+                "median_ms": 0.017408,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.043008,
+                "p99_ms": 0.059392,
+                "samples": 1985
+              },
+              "render/ui/elapsed_gpu": {
+                "max_ms": 0.029696,
+                "median_ms": 0.00512,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0256,
+                "p99_ms": 0.027648,
+                "samples": 1985
+              },
+              "render/uniform_allocation/elapsed_gpu": {
+                "max_ms": 0.202752,
+                "median_ms": 0.011264,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.02048,
+                "p99_ms": 0.024576,
+                "samples": 1985
+              },
+              "render/upscaling/elapsed_gpu": {
+                "max_ms": 0.242688,
+                "median_ms": 0.013312,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.047104,
+                "p99_ms": 0.050176,
+                "samples": 1985
+              }
+            },
+            "owners": {
+              "Fireworks Crackle — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 0.8852,
+                  "median_ms": 0.2906,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.5913,
+                  "p99_ms": 0.733,
+                  "samples": 2839
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 2.015232,
+                  "median_ms": 0.439296,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 1.212416,
+                  "p99_ms": 1.579008,
+                  "samples": 2667
+                },
+                "max_fixed_ticks": 3,
+                "observed_fixed_ticks": 2878,
+                "trail_observations": 3383,
+                "trail_workgroups": 23681
+              },
+              "Fireworks Crossette — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 1.4184,
+                  "median_ms": 0.4045,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.813,
+                  "p99_ms": 0.9549,
+                  "samples": 2828
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 2.333696,
+                  "median_ms": 0.533504,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 1.327104,
+                  "p99_ms": 1.952768,
+                  "samples": 2653
+                },
+                "max_fixed_ticks": 3,
+                "observed_fixed_ticks": 2866,
+                "trail_observations": 3350,
+                "trail_workgroups": 30150
+              },
+              "Fireworks Multi-break — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 1.0993,
+                  "median_ms": 0.2563,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.513,
+                  "p99_ms": 0.622,
+                  "samples": 4768
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 2.264064,
+                  "median_ms": 0.393216,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 1.041408,
+                  "p99_ms": 1.610752,
+                  "samples": 4376
+                },
+                "max_fixed_ticks": 4,
+                "observed_fixed_ticks": 4573,
+                "trail_observations": 5452,
+                "trail_workgroups": 32712
+              },
+              "Fireworks Strobe — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 0.6327,
+                  "median_ms": 0.2005,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.3963,
+                  "p99_ms": 0.4949,
+                  "samples": 1870
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 1.360896,
+                  "median_ms": 0.400384,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.845824,
+                  "p99_ms": 1.1008,
+                  "samples": 1757
+                },
+                "max_fixed_ticks": 3,
+                "observed_fixed_ticks": 1926,
+                "trail_observations": 2251,
+                "trail_workgroups": 11255
+              }
+            },
+            "scope": "Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshot/capacity scan."
+          },
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1345774
+        }
+      },
+      {
+        "path": "target/fireworks-f8/profile-host-2026-10-26-c/cached-wispy-high-oit-r1.json",
+        "sha256": "3F2BE578ABCEF142D0A2079F3CC5AB6EEE0B8CAF34573B7B9D07353BEFA680BB",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.9854581,
+          "bevy_real_seconds": 36.9854581,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 12365,
+            "frames": 2088,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.10000085830688477,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+              "encoded_seconds": 5.7166666984558105,
+              "requested_seconds": 5.816667556762695
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 78.4344,
+            "median_ms": 16.6663,
+            "over_16_67ms": 1038,
+            "over_20ms": 511,
+            "over_33_33ms": 63,
+            "p95_ms": 31.214,
+            "p99_ms": 36.077999999999996,
+            "samples": 2077
+          },
+          "lane": "host-pacing-no-scans-no-screenshots",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 2126,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1352364
+        }
+      },
+      {
+        "path": "target/fireworks-f8/profile-host-2026-10-26-c/cached-wispy-high-oit-r2.json",
+        "sha256": "4DBBEB3ECBB3BAAFF4093EEBE6CD80DCE43ED93A3612AE553CAC666DE2CC6756",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.984638100000055,
+          "bevy_real_seconds": 36.984638100000055,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 12125,
+            "frames": 2064,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.033333778381347656,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+              "encoded_seconds": 8.433333396911621,
+              "requested_seconds": 8.466667175292969
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 60.1355,
+            "median_ms": 16.669,
+            "over_16_67ms": 1028,
+            "over_20ms": 515,
+            "over_33_33ms": 54,
+            "p95_ms": 31.679899999999996,
+            "p99_ms": 35.561299999999996,
+            "samples": 2053
+          },
+          "lane": "host-pacing-no-scans-no-screenshots",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 2126,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1344711
+        }
+      }
+    ],
+    "logs": [
+      {
+        "path": "target/fireworks-f8-profile-c-cached-persistent-high-oit.log",
+        "sha256": "0BBEF8FC50DA52ABDF85E7C20F4B432609109944E7A9B1B9F4C008EDB15F9A12"
+      },
+      {
+        "path": "target/fireworks-f8-profile-c-cached-wispy-high-oit-profile.log",
+        "sha256": "E324337E07A5BF3403BF3EC12BE2B635E3867CC115F5F814B61C77E9E7C09BC2"
+      },
+      {
+        "path": "target/fireworks-f8-profile-c-cached-wispy-high-oit-r1.log",
+        "sha256": "207CB042C9E7098C9E0E5BE4880E00F58D3F89973EEC78FF983D4021BED1A71F"
+      },
+      {
+        "path": "target/fireworks-f8-profile-c-cached-wispy-high-oit-r2.log",
+        "sha256": "FECA938B92BB8C382E282F4743CE849119D92FD80473A0CCFDAE28BF9B3B204F"
+      }
+    ],
+    "binary": {
+      "path": "target/debug/examples/fireworks.exe",
+      "sha256": "A1BC1874A541974F5944C7F98D84F6C85E6246F07F2383CB744565B311D73D21",
+      "bytes": 125673472
+    }
+  },
+  "preliminary": {
+    "runs": [
+      {
+        "path": "target/fireworks-f8/profile-host-2026-10-26-a/wispy-high-oit-profile-0.json",
+        "sha256": "D6694B43CD07B7BF4C0BAB5185AEA3A3125A2EC088B9533147FE10486D292675",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.9850095,
+          "bevy_real_seconds": 36.9850095,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 11597,
+            "frames": 2015,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.15000152587890625,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "encoded_seconds": 17.66666603088379,
+              "requested_seconds": 17.816667556762695
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 100.4904,
+            "median_ms": 16.6907,
+            "over_16_67ms": 1027,
+            "over_20ms": 539,
+            "over_33_33ms": 83,
+            "p95_ms": 32.9871,
+            "p99_ms": 37.4484,
+            "samples": 2010
+          },
+          "lane": "host-pacing-no-scans-no-screenshots",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 2125,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1347842
+        }
+      },
+      {
+        "path": "target/fireworks-f8/profile-host-2026-10-26-a/wispy-high-oit-profile-1.json",
+        "sha256": "67894B22D6F1978F72457F79C2C60DC771CAC87671540C40FF7752D58614A8DE",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.984470699999925,
+          "bevy_real_seconds": 36.984470699999925,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 11475,
+            "frames": 2003,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.16666793823242188,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+              "encoded_seconds": 17.266666412353516,
+              "requested_seconds": 17.433334350585938
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 109.9145,
+            "median_ms": 16.6714,
+            "over_16_67ms": 1002,
+            "over_20ms": 535,
+            "over_33_33ms": 106,
+            "p95_ms": 33.6961,
+            "p99_ms": 37.5683,
+            "samples": 1998
+          },
+          "lane": "profiling-timestamps-no-images",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 2125,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "profile": {
+            "activations": [
+              {
+                "cpu_preparation_ms": 0.9581,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 0
+              },
+              {
+                "cpu_preparation_ms": 0.1344,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 2.299999952316284
+              },
+              {
+                "cpu_preparation_ms": 0.0489,
+                "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+                "root_seconds": 4.599999904632568
+              },
+              {
+                "cpu_preparation_ms": 0.2988,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 4.599999904632568
+              },
+              {
+                "cpu_preparation_ms": 1.0076,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_preparation_ms": 0.8766,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_preparation_ms": 0.8429,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_preparation_ms": 0.1237,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 12.016666412353516
+              },
+              {
+                "cpu_preparation_ms": 0.3099,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 12.016666412353516
+              },
+              {
+                "cpu_preparation_ms": 0.0489,
+                "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+                "root_seconds": 16.016666412353516
+              },
+              {
+                "cpu_preparation_ms": 0.1104,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 16.016666412353516
+              },
+              {
+                "cpu_preparation_ms": 0.855,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 16.016666412353516
+              },
+              {
+                "cpu_preparation_ms": 0.2822,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 17
+              }
+            ],
+            "cpu_playback_scope_ms": {
+              "max_ms": 76.2354,
+              "median_ms": 0.0986,
+              "over_16_67ms": 6,
+              "over_20ms": 6,
+              "over_33_33ms": 4,
+              "p95_ms": 0.1499,
+              "p99_ms": 0.1877,
+              "samples": 2008
+            },
+            "cpu_simulation_encoding_scope_ms": {
+              "max_ms": 12.3648,
+              "median_ms": 1.3907,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 5.7589,
+              "p99_ms": 6.3786,
+              "samples": 2003
+            },
+            "gpu_phases_ms": {
+              "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+                "max_ms": 1.047552,
+                "median_ms": 0.24064,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.437248,
+                "p99_ms": 0.595968,
+                "samples": 1779
+              },
+              "render/aestra::gpu::simulate/aestra::gpu::trail_history/elapsed_gpu": {
+                "max_ms": 0.44544,
+                "median_ms": 0.027648,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.15872,
+                "p99_ms": 0.26624,
+                "samples": 1779
+              },
+              "render/aestra::gpu::simulate/elapsed_gpu": {
+                "max_ms": 24.547328,
+                "median_ms": 2.538496,
+                "over_16_67ms": 1,
+                "over_20ms": 1,
+                "over_33_33ms": 0,
+                "p95_ms": 9.230336,
+                "p99_ms": 12.106752,
+                "samples": 1903
+              },
+              "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+                "max_ms": 1.240064,
+                "median_ms": 0.247808,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.477184,
+                "p99_ms": 0.65024,
+                "samples": 1903
+              },
+              "render/aestra_oit_overflow_sort/elapsed_gpu": {
+                "max_ms": 0.600064,
+                "median_ms": 0.021504,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.130048,
+                "p99_ms": 0.326656,
+                "samples": 1903
+              },
+              "render/auxiliary_views/elapsed_gpu": {
+                "max_ms": 0.022528,
+                "median_ms": 0.002048,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.00512,
+                "p99_ms": 0.013312,
+                "samples": 1903
+              },
+              "render/bin_unpacking/elapsed_gpu": {
+                "max_ms": 0.2048,
+                "median_ms": 0.011264,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.018432,
+                "p99_ms": 0.02048,
+                "samples": 1903
+              },
+              "render/bloom/elapsed_gpu": {
+                "max_ms": 0.883712,
+                "median_ms": 0.089088,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.241664,
+                "p99_ms": 0.325632,
+                "samples": 1903
+              },
+              "render/clustering/elapsed_gpu": {
+                "max_ms": 0.556032,
+                "median_ms": 0.075776,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.150528,
+                "p99_ms": 0.190464,
+                "samples": 1903
+              },
+              "render/early prepass/elapsed_gpu": {
+                "max_ms": 0.008192,
+                "median_ms": 0.002048,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.006144,
+                "p99_ms": 0.007168,
+                "samples": 1903
+              },
+              "render/early_mesh_preprocessing/elapsed_gpu": {
+                "max_ms": 0.053248,
+                "median_ms": 0.012288,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.022528,
+                "p99_ms": 0.0256,
+                "samples": 1903
+              },
+              "render/main_opaque_pass_3d/elapsed_gpu": {
+                "max_ms": 0.075776,
+                "median_ms": 0.022528,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.05632,
+                "p99_ms": 0.067584,
+                "samples": 1903
+              },
+              "render/main_transparent_pass_3d/elapsed_gpu": {
+                "max_ms": 0.550912,
+                "median_ms": 0.048128,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.134144,
+                "p99_ms": 0.257024,
+                "samples": 1779
+              },
+              "render/oit_resolve/elapsed_gpu": {
+                "max_ms": 4.626432,
+                "median_ms": 0.254976,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 1.398784,
+                "p99_ms": 1.780736,
+                "samples": 1903
+              },
+              "render/per_view_shadow_pass/elapsed_gpu": {
+                "max_ms": 0.009216,
+                "median_ms": 0.001024,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.002048,
+                "p99_ms": 0.002048,
+                "samples": 1903
+              },
+              "render/tonemapping/elapsed_gpu": {
+                "max_ms": 0.067584,
+                "median_ms": 0.01536,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.044032,
+                "p99_ms": 0.059392,
+                "samples": 1903
+              },
+              "render/ui/elapsed_gpu": {
+                "max_ms": 0.608256,
+                "median_ms": 0.004096,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.022528,
+                "p99_ms": 0.0256,
+                "samples": 1903
+              },
+              "render/uniform_allocation/elapsed_gpu": {
+                "max_ms": 0.453632,
+                "median_ms": 0.011264,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.019456,
+                "p99_ms": 0.023552,
+                "samples": 1903
+              },
+              "render/upscaling/elapsed_gpu": {
+                "max_ms": 0.057344,
+                "median_ms": 0.011264,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.047104,
+                "p99_ms": 0.0512,
+                "samples": 1903
+              }
+            },
+            "owners": {
+              "Fireworks Crackle — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 1.1873,
+                  "median_ms": 0.314,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.6253,
+                  "p99_ms": 0.7872,
+                  "samples": 2657
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 2.157568,
+                  "median_ms": 0.622592,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 1.23392,
+                  "p99_ms": 1.584128,
+                  "samples": 2513
+                },
+                "max_fixed_ticks": 5,
+                "observed_fixed_ticks": 2895,
+                "trail_observations": 3373,
+                "trail_workgroups": 23611
+              },
+              "Fireworks Crossette — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 1.4568,
+                  "median_ms": 0.4684,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.8559,
+                  "p99_ms": 1.0684,
+                  "samples": 2627
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 2.993152,
+                  "median_ms": 0.791552,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 1.461248,
+                  "p99_ms": 1.974272,
+                  "samples": 2481
+                },
+                "max_fixed_ticks": 5,
+                "observed_fixed_ticks": 2909,
+                "trail_observations": 3362,
+                "trail_workgroups": 30258
+              },
+              "Fireworks Multi-break — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 1.0462,
+                  "median_ms": 0.2804,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.5382,
+                  "p99_ms": 0.6778,
+                  "samples": 4432
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 3.042304,
+                  "median_ms": 0.429056,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 1.09568,
+                  "p99_ms": 1.360896,
+                  "samples": 4099
+                },
+                "max_fixed_ticks": 5,
+                "observed_fixed_ticks": 4645,
+                "trail_observations": 5418,
+                "trail_workgroups": 32508
+              },
+              "Fireworks Strobe — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 0.8008,
+                  "median_ms": 0.2151,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.4234,
+                  "p99_ms": 0.5419,
+                  "samples": 1733
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 2.230272,
+                  "median_ms": 0.442368,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.862208,
+                  "p99_ms": 1.181696,
+                  "samples": 1637
+                },
+                "max_fixed_ticks": 5,
+                "observed_fixed_ticks": 1948,
+                "trail_observations": 2246,
+                "trail_workgroups": 11230
+              }
+            },
+            "scope": "Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshot/capacity scan."
+          },
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1346785
+        }
+      }
+    ],
+    "logs": [
+      {
+        "path": "target/fireworks-f8-profile-a-0.log",
+        "sha256": "91ACC9DBF02F5A7CFB612BAE6C30698501D291DC74C4E5452FF8C873F7A67CF2"
+      },
+      {
+        "path": "target/fireworks-f8-profile-a-1.log",
+        "sha256": "5EE9A040DF1B6E4333A938748BD7F3E76597BF0E6E52F334757967A88910CF76"
+      }
+    ],
+    "scope": "Discovery runs retained. Before direct clip-construction timer; binary/source inventory not independently snapshotted, so these are supporting diagnosis rather than primary before/after provenance."
+  },
+  "observations": {
+    "clip_construction_ms": {
+      "uncached_min": 22.1783,
+      "uncached_max": 32.0247,
+      "cached_min": 0.0048,
+      "cached_max": 0.0198,
+      "uncached_clips": 13,
+      "cached_clips": 13
+    },
+    "cpu_playback_max_ms": {
+      "uncached": 76.2683,
+      "cached": 0.231
+    },
+    "cpu_playback_windows_over_16_67ms": {
+      "uncached": 6,
+      "cached": 0
+    },
+    "gpu_simulation_p95_ms": {
+      "uncached": 8.935424,
+      "cached": 8.368128
+    },
+    "gpu_simulation_max_ms": {
+      "uncached": 17.337344,
+      "cached": 18.089984
+    },
+    "cached_profile_cpu_encoding_p95_ms": 5.3059,
+    "cached_profile_checkpoint_capture_bytes": 0,
+    "cached_runs": "All four complete with zero late pipelines, exact clip scheduling, no blocked or missing scheduled owners, 13 accepted flashes, zero final async observed populations.",
+    "cached_plain_wispy": "Two repetitions: p95 31.214/31.680 ms; max sampled encoding lag 100.001/33.334 ms. This variance prevents a universal latency claim.",
+    "cached_plain_persistent": "p95 27.194 ms; max sampled encoding lag 16.668 ms. Not stable-60-FPS acceptance.",
+    "images_taken": false
+  },
+  "validation": {
+    "renderer_library": {
+      "passed": 178,
+      "ignored": 3
+    },
+    "host_library_with_audio": {
+      "passed": 65
+    },
+    "fireworks_example_with_audio": {
+      "passed": 29
+    },
+    "strict_workspace_clippy": true,
+    "fmt_check": true,
+    "diff_check": true,
+    "full_workspace_tests_run": false
+  },
+  "next": "Measure render-thread allocation and coupled simulation upload/dispatch costs, including event-list and parameter buffer churn. Optimize the measured work before revisiting live catch-up policy, preserving cue delivery and PlaybackOnly."
+}

@@ -1,0 +1,2633 @@
+{
+  "milestone": "F8.1C4L",
+  "date": "2026-10-26",
+  "base_commit": "70176c4c86ae50fc78dde06a644f0d0eef6a9cdd",
+  "purpose": "Matched forward-playback compositor cost/capacity observations, not renderer adoption or smoke-art acceptance.",
+  "production_renderer_changed": false,
+  "public_defaults_changed": false,
+  "native_run": {
+    "root": "target/fireworks-f8/fragment-list-live-2026-10-26-a",
+    "command": "cargo test -p aestra-viewer oit_live_paced_matched_cost_and_capacity --locked --offline -- --ignored --test-threads=1",
+    "exit_code": 0,
+    "test_seconds": 224.32,
+    "index_sha256": "B5E2EC05AB2ECAB30DBD3ADD28D8019D32885DDA8B4D274C09BF7704C986049E",
+    "probe_passed": true,
+    "renderer_adoption": false
+  },
+  "environment": {
+    "os": "Windows",
+    "adapter": {
+      "backend": "Vulkan",
+      "driver": "NVIDIA",
+      "name": "NVIDIA GeForce RTX 4070 SUPER"
+    },
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1",
+    "tier": "high",
+    "target_format": "Rgba8UnormSrgb",
+    "msaa": "Off",
+    "tonemapping": "None",
+    "bloom": false,
+    "offscreen": true
+  },
+  "method": {
+    "matrix_cases": 24,
+    "repetitions": 2,
+    "order": "Sorted/default/provisioned in repetition 1, reverse in repetition 2; workload/resolution order unchanged.",
+    "resolutions": [
+      [
+        960,
+        540
+      ],
+      [
+        1920,
+        1080
+      ]
+    ],
+    "workloads": [
+      "saved persistent-smoke candidate show with audience camera and representative-only lighting",
+      "four coincident saved smoke-cohort roots with existing high-tier lighting policy"
+    ],
+    "modes": [
+      "DepthBackToFront ordinary cost baseline",
+      "OIT average 4 / sorted 8 / 32 MiB",
+      "OIT average 4 / sorted 32 / 128 MiB explicit host provisioning"
+    ],
+    "ordinary_cost_baseline_not_correctness_reference": true,
+    "shared_seed": "0xf83b000000000001",
+    "history": "PlaybackOnly",
+    "start_frame": 360,
+    "end_frame": 600,
+    "host_updates": 240,
+    "host_pace_hz": 60,
+    "host_interval": "Absolute deadlines; missed deadlines retained and reported; no skipped player frames.",
+    "native_simulation_ticks": "Recorded independently; up to 2 observed fixed ticks per simulation window, not one native tick per host update.",
+    "initialization": "Normal forward advancement, shader-readiness wait and paused diagnostic warmup outside measurement. No seek/replay.",
+    "cost_lane": "OIT aggregate diagnostics disabled; standard async GPU timestamps enabled.",
+    "capacity_lane": "Independent app and identically initialized forward playback with bounded aggregate scans enabled. No timing from this lane is used as production-cost evidence.",
+    "async_caveat": "Own timestamp/sequence deduplication, not frame-ID join; startup/final messages may straddle the measurement boundaries. Peak populations are async counts. No raw particle/fragment transport.",
+    "timing_scope": "Whole render-graph scope includes simulation and rendering but not host preparation/game/audio/presentation. app.update duration is not GPU completion time. Do not sum pass/source percentiles.",
+    "remaining_scope": "4-second high-tier window, not the full show/finale, other GPUs/tiers or HDR/bloom. External desktop/overlay activity is not controlled."
+  },
+  "sources": [
+    {
+      "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+      "sha256": "EF69340AC7C70CE863B7FE5F1F488C5732C01D52F8A02CB851A361FC8C1857BD"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images.rs",
+      "sha256": "6C7F9FC24A2BC910211094221C2CCC65A1E2E9FE7AB775FBB4E090466645B09E"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/fragment_list_live_costs.rs",
+      "sha256": "3E189B5D11DB06D21F9139022B9F3DF27149BAD616CC70585F90E3B417CE3DDA"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "7B0943863431881AD1F8C5C2E357ED591FD7C9485D20EB6618FEBADB8BBE8A01"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/smoke_live_costs.rs",
+      "sha256": "7DFD2609C59B599CEEF6D8C85BCC20D7CF5366C264588205F98AD59DD51BE83E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_chrysanthemum.aestra.ron",
+      "sha256": "B4223D30FD5870D3FCF7D48AB857785D2E625C734001156EC6E024DEC9235C43"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_persistent_smoke.aestra.ron",
+      "sha256": "0BA33D317842C3DDC7582B12FAAA72A8DEF330FAFBF400A94512A50455BCBCD0"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron",
+      "sha256": "5AECB28110A3295AD9E010EE001D4B1CF0B38900FBDB9473383ECE0F0CC6D12E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle.aestra.ron",
+      "sha256": "4414A563BBFC7C7A02447AD044EAF7DA7189C6DE24EED4EA88E57C7610C21D63"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_persistent_smoke.aestra.ron",
+      "sha256": "E03E96E5037B7D6ABDFB1CAFB138BA11FB02B4446555A69FA862A151CB0C624B"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron",
+      "sha256": "5ED106ECFED6A58F3AC59ACB7B4F991B5890929F2BCEA00AA64EFDC36ADAFD70"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette.aestra.ron",
+      "sha256": "4E9A0E1BAF488865215E84016C031E7992E4530DE957FC49537225E181C68F56"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_persistent_smoke.aestra.ron",
+      "sha256": "0F9FC062EB024C40173DDED37A53CF4E86ADCA5984954DC4EE2C06A440B4946E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron",
+      "sha256": "1CA9DE6B0D3FFA093D6479B07952113AA7F5B42A58D993D0141CDAAD2CB5B8AB"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break.aestra.ron",
+      "sha256": "91CD5B6C696F37C988F59E33802EE99AD6C15C3A67D9692055D7F078D0AA7E78"
+    },
+    {
+      "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron",
+      "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_particle_smoke_overlap.aestra.ron",
+      "sha256": "60C11B199D1E37EF105EF237A5575CD390C6E07FA53B716F1D13F59DD3C3F532"
+    },
+    {
+      "path": "assets/test/effects/fireworks_peony.aestra.ron",
+      "sha256": "2D1CB90697E9227E2FD8FA03385653CCFCA60927409B9E753692F32B779B0C32"
+    },
+    {
+      "path": "assets/test/effects/fireworks_pistil.aestra.ron",
+      "sha256": "EDED6581E2E7791DABDCDEFD8FCBBD3BC17E30D55E5875AE5AE12E7185EA5D49"
+    },
+    {
+      "path": "assets/test/effects/fireworks_reference_hero.aestra.ron",
+      "sha256": "89C5FDCE6152F0BEB789C16ACF523261F5770257BAA415E8B421BE454B457092"
+    },
+    {
+      "path": "assets/test/effects/fireworks_secondary_volley.aestra.ron",
+      "sha256": "E32D3BC3293AC9B8226499822B1763135E55EDF7530B69C5C0FAAB2D06036838"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+      "sha256": "ED38F17F3A103DA58673EF753C550C291BBB6C7BB6C1C3FE5FDD3540B64634E5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+      "sha256": "FC22EB440F76FC4030A6C67C5B9A71AB45CE5AAC08AA1538976C0F31F9E4979C"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show.aestra.ron",
+      "sha256": "DD2BC77CC19AAA84CFCDCCB24A5C1554B168F5EA664541EA4C28882E09A4C011"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron",
+      "sha256": "1EC41EB51EDBF14CED1631C3DEEE50B1FC4459F1F03B2BA3262FB8D2AF6105B6"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_lighting.aestra.ron",
+      "sha256": "1AA6948E412DF8C7211DE9347449980C650254935983B5831613252EA51D790F"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron",
+      "sha256": "0A32D0AA5DDA578830A7D1359633FB1A33C6F0EADCF59FB92E9611845E0C3E40"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_persistent_smoke.aestra.ron",
+      "sha256": "CB5629E77DDF49ABFC995C425386FEAA3CD73972FA58001BA60B2BF8D3BE9AEF"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron",
+      "sha256": "5AB53A9C477B2987DA245F73A1A448496B08777B3A61932168EFBD78049F1A32"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe.aestra.ron",
+      "sha256": "C8CA64F617ABD86EFA1273C991676D58DB732A602D42ABF8092E0EDA7D19CA00"
+    },
+    {
+      "path": "assets/test/effects/fireworks_willow.aestra.ron",
+      "sha256": "D4151B1932ABDED733F2BE7F9A2AB571CF91FBB7FA7E3C857E2FB6A0DD762914"
+    },
+    {
+      "path": "assets/test/materials/fireworks_hero_star.aestra.material.ron",
+      "sha256": "5350E4C64BB017B8D14B947969E1E34EBF0DE2AD504FE80314589C1AC79EA932"
+    },
+    {
+      "path": "assets/test/materials/fireworks_hero_trail.aestra.material.ron",
+      "sha256": "9BEECD239E416DC39F25F6E659EDB9C311B55B45AA0D329EBDEF9175D5C26D24"
+    },
+    {
+      "path": "assets/test/materials/fireworks_lit_smoke.aestra.material.ron",
+      "sha256": "ED47199076350898859F2B046B339CD2EADDE1BD48B9625EB7AFCA169E100E2C"
+    },
+    {
+      "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron",
+      "sha256": "C1E37B06BB5E9DE3109FC87784122A23604A902884037DF5F9E752C432661CC4"
+    },
+    {
+      "path": "assets/test/materials/fireworks_smoke.aestra.material.ron",
+      "sha256": "E1A26E654787835D33AFEFFEC767FB0829F8ACB15A9268B081E341231B424140"
+    },
+    {
+      "path": "assets/test/materials/fireworks_star.aestra.material.ron",
+      "sha256": "950D8B2257BA202B3A5B495C4776B6A608AFF0C85581E34E4B93A699DB504BF9"
+    },
+    {
+      "path": "assets/test/materials/fireworks_strobe_star.aestra.material.ron",
+      "sha256": "BE51C63C89FE9079B07B94787DBC746665B097EFE0E314DEAFF4EFA3E7A81608"
+    },
+    {
+      "path": "assets/test/materials/fireworks_trail.aestra.material.ron",
+      "sha256": "01BA1D32EFE6B032A6949661F9422FFAFA2B40FC06AEC6E1E209BA6B434B3492"
+    },
+    {
+      "path": "assets/test/materials/fireworks_wispy_smoke.aestra.material.ron",
+      "sha256": "642E3704EBC4F37110E00A1146A1641B6CB53C3E37EB451C4CBB0C4EF99E1395"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+      "sha256": "2E95E26B1E34065D065EF1B7AA5A0F11F4153162B3DB31C307B34C1702755A41"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs",
+      "sha256": "F927A8CB67C3ADCC8930C266DE4B304106CC83F2D4F4481A637B5333B0D77CE8"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+      "sha256": "653B4000C2FB4BB8C8B591A4298C831CFAC0F46C084B479B4E2EDBA1F89D3182"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+      "sha256": "1A96DD860178958FEBA5B712FE22C4B183DF901D61DD42436E60BBA5009ED2F0"
+    }
+  ],
+  "audit": {
+    "costs": 20,
+    "rejections": 4,
+    "capacity_lanes": 12,
+    "total_capacity_observations": 2828,
+    "all_capacity_observations_over_sort": true,
+    "populations_match_between_lanes": true,
+    "no_pipeline_pending_updates": true,
+    "no_observed_or_unknown_checkpoint_bytes": true
+  },
+  "decision": {
+    "adopt": false,
+    "reason": "All 2828 fresh capacity observations exceed the local exact-sort threshold, even at sorted_max=32, despite zero global drops/invalid links. Default 32 MiB storage rejects 1080p. Memory/performance provisioning alone does not establish dense compositing correctness.",
+    "next": "F8.1C4M: dense overflow image-error oracle, then correct premultiplied alpha/additive overflow representation/order handling or select another bounded compositor; rerun matched cost/capacity before adoption."
+  },
+  "summary": [
+    {
+      "configuration": "four-coincident-cohorts-1920x1080-oit-default",
+      "admitted": false,
+      "gpu_frame_median_ms": null,
+      "gpu_frame_p95_ms": null,
+      "gpu_transparent_p95_ms": null,
+      "gpu_resolve_p95_ms": null,
+      "storage_bytes": null,
+      "late_deadlines": null,
+      "peak_over_sort_pixels": null
+    },
+    {
+      "configuration": "four-coincident-cohorts-1920x1080-oit-provisioned",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        5.390336,
+        5.42208
+      ],
+      "gpu_frame_p95_ms": [
+        7.313408,
+        7.451648
+      ],
+      "gpu_transparent_p95_ms": [
+        1.073152,
+        1.076224
+      ],
+      "gpu_resolve_p95_ms": [
+        1.985536,
+        2.031616
+      ],
+      "storage_bytes": [
+        107827200,
+        107827200
+      ],
+      "late_deadlines": [
+        0,
+        0
+      ],
+      "peak_over_sort_pixels": [
+        18359,
+        18359
+      ]
+    },
+    {
+      "configuration": "four-coincident-cohorts-1920x1080-sorted",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        2.605056,
+        2.680832
+      ],
+      "gpu_frame_p95_ms": [
+        4.506624,
+        5.049344
+      ],
+      "gpu_transparent_p95_ms": [
+        0.354304,
+        0.441344
+      ],
+      "gpu_resolve_p95_ms": null,
+      "storage_bytes": [
+        16,
+        16
+      ],
+      "late_deadlines": [
+        0,
+        0
+      ],
+      "peak_over_sort_pixels": null
+    },
+    {
+      "configuration": "four-coincident-cohorts-960x540-oit-default",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        2.736128,
+        2.746368
+      ],
+      "gpu_frame_p95_ms": [
+        4.987904,
+        5.035008
+      ],
+      "gpu_transparent_p95_ms": [
+        0.171008,
+        0.171008
+      ],
+      "gpu_resolve_p95_ms": [
+        0.523264,
+        0.531456
+      ],
+      "storage_bytes": [
+        26956800,
+        26956800
+      ],
+      "late_deadlines": [
+        0,
+        0
+      ],
+      "peak_over_sort_pixels": [
+        5082,
+        5082
+      ]
+    },
+    {
+      "configuration": "four-coincident-cohorts-960x540-oit-provisioned",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        3.474432,
+        3.485696
+      ],
+      "gpu_frame_p95_ms": [
+        5.856256,
+        5.892096
+      ],
+      "gpu_transparent_p95_ms": [
+        0.123904,
+        0.125952
+      ],
+      "gpu_resolve_p95_ms": [
+        1.974272,
+        1.982464
+      ],
+      "storage_bytes": [
+        26956800,
+        26956800
+      ],
+      "late_deadlines": [
+        0,
+        0
+      ],
+      "peak_over_sort_pixels": [
+        4580,
+        4580
+      ]
+    },
+    {
+      "configuration": "four-coincident-cohorts-960x540-sorted",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        2.480128,
+        2.49856
+      ],
+      "gpu_frame_p95_ms": [
+        4.299776,
+        4.38272
+      ],
+      "gpu_transparent_p95_ms": [
+        0.114688,
+        0.119808
+      ],
+      "gpu_resolve_p95_ms": null,
+      "storage_bytes": [
+        16,
+        16
+      ],
+      "late_deadlines": [
+        0,
+        0
+      ],
+      "peak_over_sort_pixels": null
+    },
+    {
+      "configuration": "persistent-show-1920x1080-oit-default",
+      "admitted": false,
+      "gpu_frame_median_ms": null,
+      "gpu_frame_p95_ms": null,
+      "gpu_transparent_p95_ms": null,
+      "gpu_resolve_p95_ms": null,
+      "storage_bytes": null,
+      "late_deadlines": null,
+      "peak_over_sort_pixels": null
+    },
+    {
+      "configuration": "persistent-show-1920x1080-oit-provisioned",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        4.06528,
+        4.179968
+      ],
+      "gpu_frame_p95_ms": [
+        9.035776,
+        9.208832
+      ],
+      "gpu_transparent_p95_ms": [
+        0.310272,
+        0.33792
+      ],
+      "gpu_resolve_p95_ms": [
+        0.685056,
+        0.74752
+      ],
+      "storage_bytes": [
+        107827200,
+        107827200
+      ],
+      "late_deadlines": [
+        9,
+        10
+      ],
+      "peak_over_sort_pixels": [
+        18246,
+        18246
+      ]
+    },
+    {
+      "configuration": "persistent-show-1920x1080-sorted",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        3.47136,
+        3.57376
+      ],
+      "gpu_frame_p95_ms": [
+        8.11008,
+        9.79968
+      ],
+      "gpu_transparent_p95_ms": [
+        0.13312,
+        0.2048
+      ],
+      "gpu_resolve_p95_ms": null,
+      "storage_bytes": [
+        16,
+        16
+      ],
+      "late_deadlines": [
+        8,
+        15
+      ],
+      "peak_over_sort_pixels": null
+    },
+    {
+      "configuration": "persistent-show-960x540-oit-default",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        3.590144,
+        3.657728
+      ],
+      "gpu_frame_p95_ms": [
+        8.159232,
+        8.406016
+      ],
+      "gpu_transparent_p95_ms": [
+        0.08704,
+        0.088064
+      ],
+      "gpu_resolve_p95_ms": [
+        0.1792,
+        0.192512
+      ],
+      "storage_bytes": [
+        26956800,
+        26956800
+      ],
+      "late_deadlines": [
+        8,
+        8
+      ],
+      "peak_over_sort_pixels": [
+        8140,
+        8140
+      ]
+    },
+    {
+      "configuration": "persistent-show-960x540-oit-provisioned",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        3.707904,
+        3.900416
+      ],
+      "gpu_frame_p95_ms": [
+        9.158656,
+        9.363456
+      ],
+      "gpu_transparent_p95_ms": [
+        0.055296,
+        0.057344
+      ],
+      "gpu_resolve_p95_ms": [
+        0.601088,
+        0.613376
+      ],
+      "storage_bytes": [
+        26956800,
+        26956800
+      ],
+      "late_deadlines": [
+        8,
+        9
+      ],
+      "peak_over_sort_pixels": [
+        4567,
+        4567
+      ]
+    },
+    {
+      "configuration": "persistent-show-960x540-sorted",
+      "admitted": true,
+      "gpu_frame_median_ms": [
+        3.472384,
+        3.556352
+      ],
+      "gpu_frame_p95_ms": [
+        8.049664,
+        8.118272
+      ],
+      "gpu_transparent_p95_ms": [
+        0.07168,
+        0.072704
+      ],
+      "gpu_resolve_p95_ms": null,
+      "storage_bytes": [
+        16,
+        16
+      ],
+      "late_deadlines": [
+        8,
+        10
+      ],
+      "peak_over_sort_pixels": null
+    }
+  ],
+  "cases": [
+    {
+      "name": "four-coincident-cohorts-1920x1080-oit-default-r1",
+      "report_sha256": "BEA74FD87DB3F3EE0E2BC54123AF8270FB3679D6288946763CE4ED3425B8D415",
+      "admitted": false,
+      "rejection": "shared OIT storage exceeds camera/device budget",
+      "estimated_bytes": 107827200,
+      "settings": {
+        "average": 4,
+        "budget": 33554432,
+        "sorted_max": 8
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "oit-default",
+      "workload": "four-coincident-cohorts",
+      "repetition": 1,
+      "start_frame": null,
+      "updates": null,
+      "end_frames": null,
+      "elapsed_seconds": null,
+      "late_deadlines": null,
+      "pending_pipelines": null,
+      "peak_alive": null,
+      "observed_checkpoint_bytes": null,
+      "unknown_checkpoint_windows": null,
+      "max_fixed_ticks": null,
+      "allocation": null,
+      "sort_bytes": null,
+      "sort_pairs": null,
+      "gpu_full_frame": null,
+      "gpu_transparent": null,
+      "gpu_resolve": null,
+      "app_update_wall": null,
+      "update_intervals": null,
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "four-coincident-cohorts-1920x1080-oit-default-r2",
+      "report_sha256": "FE0479BD0D64A560196B1106C2101DF98A641122658818B8413675490C68D342",
+      "admitted": false,
+      "rejection": "shared OIT storage exceeds camera/device budget",
+      "estimated_bytes": 107827200,
+      "settings": {
+        "average": 4,
+        "budget": 33554432,
+        "sorted_max": 8
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "oit-default",
+      "workload": "four-coincident-cohorts",
+      "repetition": 2,
+      "start_frame": null,
+      "updates": null,
+      "end_frames": null,
+      "elapsed_seconds": null,
+      "late_deadlines": null,
+      "pending_pipelines": null,
+      "peak_alive": null,
+      "observed_checkpoint_bytes": null,
+      "unknown_checkpoint_windows": null,
+      "max_fixed_ticks": null,
+      "allocation": null,
+      "sort_bytes": null,
+      "sort_pairs": null,
+      "gpu_full_frame": null,
+      "gpu_transparent": null,
+      "gpu_resolve": null,
+      "app_update_wall": null,
+      "update_intervals": null,
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "four-coincident-cohorts-1920x1080-oit-provisioned-r1",
+      "report_sha256": "7FDA95C63A86DDA6BAADC444BC43A53F18075FE30E1798B853EEAE7F30E74870",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 134217728,
+        "sorted_max": 32
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "oit-provisioned",
+      "workload": "four-coincident-cohorts",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.000103,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 107827200,
+        "heads": 2073600,
+        "nodes": 8294400
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 7.784448,
+        "median_ms": 5.42208,
+        "p95_ms": 7.313408,
+        "p99_ms": 7.597056,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 1.101824,
+        "median_ms": 0.891904,
+        "p95_ms": 1.073152,
+        "p99_ms": 1.091584,
+        "samples": 240
+      },
+      "gpu_resolve": {
+        "max_ms": 2.166784,
+        "median_ms": 1.485824,
+        "p95_ms": 1.985536,
+        "p99_ms": 2.113536,
+        "samples": 240
+      },
+      "app_update_wall": {
+        "max_ms": 1.4394,
+        "median_ms": 1.0319,
+        "p95_ms": 1.2586,
+        "p99_ms": 1.3079,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.1482,
+        "median_ms": 16.6269,
+        "p95_ms": 17.0557,
+        "p99_ms": 17.0864,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 3123648,
+        "max_capped_depth": 33,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 18359,
+        "observations": 240,
+        "observations_over_sort": 240,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0002648,
+      "capacity_peak_alive": 256,
+      "capacity_end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 0
+    },
+    {
+      "name": "four-coincident-cohorts-1920x1080-oit-provisioned-r2",
+      "report_sha256": "3C0578A3C1CF191BB38440A4EFB109E24DD5BDA57D848893585D1B72A6C75E73",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 134217728,
+        "sorted_max": 32
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "oit-provisioned",
+      "workload": "four-coincident-cohorts",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0004499,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 107827200,
+        "heads": 2073600,
+        "nodes": 8294400
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 7.709696,
+        "median_ms": 5.390336,
+        "p95_ms": 7.451648,
+        "p99_ms": 7.579648,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 1.101824,
+        "median_ms": 0.631808,
+        "p95_ms": 1.076224,
+        "p99_ms": 1.094656,
+        "samples": 240
+      },
+      "gpu_resolve": {
+        "max_ms": 2.219008,
+        "median_ms": 1.477632,
+        "p95_ms": 2.031616,
+        "p99_ms": 2.134016,
+        "samples": 240
+      },
+      "app_update_wall": {
+        "max_ms": 1.2693999999999999,
+        "median_ms": 0.9734999999999999,
+        "p95_ms": 1.2087999999999999,
+        "p99_ms": 1.2406,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.124899999999997,
+        "median_ms": 16.6271,
+        "p95_ms": 17.049100000000003,
+        "p99_ms": 17.0996,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 3123648,
+        "max_capped_depth": 33,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 18359,
+        "observations": 240,
+        "observations_over_sort": 240,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0003023,
+      "capacity_peak_alive": 256,
+      "capacity_end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 0
+    },
+    {
+      "name": "four-coincident-cohorts-1920x1080-sorted-r1",
+      "report_sha256": "BA90679D82D2D1A6AF8ECF5F6A311B5032245DE104D87A1C36D9397C12B7DCB1",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "sorted",
+      "workload": "four-coincident-cohorts",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0000822,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 16,
+        "heads": 1,
+        "nodes": 1
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 4.663296,
+        "median_ms": 2.605056,
+        "p95_ms": 4.506624,
+        "p99_ms": 4.624384,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 0.381952,
+        "median_ms": 0.185344,
+        "p95_ms": 0.354304,
+        "p99_ms": 0.380928,
+        "samples": 240
+      },
+      "gpu_resolve": null,
+      "app_update_wall": {
+        "max_ms": 1.3678,
+        "median_ms": 1.0643,
+        "p95_ms": 1.2868,
+        "p99_ms": 1.3338,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.381,
+        "median_ms": 16.6287,
+        "p95_ms": 17.063200000000002,
+        "p99_ms": 17.1288,
+        "samples": 239
+      },
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "four-coincident-cohorts-1920x1080-sorted-r2",
+      "report_sha256": "8D602C687AA6E6158366DF4975F2BFA5553D341AC4DBA1A6535295E047B88CAA",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "sorted",
+      "workload": "four-coincident-cohorts",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0002698,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 16,
+        "heads": 1,
+        "nodes": 1
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 5.10976,
+        "median_ms": 2.680832,
+        "p95_ms": 5.049344,
+        "p99_ms": 5.103616,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 0.458752,
+        "median_ms": 0.233472,
+        "p95_ms": 0.441344,
+        "p99_ms": 0.446464,
+        "samples": 240
+      },
+      "gpu_resolve": null,
+      "app_update_wall": {
+        "max_ms": 1.3799000000000001,
+        "median_ms": 0.9922,
+        "p95_ms": 1.2537,
+        "p99_ms": 1.2893,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.1452,
+        "median_ms": 16.63,
+        "p95_ms": 17.0722,
+        "p99_ms": 17.1023,
+        "samples": 239
+      },
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "four-coincident-cohorts-960x540-oit-default-r1",
+      "report_sha256": "F13F2CB9CEE20B64042B2F3FD607D8A8480F25527640B4F22FC9587C373BDF2B",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 33554432,
+        "sorted_max": 8
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "oit-default",
+      "workload": "four-coincident-cohorts",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0001168,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 26956800,
+        "heads": 518400,
+        "nodes": 2073600
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 5.192704,
+        "median_ms": 2.746368,
+        "p95_ms": 5.035008,
+        "p99_ms": 5.113856,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 0.185344,
+        "median_ms": 0.098304,
+        "p95_ms": 0.171008,
+        "p99_ms": 0.178176,
+        "samples": 240
+      },
+      "gpu_resolve": {
+        "max_ms": 0.653312,
+        "median_ms": 0.3072,
+        "p95_ms": 0.523264,
+        "p99_ms": 0.586752,
+        "samples": 240
+      },
+      "app_update_wall": {
+        "max_ms": 1.3719999999999999,
+        "median_ms": 1.0284,
+        "p95_ms": 1.2719,
+        "p99_ms": 1.3353,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.1789,
+        "median_ms": 16.613300000000002,
+        "p95_ms": 17.0762,
+        "p99_ms": 17.1371,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 780428,
+        "max_capped_depth": 9,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 5082,
+        "observations": 240,
+        "observations_over_sort": 240,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0003813,
+      "capacity_peak_alive": 256,
+      "capacity_end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 0
+    },
+    {
+      "name": "four-coincident-cohorts-960x540-oit-default-r2",
+      "report_sha256": "AA8B98725D378974B12D994246B234923F6DAAD8758780A8E2953AAD468B57AA",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 33554432,
+        "sorted_max": 8
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "oit-default",
+      "workload": "four-coincident-cohorts",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0005294,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 26956800,
+        "heads": 518400,
+        "nodes": 2073600
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 5.152768,
+        "median_ms": 2.736128,
+        "p95_ms": 4.987904,
+        "p99_ms": 5.12,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 0.180224,
+        "median_ms": 0.096256,
+        "p95_ms": 0.171008,
+        "p99_ms": 0.1792,
+        "samples": 240
+      },
+      "gpu_resolve": {
+        "max_ms": 0.60416,
+        "median_ms": 0.306176,
+        "p95_ms": 0.531456,
+        "p99_ms": 0.570368,
+        "samples": 240
+      },
+      "app_update_wall": {
+        "max_ms": 1.3819,
+        "median_ms": 1.0455,
+        "p95_ms": 1.2692,
+        "p99_ms": 1.2971000000000001,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.1338,
+        "median_ms": 16.6452,
+        "p95_ms": 17.055500000000002,
+        "p99_ms": 17.1175,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 780428,
+        "max_capped_depth": 9,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 5082,
+        "observations": 240,
+        "observations_over_sort": 240,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0000353,
+      "capacity_peak_alive": 256,
+      "capacity_end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 0
+    },
+    {
+      "name": "four-coincident-cohorts-960x540-oit-provisioned-r1",
+      "report_sha256": "AE8F8D33757F9CE5C65F3724D0FABDE6B75DB2BFD9972603D0A5AFA8E74B5512",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 134217728,
+        "sorted_max": 32
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "oit-provisioned",
+      "workload": "four-coincident-cohorts",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0001045,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 26956800,
+        "heads": 518400,
+        "nodes": 2073600
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 6.132736,
+        "median_ms": 3.485696,
+        "p95_ms": 5.856256,
+        "p99_ms": 5.966848,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 0.131072,
+        "median_ms": 0.08192,
+        "p95_ms": 0.123904,
+        "p99_ms": 0.130048,
+        "samples": 240
+      },
+      "gpu_resolve": {
+        "max_ms": 2.210816,
+        "median_ms": 1.215488,
+        "p95_ms": 1.982464,
+        "p99_ms": 2.09408,
+        "samples": 240
+      },
+      "app_update_wall": {
+        "max_ms": 1.3747,
+        "median_ms": 1.0514000000000001,
+        "p95_ms": 1.2947,
+        "p99_ms": 1.3272,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.1386,
+        "median_ms": 16.6279,
+        "p95_ms": 17.0659,
+        "p99_ms": 17.0999,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 780428,
+        "max_capped_depth": 33,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 4580,
+        "observations": 240,
+        "observations_over_sort": 240,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0001556,
+      "capacity_peak_alive": 256,
+      "capacity_end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 0
+    },
+    {
+      "name": "four-coincident-cohorts-960x540-oit-provisioned-r2",
+      "report_sha256": "A6555F0A6DA9B1F1C1E7835166F09707721BCE5AFD0E37570313442337921268",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 134217728,
+        "sorted_max": 32
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "oit-provisioned",
+      "workload": "four-coincident-cohorts",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0001155,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 26956800,
+        "heads": 518400,
+        "nodes": 2073600
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 6.080512,
+        "median_ms": 3.474432,
+        "p95_ms": 5.892096,
+        "p99_ms": 6.029312,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 0.134144,
+        "median_ms": 0.08192,
+        "p95_ms": 0.125952,
+        "p99_ms": 0.13312,
+        "samples": 240
+      },
+      "gpu_resolve": {
+        "max_ms": 2.126848,
+        "median_ms": 1.191936,
+        "p95_ms": 1.974272,
+        "p99_ms": 2.034688,
+        "samples": 240
+      },
+      "app_update_wall": {
+        "max_ms": 1.3471,
+        "median_ms": 0.9933,
+        "p95_ms": 1.2378,
+        "p99_ms": 1.3007,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.1621,
+        "median_ms": 16.6426,
+        "p95_ms": 17.0544,
+        "p99_ms": 17.103299999999997,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 780428,
+        "max_capped_depth": 33,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 4580,
+        "observations": 240,
+        "observations_over_sort": 240,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0002819,
+      "capacity_peak_alive": 256,
+      "capacity_end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 0
+    },
+    {
+      "name": "four-coincident-cohorts-960x540-sorted-r1",
+      "report_sha256": "AAFEEA7AC6C7C0763DB462872412FAFE8E136FEA6B1BCF5696D04C39C9C16F9A",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "sorted",
+      "workload": "four-coincident-cohorts",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0001604,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 16,
+        "heads": 1,
+        "nodes": 1
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 4.415488,
+        "median_ms": 2.480128,
+        "p95_ms": 4.299776,
+        "p99_ms": 4.363264,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 0.121856,
+        "median_ms": 0.062464,
+        "p95_ms": 0.114688,
+        "p99_ms": 0.121856,
+        "samples": 240
+      },
+      "gpu_resolve": null,
+      "app_update_wall": {
+        "max_ms": 2.0786,
+        "median_ms": 1.0331,
+        "p95_ms": 1.3042,
+        "p99_ms": 1.5878999999999999,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.353,
+        "median_ms": 16.6294,
+        "p95_ms": 17.073700000000002,
+        "p99_ms": 17.119100000000003,
+        "samples": 239
+      },
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "four-coincident-cohorts-960x540-sorted-r2",
+      "report_sha256": "5D678D21357535A04D2F004B746DEC1A35A407CF3E689EB35A74388C608B6E78",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "sorted",
+      "workload": "four-coincident-cohorts",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600,
+        600,
+        600,
+        600
+      ],
+      "elapsed_seconds": 4.0001072,
+      "late_deadlines": 0,
+      "pending_pipelines": 0,
+      "peak_alive": 256,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 1,
+      "allocation": {
+        "bytes": 16,
+        "heads": 1,
+        "nodes": 1
+      },
+      "sort_bytes": 113472,
+      "sort_pairs": 12,
+      "gpu_full_frame": {
+        "max_ms": 4.497408,
+        "median_ms": 2.49856,
+        "p95_ms": 4.38272,
+        "p99_ms": 4.425728,
+        "samples": 240
+      },
+      "gpu_transparent": {
+        "max_ms": 0.128,
+        "median_ms": 0.065536,
+        "p95_ms": 0.119808,
+        "p99_ms": 0.120832,
+        "samples": 240
+      },
+      "gpu_resolve": null,
+      "app_update_wall": {
+        "max_ms": 1.3124,
+        "median_ms": 1.0269000000000001,
+        "p95_ms": 1.2453,
+        "p99_ms": 1.2989,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 17.1493,
+        "median_ms": 16.638,
+        "p95_ms": 17.0471,
+        "p99_ms": 17.106199999999998,
+        "samples": 239
+      },
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "persistent-show-1920x1080-oit-default-r1",
+      "report_sha256": "39A541A0844B2A57E4A055621374A681AE11F0DDC490A973272E39264C278B90",
+      "admitted": false,
+      "rejection": "shared OIT storage exceeds camera/device budget",
+      "estimated_bytes": 107827200,
+      "settings": {
+        "average": 4,
+        "budget": 33554432,
+        "sorted_max": 8
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "oit-default",
+      "workload": "persistent-show",
+      "repetition": 1,
+      "start_frame": null,
+      "updates": null,
+      "end_frames": null,
+      "elapsed_seconds": null,
+      "late_deadlines": null,
+      "pending_pipelines": null,
+      "peak_alive": null,
+      "observed_checkpoint_bytes": null,
+      "unknown_checkpoint_windows": null,
+      "max_fixed_ticks": null,
+      "allocation": null,
+      "sort_bytes": null,
+      "sort_pairs": null,
+      "gpu_full_frame": null,
+      "gpu_transparent": null,
+      "gpu_resolve": null,
+      "app_update_wall": null,
+      "update_intervals": null,
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "persistent-show-1920x1080-oit-default-r2",
+      "report_sha256": "7D5BC885BBD2372F7E04D854D7639F92DD3BB539861A6435A1BDE559C23C7E78",
+      "admitted": false,
+      "rejection": "shared OIT storage exceeds camera/device budget",
+      "estimated_bytes": 107827200,
+      "settings": {
+        "average": 4,
+        "budget": 33554432,
+        "sorted_max": 8
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "oit-default",
+      "workload": "persistent-show",
+      "repetition": 2,
+      "start_frame": null,
+      "updates": null,
+      "end_frames": null,
+      "elapsed_seconds": null,
+      "late_deadlines": null,
+      "pending_pipelines": null,
+      "peak_alive": null,
+      "observed_checkpoint_bytes": null,
+      "unknown_checkpoint_windows": null,
+      "max_fixed_ticks": null,
+      "allocation": null,
+      "sort_bytes": null,
+      "sort_pairs": null,
+      "gpu_full_frame": null,
+      "gpu_transparent": null,
+      "gpu_resolve": null,
+      "app_update_wall": null,
+      "update_intervals": null,
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "persistent-show-1920x1080-oit-provisioned-r1",
+      "report_sha256": "E587158354ADAF2975A224C856CEC89EEE7B672F83FF31A4D24339D6BFAE4101",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 134217728,
+        "sorted_max": 32
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "oit-provisioned",
+      "workload": "persistent-show",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0004112,
+      "late_deadlines": 10,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 107827200,
+        "heads": 2073600,
+        "nodes": 8294400
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 13.662208,
+        "median_ms": 4.06528,
+        "p95_ms": 9.035776,
+        "p99_ms": 11.021312,
+        "samples": 226
+      },
+      "gpu_transparent": {
+        "max_ms": 0.69632,
+        "median_ms": 0.131072,
+        "p95_ms": 0.310272,
+        "p99_ms": 0.380928,
+        "samples": 226
+      },
+      "gpu_resolve": {
+        "max_ms": 1.692672,
+        "median_ms": 0.431104,
+        "p95_ms": 0.685056,
+        "p99_ms": 1.313792,
+        "samples": 226
+      },
+      "app_update_wall": {
+        "max_ms": 72.0433,
+        "median_ms": 1.2707,
+        "p95_ms": 8.1123,
+        "p99_ms": 12.8164,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 72.0667,
+        "median_ms": 16.627200000000002,
+        "p95_ms": 17.0578,
+        "p99_ms": 17.1085,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 1350142,
+        "max_capped_depth": 33,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 18246,
+        "observations": 230,
+        "observations_over_sort": 230,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0000864,
+      "capacity_peak_alive": 617,
+      "capacity_end_frames": [
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 8
+    },
+    {
+      "name": "persistent-show-1920x1080-oit-provisioned-r2",
+      "report_sha256": "0A0C75F23C60A2084857A8262C43D2ADA126362B22CDA3398C43B1CC8BAECA6C",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 134217728,
+        "sorted_max": 32
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "oit-provisioned",
+      "workload": "persistent-show",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0004276,
+      "late_deadlines": 9,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 107827200,
+        "heads": 2073600,
+        "nodes": 8294400
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 12.918784,
+        "median_ms": 4.179968,
+        "p95_ms": 9.208832,
+        "p99_ms": 12.136448,
+        "samples": 222
+      },
+      "gpu_transparent": {
+        "max_ms": 0.718848,
+        "median_ms": 0.155648,
+        "p95_ms": 0.33792,
+        "p99_ms": 0.46592,
+        "samples": 222
+      },
+      "gpu_resolve": {
+        "max_ms": 1.753088,
+        "median_ms": 0.444416,
+        "p95_ms": 0.74752,
+        "p99_ms": 1.224704,
+        "samples": 222
+      },
+      "app_update_wall": {
+        "max_ms": 71.1688,
+        "median_ms": 1.2379,
+        "p95_ms": 8.1332,
+        "p99_ms": 11.725,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 71.1894,
+        "median_ms": 16.617,
+        "p95_ms": 17.0795,
+        "p99_ms": 17.1502,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 1350142,
+        "max_capped_depth": 33,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 18246,
+        "observations": 229,
+        "observations_over_sort": 229,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0003881,
+      "capacity_peak_alive": 617,
+      "capacity_end_frames": [
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 9
+    },
+    {
+      "name": "persistent-show-1920x1080-sorted-r1",
+      "report_sha256": "CAF2A38F75C1266E383363C112DEF6ECE23FBE8BDB628FEB100250773986E9D1",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "sorted",
+      "workload": "persistent-show",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0003891,
+      "late_deadlines": 8,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 16,
+        "heads": 1,
+        "nodes": 1
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 9.237504,
+        "median_ms": 3.57376,
+        "p95_ms": 8.11008,
+        "p99_ms": 8.829952,
+        "samples": 230
+      },
+      "gpu_transparent": {
+        "max_ms": 0.218112,
+        "median_ms": 0.067584,
+        "p95_ms": 0.2048,
+        "p99_ms": 0.212992,
+        "samples": 230
+      },
+      "gpu_resolve": null,
+      "app_update_wall": {
+        "max_ms": 71.06469999999999,
+        "median_ms": 1.1734,
+        "p95_ms": 3.0717000000000003,
+        "p99_ms": 11.627699999999999,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 71.0821,
+        "median_ms": 16.6186,
+        "p95_ms": 17.0554,
+        "p99_ms": 17.0918,
+        "samples": 239
+      },
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "persistent-show-1920x1080-sorted-r2",
+      "report_sha256": "6736041FA3D9EF2512F9D40A7978B21E1DB6B7B8D78F3657D9A25B010D46E312",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        1920,
+        1080
+      ],
+      "mode": "sorted",
+      "workload": "persistent-show",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0000251,
+      "late_deadlines": 15,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 16,
+        "heads": 1,
+        "nodes": 1
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 11.22304,
+        "median_ms": 3.47136,
+        "p95_ms": 9.79968,
+        "p99_ms": 10.77248,
+        "samples": 232
+      },
+      "gpu_transparent": {
+        "max_ms": 0.340992,
+        "median_ms": 0.063488,
+        "p95_ms": 0.13312,
+        "p99_ms": 0.139264,
+        "samples": 232
+      },
+      "gpu_resolve": null,
+      "app_update_wall": {
+        "max_ms": 71.6801,
+        "median_ms": 1.2696,
+        "p95_ms": 13.3064,
+        "p99_ms": 19.7371,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 71.6965,
+        "median_ms": 16.6416,
+        "p95_ms": 17.0807,
+        "p99_ms": 19.763099999999998,
+        "samples": 239
+      },
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "persistent-show-960x540-oit-default-r1",
+      "report_sha256": "6E4B684E10772F5BA5E27532B5F0E5FF94650C085933DCDB4F97A99D08219345",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 33554432,
+        "sorted_max": 8
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "oit-default",
+      "workload": "persistent-show",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0001923,
+      "late_deadlines": 8,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 26956800,
+        "heads": 518400,
+        "nodes": 2073600
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 9.249792,
+        "median_ms": 3.657728,
+        "p95_ms": 8.406016,
+        "p99_ms": 9.00608,
+        "samples": 236
+      },
+      "gpu_transparent": {
+        "max_ms": 0.100352,
+        "median_ms": 0.03584,
+        "p95_ms": 0.088064,
+        "p99_ms": 0.095232,
+        "samples": 236
+      },
+      "gpu_resolve": {
+        "max_ms": 0.237568,
+        "median_ms": 0.11264,
+        "p95_ms": 0.1792,
+        "p99_ms": 0.198656,
+        "samples": 236
+      },
+      "app_update_wall": {
+        "max_ms": 70.105,
+        "median_ms": 1.1895,
+        "p95_ms": 1.4821,
+        "p99_ms": 10.1367,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 70.1234,
+        "median_ms": 16.6046,
+        "p95_ms": 17.066000000000003,
+        "p99_ms": 17.1483,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 337481,
+        "max_capped_depth": 9,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 8140,
+        "observations": 230,
+        "observations_over_sort": 230,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0001514,
+      "capacity_peak_alive": 617,
+      "capacity_end_frames": [
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 8
+    },
+    {
+      "name": "persistent-show-960x540-oit-default-r2",
+      "report_sha256": "BA16F136A3F3D02A511AF707165E653C7FE68AB443B6137071670CCF4DD8C5EC",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 33554432,
+        "sorted_max": 8
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "oit-default",
+      "workload": "persistent-show",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0001091,
+      "late_deadlines": 8,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 26956800,
+        "heads": 518400,
+        "nodes": 2073600
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 9.422848,
+        "median_ms": 3.590144,
+        "p95_ms": 8.159232,
+        "p99_ms": 8.876032,
+        "samples": 234
+      },
+      "gpu_transparent": {
+        "max_ms": 0.099328,
+        "median_ms": 0.034816,
+        "p95_ms": 0.08704,
+        "p99_ms": 0.094208,
+        "samples": 234
+      },
+      "gpu_resolve": {
+        "max_ms": 0.24576,
+        "median_ms": 0.111616,
+        "p95_ms": 0.192512,
+        "p99_ms": 0.234496,
+        "samples": 234
+      },
+      "app_update_wall": {
+        "max_ms": 70.9665,
+        "median_ms": 1.2174,
+        "p95_ms": 1.4747000000000001,
+        "p99_ms": 10.0386,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 70.9846,
+        "median_ms": 16.6149,
+        "p95_ms": 17.0431,
+        "p99_ms": 17.108600000000003,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 337481,
+        "max_capped_depth": 9,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 8140,
+        "observations": 236,
+        "observations_over_sort": 236,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0004559,
+      "capacity_peak_alive": 617,
+      "capacity_end_frames": [
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 17
+    },
+    {
+      "name": "persistent-show-960x540-oit-provisioned-r1",
+      "report_sha256": "C7D6A6C159F8521D078DDC75278C36A8C27C92F20F080CC8EF82EC0EDFF7E60E",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 134217728,
+        "sorted_max": 32
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "oit-provisioned",
+      "workload": "persistent-show",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0000676,
+      "late_deadlines": 9,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 26956800,
+        "heads": 518400,
+        "nodes": 2073600
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 11.728896,
+        "median_ms": 3.707904,
+        "p95_ms": 9.158656,
+        "p99_ms": 10.692608,
+        "samples": 223
+      },
+      "gpu_transparent": {
+        "max_ms": 0.062464,
+        "median_ms": 0.032768,
+        "p95_ms": 0.055296,
+        "p99_ms": 0.057344,
+        "samples": 223
+      },
+      "gpu_resolve": {
+        "max_ms": 0.818176,
+        "median_ms": 0.374784,
+        "p95_ms": 0.601088,
+        "p99_ms": 0.730112,
+        "samples": 223
+      },
+      "app_update_wall": {
+        "max_ms": 70.5848,
+        "median_ms": 1.2766,
+        "p95_ms": 7.8803,
+        "p99_ms": 12.0755,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 70.601,
+        "median_ms": 16.630599999999998,
+        "p95_ms": 17.023500000000002,
+        "p99_ms": 17.0842,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 337481,
+        "max_capped_depth": 33,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 4567,
+        "observations": 229,
+        "observations_over_sort": 229,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0000883,
+      "capacity_peak_alive": 617,
+      "capacity_end_frames": [
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 8
+    },
+    {
+      "name": "persistent-show-960x540-oit-provisioned-r2",
+      "report_sha256": "F76A7A2A37DE7C2730D8267BD529827E9E819632378D3CCC426DF53640792833",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": {
+        "average": 4,
+        "budget": 134217728,
+        "sorted_max": 32
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "oit-provisioned",
+      "workload": "persistent-show",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0005096,
+      "late_deadlines": 8,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 26956800,
+        "heads": 518400,
+        "nodes": 2073600
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 12.389376,
+        "median_ms": 3.900416,
+        "p95_ms": 9.363456,
+        "p99_ms": 10.725376,
+        "samples": 229
+      },
+      "gpu_transparent": {
+        "max_ms": 0.114688,
+        "median_ms": 0.032768,
+        "p95_ms": 0.057344,
+        "p99_ms": 0.060416,
+        "samples": 229
+      },
+      "gpu_resolve": {
+        "max_ms": 0.772096,
+        "median_ms": 0.382976,
+        "p95_ms": 0.613376,
+        "p99_ms": 0.739328,
+        "samples": 229
+      },
+      "app_update_wall": {
+        "max_ms": 70.9372,
+        "median_ms": 1.2083000000000002,
+        "p95_ms": 8.8032,
+        "p99_ms": 11.9186,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 70.9524,
+        "median_ms": 16.6188,
+        "p95_ms": 17.0654,
+        "p99_ms": 17.1423,
+        "samples": 239
+      },
+      "capacity": {
+        "invalid_links": 0,
+        "max_attempted": 337481,
+        "max_capped_depth": 33,
+        "max_dropped": 0,
+        "max_over_sort_pixels": 4567,
+        "observations": 234,
+        "observations_over_sort": 234,
+        "observations_with_drops": 0,
+        "observed_exact_capacity": false
+      },
+      "capacity_lane_admitted": true,
+      "capacity_elapsed": 4.0005151,
+      "capacity_peak_alive": 617,
+      "capacity_end_frames": [
+        600
+      ],
+      "capacity_pending": 0,
+      "capacity_late": 10
+    },
+    {
+      "name": "persistent-show-960x540-sorted-r1",
+      "report_sha256": "AC00D75F2D420E8637B78700025C5E1C239D60FA0F28B002EBD58D808E444F09",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "sorted",
+      "workload": "persistent-show",
+      "repetition": 1,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0001401,
+      "late_deadlines": 10,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 16,
+        "heads": 1,
+        "nodes": 1
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 9.261056,
+        "median_ms": 3.556352,
+        "p95_ms": 8.118272,
+        "p99_ms": 8.94976,
+        "samples": 230
+      },
+      "gpu_transparent": {
+        "max_ms": 0.08192,
+        "median_ms": 0.027648,
+        "p95_ms": 0.07168,
+        "p99_ms": 0.078848,
+        "samples": 230
+      },
+      "gpu_resolve": null,
+      "app_update_wall": {
+        "max_ms": 72.32180000000001,
+        "median_ms": 1.2184,
+        "p95_ms": 6.2244,
+        "p99_ms": 12.5508,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 72.3398,
+        "median_ms": 16.5945,
+        "p95_ms": 17.0626,
+        "p99_ms": 17.1154,
+        "samples": 239
+      },
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    },
+    {
+      "name": "persistent-show-960x540-sorted-r2",
+      "report_sha256": "091A4571D18AB482593B32188CF32D27320E4B5F4F5216818EF666F6BAC448D6",
+      "admitted": true,
+      "rejection": null,
+      "estimated_bytes": null,
+      "settings": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "resolution": [
+        960,
+        540
+      ],
+      "mode": "sorted",
+      "workload": "persistent-show",
+      "repetition": 2,
+      "start_frame": 360,
+      "updates": 240,
+      "end_frames": [
+        600
+      ],
+      "elapsed_seconds": 4.0005354,
+      "late_deadlines": 8,
+      "pending_pipelines": 0,
+      "peak_alive": 617,
+      "observed_checkpoint_bytes": 0,
+      "unknown_checkpoint_windows": 0,
+      "max_fixed_ticks": 2,
+      "allocation": {
+        "bytes": 16,
+        "heads": 1,
+        "nodes": 1
+      },
+      "sort_bytes": 132384,
+      "sort_pairs": 14,
+      "gpu_full_frame": {
+        "max_ms": 9.227264,
+        "median_ms": 3.472384,
+        "p95_ms": 8.049664,
+        "p99_ms": 8.741888,
+        "samples": 229
+      },
+      "gpu_transparent": {
+        "max_ms": 0.088064,
+        "median_ms": 0.026624,
+        "p95_ms": 0.072704,
+        "p99_ms": 0.079872,
+        "samples": 229
+      },
+      "gpu_resolve": null,
+      "app_update_wall": {
+        "max_ms": 71.3848,
+        "median_ms": 1.1669,
+        "p95_ms": 2.7251,
+        "p99_ms": 10.9989,
+        "samples": 240
+      },
+      "update_intervals": {
+        "max_ms": 71.4007,
+        "median_ms": 16.6325,
+        "p95_ms": 17.0539,
+        "p99_ms": 17.1348,
+        "samples": 239
+      },
+      "capacity": null,
+      "capacity_lane_admitted": null,
+      "capacity_elapsed": null,
+      "capacity_peak_alive": null,
+      "capacity_end_frames": null,
+      "capacity_pending": null,
+      "capacity_late": null
+    }
+  ],
+  "raw_reports": "One JSON per case, plus accepted.json, under native_run.root. This committed evidence preserves selected timing/metadata/capacity values and SHA256 of every raw report. Raw reports additionally contain full GPU pass/source timing distributions.",
+  "validation": {
+    "fixture_matrix_unit": {
+      "passed": true,
+      "command": "cargo test -p aestra-viewer paced_oit_matrix --locked --offline -- --test-threads=1"
+    },
+    "viewer_tests": {
+      "passed": 108,
+      "ignored": 41,
+      "command": "cargo test -p aestra-viewer --locked --offline -- --test-threads=1"
+    },
+    "strict_clippy": {
+      "passed": true,
+      "command": "cargo clippy --workspace --all-targets --features aestra-bench/gpu --locked --offline -- -D warnings"
+    },
+    "formatting": {
+      "passed": true,
+      "command": "cargo fmt --all -- --check"
+    },
+    "diff_check": {
+      "passed": true,
+      "command": "git diff --check"
+    },
+    "not_claimed": [
+      "full workspace tests",
+      "Linux native benchmark",
+      "dense-image correctness",
+      "public show adoption",
+      "statistical confidence intervals"
+    ]
+  },
+  "harness_iteration": "Initial fixture unit compile used a nonexistent root.clips member; corrected to compiled project dependencies before native measurements. No native measurement from that compile failure is accepted. No timing/capacity threshold was weakened.",
+  "warnings": "Vulkan Galaxy overlay manifest/registry notices, repeated-headless-app LogPlugin/global-subscriber warnings and no-tonemapping/dither notices occurred during app setup. Pending-pipeline counts are zero inside every measured window; these notices are not shader-composer failures. Existing incremental hard-link fallback notices remain environmental."
+}

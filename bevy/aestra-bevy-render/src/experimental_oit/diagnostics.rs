@@ -34,8 +34,10 @@ pub struct ExperimentalOitDiagnosticSample {
     pub attempted_fragments: u32,
     pub node_capacity: u32,
     pub dropped_fragments: u32,
-    /// Count over the exact-sort threshold among *accepted* fragments. A lower
-    /// bound when global drops occur; zero never certifies visual correctness.
+    /// Count over the local fast-sort threshold among *accepted* fragments,
+    /// measured before link sorting. This now identifies overflow-sort work,
+    /// not approximate blending. A lower bound when global drops occur;
+    /// zero never certifies visual correctness.
     pub over_sort_pixels: u32,
     pub invalid_links: u32,
     /// Capped at sorted_fragment_max_count + 1, not an unbounded depth statistic.
@@ -141,6 +143,7 @@ pub(super) fn install(app: &mut App) {
             .add_systems(
                 Core3d,
                 measure
+                    .in_set(Measure)
                     .after(main_transparent_pass_3d)
                     .before(oit_resolve)
                     .in_set(Core3dSystems::MainPass),
@@ -212,6 +215,9 @@ struct Transport {
     slots: Vec<Slot>,
     sequence: u64,
 }
+
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct Measure;
 
 fn measure(
     view: ViewQuery<(&Request, &OitResolvePipelineId)>,

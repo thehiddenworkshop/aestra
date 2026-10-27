@@ -155,6 +155,7 @@ dependencies = [
  "aestra-project",
  "aestra-runtime",
  "bevy",
+ "serde_json",
  "thiserror 2.0.20",
  "tracing",
  "wesl",

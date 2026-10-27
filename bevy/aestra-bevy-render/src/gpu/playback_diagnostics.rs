@@ -1,0 +1,170 @@
+//! Optional CPU-side command-encoding ledger. No GPU waits, timestamps or readbacks.
+use bevy::prelude::*;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+
+/// One prepared owner in the most recently encoded simulation frame.
+#[derive(Clone, Debug)]
+pub struct GpuPlaybackSample {
+    pub owner: Entity,
+    pub requested_time: f32,
+    /// Time actually encoded for presentation, or `None` when preparation blocked it.
+    /// This is not a GPU completion fence or proof of visible pixels.
+    pub encoded_time: Option<f32>,
+    /// CPU command-encoding scope, available only with profiling enabled.
+    pub cpu_encoding_ns: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GpuPlaybackFrame {
+    pub sequence: u64,
+    pub samples: Vec<GpuPlaybackSample>,
+    pub cpu_encoding_ns: Option<u64>,
+}
+
+/// CPU artifact/buffer-asset preparation at initial activation. This excludes
+/// render-thread GPU allocation, submission and GPU execution.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct GpuActivationTiming {
+    pub cpu_preparation_ns: u64,
+}
+
+/// Opt-in latest-frame diagnostics, shared with the render world. Storage is bounded
+/// by the number of currently prepared owners; old frames are replaced, not retained.
+#[derive(Resource, Clone, Default)]
+pub struct GpuPlaybackDiagnostics {
+    enabled: Arc<AtomicBool>,
+    profiling: Arc<AtomicBool>,
+    frame: Arc<Mutex<GpuPlaybackFrame>>,
+}
+impl GpuPlaybackDiagnostics {
+    pub fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::Relaxed);
+    }
+    pub fn snapshot(&self) -> GpuPlaybackFrame {
+        self.frame.lock().expect("playback ledger poisoned").clone()
+    }
+    /// Additional CPU timers; ordinary playback and plain encoding reports leave this off.
+    pub fn set_profiling_enabled(&self, enabled: bool) {
+        self.profiling.store(enabled, Ordering::Relaxed);
+    }
+    /// Whether optional CPU preparation/encoding timers are requested.
+    pub fn profiling_enabled(&self) -> bool {
+        self.profiling.load(Ordering::Relaxed)
+    }
+    pub(super) fn begin(&self) -> Option<Recording> {
+        self.enabled.load(Ordering::Relaxed).then(|| Recording {
+            mailbox: self.clone(),
+            samples: Vec::new(),
+            started: self.profiling_enabled().then(std::time::Instant::now),
+        })
+    }
+}
+
+pub(super) struct Recording {
+    mailbox: GpuPlaybackDiagnostics,
+    pub samples: Vec<GpuPlaybackSample>,
+    started: Option<std::time::Instant>,
+}
+impl Recording {
+    pub fn owner(&mut self, owner: Entity) -> Option<OwnerRecording<'_>> {
+        let started = self.started.map(|_| std::time::Instant::now());
+        self.samples
+            .iter_mut()
+            .find(|s| s.owner == owner)
+            .map(|sample| OwnerRecording { sample, started })
+    }
+}
+pub(super) struct OwnerRecording<'a> {
+    sample: &'a mut GpuPlaybackSample,
+    started: Option<std::time::Instant>,
+}
+impl OwnerRecording<'_> {
+    pub fn encoded(&mut self, time: f32) {
+        self.sample.encoded_time = Some(time);
+    }
+}
+impl Drop for OwnerRecording<'_> {
+    fn drop(&mut self) {
+        self.sample.cpu_encoding_ns = self
+            .started
+            .map(|t| t.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
+    }
+}
+impl Drop for Recording {
+    fn drop(&mut self) {
+        let mut frame = self.mailbox.frame.lock().expect("playback ledger poisoned");
+        frame.sequence += 1;
+        frame.samples = std::mem::take(&mut self.samples);
+        frame.cpu_encoding_ns = self
+            .started
+            .map(|t| t.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ledger_is_opt_in_replaces_frames_and_keeps_blocked_owners_explicit() {
+        let ledger = GpuPlaybackDiagnostics::default();
+        assert!(ledger.begin().is_none());
+        ledger.set_enabled(true);
+        let owner = World::new().spawn_empty().id();
+        {
+            let mut frame = ledger.begin().unwrap();
+            frame.samples.push(GpuPlaybackSample {
+                owner,
+                requested_time: 2.0,
+                encoded_time: None,
+                cpu_encoding_ns: None,
+            });
+            frame.owner(owner).unwrap().encoded(1.5);
+        }
+        assert_eq!(ledger.snapshot().samples[0].encoded_time, Some(1.5));
+        {
+            let mut frame = ledger.begin().unwrap();
+            frame.samples.push(GpuPlaybackSample {
+                owner,
+                requested_time: 3.0,
+                encoded_time: None,
+                cpu_encoding_ns: None,
+            });
+        }
+        let snapshot = ledger.snapshot();
+        assert_eq!(snapshot.sequence, 2);
+        assert_eq!(snapshot.samples.len(), 1);
+        assert_eq!(snapshot.samples[0].encoded_time, None);
+        assert!(snapshot.cpu_encoding_ns.is_none());
+        assert!(snapshot.samples[0].cpu_encoding_ns.is_none());
+    }
+
+    #[test]
+    fn profiling_timers_are_opt_in_and_owner_scope_closes_on_early_return() {
+        let ledger = GpuPlaybackDiagnostics::default();
+        ledger.set_enabled(true);
+        ledger.set_profiling_enabled(true);
+        let owner = World::new().spawn_empty().id();
+        {
+            let mut frame = ledger.begin().unwrap();
+            frame.samples.push(GpuPlaybackSample {
+                owner,
+                requested_time: 1.0,
+                encoded_time: None,
+                cpu_encoding_ns: None,
+            });
+            let leave_blocked = |frame: &mut Recording| {
+                let _owner = frame.owner(owner).unwrap();
+                // Early returns/continues still close the CPU window without
+                // claiming that a simulation was encoded.
+            };
+            leave_blocked(&mut frame);
+        }
+        let snapshot = ledger.snapshot();
+        assert!(snapshot.cpu_encoding_ns.is_some());
+        assert!(snapshot.samples[0].cpu_encoding_ns.is_some());
+        assert_eq!(snapshot.samples[0].encoded_time, None);
+    }
+}

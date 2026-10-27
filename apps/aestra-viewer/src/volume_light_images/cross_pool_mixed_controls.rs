@@ -86,9 +86,9 @@ pub(super) fn qualify(
     );
 
     if matches!(kind, MixedKind::SemanticAdditiveSprite) {
-        // Alpha-zero extinction preserves emission inside the exact sorted prefix.
-        // Bevy's overflow approximation is NOT exact for this representation; keep
-        // that degradation observable rather than silently accepting healthy allocation.
+        // Over-sort is still diagnostic even when the two-fragment special case
+        // is exact. The adapter must preserve premultiplied additive emission;
+        // larger interleaved lists have a separate residual-order oracle.
         for (stage, average, sorted_max) in [
             ("global-exhausted", 0.001, 8),
             ("local-approximation", 4.0, 1),
@@ -128,7 +128,7 @@ pub(super) fn qualify(
                     assert_eq!(sample.dropped_fragments, 0);
                     assert!(sample.over_sort_pixels > 0);
                     assert_eq!(sample.capped_max_depth, 2);
-                    assert!(error > 0.01);
+                    assert!(error < 0.01, "two-fragment overflow must preserve emission");
                 }
                 _ => {
                     healthy(app);
@@ -143,7 +143,8 @@ pub(super) fn qualify(
                 "attempted_fragments":sample.attempted_fragments,"dropped_fragments":sample.dropped_fragments,
                 "over_sort_pixels":sample.over_sort_pixels,"invalid_links":sample.invalid_links,
                 "capped_max_depth":sample.capped_max_depth,"whole_image_linear_error":error,
-                "expected_degradation":stage!="restored"}));
+                "expected_degradation":stage=="global-exhausted",
+                "exact_two_fragment_control":stage=="local-approximation"}));
         }
     }
     results

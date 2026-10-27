@@ -1,0 +1,943 @@
+{
+  "milestone": "F8.1C4N",
+  "date": "2026-10-26",
+  "base_commit": "70176c4c86ae50fc78dde06a644f0d0eef6a9cdd",
+  "prerequisites": "Uncommitted C4L, C4M1 and C4M2; accepted-list ordering infrastructure retained.",
+  "scope": "Guarded public-host HDR opt-in and bounded real-window pilot; not default migration, stable 60 FPS, exact-frame visual comparison, optimized release costs or photographic smoke approval.",
+  "public_defaults_changed": false,
+  "authored_effects_changed": false,
+  "adoption_accepted": false,
+  "entry_point": "cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --experimental-oit",
+  "admission": {
+    "candidate_flags": [
+      "--smoke-art-show",
+      "--persistent-smoke-show"
+    ],
+    "static_check": "Same eligibility predicate as native renderer via ExperimentalOitSettings::supports_renderer; root and all dependencies; this host requires resolved semantic materials and excludes extension stages.",
+    "static_renderer_definitions": 39,
+    "sprites": 27,
+    "trails": 12,
+    "not_live_draw_count": true,
+    "native_checks": "Await camera admission and native global/effect presentation; budget/backend rejection pauses and exits. Missing initial admission times out; shader errors remain fatal after startup.",
+    "camera": {
+      "msaa": "Off",
+      "average_fragments": 4,
+      "local_threshold": 32,
+      "shared_budget_bytes": 134217728,
+      "measured_node_head_bytes": 47923200,
+      "physical_size": [
+        1280,
+        720
+      ],
+      "hdr": true,
+      "tonemapping": "TonyMcMapface",
+      "bloom_intensity": 0.15
+    },
+    "limitations": "Static audit is not arbitrary foreign/custom transparency, dynamic override or global loss certification. Resize rejection covered by CPU host failure-path test and earlier native renderer lifecycle tests; no native 4K resize acceptance claimed."
+  },
+  "environment": {
+    "os": "Windows",
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1",
+    "profile": "dev: application opt-level1, dependencies opt-level3",
+    "features": [
+      "fireworks-audio"
+    ],
+    "sound_playback": false,
+    "binary": {
+      "path": "target/debug/examples/fireworks.exe",
+      "sha256": "B42A9AA389EB7D3B3C972C93D67A1F4001BAD2B423F988B63C4543D345B0F6CC",
+      "bytes": 125234688
+    }
+  },
+  "method": {
+    "native_cases": 6,
+    "case_order": [
+      "wispy-high-ordinary",
+      "wispy-high-oit",
+      "wispy-medium-oit",
+      "wispy-low-oit",
+      "wispy-high-images",
+      "persistent-high-images"
+    ],
+    "same_built_binary": true,
+    "serial": true,
+    "no_concurrent_compilation_or_other_native_probe_in_final_runs": true,
+    "playback": "Automatic host time, forward PlaybackOnly, speed1; no replay/seek/manual fixed-time schedule",
+    "duration_seconds": 37,
+    "cleanup_updates": 10,
+    "controls": "Report hook fixes playback/camera/light controls; Esc still cancels. Normal interactive use unaffected.",
+    "cost_lane": "No screenshots or OIT diagnostic scans. Main-update wall intervals include vsync; not GPU completion or exact present timestamps. Ordinary keeps default Sample4 MSAA, OIT requires Off, so no isolated causal overhead claim.",
+    "image_lane": "Four asynchronous delivered screenshots at nominal8/15/25/32s plus OIT scans. Not a cost lane or exact-frame oracle.",
+    "timing": "Wall playback starts at the first recorded update and includes ten cleanup updates. The interval array has no initial sample; summed game/real deltas omit the terminal update. Root reaches exactly37s. Full-show cold/lazy preparation is included, not a settled-only window."
+  },
+  "sources": [
+    {
+      "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+      "sha256": "EF69340AC7C70CE863B7FE5F1F488C5732C01D52F8A02CB851A361FC8C1857BD"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images.rs",
+      "sha256": "6C7F9FC24A2BC910211094221C2CCC65A1E2E9FE7AB775FBB4E090466645B09E"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_overflow.rs",
+      "sha256": "32868DA754D2835BB37261050CFB1AA322E2D5223F862DB51D5FF763056E58D9"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_saturation.rs",
+      "sha256": "1721119ACA3E2FD2E06F7ED51C278CAD55CEFEE31D1C28DCCFA1F01508D05267"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/fragment_list_live_costs.rs",
+      "sha256": "3E189B5D11DB06D21F9139022B9F3DF27149BAD616CC70585F90E3B417CE3DDA"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "7B0943863431881AD1F8C5C2E357ED591FD7C9485D20EB6618FEBADB8BBE8A01"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/smoke_live_costs.rs",
+      "sha256": "7DFD2609C59B599CEEF6D8C85BCC20D7CF5366C264588205F98AD59DD51BE83E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_chrysanthemum.aestra.ron",
+      "sha256": "B4223D30FD5870D3FCF7D48AB857785D2E625C734001156EC6E024DEC9235C43"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_persistent_smoke.aestra.ron",
+      "sha256": "0BA33D317842C3DDC7582B12FAAA72A8DEF330FAFBF400A94512A50455BCBCD0"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron",
+      "sha256": "5AECB28110A3295AD9E010EE001D4B1CF0B38900FBDB9473383ECE0F0CC6D12E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crackle.aestra.ron",
+      "sha256": "4414A563BBFC7C7A02447AD044EAF7DA7189C6DE24EED4EA88E57C7610C21D63"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_persistent_smoke.aestra.ron",
+      "sha256": "E03E96E5037B7D6ABDFB1CAFB138BA11FB02B4446555A69FA862A151CB0C624B"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron",
+      "sha256": "5ED106ECFED6A58F3AC59ACB7B4F991B5890929F2BCEA00AA64EFDC36ADAFD70"
+    },
+    {
+      "path": "assets/test/effects/fireworks_crossette.aestra.ron",
+      "sha256": "4E9A0E1BAF488865215E84016C031E7992E4530DE957FC49537225E181C68F56"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_persistent_smoke.aestra.ron",
+      "sha256": "0F9FC062EB024C40173DDED37A53CF4E86ADCA5984954DC4EE2C06A440B4946E"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron",
+      "sha256": "1CA9DE6B0D3FFA093D6479B07952113AA7F5B42A58D993D0141CDAAD2CB5B8AB"
+    },
+    {
+      "path": "assets/test/effects/fireworks_multi_break.aestra.ron",
+      "sha256": "91CD5B6C696F37C988F59E33802EE99AD6C15C3A67D9692055D7F078D0AA7E78"
+    },
+    {
+      "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron",
+      "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_particle_smoke_overlap.aestra.ron",
+      "sha256": "60C11B199D1E37EF105EF237A5575CD390C6E07FA53B716F1D13F59DD3C3F532"
+    },
+    {
+      "path": "assets/test/effects/fireworks_peony.aestra.ron",
+      "sha256": "2D1CB90697E9227E2FD8FA03385653CCFCA60927409B9E753692F32B779B0C32"
+    },
+    {
+      "path": "assets/test/effects/fireworks_pistil.aestra.ron",
+      "sha256": "EDED6581E2E7791DABDCDEFD8FCBBD3BC17E30D55E5875AE5AE12E7185EA5D49"
+    },
+    {
+      "path": "assets/test/effects/fireworks_reference_hero.aestra.ron",
+      "sha256": "89C5FDCE6152F0BEB789C16ACF523261F5770257BAA415E8B421BE454B457092"
+    },
+    {
+      "path": "assets/test/effects/fireworks_secondary_volley.aestra.ron",
+      "sha256": "E32D3BC3293AC9B8226499822B1763135E55EDF7530B69C5C0FAAB2D06036838"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+      "sha256": "ED38F17F3A103DA58673EF753C550C291BBB6C7BB6C1C3FE5FDD3540B64634E5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+      "sha256": "FC22EB440F76FC4030A6C67C5B9A71AB45CE5AAC08AA1538976C0F31F9E4979C"
+    },
+    {
+      "path": "assets/test/effects/fireworks_show.aestra.ron",
+      "sha256": "DD2BC77CC19AAA84CFCDCCB24A5C1554B168F5EA664541EA4C28882E09A4C011"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron",
+      "sha256": "1EC41EB51EDBF14CED1631C3DEEE50B1FC4459F1F03B2BA3262FB8D2AF6105B6"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_lighting.aestra.ron",
+      "sha256": "1AA6948E412DF8C7211DE9347449980C650254935983B5831613252EA51D790F"
+    },
+    {
+      "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron",
+      "sha256": "0A32D0AA5DDA578830A7D1359633FB1A33C6F0EADCF59FB92E9611845E0C3E40"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_persistent_smoke.aestra.ron",
+      "sha256": "CB5629E77DDF49ABFC995C425386FEAA3CD73972FA58001BA60B2BF8D3BE9AEF"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron",
+      "sha256": "5AB53A9C477B2987DA245F73A1A448496B08777B3A61932168EFBD78049F1A32"
+    },
+    {
+      "path": "assets/test/effects/fireworks_strobe.aestra.ron",
+      "sha256": "C8CA64F617ABD86EFA1273C991676D58DB732A602D42ABF8092E0EDA7D19CA00"
+    },
+    {
+      "path": "assets/test/effects/fireworks_willow.aestra.ron",
+      "sha256": "D4151B1932ABDED733F2BE7F9A2AB571CF91FBB7FA7E3C857E2FB6A0DD762914"
+    },
+    {
+      "path": "assets/test/materials/fireworks_hero_star.aestra.material.ron",
+      "sha256": "5350E4C64BB017B8D14B947969E1E34EBF0DE2AD504FE80314589C1AC79EA932"
+    },
+    {
+      "path": "assets/test/materials/fireworks_hero_trail.aestra.material.ron",
+      "sha256": "9BEECD239E416DC39F25F6E659EDB9C311B55B45AA0D329EBDEF9175D5C26D24"
+    },
+    {
+      "path": "assets/test/materials/fireworks_lit_smoke.aestra.material.ron",
+      "sha256": "ED47199076350898859F2B046B339CD2EADDE1BD48B9625EB7AFCA169E100E2C"
+    },
+    {
+      "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron",
+      "sha256": "C1E37B06BB5E9DE3109FC87784122A23604A902884037DF5F9E752C432661CC4"
+    },
+    {
+      "path": "assets/test/materials/fireworks_smoke.aestra.material.ron",
+      "sha256": "E1A26E654787835D33AFEFFEC767FB0829F8ACB15A9268B081E341231B424140"
+    },
+    {
+      "path": "assets/test/materials/fireworks_star.aestra.material.ron",
+      "sha256": "950D8B2257BA202B3A5B495C4776B6A608AFF0C85581E34E4B93A699DB504BF9"
+    },
+    {
+      "path": "assets/test/materials/fireworks_strobe_star.aestra.material.ron",
+      "sha256": "BE51C63C89FE9079B07B94787DBC746665B097EFE0E314DEAFF4EFA3E7A81608"
+    },
+    {
+      "path": "assets/test/materials/fireworks_trail.aestra.material.ron",
+      "sha256": "01BA1D32EFE6B032A6949661F9422FFAFA2B40FC06AEC6E1E209BA6B434B3492"
+    },
+    {
+      "path": "assets/test/materials/fireworks_wispy_smoke.aestra.material.ron",
+      "sha256": "642E3704EBC4F37110E00A1146A1641B6CB53C3E37EB451C4CBB0C4EF99E1395"
+    },
+    {
+      "path": "benchmarks/bevy-upgrade/patches-020/overflow_sort.rs",
+      "sha256": "0CB4261291886395051BFB5845180B77C80D62B3378A33AAC8DC156D50F2EECE"
+    },
+    {
+      "path": "benchmarks/bevy-upgrade/patches-020/shader_composition.rs",
+      "sha256": "97F65AA0346109CCD6CF479DAADC61EA38BE24C6A53E88682531E9A2398024B3"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+      "sha256": "6BC7116499755C3A9AD4FE3B57C3363DBF6514CD44965021FABA2759445A95A9"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs",
+      "sha256": "9BAD19218428978DF4421AD040CA891C4566994FEC11693C06E9F30A6E570F0F"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.rs",
+      "sha256": "709755DF6255C5A84663EFFA8AF27528FF6BD8014B5B2DF7F8BABE7D658E33E2"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl",
+      "sha256": "14C603D2F2B6BEC2592A65478A8B3501B2646339ACD704101F6C3A252BB389FF"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.rs",
+      "sha256": "BD6F0AD27A0D0B69693020E816E4D7A666994CB8F31EAA24BD3C1052B3989174"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.wesl",
+      "sha256": "77EF295C7B268F5D1C3337BDE7E01F73129512660E94E0849A1BD7DF4C9E3FCD"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+      "sha256": "508637BD35061511932F2B8A2EA137436EDA6A1E127511A9230FD2EB56C932AA"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+      "sha256": "1A96DD860178958FEBA5B712FE22C4B183DF901D61DD42436E60BBA5009ED2F0"
+    },
+    {
+      "path": "bevy/aestra-bevy/Cargo.toml",
+      "sha256": "146082B7A8469282BB34049352022406DFEC271C5EFCB848393D031D9CD6C2DA"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks.rs",
+      "sha256": "51CAFB22CA49B67B949A4AF90F2110D4F2B7CE6FB915B8676B7AE314BE7AF2FB"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/audio.rs",
+      "sha256": "93AA2FCD7213BEDCE4A5438482FE8DCB9CD95F5B103EAB6D0D010935B7C45813"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/oit_tests.rs",
+      "sha256": "B7E31D03E1D8848931DEF06437345CEED4EDDD53E53E4F115AF02D34D9B1B375"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/oit.rs",
+      "sha256": "F838F0B9AE01E92DD8C68B5C40692F6E547F5AFB6DDAE76CE1A8A911529141EE"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/paths.rs",
+      "sha256": "A89CA2C5BED30EAD922CD29DB513A47AE36CAC0220F5B4EF619D092B6FB0F823"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/project.rs",
+      "sha256": "A90BE1682926EE4CBDF7B33A97BF8EC473F5FC43502705FEB0B7587D2BB7CC03"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/readiness.rs",
+      "sha256": "1D5CAF6FD49D43A0C9F837282E54961C9EDF5ED1F876D57DBF51D94620DD3A80"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/report.rs",
+      "sha256": "E6EFFB159A054EB4A1F3FD2AA8C42C54F6CA0562003A9FF23A0F692342A9F8D9"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "7C23AE9878199DE28D2A800DAEA196BDA44A24B759638606F1C3EB732BD75C4F"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "9ED441D49D2EAD9E9FC45687216BE62A1F5C04295F37CB48C4D5508026071DF9"
+    }
+  ],
+  "runs": [
+    {
+      "name": "persistent-high-images",
+      "raw_path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images.json",
+      "raw_sha256": "1A9F7626CDF9B2D19CCBCBD0406FE2F1D42F59F94526C1E31098A517821DC8FB",
+      "exit_code": 0,
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.984616299999914,
+        "bevy_real_seconds": 36.984616299999914,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": {
+          "loss_free": true,
+          "max_dropped": 0,
+          "max_invalid_links": 0,
+          "max_over_sort_pixels": 22439,
+          "observations": 2061
+        },
+        "captures": [
+          {
+            "delivered": true,
+            "nominal_seconds": 8,
+            "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images-8s.png",
+            "request_seconds": 8
+          },
+          {
+            "delivered": true,
+            "nominal_seconds": 15,
+            "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images-15s.png",
+            "request_seconds": 15.016666412353516
+          },
+          {
+            "delivered": true,
+            "nominal_seconds": 25,
+            "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images-25s.png",
+            "request_seconds": 25
+          },
+          {
+            "delivered": true,
+            "nominal_seconds": 32,
+            "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images-32s.png",
+            "request_seconds": 32
+          }
+        ],
+        "completed": true,
+        "duration": 37,
+        "effect": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 105.5222,
+          "median_ms": 16.5813,
+          "over_16_67ms": 1010,
+          "over_20ms": 395,
+          "over_33_33ms": 24,
+          "p95_ms": 27.922800000000002,
+          "p99_ms": 33.836999999999996,
+          "samples": 2158
+        },
+        "lane": "images-and-capacity",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 1872,
+        "pending_pipeline_updates": 12,
+        "player_speed": 1,
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "high",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.1348714
+      }
+    },
+    {
+      "name": "wispy-high-images",
+      "raw_path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images.json",
+      "raw_sha256": "B6BD1881FE1AE4733B483E622E50143607CBF9781E5BEFF8310BF46232AE6CF9",
+      "exit_code": 0,
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.98485549999991,
+        "bevy_real_seconds": 36.98485549999991,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": {
+          "loss_free": true,
+          "max_dropped": 0,
+          "max_invalid_links": 0,
+          "max_over_sort_pixels": 168,
+          "observations": 1929
+        },
+        "captures": [
+          {
+            "delivered": true,
+            "nominal_seconds": 8,
+            "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images-8s.png",
+            "request_seconds": 8
+          },
+          {
+            "delivered": true,
+            "nominal_seconds": 15,
+            "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images-15s.png",
+            "request_seconds": 15
+          },
+          {
+            "delivered": true,
+            "nominal_seconds": 25,
+            "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images-25s.png",
+            "request_seconds": 25
+          },
+          {
+            "delivered": true,
+            "nominal_seconds": 32,
+            "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images-32s.png",
+            "request_seconds": 32
+          }
+        ],
+        "completed": true,
+        "duration": 37,
+        "effect": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 93.7413,
+          "median_ms": 16.6486,
+          "over_16_67ms": 995,
+          "over_20ms": 522,
+          "over_33_33ms": 72,
+          "p95_ms": 32.4743,
+          "p99_ms": 36.9619,
+          "samples": 2028
+        },
+        "lane": "images-and-capacity",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 2125,
+        "pending_pipeline_updates": 4,
+        "player_speed": 1,
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "high",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.134542
+      }
+    },
+    {
+      "name": "wispy-high-oit",
+      "raw_path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-oit.json",
+      "raw_sha256": "27A0D7E515EA66412D23BB6670511BC5A524BA28FCEE997EA9AB08719B30F1D0",
+      "exit_code": 0,
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.984730000000084,
+        "bevy_real_seconds": 36.984730000000084,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": null,
+        "captures": [],
+        "completed": true,
+        "duration": 37,
+        "effect": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 108.8658,
+          "median_ms": 16.6489,
+          "over_16_67ms": 1008,
+          "over_20ms": 492,
+          "over_33_33ms": 67,
+          "p95_ms": 32.4657,
+          "p99_ms": 35.5844,
+          "samples": 2044
+        },
+        "lane": "host-pacing-no-scans-no-screenshots",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 2125,
+        "pending_pipeline_updates": 11,
+        "player_speed": 1,
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "high",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.1347467
+      }
+    },
+    {
+      "name": "wispy-high-ordinary",
+      "raw_path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-ordinary.json",
+      "raw_sha256": "CE4C5237B5F4E9C41B9D5F23B872F3B73B687F114EA836403776B38A676EB918",
+      "exit_code": 0,
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.984965999999986,
+        "bevy_real_seconds": 36.984965999999986,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": null,
+        "captures": [],
+        "completed": true,
+        "duration": 37,
+        "effect": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+        "experimental_oit": false,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 109.2591,
+          "median_ms": 16.6518,
+          "over_16_67ms": 997,
+          "over_20ms": 539,
+          "over_33_33ms": 88,
+          "p95_ms": 32.9409,
+          "p99_ms": 37.3762,
+          "samples": 2025
+        },
+        "lane": "host-pacing-no-scans-no-screenshots",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Sample4",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 16,
+        "oit_estimated_bytes": null,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 2126,
+        "pending_pipeline_updates": 11,
+        "player_speed": 1,
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 0,
+        "static_sprites": 0,
+        "static_trails": 0,
+        "tier": "high",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.1350038
+      }
+    },
+    {
+      "name": "wispy-low-oit",
+      "raw_path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-low-oit.json",
+      "raw_sha256": "CF1F1C092DB0811996770F1C1AEA886476B0B4E4B1C6AE93E1FAFBF137268A18",
+      "exit_code": 0,
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.984607899999936,
+        "bevy_real_seconds": 36.984607899999936,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": null,
+        "captures": [],
+        "completed": true,
+        "duration": 37,
+        "effect": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 11,
+        "flashes_peak": 2,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 91.9499,
+          "median_ms": 16.6651,
+          "over_16_67ms": 1023,
+          "over_20ms": 511,
+          "over_33_33ms": 74,
+          "p95_ms": 32.4509,
+          "p99_ms": 36.771699999999996,
+          "samples": 2050
+        },
+        "lane": "host-pacing-no-scans-no-screenshots",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 530,
+        "pending_pipeline_updates": 11,
+        "player_speed": 1,
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "low",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.1351376
+      }
+    },
+    {
+      "name": "wispy-medium-oit",
+      "raw_path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-medium-oit.json",
+      "raw_sha256": "5A86712A2E0E71515FE39140839E1F1CEC6AF7C744C1DB7F1BB2904E84AE6EAC",
+      "exit_code": 0,
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.98434070000005,
+        "bevy_real_seconds": 36.98434070000005,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": null,
+        "captures": [],
+        "completed": true,
+        "duration": 37,
+        "effect": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 96.85390000000001,
+          "median_ms": 16.6416,
+          "over_16_67ms": 1003,
+          "over_20ms": 505,
+          "over_33_33ms": 79,
+          "p95_ms": 32.6203,
+          "p99_ms": 36.291700000000006,
+          "samples": 2045
+        },
+        "lane": "host-pacing-no-scans-no-screenshots",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 998,
+        "pending_pipeline_updates": 12,
+        "player_speed": 1,
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "medium",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.1350373
+      }
+    }
+  ],
+  "images": [
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images-15s.png",
+      "sha256": "666C790E6359915835D747C3EAEB556E5E93D30A2B00DC4440DFAB6F0AD0F92A"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images-25s.png",
+      "sha256": "2F86D479A6384EBFDBB51FD8A701B825C658D857E0E933EA7F2484E0C794DCFC"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images-32s.png",
+      "sha256": "98F7A1BD05B0B9DCF84C3DF61C66B0467A3FF7AB17B2E617C98EA782AA69A0A0"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images-8s.png",
+      "sha256": "7C4BEC2A72A22FF05E4919CD9DE0D3BFD74D4747FE8C70B07080CB34F9421E30"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-bright-oit.png",
+      "sha256": "E7CDC424E1270535348AAD73015F302502B0883ECAE5403D4B222F27EFE8A91B"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-bright-ordinary.png",
+      "sha256": "E7C5C3A68C5AAC5AE6BEA78FF21FA49C4AAEA3D7FEE5C05F9825A243D8268DAD"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images-15s.png",
+      "sha256": "7ECE1212BBA3846F3B298CA034925A97E7C1ED372E23DEA074936780CFEB79CC"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images-25s.png",
+      "sha256": "A9994E4DE9C1AE404E995E50FF1FBD306690719D66E7335105677E470AE38C43"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images-32s.png",
+      "sha256": "80DC2456803DB5838C4ED0908F96D6A78DB80D804FF176FBC7B17AABAE0FD0C9"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images-8s.png",
+      "sha256": "7B97A7360394D59DAEE6D7F11B042712F14750DB958B5E7101191628F6962ED7"
+    }
+  ],
+  "logs": [
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/persistent-high-images.log",
+      "sha256": "F3FB8636B1207D12EC1EF125767F3B37B6EAE5C02767607DD775EE9961A44175"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-bright-oit.log",
+      "sha256": "3A7C7EE7C47ED54110DF5D6DC206A9A1C26CB8BD83B6DD0A1393241A5EF0FA0A"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-bright-ordinary.log",
+      "sha256": "DE2CAF4487DDCC269CF20BE8461DDE87B8BDCC527052249D66015CFF7E7E5CA0"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-images.log",
+      "sha256": "B6CA866FFBBEE9889B1BA0332BE0C74926AD0F4F5C5E908EA0568F454CB5E831"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-oit.log",
+      "sha256": "CE6417788B56CDE9F0BF28D07FA9EBF8626767A22A488128AEDFBFF7C4BBF871"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-high-ordinary.log",
+      "sha256": "F533222E6B02DB7B974A9F7AA2AB46CD9C1344CBB4A3E4E0E86264B86EEFFC78"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-low-oit.log",
+      "sha256": "06E7979054F1AE9FBD9B7DD96C8A87BEAD6CE02A937464846C23BF4789E33A84"
+    },
+    {
+      "path": "target/fireworks-f8/public-oit-2026-10-26-b/wispy-medium-oit.log",
+      "sha256": "F8BC74C14C866AAB76892A687DDC83CAAFD5DB9B448B03EE68D3881ACDD878D3"
+    }
+  ],
+  "result": {
+    "all_native_runs_completed": true,
+    "all_native_backend": "Gpu",
+    "all_hdr": true,
+    "all_final_seconds": 37,
+    "paused_updates": 0,
+    "capacity_observations": 3990,
+    "capacity_max_dropped": 0,
+    "capacity_max_invalid_links": 0,
+    "wispy_capacity_peak_over_sort": 168,
+    "persistent_capacity_peak_over_sort": 22439,
+    "recorded_screenshots": 8,
+    "additional_bright_snapshots": 2,
+    "late_pipeline_updates_cost_lanes": [
+      11,
+      11,
+      12,
+      11
+    ],
+    "pacing_adopted": false,
+    "art_approved": false,
+    "light_admission_note": "Final controlled runs admit13 flashes at high/medium and11 at low (peak2). Quality budgets remain unchanged; report does not record all light-drop reason counters, so this is not loss-free cue certification.",
+    "end_state": "All reports have last_async_alive0 and last_observed_owners0 after ten cleanup updates. This does not certify driver VRAM frees; camera OIT storage remains resident until app exit."
+  },
+  "bright_controls": {
+    "command_env": {
+      "AESTRA_EXAMPLE_CAPTURE_SECONDS": "17.45",
+      "AESTRA_EXAMPLE_REPORT": "unset"
+    },
+    "modes": [
+      "ordinary",
+      "oit"
+    ],
+    "scope": "Separate asynchronous real-window captures, not matched particle/light state. Ordinary log has9 admitted flashes and the OIT log12 at request time; visible burst phases differ. Do not use pair as a blend oracle or causal visual improvement proof.",
+    "visual_review": "OIT snapshot visibly shows three colored bursts and nearby colored smoke; current smoke remains granular/draft, persistent control remains round billows."
+  },
+  "preliminary": {
+    "raw_path": "target/fireworks-f8/public-oit-2026-10-26-a/wispy-high-images.json",
+    "raw_sha256": "4D98D195A3785718E8EC692CCEB9B8069BBB3B6795A33A91A94455E54E50B01F",
+    "exit_code": 0,
+    "completed": true,
+    "capacity": {
+      "loss_free": true,
+      "max_dropped": 0,
+      "max_invalid_links": 0,
+      "max_over_sort_pixels": 175,
+      "observations": 3587
+    },
+    "accepted_for": "Preliminary hardware/HDR/capture availability only.",
+    "not_accepted_for": "Pacing or authored-count comparison. This earlier hook had interactive controls, no clock/pause ledger, and overlapped compilation; 3717 interval samples and22 accepted flashes are retained without causal interpretation.",
+    "changes_before_final": "Fixed recording controls, added wall/real/game clock and pause metadata; strengthened initial admission timeout/failure paths."
+  },
+  "validation": {
+    "example_default": {
+      "command": "cargo test -p aestra-bevy --example fireworks --locked --offline -- --test-threads=1",
+      "passed": 24
+    },
+    "example_audio": {
+      "command": "cargo test -p aestra-bevy --example fireworks --features fireworks-audio --locked --offline -- --test-threads=1",
+      "passed": 28
+    },
+    "renderer_lib": {
+      "command": "cargo test -p aestra-bevy-render --lib --locked --offline -- --test-threads=1",
+      "passed": 172,
+      "ignored": 3
+    },
+    "strict_workspace_clippy": {
+      "command": "cargo clippy --workspace --all-targets --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked --offline -- -D warnings",
+      "passed": true
+    },
+    "format": "passed",
+    "diff_check": "passed",
+    "notes": "Six candidate/tier compiled-project equality and static admission gates; unsupported ribbon, budget rejection, missing initial admission timeout, actual camera HDR/bloom/MSAA profile. Existing voice/cue/restart tests retained. Native data gathered by the public example, no viewer import."
+  },
+  "remaining": [
+    "late child-pipeline preparation during real playback",
+    "high/medium/low host p95 intervals around32ms; stable60Hz not accepted",
+    "single per-configuration development-build observations, no confidence intervals or optimized-release certification",
+    "audio compiled/tested but native runs explicitly silent",
+    "only1280x720 audience view in actual-window pilot",
+    "asynchronous snapshots/counts are not exact-frame/math references",
+    "continuous star-path smoke and photographic/material art remain open"
+  ],
+  "next": "Prepare late child render pipelines before first visible birth and re-profile actual-host pacing before promotion; continue bounded continuous star-path smoke and HDR bright/quiet art review on the opt-in candidate."
+}

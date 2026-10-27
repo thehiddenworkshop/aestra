@@ -1,0 +1,555 @@
+{
+  "milestone": "F8.1C4M1",
+  "date": "2026-10-26",
+  "base_commit": "70176c4c86ae50fc78dde06a644f0d0eef6a9cdd",
+  "scope": "Dense local-overflow color-math repair and explicit residual ordering diagnostic. Not renderer adoption, smoke art, or post-repair performance acceptance.",
+  "public_defaults_changed": false,
+  "renderer_adoption": false,
+  "environment": {
+    "os": "Windows",
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "rust": "1.98.1-x86_64-pc-windows-msvc",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1",
+    "target": [
+      480,
+      360
+    ],
+    "intermediate": "HDR linear floating point",
+    "capture": "RGBA8 sRGB",
+    "tonemapping": "None",
+    "bloom": false,
+    "msaa": "Off",
+    "history": "PlaybackOnly",
+    "seed": 1,
+    "sample_frame": 30
+  },
+  "implementation": {
+    "ownership": "Aestra-approved opt-in cameras only; native layouts/12-byte node ABI retained",
+    "repair": "Use already-premultiplied RGB directly in both overflow paths, including alpha-zero additive emission",
+    "unmodified": "Global buffers, 1..32 local sort limit, defaults, collection and portable/ordinary paths",
+    "cold_pipeline": "Keep native resolve until adapter specialization is ready so list clearing continues; no first-frame color guarantee",
+    "remaining": "Early blending is arrival-order dependent; no exactness/error bound for interleaved local overflow"
+  },
+  "method": {
+    "scenes": [
+      "40 homogeneous red alpha=.125 planes",
+      "40 additive planes: RGB=(.025,.0125,0), coverage=.5, extinction=0",
+      "41 interleaved layers: 20 red + 20 blue alpha=.125 and one green additive plane"
+    ],
+    "views": [
+      16,
+      -16
+    ],
+    "spawn_orders": [
+      "forward",
+      "reversed"
+    ],
+    "local_sort_limits": [
+      1,
+      8,
+      32
+    ],
+    "cases_per_run": 36,
+    "global_average": 16,
+    "global_budget_bytes": 67108864,
+    "node_capacity": 2764800,
+    "node_head_storage_bytes": 33868800,
+    "analytic_gate_max_linear_error": 0.01,
+    "positive_math_cases": 24,
+    "residual_order_diagnostic_cases": 12,
+    "reference": "Depth-sorted ordinary GPU draws with one particle per owner, independently checked against analytic central 8x8 patch",
+    "coverage": "Flat semantic mesh planes, size=32, root scale=.25; no soft mask/constant-coverage assumption",
+    "no_global_loss": true
+  },
+  "sources": [
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+      "sha256": "FDF546ED83E9DBAB8CCEA0CC401BA8264B583363C9C06E2F783BA736BFE670FA"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.rs",
+      "sha256": "709755DF6255C5A84663EFFA8AF27528FF6BD8014B5B2DF7F8BABE7D658E33E2"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl",
+      "sha256": "93E9711C6D1A6B412FEDD9D6D6EDFD35FC1C626534B66CE32D5820EEC07B21DB"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_overflow.rs",
+      "sha256": "32199F766A1971F2F65AAD76BDF06F1F8A7195D04A792821694DB25DCAAFBB54"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_oit.rs",
+      "sha256": "722DF91BE85D55C3CC5C182529020BD71DA4917691757243AAD3CC05A7871B15"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_mixed_controls.rs",
+      "sha256": "4FBF8A5F6B42C1947C7F0E499CB6A4875EBBDFC1FDE9E6B16624F5446FA2F3C3"
+    },
+    {
+      "path": "benchmarks/bevy-upgrade/patches-020/shader_composition.rs",
+      "sha256": "1D3A37E29D521990B0FD68EB27E804E355E0F1471E41EFF6EABC919345510C81"
+    }
+  ],
+  "matched_before": {
+    "root": "target/fireworks-f8/fragment-list-overflow-before-2026-10-26-e/fragment-list-dense-overflow",
+    "report_sha256": "53D348AD9CC1EA38B10F66A758C9EBE681B3A4B4BF4DA6D67E7513197C93D4CC",
+    "exit_code": 1,
+    "expected_math_gate_failure": true,
+    "temporary_change": "Disabled only resolve::install(app), then restored it before final runs; final oracle unchanged",
+    "temporary_experimental_oit_sha256": "54094536BDF2E678F96D273DAE7061DD2847198439D57AA1BDA3C266E8BDB2D2",
+    "test_seconds": 22.94,
+    "probe_passed": false,
+    "png_bundle": {
+      "run": "fragment-list-overflow-before-2026-10-26-e",
+      "pngs": 48,
+      "manifest_sha256": "7F6AAFE5F42638BE4D8ACD3A839EBD050D47AED6AAAF71E660DFA31B498DF1AE"
+    }
+  },
+  "final_runs": [
+    {
+      "root": "target/fireworks-f8/fragment-list-overflow-final-2026-10-26-a/fragment-list-dense-overflow",
+      "report_sha256": "794ABE4D10C006E0BD9E2E41B033DCD0AC9AF1A7892E432B8012FA76DAE09894",
+      "exit_code": 0,
+      "probe_passed": true,
+      "math_correct": true,
+      "renderer_correct": false,
+      "residual_order_errors": 12,
+      "ownership_controls": [
+        {
+          "restored_managed_error": 0.004107832908630371,
+          "unmanaged_diagnostics": "unavailable",
+          "unmanaged_native_error": 0.8663303852081299,
+          "unmanaged_status": "none"
+        }
+      ],
+      "run": "fragment-list-overflow-final-2026-10-26-a",
+      "pngs": 52,
+      "manifest_sha256": "902D94291B0D81BD8FEE6510D129A0A877D454AB30D2A7390AA8330022BCCE2C"
+    },
+    {
+      "root": "target/fireworks-f8/fragment-list-overflow-final-2026-10-26-b/fragment-list-dense-overflow",
+      "report_sha256": "7B1A27CA8026ECEDE35A4B25D9D3251DC72E289F38518E2D2EDE63F0D356C696",
+      "exit_code": 0,
+      "probe_passed": true,
+      "math_correct": true,
+      "renderer_correct": false,
+      "residual_order_errors": 12,
+      "ownership_controls": [
+        {
+          "restored_managed_error": 0.004107832908630371,
+          "unmanaged_diagnostics": "unavailable",
+          "unmanaged_native_error": 0.8663303852081299,
+          "unmanaged_status": "none"
+        }
+      ],
+      "run": "fragment-list-overflow-final-2026-10-26-b",
+      "pngs": 52,
+      "manifest_sha256": "F095D027F15B4D072E186858981EDBAB6279DE8725F14C15BB27CCA8D271F061"
+    }
+  ],
+  "scene_error_ranges": [
+    {
+      "run": "fragment-list-overflow-before-2026-10-26-e",
+      "scenes": [
+        {
+          "scene": "homogeneous-smoke",
+          "cases": 12,
+          "min_patch_error": 0.5773248672485352,
+          "max_patch_error": 0.8704382181167603,
+          "max_reference_patch_error": 0.004107832908630371,
+          "max_in_run_repeat_byte_error": 0
+        },
+        {
+          "scene": "additive-only",
+          "cases": 12,
+          "min_patch_error": 0.09802192449569702,
+          "max_patch_error": 0.4877133071422577,
+          "max_reference_patch_error": 0.0030667483806610107,
+          "max_in_run_repeat_byte_error": 0
+        },
+        {
+          "scene": "interleaved-alpha-emission",
+          "cases": 12,
+          "min_patch_error": 0.40292465686798096,
+          "max_patch_error": 0.5217322707176208,
+          "max_reference_patch_error": 0.0029075145721435547,
+          "max_in_run_repeat_byte_error": 1
+        }
+      ]
+    },
+    {
+      "run": "fragment-list-overflow-final-2026-10-26-a",
+      "scenes": [
+        {
+          "scene": "homogeneous-smoke",
+          "cases": 12,
+          "min_patch_error": 0.004107832908630371,
+          "max_patch_error": 0.004107832908630371,
+          "max_reference_patch_error": 0.004107832908630371,
+          "max_in_run_repeat_byte_error": 0
+        },
+        {
+          "scene": "additive-only",
+          "cases": 12,
+          "min_patch_error": 0.0028868019580841064,
+          "max_patch_error": 0.0028868019580841064,
+          "max_reference_patch_error": 0.0030667483806610107,
+          "max_in_run_repeat_byte_error": 0
+        },
+        {
+          "scene": "interleaved-alpha-emission",
+          "cases": 12,
+          "min_patch_error": 0.013249874114990234,
+          "max_patch_error": 0.30734264850616455,
+          "max_reference_patch_error": 0.0029075145721435547,
+          "max_in_run_repeat_byte_error": 6
+        }
+      ]
+    },
+    {
+      "run": "fragment-list-overflow-final-2026-10-26-b",
+      "scenes": [
+        {
+          "scene": "homogeneous-smoke",
+          "cases": 12,
+          "min_patch_error": 0.004107832908630371,
+          "max_patch_error": 0.004107832908630371,
+          "max_reference_patch_error": 0.004107832908630371,
+          "max_in_run_repeat_byte_error": 0
+        },
+        {
+          "scene": "additive-only",
+          "cases": 12,
+          "min_patch_error": 0.0028868019580841064,
+          "max_patch_error": 0.0028868019580841064,
+          "max_reference_patch_error": 0.0030667483806610107,
+          "max_in_run_repeat_byte_error": 0
+        },
+        {
+          "scene": "interleaved-alpha-emission",
+          "cases": 12,
+          "min_patch_error": 0.013249874114990234,
+          "max_patch_error": 0.30734264850616455,
+          "max_reference_patch_error": 0.0029075145721435547,
+          "max_in_run_repeat_byte_error": 6
+        }
+      ]
+    }
+  ],
+  "matched_work": {
+    "compared": 36,
+    "mismatches": []
+  },
+  "image_audit": {
+    "bundles": [
+      {
+        "run": "fragment-list-overflow-before-2026-10-26-e",
+        "pngs": 48,
+        "manifest_sha256": "7F6AAFE5F42638BE4D8ACD3A839EBD050D47AED6AAAF71E660DFA31B498DF1AE"
+      },
+      {
+        "run": "fragment-list-overflow-final-2026-10-26-a",
+        "pngs": 52,
+        "manifest_sha256": "902D94291B0D81BD8FEE6510D129A0A877D454AB30D2A7390AA8330022BCCE2C"
+      },
+      {
+        "run": "fragment-list-overflow-final-2026-10-26-b",
+        "pngs": 52,
+        "manifest_sha256": "F095D027F15B4D072E186858981EDBAB6279DE8725F14C15BB27CCA8D271F061"
+      }
+    ],
+    "before_after_references": {
+      "compared": 12,
+      "missing": [],
+      "changed": [],
+      "max_byte_error": 0
+    },
+    "after_repeat": {
+      "compared": 52,
+      "missing": [],
+      "changed": [
+        {
+          "name": "interleaved-alpha-emission-view-0-spawn-0-sort-1.png",
+          "max_byte_error": 1
+        },
+        {
+          "name": "interleaved-alpha-emission-view-0-spawn-0-sort-32.png",
+          "max_byte_error": 3
+        },
+        {
+          "name": "interleaved-alpha-emission-view-0-spawn-0-sort-8.png",
+          "max_byte_error": 3
+        },
+        {
+          "name": "interleaved-alpha-emission-view-0-spawn-1-sort-1.png",
+          "max_byte_error": 6
+        },
+        {
+          "name": "interleaved-alpha-emission-view-0-spawn-1-sort-32.png",
+          "max_byte_error": 4
+        },
+        {
+          "name": "interleaved-alpha-emission-view-0-spawn-1-sort-8.png",
+          "max_byte_error": 3
+        },
+        {
+          "name": "interleaved-alpha-emission-view-1-spawn-0-sort-1.png",
+          "max_byte_error": 5
+        },
+        {
+          "name": "interleaved-alpha-emission-view-1-spawn-0-sort-32.png",
+          "max_byte_error": 2
+        },
+        {
+          "name": "interleaved-alpha-emission-view-1-spawn-0-sort-8.png",
+          "max_byte_error": 5
+        },
+        {
+          "name": "interleaved-alpha-emission-view-1-spawn-1-sort-1.png",
+          "max_byte_error": 5
+        },
+        {
+          "name": "interleaved-alpha-emission-view-1-spawn-1-sort-32.png",
+          "max_byte_error": 2
+        },
+        {
+          "name": "interleaved-alpha-emission-view-1-spawn-1-sort-8.png",
+          "max_byte_error": 6
+        }
+      ],
+      "max_byte_error": 6
+    }
+  },
+  "prior_non_degraded_image_audit": [
+    {
+      "probe": "fragment-list",
+      "compared": 76,
+      "missing": [],
+      "changed": []
+    },
+    {
+      "probe": "fragment-list-camera-lifecycle",
+      "compared": 33,
+      "missing": [],
+      "changed": []
+    },
+    {
+      "probe": "fragment-list-depth",
+      "compared": 28,
+      "missing": [],
+      "changed": []
+    },
+    {
+      "probe": "fragment-list-depth-variants",
+      "compared": 144,
+      "missing": [],
+      "changed": []
+    },
+    {
+      "probe": "fragment-list-hdr",
+      "compared": 16,
+      "missing": [],
+      "changed": []
+    },
+    {
+      "probe": "fragment-list-lighting",
+      "compared": 48,
+      "missing": [],
+      "changed": []
+    },
+    {
+      "probe": "fragment-list-mixed-unified",
+      "compared": 883,
+      "missing": [],
+      "changed": []
+    },
+    {
+      "probe": "fragment-list-near-plane",
+      "compared": 70,
+      "missing": [],
+      "changed": []
+    },
+    {
+      "probe": "fragment-list-textures",
+      "compared": 396,
+      "missing": [],
+      "changed": []
+    }
+  ],
+  "retained_fixture_attempts": [
+    {
+      "roots": [
+        "fragment-list-overflow-before-2026-10-26-a"
+      ],
+      "accepted": false,
+      "reason": "LDR 8-bit intermediate invalidated the 40-layer analytic reference (~.039 error)."
+    },
+    {
+      "roots": [
+        "fragment-list-overflow-before-2026-10-26-b"
+      ],
+      "accepted": false,
+      "reason": "A byte-exact repeat assertion was invalid for an order-dependent approximation."
+    },
+    {
+      "roots": [
+        "fragment-list-overflow-before-2026-10-26-c",
+        "fragment-list-overflow-before-2026-10-26-d",
+        "fragment-list-overflow-after-2026-10-26-b",
+        "fragment-list-overflow-after-2026-10-26-c"
+      ],
+      "accepted": false,
+      "reason": "Soft sprite coverage/alpha quantization did not meet the independent analytic bound. Replaced with flat semantic mesh coverage, without relaxing .01 threshold."
+    },
+    {
+      "roots": [
+        "fragment-list-overflow-after-2026-10-26-a"
+      ],
+      "accepted": false,
+      "reason": "Invalid ownership-control assumption: unmanaged Aestra draws do not automatically participate in native Bevy OIT. Final control uses actual StandardMaterial draws."
+    },
+    {
+      "roots": [
+        "fragment-list-overflow-after-2026-10-26-d"
+      ],
+      "accepted": "preliminary math only",
+      "reason": "Final flat mesh fixture passed before optional FullscreenShader-resource handling; final -a/-b runs use final source."
+    }
+  ],
+  "next": "C4M2: bound/fix interleaved overflow ordering or select another bounded compositor, then repeat matched live costs/capacity. C4L timings precede this repair.",
+  "regression": {
+    "root": "target/fireworks-f8/fragment-list-overflow-final-2026-10-26-b",
+    "command": "cargo test -p aestra-viewer fragment_list_ --locked --offline -- --ignored --test-threads=1",
+    "exit_code": 0,
+    "passed": 10,
+    "test_seconds": 260.78,
+    "probes": [
+      {
+        "probe": "fragment-list",
+        "probe_passed": true,
+        "report_sha256": "851CCE2100DD517BC5CEFF4D917354FBD01F88C56857773441B5EC0F73AF59DB",
+        "pngs": 76,
+        "png_manifest_sha256": "EA766F1FAA8502AD784B11ED09E5D288BDFA10D3EBC78B2E5D1B0F7602F04355",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-camera-lifecycle",
+        "probe_passed": true,
+        "report_sha256": "7A9EB188804220CC25D716ECFAA30B1C4D32CE08B528FA203C4326FEBCCF743A",
+        "pngs": 33,
+        "png_manifest_sha256": "927F224767BB4D25DD62D46C96F22AB8E03DCE6A0B1AB462B64497A11177F880",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-dense-overflow",
+        "probe_passed": true,
+        "report_sha256": "7B1A27CA8026ECEDE35A4B25D9D3251DC72E289F38518E2D2EDE63F0D356C696",
+        "pngs": 52,
+        "png_manifest_sha256": "F095D027F15B4D072E186858981EDBAB6279DE8725F14C15BB27CCA8D271F061",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-depth",
+        "probe_passed": true,
+        "report_sha256": "50E222A8D9C8A86A27C90FDB0CF54F2FCC9AB9D30F622AC4AC54C78119482E68",
+        "pngs": 28,
+        "png_manifest_sha256": "7779B6673F3B8CBC4FB6D1F37AECF27D2BF5B6611A5997F7A21502946351010A",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-depth-variants",
+        "probe_passed": true,
+        "report_sha256": "EC13C3DB251FA7918D1601AA25D704B731941FD211D12026EF99F7D6AE92ACAA",
+        "pngs": 144,
+        "png_manifest_sha256": "DC5779834D567963649BE79423E0F92B418691BAA563F0C535B7129E61FA89B4",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-hdr",
+        "probe_passed": true,
+        "report_sha256": "5379DEF36D7880AA0F4844426F5B9F0E20A491A14066A653721188B15A94C16A",
+        "pngs": 16,
+        "png_manifest_sha256": "C094823A1B6505D60517F576F0BFD988D06C6A1B529C631AB63C8D628FB432AA",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-lighting",
+        "probe_passed": true,
+        "report_sha256": "BF7D7DDAAE7B5852EE744C8B5E6B6933EB9E56DDC18B60B3547FFCBB78304069",
+        "pngs": 48,
+        "png_manifest_sha256": "CB996079054D2CA360BBE6E12B9AC53515B96B0D094995EF49B031FCD550360D",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-mixed-unified",
+        "probe_passed": true,
+        "report_sha256": "8DB9BE5C12EC56CEE836AE4D0F1370282712168E0B64FD9E6B51BC59A74E2467",
+        "pngs": 885,
+        "png_manifest_sha256": "EE38BB608CDD8D158AA64E4973ADC2DF912187458B4F663E6E82A6F36131A6B3",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-near-plane",
+        "probe_passed": true,
+        "report_sha256": "53D5C1CF5AF4B4A5E09548E6E6E59D194E4FC68B2BE1FC4B23A2EC9222B9C231",
+        "pngs": 70,
+        "png_manifest_sha256": "EB77D8A8AAF651EF3050DECDA15854B18ACFBA90478E6F7F98EAA33DC0420937",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-saturation",
+        "probe_passed": true,
+        "report_sha256": "7ECE711356742982E4BA89785302FA001660FB17C72FD343440CEF8F57313F9C",
+        "pngs": 16,
+        "png_manifest_sha256": "0819D71A1338F92A0C6FADC32B4F8C26C65C0042CB4594876C655B2F8FA9BAD4",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      },
+      {
+        "probe": "fragment-list-textures",
+        "probe_passed": true,
+        "report_sha256": "15CF6AACA6C1884770A9D8BDB29F14A349DC00D110B97BA056A9138EF88C45F7",
+        "pngs": 396,
+        "png_manifest_sha256": "763DE5580905CC984C25875E0F3E3E271D5ACCEC3EF878D3536890F1380F734B",
+        "repeat_non_degraded_changed": [],
+        "repeat_missing": []
+      }
+    ],
+    "previous_root": "target/fireworks-f8/fragment-list-camera-depth-2026-10-25-c",
+    "prior_accepted_pngs_unchanged": 1694,
+    "repeat_accepted_pngs_unchanged": 1694,
+    "exclusions": "Saturation diagnostic and global/local capacity controls excluded from historical exact-image count; new dense images audited separately. Local two-fragment overflow now has zero whole-image linear difference."
+  },
+  "validation": {
+    "renderer_lib": {
+      "passed": 172,
+      "ignored": 3
+    },
+    "viewer": {
+      "passed": 109,
+      "ignored": 42
+    },
+    "real_shader_composition": {
+      "passed": 11,
+      "ignored": 1,
+      "resolve_variants": 6
+    },
+    "workspace_all_targets_clippy_gpu": "passed -D warnings",
+    "shader_composition_clippy": "passed -D warnings",
+    "workspace_format": "passed",
+    "isolated_format": "passed",
+    "diff_check": "passed"
+  }
+}

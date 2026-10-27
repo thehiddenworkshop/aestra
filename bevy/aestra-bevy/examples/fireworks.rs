@@ -2,10 +2,14 @@
 //! No viewer/benchmark implementation is imported.
 #[path = "fireworks/audio.rs"]
 mod audio;
+#[path = "fireworks/oit.rs"]
+mod oit;
 #[path = "fireworks/project.rs"]
 mod project;
 #[path = "fireworks/readiness.rs"]
 mod readiness;
+#[path = "fireworks/report.rs"]
+mod report;
 
 use aestra_bevy::{
     AestraParticleLightPlugin, AestraParticleLightSettings, AestraPlugin, AestraRuntimeStatus,
@@ -24,6 +28,8 @@ use project::{Options, ShowProject};
 struct AudienceCamera;
 #[derive(Component)]
 struct StatusText;
+#[derive(Component)]
+struct ShowRoot;
 #[derive(Resource, Default)]
 struct CaptureState {
     requested: bool,
@@ -47,6 +53,15 @@ fn main() -> AppExit {
         std::process::exit(1);
     });
     let mut app = App::new();
+    let admission = if options.experimental_oit {
+        oit::audit(&project).unwrap_or_else(|error| {
+            eprintln!("Cannot enable experimental fireworks OIT: {error}");
+            std::process::exit(1);
+        })
+    } else {
+        oit::Admission::default()
+    };
+    app.insert_resource(admission);
     // Audio is a separate source: material textures still resolve against the VFX project.
     if let Some(root) = &options.audio_root {
         app.register_asset_source(
@@ -102,12 +117,16 @@ fn main() -> AppExit {
         .apply(app.world_mut())
         .expect("valid lighting preset");
     readiness::install(&mut app);
-    app.insert_resource(options)
-        .init_resource::<CaptureState>()
+    app.insert_resource(options);
+    report::install(&mut app).unwrap_or_else(|error| {
+        eprintln!("Cannot configure fireworks report: {error}");
+        std::process::exit(2);
+    });
+    app.init_resource::<CaptureState>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (readiness::start, controls)
+            (oit::guard, readiness::start, controls)
                 .chain()
                 .before(AestraSet::Playback),
         )
@@ -121,8 +140,12 @@ fn setup(
     project: Res<ShowProject>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    admission: Res<oit::Admission>,
 ) {
     info!("Fireworks project: {}", options.project_root.display());
+    if options.experimental_oit {
+        info!("Experimental OIT static renderer audit: {admission:?}");
+    }
     if let Some(root) = &options.audio_root {
         info!("Fireworks audio: {}", root.display());
     }
@@ -146,6 +169,16 @@ fn setup(
     // Same public HDR response as editor/viewer; fixed exposure, no auto adaptation.
     if !options.smoke_lighting {
         PhotographicPreview::default().apply(&mut commands.entity(camera));
+    }
+    if options.experimental_oit {
+        commands.entity(camera).insert((Msaa::Off, oit::settings()));
+    }
+    if options.smoke_art_show || options.persistent_smoke_show {
+        commands
+            .entity(camera)
+            .insert(aestra_bevy::EffectPipelinePreparation::for_project(
+                &project.0,
+            ));
     }
     if !options.smoke_lighting {
         commands.spawn((
@@ -184,6 +217,7 @@ fn setup(
     player.playing = false;
     commands.spawn((
         player,
+        ShowRoot,
         Transform::from_scale(Vec3::splat(if options.smoke_lighting { 0.1 } else { 1.0 })),
     ));
     commands.spawn((
@@ -231,9 +265,15 @@ fn controls(
     options: Res<Options>,
     mut exit: MessageWriter<AppExit>,
     readiness: Res<readiness::Readiness>,
+    reporting: Option<Res<report::Report>>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
+    }
+    // Qualification runs keep forward playback/camera/light inputs fixed.
+    // Normal interactive controls remain available without the report hook.
+    if reporting.is_some() {
+        return;
     }
     if !readiness.started {
         return;
@@ -317,7 +357,7 @@ fn status(
     };
     for mut label in &mut labels {
         label.0 = format!(
-            "{title}\n{} | {:.1} / {:.1}s | {} | {:?}\n{:?} | {:.1}ms frame (includes vsync) | burst lights: {} active / {} peak",
+            "{title}\n{} | {:.1} / {:.1}s | {} | {:?}\n{:?} | {:.1}ms frame (includes vsync) | burst lights: {} active / {} peak\n{}",
             options.tier,
             player.elapsed(),
             player.effect().duration,
@@ -332,7 +372,12 @@ fn status(
             runtime.active,
             *frame_ms,
             lights.active,
-            lights.peak_active
+            lights.peak_active,
+            if options.experimental_oit {
+                "Experimental shared transparency | 128 MiB guard"
+            } else {
+                "Ordinary transparency"
+            }
         );
     }
 }

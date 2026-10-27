@@ -21,6 +21,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 aestra-artifact = { path = "../../crates/aestra-artifact" }
 # Used by the `minimal_player` example to resolve an authored effect into a
 # compiled project. The crate itself plays an already-compiled project, so this
