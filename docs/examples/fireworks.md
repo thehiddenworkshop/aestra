@@ -217,6 +217,25 @@ The measured high-tier wispy construction cost fell from 22–32 ms per clip to
 GPU simulation and whole-host pacing remain separate open gates. See
 [profile and repeated controls](../../benchmarks/fireworks/profiled-public-host-2026-10-26.md).
 
+### Event-link scratch reuse and encoding accounting (F8.1C4Q)
+
+Lockstep playback now retains per-effect event-list/gather/spawn scratch instead of
+creating it every advancing frame/tick. Descriptor changes invalidate affected slots;
+removed links and retired owners release ownership. Per-tick parameters and bind
+groups remain fresh. Catch-up policy, cues and PlaybackOnly are unchanged.
+
+The profiling report adds `encoding_operations` (CPU scopes, buffer requests/payload
+bytes, bind groups and dispatch counts) and `event_scratch_retained` (owned links,
+buffers and bytes). These cover instrumented simulation call sites in observed
+latest-ledger frames, not complete render-world allocation, driver residency/frees
+or measured transfer traffic. Plain runs keep this accounting off.
+
+Observed event-link buffer requests fall from 461,009 to 450 and CPU simulation
+encoding p95 from 5.61 to 3.33 ms. Three plain full-show controls preserve all 13
+flashes and zero late pipelines; host p95 remains 24.9–26.9 ms, so stable 60 FPS
+and final smoke-art acceptance remain open. See
+[scratch reuse and native controls](../../benchmarks/fireworks/reused-event-scratch-2026-10-27.md).
+
 The new native transparency oracle uses pure-red/blue half-alpha sheets in separate
 players, opposite cameras and reversed spawn orders. It checks linear source-over
 against a deliberately wrong-order control, rather than using repeatability as proof.

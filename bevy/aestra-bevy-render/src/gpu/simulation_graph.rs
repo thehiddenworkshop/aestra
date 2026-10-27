@@ -708,6 +708,22 @@ pub(super) fn run_simulation(
             light_readiness.owners.insert(entity);
         }
     }
+    if playback_diagnostics.profiling_enabled()
+        && let Some(recording) = &mut playback_recording
+    {
+        let mut retention = super::playback_diagnostics::GpuEventScratchRetention::default();
+        for link in stateful_states
+            .0
+            .values()
+            .flatten()
+            .flat_map(|state| state.event_links.iter().flatten())
+        {
+            retention.links += 1;
+            retention.buffers += 4 + u64::from(link.spawn.is_some()) * 2;
+            retention.bytes += link.bytes();
+        }
+        recording.event_scratch = Some(retention);
+    }
     // Copy only instance counts after simulation; mesh commands retain their own geometry ranges.
     // This avoids CPU readback and preserves the existing per-emitter simulation ABI.
     for (draw, mesh) in &mesh_draws {

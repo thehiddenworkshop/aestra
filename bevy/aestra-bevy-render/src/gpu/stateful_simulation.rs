@@ -152,6 +152,8 @@ pub(super) struct StatefulPersistentState {
     /// A changed input history differs from this tick on, which the state already advanced past:
     /// the next advance first goes back to a checkpoint at or before it.
     pub(super) rewind: Option<u32>,
+    /// Used only on the effect's first emitter; one bounded scratch slot per active link.
+    pub(super) event_links: Vec<Option<super::event_link_scratch::EventLinkScratch>>,
 }
 
 /// Fixed tick cadence between checkpoints (~1/3 s at 60 Hz).
@@ -207,6 +209,7 @@ impl StatefulPersistentState {
             mixed_placement: false,
             host_events: Vec::new(),
             rewind: None,
+            event_links: Vec::new(),
         }
     }
 
@@ -466,6 +469,11 @@ pub(super) fn prepare_stateful_states(
                 .collect();
             states.0.insert(entity, allocated);
         } else if let Some(states) = states.0.get_mut(&entity) {
+            // Removing the last link may switch to independent scheduling, which
+            // never enters the coupled encoder to truncate its scratch itself.
+            if let Some(first) = states.first_mut() {
+                first.event_links.truncate(effect.event_links.len());
+            }
             for state in states.iter_mut() {
                 state.set_history_policy(effect.history_policy);
                 state.set_host_events(&effect.host_events.events);
@@ -598,6 +606,15 @@ pub(super) fn is_live_advance(last: u32, target: u32) -> bool {
 /// The host's physics colliders around an effect, on the device for this frame (host bindings HB10):
 /// a few kilobytes at most, so simply uploaded again every frame the bodies may have moved.
 pub(super) fn physics_scene_buffer(device: &RenderDevice, words: &[u32]) -> Buffer {
+    let bytes = words.len() as u64 * 4;
+    let _allocation = super::encoding_profile::scope(
+        super::encoding_profile::Operation::Physics,
+        1,
+        bytes,
+        bytes,
+        0,
+        0,
+    );
     device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("aestra particle physics"),
         contents: &words
@@ -628,6 +645,14 @@ pub(super) fn stateful_bind_group(
     params: &Buffer,
     render: &StatefulRenderBuffers<'_>,
 ) -> BindGroup {
+    let _group = super::encoding_profile::scope(
+        super::encoding_profile::Operation::StatefulGroup,
+        0,
+        0,
+        0,
+        1,
+        0,
+    );
     device.create_bind_group(
         Some("aestra_gpu_stateful"),
         layout,
@@ -678,17 +703,22 @@ pub(super) fn stateful_tick_group(
             .saturating_add(burst)
             .min(dispatch.capacity)
     };
-    let params = device.create_buffer_with_data(&BufferInitDescriptor {
-        label: Some("aestra stateful tick params"),
-        contents: &stateful_params_bytes(
-            dispatch,
-            spawn_count,
-            0.0,
-            live,
-            Some(persistent.last_tick),
-        ),
-        usage: BufferUsages::STORAGE,
-    });
+    let bytes = stateful_params_bytes(dispatch, spawn_count, 0.0, live, Some(persistent.last_tick));
+    let params = {
+        let _allocation = super::encoding_profile::scope(
+            super::encoding_profile::Operation::TickParams,
+            1,
+            bytes.len() as u64,
+            bytes.len() as u64,
+            0,
+            0,
+        );
+        device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful tick params"),
+            contents: &bytes,
+            usage: BufferUsages::STORAGE,
+        })
+    };
     let group = stateful_bind_group(device, layout, persistent, &params, render);
     (group, params)
 }
@@ -715,11 +745,22 @@ pub(super) fn present_stateful_emitter(
     encoder.clear_buffer(render.indirect, instance_count_offset, Some(4));
     let subtick = (simulation_time - persistent.last_tick as f32 * STATEFUL_TICK_DT)
         .clamp(0.0, STATEFUL_TICK_DT);
-    let params = device.create_buffer_with_data(&BufferInitDescriptor {
-        label: Some("aestra stateful present params"),
-        contents: &stateful_params_bytes(dispatch, 0, subtick, false, None),
-        usage: BufferUsages::STORAGE,
-    });
+    let bytes = stateful_params_bytes(dispatch, 0, subtick, false, None);
+    let params = {
+        let _allocation = super::encoding_profile::scope(
+            super::encoding_profile::Operation::PresentParams,
+            1,
+            bytes.len() as u64,
+            bytes.len() as u64,
+            0,
+            0,
+        );
+        device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful present params"),
+            contents: &bytes,
+            usage: BufferUsages::STORAGE,
+        })
+    };
     let group = stateful_bind_group(device, layout, persistent, &params, render);
     let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
         label: Some("aestra stateful present"),

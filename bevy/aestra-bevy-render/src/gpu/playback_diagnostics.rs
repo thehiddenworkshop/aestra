@@ -22,6 +22,17 @@ pub struct GpuPlaybackFrame {
     pub sequence: u64,
     pub samples: Vec<GpuPlaybackSample>,
     pub cpu_encoding_ns: Option<u64>,
+    /// Instrumented simulation call sites only; not a complete GPU/driver allocation ledger.
+    pub encoding_operations: Option<Vec<super::encoding_profile::GpuEncodingOperation>>,
+    /// Live cache ownership in this render-world frame, excluding in-flight driver resources.
+    pub event_scratch: Option<GpuEventScratchRetention>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GpuEventScratchRetention {
+    pub links: u64,
+    pub buffers: u64,
+    pub bytes: u64,
 }
 
 /// CPU artifact/buffer-asset preparation at initial activation. This excludes
@@ -55,10 +66,17 @@ impl GpuPlaybackDiagnostics {
         self.profiling.load(Ordering::Relaxed)
     }
     pub(super) fn begin(&self) -> Option<Recording> {
-        self.enabled.load(Ordering::Relaxed).then(|| Recording {
-            mailbox: self.clone(),
-            samples: Vec::new(),
-            started: self.profiling_enabled().then(std::time::Instant::now),
+        self.enabled.load(Ordering::Relaxed).then(|| {
+            let started = self.profiling_enabled().then(|| {
+                super::encoding_profile::begin();
+                std::time::Instant::now()
+            });
+            Recording {
+                mailbox: self.clone(),
+                samples: Vec::new(),
+                started,
+                event_scratch: None,
+            }
         })
     }
 }
@@ -67,6 +85,7 @@ pub(super) struct Recording {
     mailbox: GpuPlaybackDiagnostics,
     pub samples: Vec<GpuPlaybackSample>,
     started: Option<std::time::Instant>,
+    pub event_scratch: Option<GpuEventScratchRetention>,
 }
 impl Recording {
     pub fn owner(&mut self, owner: Entity) -> Option<OwnerRecording<'_>> {
@@ -101,6 +120,8 @@ impl Drop for Recording {
         frame.cpu_encoding_ns = self
             .started
             .map(|t| t.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
+        frame.encoding_operations = self.started.map(|_| super::encoding_profile::finish());
+        frame.event_scratch = self.event_scratch;
     }
 }
 

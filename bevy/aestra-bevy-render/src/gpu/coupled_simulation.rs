@@ -201,31 +201,30 @@ pub(super) fn run_coupled_stateful(
         }
         trails.record(encoder, now);
     }
-    let lists: Vec<Buffer> = if ticks > 0 {
-        link_ends
-            .iter()
-            .map(|(_, source, _, link)| {
-                let capacity = crate::execution::EventGatherPipeline::list_capacity(
-                    aestra_runtime::event_capture_capacity(
-                        dispatches[*source].capacity,
-                        link.trigger,
-                    ),
-                    link.count,
-                );
-                device.create_buffer_with_data(&BufferInitDescriptor {
-                    label: Some("aestra event list"),
-                    contents: &vec![
-                        0u8;
-                        crate::execution::EventGatherPipeline::list_bytes(capacity)
-                            as usize
-                    ],
-                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-                })
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
+    // Temporarily move the effect-owned scratch out so ticking any emitter can
+    // borrow the state slice. Restore ownership before returning. Buffer contents
+    // are GPU scratch only: every gather/plan overwrites its live header each tick.
+    let mut lists = persistent_states
+        .first_mut()
+        .map(|state| std::mem::take(&mut state.event_links))
+        .unwrap_or_default();
+    lists.truncate(link_ends.len());
+    if ticks > 0 {
+        lists.resize_with(link_ends.len(), || None);
+        for ((index, source, _, link), slot) in link_ends.iter().zip(&mut lists) {
+            let capacity = crate::execution::EventGatherPipeline::list_capacity(
+                aestra_runtime::event_capture_capacity(dispatches[*source].capacity, link.trigger),
+                link.count,
+            );
+            let words = crate::execution::EventGatherBuffers::words(
+                capacity,
+                link,
+                counter_base.map_or(u32::MAX, |base| base + *index as u32 * 3),
+                counter_base.map_or(u32::MAX, |base| base + *index as u32 * 3 + 1),
+            );
+            super::event_link_scratch::EventLinkScratch::prepare(device, slot, words);
+        }
+    }
     let mut checkpoint_capture_bytes = 0;
     for _ in 0..ticks {
         let mut tick_params = Vec::with_capacity(dispatches.len());
@@ -305,12 +304,16 @@ pub(super) fn run_coupled_stateful(
         }
         // Event links (host bindings HB9b): after every emitter's tick, each link's events of it
         // become its target's particles, in link order.
-        for ((index, source, target, link), list) in link_ends.iter().zip(&lists) {
+        for ((index, source, target, link), slot) in link_ends.iter().zip(&mut lists) {
+            let scratch = slot
+                .as_mut()
+                .expect("advancing links have prepared scratch");
+            let list = &scratch.list;
             let list_capacity = crate::execution::EventGatherPipeline::list_capacity(
                 aestra_runtime::event_capture_capacity(dispatches[*source].capacity, link.trigger),
                 link.count,
             );
-            coupling.gatherer.encode_with_overflow(
+            coupling.gatherer.encode_with_buffers(
                 device.wgpu_device(),
                 encoder,
                 &persistent_states[*source].events,
@@ -318,16 +321,35 @@ pub(super) fn run_coupled_stateful(
                     buffer: list,
                     capacity: list_capacity,
                 },
-                link,
                 crate::execution::EventLinkCounters {
                     buffer: render.counters,
                     requested_word: counter_base.map_or(u32::MAX, |base| base + *index as u32 * 3),
                     dropped_word: counter_base
                         .map_or(u32::MAX, |base| base + *index as u32 * 3 + 1),
                 },
+                &scratch.gather,
             );
             let persistent = &persistent_states[*target];
-            coupling.spawner.encode_with_acceptance(
+            let output_births = (birth_outputs[*target]
+                && live
+                && u64::from(next) > routes.output_suppress_through)
+                .then_some(&persistent.events);
+            let spawn_words = crate::execution::DomainSpawnBuffers::words(
+                &crate::execution::EventGatherPipeline::spawn(link, list_capacity),
+                counter_base.map_or(u32::MAX, |base| base + *index as u32 * 3 + 2),
+                output_births.map(|b| &**b),
+            );
+            if scratch
+                .spawn
+                .as_ref()
+                .is_none_or(|s| !s.matches(spawn_words))
+            {
+                scratch.spawn = Some(crate::execution::DomainSpawnBuffers::new(
+                    device.wgpu_device(),
+                    spawn_words,
+                ));
+            }
+            coupling.spawner.encode_with_buffers(
                 device.wgpu_device(),
                 encoder,
                 crate::execution::SpawnState {
@@ -336,17 +358,14 @@ pub(super) fn run_coupled_stateful(
                     free_count: &persistent.free_count,
                     spawn_counter: &persistent.spawn_counter,
                     params: &tick_params[*target],
-                    output_births: (birth_outputs[*target]
-                        && live
-                        && u64::from(next) > routes.output_suppress_through)
-                        .then_some(&persistent.events),
+                    output_births: output_births.map(|b| &**b),
                 },
                 list,
-                &crate::execution::EventGatherPipeline::spawn(link, list_capacity),
                 crate::execution::SpawnAcceptanceCounter {
                     buffer: render.counters,
                     word: counter_base.map_or(u32::MAX, |base| base + *index as u32 * 3 + 2),
                 },
+                scratch.spawn.as_ref().unwrap(),
             );
         }
         // Input routes (event system E3): after the links, the bursts the host's events of this
@@ -480,6 +499,9 @@ pub(super) fn run_coupled_stateful(
                 simulation_time,
             );
         }
+    }
+    if let Some(state) = persistent_states.first_mut() {
+        state.event_links = lists;
     }
     (ticks, checkpoint_capture_bytes)
 }

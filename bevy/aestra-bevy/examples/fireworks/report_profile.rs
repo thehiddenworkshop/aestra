@@ -18,6 +18,17 @@ struct Owner {
     checkpoint_bytes: u64,
 }
 
+#[derive(Default)]
+struct EncodingOperation {
+    frames_ms: Vec<f64>,
+    calls: u64,
+    buffers: u64,
+    buffer_bytes: u64,
+    initialized_bytes: u64,
+    bind_groups: u64,
+    dispatches: u64,
+}
+
 #[derive(Resource, Default)]
 pub(super) struct Profile {
     start: Option<Instant>,
@@ -30,6 +41,9 @@ pub(super) struct Profile {
     activation_seen: BTreeSet<Entity>,
     activations: Vec<serde_json::Value>,
     encoding_sequence: u64,
+    operations: BTreeMap<&'static str, EncodingOperation>,
+    scratch_peak: [u64; 3],
+    scratch_last: [u64; 3],
 }
 
 pub(super) fn install(app: &mut App) {
@@ -104,6 +118,22 @@ fn collect(
         if let Some(ns) = frame.cpu_encoding_ns {
             profile.encoding_cpu.push(ns as f64 / 1e6);
         }
+        for sample in frame.encoding_operations.into_iter().flatten() {
+            let op = profile.operations.entry(sample.name).or_default();
+            op.frames_ms.push(sample.cpu_ns as f64 / 1e6);
+            op.calls += sample.calls;
+            op.buffers += sample.buffers;
+            op.buffer_bytes += sample.buffer_bytes;
+            op.initialized_bytes += sample.initialized_bytes;
+            op.bind_groups += sample.bind_groups;
+            op.dispatches += sample.dispatches;
+        }
+        if let Some(scratch) = frame.event_scratch {
+            profile.scratch_last = [scratch.links, scratch.buffers, scratch.bytes];
+            for i in 0..3 {
+                profile.scratch_peak[i] = profile.scratch_peak[i].max(profile.scratch_last[i]);
+            }
+        }
         for sample in frame.samples {
             if let Some(ns) = sample.cpu_encoding_ns
                 && let Ok((_, effect, _, _, _, _)) = effects.get(sample.owner)
@@ -153,7 +183,15 @@ impl Profile {
     pub(super) fn summary(&self) -> serde_json::Value {
         let gpu: BTreeMap<_, _> = self.gpu.iter().map(|(k, v)| (k, distribution(v))).collect();
         let owners: BTreeMap<_,_> = self.owners.iter().map(|(k,o)|(k,json!({"cpu_encoding_ms":distribution(&o.cpu),"gpu_simulation_ms":distribution(&o.gpu),"observed_fixed_ticks":o.ticks,"max_fixed_ticks":o.max_ticks,"trail_observations":o.observations,"trail_workgroups":o.workgroups,"checkpoint_capture_bytes":o.checkpoint_bytes}))).collect();
+        let operations: BTreeMap<_, _> = self.operations.iter().map(|(name, op)| (name, json!({
+            "observed_frame_cpu_ms": distribution(&op.frames_ms), "calls":op.calls,
+            "buffers":op.buffers,"requested_buffer_bytes":op.buffer_bytes,
+            "initialized_bytes":op.initialized_bytes,"bind_groups":op.bind_groups,"dispatches":op.dispatches
+        }))).collect();
         json!({"cpu_playback_scope_ms":distribution(&self.playback_cpu),"cpu_simulation_encoding_scope_ms":distribution(&self.encoding_cpu),"gpu_phases_ms":gpu,"owners":owners,"activations":self.activations,
+            "encoding_operations":operations,
+            "event_scratch_retained":{"order":["links","buffers","bytes"],"observed_peak":self.scratch_peak,"last":self.scratch_last,"scope":"Render-world cache ownership, not driver residency or completed-submission frees."},
+            "encoding_operations_scope":"Instrumented simulation-thread API call sites in observed latest-ledger frames only. Buffer bytes are requested sizes; initialized bytes are create-with-data payloads, not measured PCIe traffic. CPU scopes exclude parameter-byte construction and GPU execution. Initial render-world preparation, uninstrumented helpers, driver allocations and skipped ledger frames are not counted. Gather/spawn scopes include command encoding; other scopes measure allocation/bind-group calls.",
             "scope":"Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshot/capacity scan."})
     }
 }

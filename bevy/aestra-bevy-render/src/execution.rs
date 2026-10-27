@@ -42,6 +42,9 @@ use std::sync::mpsc;
 use std::time::Duration;
 use wgpu::util::DeviceExt;
 
+mod event_scratch;
+pub(crate) use event_scratch::{DomainSpawnBuffers, EventGatherBuffers};
+
 const READBACK_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// A grid field's buffers as a reader binds them (see [`StageExecutor::field_buffers`]).
@@ -1519,24 +1522,33 @@ impl DomainSpawnPipeline {
         spawn: &aestra_runtime::CompiledDomainSpawn,
         acceptance: SpawnAcceptanceCounter<'_>,
     ) {
-        let mut words = aestra_gpu::domain_spawn_params(spawn);
-        words[2] = acceptance.word;
-        words[3] = target.output_births.map_or(0, |events| {
-            (events.size().saturating_sub(16) / 32)
-                .min(u64::from(aestra_runtime::PARTICLE_EVENT_CAPACITY)) as u32
-        });
+        let scratch = DomainSpawnBuffers::new(
+            device,
+            DomainSpawnBuffers::words(spawn, acceptance.word, target.output_births),
+        );
+        self.encode_with_buffers(device, encoder, target, emission, acceptance, &scratch);
+    }
+
+    pub(crate) fn encode_with_buffers(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target: SpawnState<'_>,
+        emission: &wgpu::Buffer,
+        acceptance: SpawnAcceptanceCounter<'_>,
+        scratch: &DomainSpawnBuffers,
+    ) {
+        let _encoding = crate::gpu::encoding_profile::scope(
+            crate::gpu::encoding_profile::Operation::EventSpawn,
+            0,
+            0,
+            0,
+            2,
+            2,
+        );
         let events = target.output_births.unwrap_or(&self.no_events);
-        let spawn_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("aestra domain spawn params"),
-            contents: &words_to_bytes(&words),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
-        let plan = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("aestra domain spawn plan"),
-            size: aestra_gpu::DOMAIN_SPAWN_PLAN_WORDS as u64 * 4,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT,
-            mapped_at_creation: false,
-        });
+        let spawn_params = &scratch.params;
+        let plan = &scratch.plan;
         let group = |pipeline: &wgpu::ComputePipeline, buffers: &[&wgpu::Buffer]| {
             let entries: Vec<wgpu::BindGroupEntry> = buffers
                 .iter()
@@ -1558,8 +1570,8 @@ impl DomainSpawnPipeline {
                 target.free_count,
                 target.spawn_counter,
                 emission,
-                &plan,
-                &spawn_params,
+                plan,
+                spawn_params,
                 acceptance.buffer,
                 events,
             ],
@@ -1571,8 +1583,8 @@ impl DomainSpawnPipeline {
                 target.free_list,
                 target.params,
                 emission,
-                &plan,
-                &spawn_params,
+                plan,
+                spawn_params,
                 events,
             ],
         );
@@ -1591,7 +1603,7 @@ impl DomainSpawnPipeline {
         });
         pass.set_pipeline(&self.spawn);
         pass.set_bind_group(0, &spawn_group, &[]);
-        pass.dispatch_workgroups_indirect(&plan, 0);
+        pass.dispatch_workgroups_indirect(plan, 0);
     }
 }
 
@@ -1834,32 +1846,39 @@ impl EventGatherPipeline {
         link: &aestra_runtime::CompiledEventLink,
         counters: EventLinkCounters<'_>,
     ) {
-        encoder.clear_buffer(list.buffer, 0, Some(4));
-        let capacity = aestra_runtime::PARTICLE_EVENT_CAPACITY;
-        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("aestra event gather params"),
-            contents: &words_to_bytes(&[
-                aestra_runtime::event_trigger_bit(link.trigger),
-                link.count,
+        let scratch = EventGatherBuffers::new(
+            device,
+            EventGatherBuffers::words(
                 list.capacity,
-                capacity,
+                link,
                 counters.requested_word,
                 counters.dropped_word,
-            ]),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
-        let order = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("aestra event order and dispatch plan"),
-            size: (6 + aestra_runtime::PARTICLE_EVENT_CAPACITY as u64) * 4,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let indirect = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("aestra event expansion indirect dispatch"),
-            size: 12,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDIRECT,
-            mapped_at_creation: false,
-        });
+            ),
+        );
+        self.encode_with_buffers(device, encoder, events, list, counters, &scratch);
+    }
+
+    pub(crate) fn encode_with_buffers(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        events: &wgpu::Buffer,
+        list: EventEmissionList<'_>,
+        counters: EventLinkCounters<'_>,
+        scratch: &EventGatherBuffers,
+    ) {
+        let _encoding = crate::gpu::encoding_profile::scope(
+            crate::gpu::encoding_profile::Operation::EventGather,
+            0,
+            0,
+            0,
+            1,
+            2,
+        );
+        encoder.clear_buffer(list.buffer, 0, Some(4));
+        let params = &scratch.params;
+        let order = &scratch.order;
+        let indirect = &scratch.indirect;
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("aestra event gather"),
             layout: &self.layout,
@@ -1895,14 +1914,14 @@ impl EventGatherPipeline {
             pass.set_bind_group(0, &group, &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
-        encoder.copy_buffer_to_buffer(&order, 0, &indirect, 0, 12);
+        encoder.copy_buffer_to_buffer(order, 0, indirect, 0, 12);
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("aestra event expansion"),
             timestamp_writes: None,
         });
         pass.set_pipeline(&self.expand);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups_indirect(&indirect, 0);
+        pass.dispatch_workgroups_indirect(indirect, 0);
     }
 }
 

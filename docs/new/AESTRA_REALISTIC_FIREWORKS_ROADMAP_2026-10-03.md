@@ -5068,11 +5068,38 @@ assets and renderer defaults are unchanged. Final checks: 178 renderer tests pas
 workspace Clippy/formatting/diff checks pass. See
 [`profiled-public-host-2026-10-26.md`](../../benchmarks/fireworks/profiled-public-host-2026-10-26.md).
 
-**Next:** measure render-thread allocation and coupled simulation upload/dispatch work,
-including repeated event-list/parameter buffer allocation, before revisiting bounded
-live catch-up policy. Preserve registration, short flash delivery and PlaybackOnly;
-continue continuous star-path smoke/HDR art review after that gate. Do not replace
-the default show or claim stable 60 FPS from these CPU activation measurements.
+**F8.1C4Q event-link scratch reuse (2026-10-27): implemented; bounded
+allocation/retirement gate accepted, whole-host pacing still open.** Optional fixed-category
+simulation-thread accounting measures allocation requests, initialization payloads,
+bind groups, dispatches and CPU scopes, without new readbacks/GPU waits. An actual
+high-tier public wispy baseline observes 461,009 event-link buffer requests. Per-effect,
+per-link retained list/gather/spawn scratch reduces that to 450 requests in the final
+instrumented run; CPU simulation encoding p95 falls from 5.612 to 3.330 ms.
+
+Descriptor changes invalidate affected slots; gather/spawn overwrite live headers
+each tick. Bind groups and per-tick stateful parameters remain fresh, retaining
+current resources and historical inputs. Removed links, independent-scheduling
+transition, state replacement and owner retirement release cache ownership. Observed
+cache peaks at 75 links/450 buffers/589,044 bytes and finishes at zero. This is not
+a global GPU memory bound or driver-free trace; retained scratch extends working
+memory lifetime between frames/pauses. Standalone public execution signatures remain.
+
+Two plain wispy repetitions and a persistent control preserve all 13 flashes, zero
+late pipelines, exact clip scheduling, no blocked/missing owners and empty final
+observed populations. Maximum sampled encoding lag is one tick within f32 tolerance;
+host p95 remains 24.874–26.894 ms, with 52–61 ms maxima. No stable-60-FPS, universal
+display-registration or smoke-art acceptance is claimed. GPU timing differences
+are observations, not an isolated shader speedup. Authored assets, catch-up budgets,
+PlaybackOnly and defaults are unchanged. Tests: 180 renderer (three ignored),
+4 domain-spawn, 31 stateful conformance, 65 host and 29 example passed; native GPU
+required for renderer/conformance gates. Strict workspace Clippy/format/diff pass.
+See [`reused-event-scratch-2026-10-27.md`](../../benchmarks/fireworks/reused-event-scratch-2026-10-27.md).
+
+**Next:** measure remaining per-tick/presentation parameter and bind-group churn,
+plus render-world activation allocation outside the simulation profiling scope.
+Preserve registration, short flash delivery and PlaybackOnly; continuous star-path
+smoke/HDR art review remains open. Do not replace the default show or claim stable
+60 FPS from allocation/CPU encoding measurements.
 Arbitrary no-prepass/custom-depth,
 equal-depth ties, viewport subrectangles/resolution overrides, window/minimize lifecycle
 and multi-camera overflow diagnostics remain outside the qualified set. More storage

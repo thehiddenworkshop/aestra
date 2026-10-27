@@ -155,11 +155,21 @@ impl Observer<'_> {
             placement,
             self.effect.checkpoint_context.motion.as_deref(),
         );
-        let upload = device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("aestra stateful trail observation"),
-            contents: &bytes,
-            usage: BufferUsages::COPY_SRC,
-        });
+        let upload = {
+            let _allocation = super::encoding_profile::scope(
+                super::encoding_profile::Operation::TrailUpload,
+                1,
+                bytes.len() as u64,
+                bytes.len() as u64,
+                0,
+                0,
+            );
+            device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra stateful trail observation"),
+                contents: &bytes,
+                usage: BufferUsages::COPY_SRC,
+            })
+        };
         encoder.copy_buffer_to_buffer(&upload, 0, self.globals, 0, 4);
         encoder.copy_buffer_to_buffer(&upload, 4, self.globals, 32, 64);
         encoder.copy_buffer_to_buffer(&upload, 0, self.render_globals, 64, 4);

@@ -24,6 +24,9 @@ mod draw_instance;
 mod draw_preparation;
 mod draw_resources;
 mod effect_inputs;
+pub(crate) mod encoding_profile;
+mod event_link_scratch;
+pub use encoding_profile::GpuEncodingOperation;
 mod extension_stages;
 #[path = "gpu/extraction.rs"]
 mod extraction;
@@ -54,7 +57,8 @@ mod pipeline_preparation;
 pub use pipeline_preparation::{EffectPipelinePreparation, EffectPipelinePreparationStatus};
 mod playback_diagnostics;
 pub use playback_diagnostics::{
-    GpuActivationTiming, GpuPlaybackDiagnostics, GpuPlaybackFrame, GpuPlaybackSample,
+    GpuActivationTiming, GpuEventScratchRetention, GpuPlaybackDiagnostics, GpuPlaybackFrame,
+    GpuPlaybackSample,
 };
 mod preparation;
 mod preparation_context;

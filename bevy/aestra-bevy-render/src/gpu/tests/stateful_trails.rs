@@ -1,4 +1,70 @@
 // Included in coupled_tests so this regression drives the production lockstep encoder.
+#[test]
+fn event_link_scratch_reuses_buffers_without_stale_births_and_retires_removed_links() {
+    let Some(mut cached) = sized_event_trail_scene(false, 16) else {
+        assert!(std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(), "native GPU required");
+        return;
+    };
+    let mut fresh = sized_event_trail_scene(false, 16).unwrap();
+    cached.effect.history_policy = PlaybackHistoryPolicy::PlaybackOnly;
+    fresh.effect.history_policy = PlaybackHistoryPolicy::PlaybackOnly;
+    let mut identity = None;
+    for tick in 0..=24 {
+        super::encoding_profile::begin();
+        cached.frame(tick, 4);
+        let operations = super::encoding_profile::finish();
+        // The control takes the former allocate-every-frame path. Actual source deaths
+        // are followed by empty-event ticks, so stale plan/count reuse would diverge.
+        fresh.scene.states[0].event_links.clear();
+        fresh.frame(tick, 4);
+        if tick > 0 {
+            let slot = cached.scene.states[0].event_links[0].as_ref().unwrap();
+            if let Some(id) = identity { assert_eq!(slot.list.id(), id); }
+            identity = Some(slot.list.id());
+            if tick > 1 {
+                assert!(!operations.iter().any(|op| matches!(op.name,
+                    "event_list" | "event_gather_prepare" | "event_spawn_prepare")));
+            }
+        }
+        for (a, b) in cached.scene.states.iter().zip(&fresh.scene.states) {
+            assert_eq!(read_back(&cached.scene.device, &cached.scene.queue, &a.state),
+                read_back(&fresh.scene.device, &fresh.scene.queue, &b.state), "state at tick {tick}");
+        }
+        assert_eq!(cached.trail_state(), fresh.trail_state(), "trails at tick {tick}");
+        assert_eq!(cached.usage(), fresh.usage());
+    }
+    // A paused frame does not rebuild scratch. Changed capacity/routing invalidates
+    // only its slot; removed links drop their buffers at the next lockstep call.
+    cached.frame(24, 4);
+    assert_eq!(cached.scene.states[0].event_links[0].as_ref().unwrap().list.id(), identity.unwrap());
+    cached.effect.event_links[0].count = 8;
+    cached.frame(25, 4);
+    let slot = cached.scene.states[0].event_links[0].as_ref().unwrap();
+    assert_ne!(slot.list.id(), identity.unwrap());
+    assert_eq!(slot.list.size(), crate::execution::EventGatherPipeline::list_bytes(8));
+    cached.effect.event_links.clear();
+    cached.frame(25, 4);
+    assert!(cached.scene.states[0].event_links.is_empty());
+
+    let mut app = App::new();
+    // The direct-encoder fixture did not need preparation's stride metadata.
+    fresh.effect.simulation_state.stride = STRIDE;
+    let owner = app.world_mut().spawn(fresh.effect.clone()).id();
+    app.insert_resource(fresh.scene.device.clone())
+        .insert_resource(StatefulStates([(owner, std::mem::take(&mut fresh.scene.states))].into()))
+        .add_systems(Update, prepare_stateful_states);
+    app.update();
+    assert_eq!(app.world().resource::<StatefulStates>().0[&owner][0].event_links.len(), 1);
+    // This also covers the independent-scheduling transition: preparation must
+    // release scratch even when the coupled encoder is no longer called.
+    app.world_mut().get_mut::<GpuEffectBuffers>(owner).unwrap().event_links.clear();
+    app.update();
+    assert!(app.world().resource::<StatefulStates>().0[&owner][0].event_links.is_empty());
+    app.world_mut().entity_mut(owner).remove::<GpuEffectBuffers>();
+    app.update();
+    assert!(app.world().resource::<StatefulStates>().0.is_empty());
+}
+
 struct EventTrailScene {
     scene: Scene,
     effect: GpuEffectBuffers,
