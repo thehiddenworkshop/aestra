@@ -51,6 +51,7 @@ type SimulationState<'w, 's> = (
     Option<Res<'w, stage_coupling::FieldFollow>>,
     Option<ResMut<'w, CatchupPacer>>,
     Option<Res<'w, stage_coupling::ParticleWorldBuffer>>,
+    Local<'s, std::cell::RefCell<super::parameter_uploads::ParameterUploads>>,
 );
 
 type SimulationGpuResources<'w> = (
@@ -109,7 +110,9 @@ pub(super) fn run_simulation(
         follower,
         mut pacer,
         particle_world,
+        uploads,
     ) = state;
+    uploads.borrow_mut().begin();
     let Some(particle_world) = particle_world else {
         return;
     };
@@ -261,7 +264,8 @@ pub(super) fn run_simulation(
                     None
                 };
                 let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
-                let physics_buffer = physics_scene_buffer(&render_device, &effect.physics);
+                let physics_buffer =
+                    cached_physics_scene_buffer(&render_device, persistent_states, &effect.physics);
                 let timing_index = timing_batch.as_mut().and_then(|batch| {
                     batch.instance(
                         main_entity.id(),
@@ -292,6 +296,7 @@ pub(super) fn run_simulation(
                         output_suppress_through: effect.output_suppress_through,
                     }),
                     &StatefulRenderBuffers {
+                        uploads: Some(&uploads),
                         particles,
                         alive,
                         indirect,
@@ -314,6 +319,7 @@ pub(super) fn run_simulation(
                     effect.seek_quality,
                     effect.statistics_token,
                     effect.history_epoch,
+                    effect.output_suppress_through,
                     true,
                     pacer.as_deref_mut(),
                     observer
@@ -648,7 +654,8 @@ pub(super) fn run_simulation(
                 && persistent_states.len() == effect.stateful_dispatch.len()
             {
                 let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
-                let physics_buffer = physics_scene_buffer(&render_device, &effect.physics);
+                let physics_buffer =
+                    cached_physics_scene_buffer(&render_device, persistent_states, &effect.physics);
                 let work = run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
@@ -664,6 +671,7 @@ pub(super) fn run_simulation(
                         output_suppress_through: effect.output_suppress_through,
                     }),
                     &StatefulRenderBuffers {
+                        uploads: Some(&uploads),
                         particles,
                         alive,
                         indirect,
@@ -686,6 +694,7 @@ pub(super) fn run_simulation(
                     effect.seek_quality,
                     effect.statistics_token,
                     effect.history_epoch,
+                    effect.output_suppress_through,
                     false,
                     pacer.as_deref_mut(),
                     None,
@@ -708,6 +717,8 @@ pub(super) fn run_simulation(
             light_readiness.owners.insert(entity);
         }
     }
+    // Install source-page contents before any of this frame's command buffers submit.
+    uploads.borrow_mut().flush(&queue);
     if playback_diagnostics.profiling_enabled()
         && let Some(recording) = &mut playback_recording
     {
@@ -723,6 +734,23 @@ pub(super) fn run_simulation(
             retention.bytes += link.bytes();
         }
         recording.event_scratch = Some(retention);
+        let mut parameters = super::playback_diagnostics::GpuParameterRetention::default();
+        for state in stateful_states.0.values().flatten() {
+            if let Some(cached) = state
+                .parameters
+                .lock()
+                .expect("parameter cache poisoned")
+                .as_ref()
+            {
+                parameters.destinations += 1;
+                parameters.destination_bytes += cached.bytes();
+                parameters.bind_groups += 1;
+            }
+        }
+        let (pages, bytes) = uploads.borrow().retained();
+        parameters.upload_pages = pages;
+        parameters.upload_bytes = bytes;
+        recording.parameter_scratch = Some(parameters);
     }
     // Copy only instance counts after simulation; mesh commands retain their own geometry ranges.
     // This avoids CPU readback and preserves the existing per-emitter simulation ABI.
@@ -737,6 +765,8 @@ pub(super) fn run_simulation(
             );
         }
     }
+    // Queue writes target COPY_SRC pages only. Ordered encoder copies, not repeated
+    // queue writes to a shared live destination, install every tick's parameters.
     gpu_span.end(render_context.command_encoder());
     if let Some(batch) = timing_batch {
         batch.finish(&mut render_context, timing_mailbox.clone());

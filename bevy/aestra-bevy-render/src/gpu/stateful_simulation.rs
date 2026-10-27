@@ -16,6 +16,7 @@ use bevy::{
         renderer::{RenderAdapter, RenderDevice},
     },
 };
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 pub(super) const STATEFUL_SIMULATION_SHADER_PATH: &str =
@@ -154,6 +155,9 @@ pub(super) struct StatefulPersistentState {
     pub(super) rewind: Option<u32>,
     /// Used only on the effect's first emitter; one bounded scratch slot per active link.
     pub(super) event_links: Vec<Option<super::event_link_scratch::EventLinkScratch>>,
+    pub(super) parameters: std::sync::Mutex<Option<super::stateful_parameters::StatefulParameters>>,
+    /// Effect-wide physics upload, used on the first emitter only.
+    physics: Option<(Vec<u32>, Buffer)>,
 }
 
 /// Fixed tick cadence between checkpoints (~1/3 s at 60 Hz).
@@ -210,6 +214,8 @@ impl StatefulPersistentState {
             host_events: Vec::new(),
             rewind: None,
             event_links: Vec::new(),
+            parameters: std::sync::Mutex::new(None),
+            physics: None,
         }
     }
 
@@ -424,7 +430,13 @@ pub(super) fn prepare_stateful_states(
     mut states: ResMut<StatefulStates>,
     render_device: Res<RenderDevice>,
     effects: Query<(Entity, &GpuEffectBuffers)>,
+    diagnostics: Option<Res<super::playback_diagnostics::GpuPlaybackDiagnostics>>,
 ) {
+    let started = diagnostics
+        .as_ref()
+        .is_some_and(|d| d.profiling_enabled())
+        .then(std::time::Instant::now);
+    let mut allocated_emitters = 0;
     states.0.retain(|entity, _| {
         effects
             .get(*entity)
@@ -450,6 +462,7 @@ pub(super) fn prepare_stateful_states(
                     })
         });
         if !matches {
+            allocated_emitters += effect.stateful_dispatch.len() as u64;
             let allocated = effect
                 .stateful_dispatch
                 .iter()
@@ -490,6 +503,12 @@ pub(super) fn prepare_stateful_states(
                 }
             }
         }
+    }
+    if let Some(started) = started {
+        diagnostics.unwrap().record_stateful_preparation(
+            started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64,
+            allocated_emitters,
+        );
     }
 }
 
@@ -625,8 +644,23 @@ pub(super) fn physics_scene_buffer(device: &RenderDevice, words: &[u32]) -> Buff
     })
 }
 
+pub(super) fn cached_physics_scene_buffer(
+    device: &RenderDevice,
+    states: &mut [StatefulPersistentState],
+    words: &[u32],
+) -> Buffer {
+    let Some(first) = states.first_mut() else {
+        return physics_scene_buffer(device, words);
+    };
+    if first.physics.as_ref().is_none_or(|(old, _)| old != words) {
+        first.physics = Some((words.to_vec(), physics_scene_buffer(device, words)));
+    }
+    first.physics.as_ref().unwrap().1.clone()
+}
+
 /// The effect-wide render buffers a stateful emitter presents into.
 pub(super) struct StatefulRenderBuffers<'a> {
+    pub(super) uploads: Option<&'a RefCell<super::parameter_uploads::ParameterUploads>>,
     pub(super) particles: &'a Buffer,
     pub(super) alive: &'a Buffer,
     pub(super) indirect: &'a Buffer,
@@ -682,6 +716,7 @@ pub(super) fn stateful_tick_group(
     dispatch: &StatefulDispatch,
     render: &StatefulRenderBuffers<'_>,
     live: bool,
+    encoder: Option<&mut CommandEncoder>,
 ) -> (BindGroup, Buffer) {
     // A host's stop_emitting / kill (event system E2b): nothing spawns from its tick on.
     let stopped = dispatch
@@ -704,6 +739,11 @@ pub(super) fn stateful_tick_group(
             .min(dispatch.capacity)
     };
     let bytes = stateful_params_bytes(dispatch, spawn_count, 0.0, live, Some(persistent.last_tick));
+    if let Some((uploads, encoder)) = render.uploads.zip(encoder) {
+        return super::stateful_parameters::StatefulParameters::encode(
+            device, encoder, layout, persistent, render, uploads, &bytes,
+        );
+    }
     let params = {
         let _allocation = super::encoding_profile::scope(
             super::encoding_profile::Operation::TickParams,
@@ -746,22 +786,30 @@ pub(super) fn present_stateful_emitter(
     let subtick = (simulation_time - persistent.last_tick as f32 * STATEFUL_TICK_DT)
         .clamp(0.0, STATEFUL_TICK_DT);
     let bytes = stateful_params_bytes(dispatch, 0, subtick, false, None);
-    let params = {
-        let _allocation = super::encoding_profile::scope(
-            super::encoding_profile::Operation::PresentParams,
-            1,
-            bytes.len() as u64,
-            bytes.len() as u64,
-            0,
-            0,
-        );
-        device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("aestra stateful present params"),
-            contents: &bytes,
-            usage: BufferUsages::STORAGE,
-        })
+    let (group, params) = if let Some(uploads) = render.uploads {
+        super::stateful_parameters::StatefulParameters::encode(
+            device, encoder, layout, persistent, render, uploads, &bytes,
+        )
+    } else {
+        let params = {
+            let _allocation = super::encoding_profile::scope(
+                super::encoding_profile::Operation::PresentParams,
+                1,
+                bytes.len() as u64,
+                bytes.len() as u64,
+                0,
+                0,
+            );
+            device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra stateful present params"),
+                contents: &bytes,
+                usage: BufferUsages::STORAGE,
+            })
+        };
+        let group = stateful_bind_group(device, layout, persistent, &params, render);
+        (group, params)
     };
-    let group = stateful_bind_group(device, layout, persistent, &params, render);
+    let _params = params;
     let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
         label: Some("aestra stateful present"),
         timestamp_writes: None,
@@ -830,7 +878,7 @@ pub(super) fn dispatch_stateful_effect(
         let groups: Vec<BindGroup> = (0..segment)
             .map(|_| {
                 let group =
-                    stateful_tick_group(device, layout, persistent, dispatch, render, live).0;
+                    stateful_tick_group(device, layout, persistent, dispatch, render, live, None).0;
                 // Each encoded tick needs its own burst/cutoff/trace inputs, even
                 // when all dispatches share one compute pass.
                 persistent.last_tick += 1;

@@ -1,0 +1,30 @@
+(
+    id: "a3574a00-0000-4000-8000-000000f85700", schema_version: 1, name: "Fireworks Drifting Star Smoke", domain: Sprite,
+    render_state_policy: (
+        default: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+        allowed: [(blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None)],
+    ),
+    parameters: [
+        (id: "a3574a00-0000-4000-8000-000000f85701", name: "Scene light gain", value_type: Float, evaluation_domain: Instance, default: Some(Float(0.02))),
+        (id: "a3574a00-0000-4000-8000-000000f85702", name: "Density", value_type: Float, evaluation_domain: Instance, default: Some(Float(1.0))),
+        (id: "a3574a00-0000-4000-8000-000000f85703", name: "Ambient", value_type: Vec3, evaluation_domain: Instance, default: Some(Vec3((0.055, 0.060, 0.070)))),
+    ],
+    expressions: [
+        (id: "a3574a00-0000-4000-8000-000000f85710", kind: Input(Uv0)),
+        (id: "a3574a00-0000-4000-8000-000000f85711", kind: Input(ParticleRandom)),
+        (id: "a3574a00-0000-4000-8000-000000f85712", kind: Input(ParticleNormalizedAge)),
+        (id: "a3574a00-0000-4000-8000-000000f85713", kind: FunctionCall(function: Project("a3574a00-0000-4000-8000-000000f85600"), arguments: {"a3574a00-0000-4000-8000-000000f85601": "a3574a00-0000-4000-8000-000000f85710", "a3574a00-0000-4000-8000-000000f85602": "a3574a00-0000-4000-8000-000000f85711", "a3574a00-0000-4000-8000-000000f85603": "a3574a00-0000-4000-8000-000000f85712"}, output: "a3574a00-0000-4000-8000-000000f85604")),
+        (id: "a3574a00-0000-4000-8000-000000f85714", kind: Input(ParticleOpacity)),
+        (id: "a3574a00-0000-4000-8000-000000f85715", kind: Multiply("a3574a00-0000-4000-8000-000000f85713", "a3574a00-0000-4000-8000-000000f85714")),
+        (id: "a3574a00-0000-4000-8000-000000f85716", kind: Parameter("a3574a00-0000-4000-8000-000000f85702")),
+        (id: "a3574a00-0000-4000-8000-000000f85717", kind: Multiply("a3574a00-0000-4000-8000-000000f85715", "a3574a00-0000-4000-8000-000000f85716")),
+        (id: "a3574a00-0000-4000-8000-000000f85720", kind: Input(ScenePointIrradiance)),
+        (id: "a3574a00-0000-4000-8000-000000f85721", kind: Parameter("a3574a00-0000-4000-8000-000000f85701")),
+        (id: "a3574a00-0000-4000-8000-000000f85722", kind: Multiply("a3574a00-0000-4000-8000-000000f85720", "a3574a00-0000-4000-8000-000000f85721")),
+        (id: "a3574a00-0000-4000-8000-000000f85723", kind: Parameter("a3574a00-0000-4000-8000-000000f85703")),
+        (id: "a3574a00-0000-4000-8000-000000f85724", kind: Add("a3574a00-0000-4000-8000-000000f85722", "a3574a00-0000-4000-8000-000000f85723")),
+        (id: "a3574a00-0000-4000-8000-000000f85725", kind: Constant(Vec3((0.72, 0.74, 0.78)))),
+        (id: "a3574a00-0000-4000-8000-000000f85726", kind: Multiply("a3574a00-0000-4000-8000-000000f85724", "a3574a00-0000-4000-8000-000000f85725")),
+    ],
+    outputs: (color: "a3574a00-0000-4000-8000-000000f85726", alpha: "a3574a00-0000-4000-8000-000000f85717"),
+)

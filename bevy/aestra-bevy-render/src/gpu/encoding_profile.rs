@@ -13,6 +13,8 @@ pub struct GpuEncodingOperation {
     pub initialized_bytes: u64,
     pub bind_groups: u64,
     pub dispatches: u64,
+    pub copy_bytes: u64,
+    pub queue_write_bytes: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -27,8 +29,12 @@ pub(crate) enum Operation {
     EventSpawn,
     EventGatherPrepare,
     EventSpawnPrepare,
+    ParameterPage,
+    ParameterDestination,
+    ParameterCopy,
+    ParameterUpload,
 }
-const NAMES: [&str; 10] = [
+const NAMES: [&str; 14] = [
     "event_list",
     "tick_params",
     "present_params",
@@ -39,9 +45,13 @@ const NAMES: [&str; 10] = [
     "event_spawn",
     "event_gather_prepare",
     "event_spawn_prepare",
+    "parameter_page",
+    "parameter_destination",
+    "parameter_copy",
+    "parameter_upload",
 ];
 thread_local! {
-    static ACTIVE: RefCell<Option<[GpuEncodingOperation; 10]>> = const { RefCell::new(None) };
+    static ACTIVE: RefCell<Option<[GpuEncodingOperation; 14]>> = const { RefCell::new(None) };
 }
 
 pub(super) fn begin() {
@@ -88,7 +98,15 @@ pub(crate) fn scope(
         initialized,
         groups,
         dispatches,
+        copy_bytes: 0,
+        queue_write_bytes: 0,
     }
+}
+pub(super) fn transfer(op: Operation, copy_bytes: u64, queue_write_bytes: u64) -> Scope {
+    let mut scope = scope(op, 0, 0, 0, 0, 0);
+    scope.copy_bytes = copy_bytes;
+    scope.queue_write_bytes = queue_write_bytes;
+    scope
 }
 pub(crate) struct Scope {
     op: Operation,
@@ -98,6 +116,8 @@ pub(crate) struct Scope {
     initialized: u64,
     groups: u64,
     dispatches: u64,
+    copy_bytes: u64,
+    queue_write_bytes: u64,
 }
 impl Drop for Scope {
     fn drop(&mut self) {
@@ -115,6 +135,8 @@ impl Drop for Scope {
                 s.initialized_bytes += self.initialized;
                 s.bind_groups += self.groups;
                 s.dispatches += self.dispatches;
+                s.copy_bytes += self.copy_bytes;
+                s.queue_write_bytes += self.queue_write_bytes;
             }
         });
     }

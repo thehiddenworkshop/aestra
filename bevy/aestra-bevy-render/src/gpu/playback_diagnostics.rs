@@ -26,6 +26,24 @@ pub struct GpuPlaybackFrame {
     pub encoding_operations: Option<Vec<super::encoding_profile::GpuEncodingOperation>>,
     /// Live cache ownership in this render-world frame, excluding in-flight driver resources.
     pub event_scratch: Option<GpuEventScratchRetention>,
+    pub parameter_scratch: Option<GpuParameterRetention>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GpuParameterRetention {
+    pub destinations: u64,
+    pub destination_bytes: u64,
+    pub bind_groups: u64,
+    pub upload_pages: u64,
+    pub upload_bytes: u64,
+}
+
+/// Latest stateful render-world preparation system window (not all render preparation).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GpuStatefulPreparationFrame {
+    pub sequence: u64,
+    pub cpu_ns: u64,
+    pub allocated_emitters: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -49,6 +67,7 @@ pub struct GpuPlaybackDiagnostics {
     enabled: Arc<AtomicBool>,
     profiling: Arc<AtomicBool>,
     frame: Arc<Mutex<GpuPlaybackFrame>>,
+    preparation: Arc<Mutex<GpuStatefulPreparationFrame>>,
 }
 impl GpuPlaybackDiagnostics {
     pub fn set_enabled(&self, enabled: bool) {
@@ -56,6 +75,21 @@ impl GpuPlaybackDiagnostics {
     }
     pub fn snapshot(&self) -> GpuPlaybackFrame {
         self.frame.lock().expect("playback ledger poisoned").clone()
+    }
+    pub fn stateful_preparation_snapshot(&self) -> GpuStatefulPreparationFrame {
+        *self
+            .preparation
+            .lock()
+            .expect("preparation ledger poisoned")
+    }
+    pub(super) fn record_stateful_preparation(&self, cpu_ns: u64, allocated_emitters: u64) {
+        let mut frame = self
+            .preparation
+            .lock()
+            .expect("preparation ledger poisoned");
+        frame.sequence += 1;
+        frame.cpu_ns = cpu_ns;
+        frame.allocated_emitters = allocated_emitters;
     }
     /// Additional CPU timers; ordinary playback and plain encoding reports leave this off.
     pub fn set_profiling_enabled(&self, enabled: bool) {
@@ -76,6 +110,7 @@ impl GpuPlaybackDiagnostics {
                 samples: Vec::new(),
                 started,
                 event_scratch: None,
+                parameter_scratch: None,
             }
         })
     }
@@ -86,6 +121,7 @@ pub(super) struct Recording {
     pub samples: Vec<GpuPlaybackSample>,
     started: Option<std::time::Instant>,
     pub event_scratch: Option<GpuEventScratchRetention>,
+    pub parameter_scratch: Option<GpuParameterRetention>,
 }
 impl Recording {
     pub fn owner(&mut self, owner: Entity) -> Option<OwnerRecording<'_>> {
@@ -122,6 +158,7 @@ impl Drop for Recording {
             .map(|t| t.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
         frame.encoding_operations = self.started.map(|_| super::encoding_profile::finish());
         frame.event_scratch = self.event_scratch;
+        frame.parameter_scratch = self.parameter_scratch;
     }
 }
 

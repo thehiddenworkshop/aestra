@@ -145,6 +145,9 @@ pub(super) fn run_coupled_stateful(
     let history_discontinuity = trails
         .as_ref()
         .is_some_and(|trails| !trails.is_current(last));
+    // Initial trail storage needs the same clearing/recording below, but no
+    // simulation tick has happened yet. Its first launch is not reconstruction.
+    let initial_history = last == 0 && trails.as_ref().is_some_and(|trails| trails.is_unobserved());
     if let Some(rewind) = rewind
         && let Some(trails) = trails.as_mut()
     {
@@ -178,8 +181,13 @@ pub(super) fn run_coupled_stateful(
         }
     }
     let now = persistent_states.first().map_or(0, |state| state.last_tick);
-    let live =
-        in_step && rewind.is_none() && !history_discontinuity && is_live_advance(last, target);
+    // A paced forward backlog is still live. Distance from the requested clock
+    // cannot identify replay: the explicit epoch boundary below suppresses its
+    // reconstructed prefix, and delivery rejects already-heard ticks.
+    let live = in_step
+        && rewind.is_none()
+        && (!history_discontinuity || initial_history)
+        && target >= last;
     let ticks = target.saturating_sub(now).min(budget);
     // Observe tick zero too, so a paused empty effect has valid history/telemetry.
     if let Some(trails) = trails.as_mut()
@@ -246,8 +254,15 @@ pub(super) fn run_coupled_stateful(
             .zip(persistent_states.iter_mut())
             .enumerate()
         {
-            let (group, params) =
-                stateful_tick_group(device, layout, persistent, dispatch, render, live);
+            let (group, params) = stateful_tick_group(
+                device,
+                layout,
+                persistent,
+                dispatch,
+                render,
+                live && u64::from(next) > routes.output_suppress_through,
+                Some(encoder),
+            );
             if dispatch.event_mask != 0 {
                 encoder.clear_buffer(&persistent.events, 0, Some(4));
             }
@@ -562,6 +577,7 @@ pub(super) fn run_stateful_dispatches(
     seek_quality: SeekQuality,
     statistics_token: u32,
     history_epoch: u32,
+    output_suppress_through: u64,
     owns_shared_reset: bool,
     pacer: Option<&mut CatchupPacer>,
     trails: Option<&mut dyn CoupledHistory>,
@@ -625,7 +641,11 @@ pub(super) fn run_stateful_dispatches(
                 dispatches,
                 coupling,
                 links,
-                &routes.unwrap_or_default(),
+                &routes.unwrap_or(RouteWiring {
+                    output_epoch: history_epoch,
+                    output_suppress_through,
+                    ..Default::default()
+                }),
                 render,
                 simulation_time,
                 budget,

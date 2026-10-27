@@ -5095,11 +5095,197 @@ PlaybackOnly and defaults are unchanged. Tests: 180 renderer (three ignored),
 required for renderer/conformance gates. Strict workspace Clippy/format/diff pass.
 See [`reused-event-scratch-2026-10-27.md`](../../benchmarks/fireworks/reused-event-scratch-2026-10-27.md).
 
-**Next:** measure remaining per-tick/presentation parameter and bind-group churn,
-plus render-world activation allocation outside the simulation profiling scope.
-Preserve registration, short flash delivery and PlaybackOnly; continuous star-path
-smoke/HDR art review remains open. Do not replace the default show or claim stable
-60 FPS from allocation/CPU encoding measurements.
+**F8.1C4R ordered stateful parameters (2026-10-27): implemented; bounded CPU
+encoding/allocation gate accepted, whole-host pacing still open.** Coupled emitters
+retain a parameter destination and group keyed by layout/current buffer identities.
+Distinct immutable upload ranges feed ordered encoder copies immediately before
+consuming tick/presentation work. Page queue writes precede submission and never
+directly overwrite live tick destinations. Independent multi-tick batches retain
+separate ephemeral tick parameters. Equal packed physics inputs reuse their buffer;
+data/resource/layout changes invalidate the affected group. Shader ABI, historical
+inputs, event order, catch-up budgets, PlaybackOnly and authored assets are unchanged.
+
+One final public wispy profile measures CPU simulation encoding p95 1.729 ms versus
+C4Q's recorded 3.330 ms. Observed parameter buffer creation requests fall from
+207,247 to 87 (82 destinations/five upload pages), and stateful group requests to
+82. Initial paused preparation is outside those counts. Owned peaks are 88
+destinations/67,232 bytes/88 groups and six pages/393,216 bytes; all columns finish
+at zero. Pages retain busy-period high water until an encoded frame has no uploads;
+this is not a global memory cap or driver-free proof. Extra copies/page writes
+remain, so payload traffic and queue-internal allocations are not eliminated.
+
+Optional CPU stateful render preparation now measures p95 0.0132 ms/max 0.4961 ms,
+with five observed allocation windows below 0.50 ms. The latest mailbox can skip
+windows and excludes ShaderBuffer asset preparation, other systems, submission
+and GPU execution; it does not close all render-thread activation accounting.
+Three separate plain controls retain all 13 flashes, zero late pipelines, exact
+clip scheduling and no blocked/missing owners. Host p95 is 24.529–26.038 ms; one
+wispy repetition still has a 73.382 ms interval and 50 ms sampled lag. No stable
+60 FPS or universal single-tick/visible registration is claimed. GPU timing changes
+are observations, not an isolated shader speedup. Final checks: 182 renderer
+(three ignored), 65 host and 29 example passed; native GPU required for renderer
+gates. Strict workspace Clippy/format/diff pass. See
+[`reused-stateful-parameters-2026-10-27.md`](../../benchmarks/fireworks/reused-stateful-parameters-2026-10-27.md).
+
+**F8.1C4S saved continuous star-path smoke (2026-10-27): implemented; bounded
+high-tier deposition/admission/lifecycle passes, photographic art still open.**
+Four separately saved family assets and a 13-clip root add real GPU Main-star
+distance-crossing smoke: spacing 0.8, maximum two crossings/tick, count one,
+zero velocity inheritance and no independent emission. Low initial speed,
+7–9-second lives, slow wind/expansion/fade and a dedicated smooth density material
+leave smoke along the paths. Existing shell haze is subdued; original rocket/star
+emitters, existing event/cue/light/parameter routes and choreography are retained.
+An offline typed generator and explicit per-tier destination capacities make this
+reviewable without host-side particle loops, schema changes or raised hard limits.
+
+The granular draft fails art; a smoother large-puff attempt drops up to 216,314
+global OIT fragments and remains rejected. Smaller final puffs keep the existing
+128 MiB guard. Current audience/close and density-hidden high-tier image runs each
+observe 37,996 accepted smoke births across 13 owners, zero source overflow,
+expansion omission or destination rejection, zero sampled global OIT drops/invalid
+links, all 13 flashes and a full drain. Hiding only the distinct new material keeps
+the same births and isolates its visible contribution. Captures are asynchronous
+live playback, not exact pixel pairs or independent light-family controls.
+
+All image runs record one update with the global Bevy pipeline cache not ready;
+its pipeline identity/cause is unclassified, so zero late pipeline work is not
+claimed for that lane. Three separate ordinary cost runs record zero pending
+updates, all flashes/drain and no blocked/missing owners. Candidate host p95 is
+20.28/26.71 ms versus 18.37 ms for the retained wispy control. These dev-build,
+vsync-inclusive observations do not isolate GPU cost or a fixed overhead and do
+not close stable 60 FPS. Some regular strands and insufficient broad asymmetric
+haze remain visible. All tiers compile; native art/capacity qualification here
+is high only. Tests: 31 example passed; strict workspace GPU/audio Clippy,
+format/diff and current provenance checks pass. C4R renderer results remain
+separately scoped. See
+[`star-path-smoke-2026-10-27.md`](../../benchmarks/fireworks/star-path-smoke-2026-10-27.md).
+
+**F8.1C4T all-tier native smoke/flash review (2026-10-27): smoke admission,
+capacity and drain pass; robust flash delivery does not.** Nine audience/close/
+flash-muted runs plus one fresh medium close repeat deliver 80 native HDR captures.
+High/medium/low each retain 37,996/18,959/9,313 accepted path-smoke births across
+13 owners, zero source overflow/expansion omission/destination rejection, zero
+sampled global fragment drops/invalid links and a full drain. An image-only
+`AESTRA_EXAMPLE_REPORT_FLASHES=0` control uses zero representative intensity while
+preserving enabled admission/caps and smoke simulation. Capture-time proxy intensity
+and realization rejection counters are recorded. No saved assets, hard limits,
+catch-up policy, renderer library code or default show changes in this slice.
+
+Older-wake images brighten/recolor under later representative flashes at every
+tier. High quiet ROI matches mute exactly; low differs slightly at a one-tick
+request difference. Initial medium quiet images differ despite inactive flashes;
+the repeat matches mute exactly. These are descriptive async nominal-time controls,
+not exact frame pairs or photographic art approval. Selected-star lighting is
+not authored/enabled in this candidate and is not qualified by these controls.
+
+All high controls retain 13 flashes. Medium audience/mute and the fresh close
+repeat retain 13, but the **initial medium close run accepts only 12 with no
+reported rejection**, alongside 1.1 seconds of sampled CPU encoding lag. Correlation
+does not establish the cause or visible/GPU delay. Preserve this failed delivery/
+quiet-control attempt; the repeat does not erase it. Low consistently accepts 11
+and explicitly rejects two at the existing two-light ceiling, passing safety/
+accounting rather than complete delivery. All image runs retain one global-cache
+pending update; no zero-late-pipeline claim. No cost acceptance from image scans/HUD.
+
+Tests: 33 example passed; strict example Clippy, workspace format/diff, runner
+parser and source/binary/hash checks pass. The native assessment intentionally
+fails universal flash accounting for the retained medium outlier. See
+[`star-path-tiers-lighting-2026-10-27.md`](../../benchmarks/fireworks/star-path-tiers-lighting-2026-10-27.md).
+
+**F8.1C4U coupled live source cues (2026-10-27): two producer suppression bugs
+fixed; bounded final cue/binding conservation passes.** The old ten-tick
+requested-minus-encoded heuristic classified paced forward backlog as replay.
+A native production-loop regression requests tick90 under unchanged four-tick
+submissions: old code exports no parent-death/child-birth cues; final code exports
+both once, keeps pause/reconstruction silent, resumes genuine post-boundary ticks
+and permits fresh restart cues with matching particle snapshots. Coupled playback
+now uses non-backward advance plus existing synchronization/history guards and
+explicit per-tick reconstruction boundaries. This proves a mechanism consistent
+with C4T's untraced medium failure, not its exact retrospective cause.
+
+The first corrected native batch exposes another failure: low has13 main breaks/
+bound intents but only12 launches. Fresh unobserved trail history at joint tick0
+was classified as replay. A real trail-observer tick1 regression fails before the
+second fix and passes afterward. Initial-history recognition changes only live
+classification; existing trail clears/restores/records and nonzero/rewind guards
+remain. Preserve that failed native batch and both negative GPU regression logs.
+
+Constant-size source-binding counters and a report-only256-key aggregate cue audit
+now distinguish offered/classified/bound/realized stages. All five final native
+controls—three medium repetitions plus high/low—account for13 launches,13 main
+breaks and13 bound intents. High/medium accept13 flashes; low accepts11 with two
+explicit rejections at the unchanged two-light ceiling. Smoke admission/capacity/
+drain totals remain unchanged; all40 final captures deliver. Source main-break age
+is100–117 ms at main-world observation, not display latency. No cost/pacing or
+photographic acceptance. All image runs retain one global-cache pending update.
+
+Catch-up budgets,32-tick rings, capture/light limits, async transport, shader ABI,
+saved assets and defaults remain unchanged. Ring-overwrite/very-late expiry and
+arbitrary gameplay-lossless delivery are not qualified; independent non-routed
+legacy homing retains its previous heuristic. Tests:184 renderer passed/three
+existing ignored, native GPU required;65 host and34 example passed. Strict full
+workspace GPU/audio Clippy, formatting/diff and provenance checks pass. See
+[`forward-output-cues-2026-10-27.md`](../../benchmarks/fireworks/forward-output-cues-2026-10-27.md).
+
+**F8.1C4V wind-haze art variant (2026-10-27): saved candidate and bounded final
+controls implemented; photographic approval/default adoption remain open.** A
+separate 13-clip root/four family assets preserve C4S births, lifetimes, budgets,
+stars/rockets, original shell/launch haze, choreography and cue/light routes. Only
+deposited-smoke motion/appearance and its dedicated material change. Stronger
+drift/turbulence, uneven age/seed growth and softer low-frequency density produce
+a wider older field with fewer regular strands. Individual puff structure and
+coherent volume-like depth remain visible limitations. All 69 retained asset
+hashes are unchanged; the C4U public runtime executable is reused.
+
+Two preview attempts drop up to 26,799/36,535 global fragments and remain rejected,
+with source/asset copies and native evidence retained. Smaller soft-core final
+puffs keep the unchanged 128 MiB guard. Six final native controls cover high
+audience/close/muted, medium/low close and high density-hidden: each preserves
+37,996/18,959/9,313 per-tier births, 13 launches/main breaks/bound intents, zero
+admission drops, zero sampled global fragment loss/invalid links and a full drain.
+High/medium accept 13 flashes; low explicitly rejects two at its two-light ceiling.
+All 48 final captures deliver; three previews add 24 more. Independent intensity/
+density controls preserve simulation/admission. Selected-star lighting remains off.
+
+Two separate ordinary high audience runs record host p95 27.94/27.84 ms for
+retained/new sources, with all cues/flashes, zero pending pipelines and drain.
+One vsync-inclusive dev-build pair is not GPU-cost equivalence or 60 FPS acceptance.
+Image runs retain one global-cache pending update and are not cost measurements.
+Tests: 36 example passed; actual public compile/OIT audit at all tiers; strict host
+all-target Clippy, workspace format/diff, runner parsing and provenance pass.
+No renderer library/shader ABI, catch-up/capture/light limits or defaults change.
+See [`wind-haze-smoke-2026-10-27.md`](../../benchmarks/fireworks/wind-haze-smoke-2026-10-27.md).
+
+**Video-reference review (2026-10-27):** the user's approximately 2:56 recording
+provides moving point-star, gold-tail and locally illuminated smoke references.
+A fresh 22-capture public wind-haze run confirms working burst/path deposition,
+but small bright-head density, burn duration, tail variation and persistent
+umbrella-shaped smoke remain art gaps. This sampled visual comparison is not
+radiometric calibration, a new performance qualification or default approval.
+See [`video-reference-review-2026-10-27.md`](../../benchmarks/fireworks/video-reference-review-2026-10-27.md).
+
+**Point-star reference calibration (2026-10-27):** separate saved single-shell
+control/candidate assets now isolate Main stars from secondary breaks and deposited
+smoke. A shared white palette keeps hue separate from head/tail balance. The
+candidate authors 128/64/32 stars with matching trail budgets, 2.4–3.2-second burn,
+brighter small heads and thinner/shorter cooling histories through existing APIs.
+Launch/flash materials and normal show assets remain controls. Six final public
+native runs deliver all 78 lifecycle images at high audience/close and candidate
+medium/low close, with one launch/main-break/bound flash, zero sampled global
+drops/invalid links and full drain per run. One pending global-pipeline update
+remains recorded in each image run. Source/runtime hashes are retained; 32 host
+example tests and the new all-tier saved-asset/budget test pass, with strict host
+all-target Clippy/format/diff checks. Sampled art improvement is not physical
+calibration, ordinary performance, production-show approval or default adoption.
+See [`point-star-calibration-2026-10-27.md`](../../benchmarks/fireworks/point-star-calibration-2026-10-27.md).
+
+**Next:** calibrate a separate gold-tail family against the video, then integrate
+deposited smoke with the luminous-shell candidates. Review audience/close
+expansion, cooling and extinction before tuning that smoke.
+Follow with bounded selected-star light authoring and independent host enablement;
+compare older haze with representative/selected contributions controlled separately
+under existing budgets. Keep volumetric depth/generic fluid coupling, final
+art/default adoption and whole-host/production-finale performance as separate gates.
 Arbitrary no-prepass/custom-depth,
 equal-depth ties, viewport subrectangles/resolution overrides, window/minimize lifecycle
 and multi-camera overflow diagnostics remain outside the qualified set. More storage
@@ -5107,7 +5293,8 @@ or pool sorting alone cannot qualify non-participating draws. The camera allocat
 guard is not fragment-overflow detection, and zero global drops do not prove exact
 blending or absence of global loss. Keep fragment-list
 compositing experimental until these results justify adoption or a different approach.
-Then author continuous smoke along star paths and review its public HDR/paced costs.
+Continuous Main-star smoke now has the separate C4S public HDR candidate above;
+native all-tier art/light-family review and pacing acceptance remain open.
 The six user-provided 2026-10-09 smoke references define the art target: thin radial
 star-path filaments merging into asymmetric wind-drifted haze, later bursts locally
 recoloring older smoke, and separate bright/quiet-phase audience/close reviews. More
@@ -5774,8 +5961,17 @@ billow/persistence prototype; F8.1B now passes bounded shell-born cohort control
 F8.1B2 closes bounded GPU child-birth host outputs. F8.1C1 measures bounded live overlap and
 the existing unlit show; F8.1C2 qualifies exact cleanup. F8.1C3 adds the opt-in saved
 persistent lit-smoke candidate. F8.1C4A adds a separated-sheet source-over oracle and a
-public HDR wispy draft. Next is interleaved/moving-pool transparency, continuous star-path
-smoke and paced HDR art/cost review; neither draft replaces the default show.
+public HDR wispy draft. C4S now adds saved continuous Main-star smoke with bounded
+high-tier HDR admission/capacity/drain review and separate ordinary pacing runs.
+The C4T all-tier native smoke gates pass, retaining the failed medium flash run.
+C4U now fixes two coupled cue-suppression mechanisms and passes final bounded
+source/binding accounting, retaining an interim missing-launch failure as well.
+C4V now adds a separate wind-haze art candidate with bounded native controls,
+retaining two rejected capacity attempts. The 2026-10-27 video-reference review
+now has a saved point-star calibration pair and six bounded native lifecycle
+reviews. Next is a gold-tail family and smoke integration before selected-star
+lighting authoring/independent host enablement; final art and host tail latency remain open. These
+candidates do not replace the default show; see the detailed C4S gate above.
 Large-pool/production-finale costs and generic injection remain open.
 Natural-star
 art approval, general per-view layers/hardware and production-finale certification remain open.

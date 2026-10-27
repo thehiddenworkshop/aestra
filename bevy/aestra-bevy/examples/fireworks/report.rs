@@ -14,6 +14,8 @@ use bevy::{
 };
 use serde_json::json;
 use std::{path::PathBuf, time::Instant};
+#[path = "report_outputs.rs"]
+mod outputs;
 #[path = "report_profile.rs"]
 mod profile;
 
@@ -21,6 +23,13 @@ mod profile;
 pub(super) struct Report {
     path: PathBuf,
     images: bool,
+    camera_name: String,
+    review_camera: Option<Transform>,
+    star_smoke_visible: bool,
+    representative_flashes_visible: bool,
+    sample_times: Vec<f32>,
+    star_paths: std::collections::BTreeMap<String, serde_json::Value>,
+    output_audit: outputs::OutputAudit,
     intervals: Vec<f64>,
     previous: Option<Instant>,
     wall_start: Option<Instant>,
@@ -67,9 +76,63 @@ pub fn install(app: &mut App) -> Result<(), String> {
     if profiling && images {
         return Err("Profiling and image/capacity scans require separate runs".into());
     }
+    let camera_name =
+        std::env::var("AESTRA_EXAMPLE_REPORT_CAMERA").unwrap_or_else(|_| "host-default".into());
+    let review_camera = match camera_name.as_str() {
+        "host-default" => None,
+        "audience" => Some(
+            Transform::from_xyz(0.0, 48.0, 180.0).looking_at(Vec3::new(0.0, 28.0, 0.0), Vec3::Y),
+        ),
+        "close" => Some(
+            Transform::from_xyz(0.0, 42.0, 145.0).looking_at(Vec3::new(0.0, 24.0, 0.0), Vec3::Y),
+        ),
+        "wide" => Some(
+            Transform::from_xyz(0.0, 60.0, 235.0).looking_at(Vec3::new(0.0, 26.0, 0.0), Vec3::Y),
+        ),
+        _ => return Err("Report camera must be audience, close, wide or host-default".into()),
+    };
+    let star_smoke_visible = match std::env::var("AESTRA_EXAMPLE_REPORT_STAR_SMOKE").as_deref() {
+        Ok("0") if images => false,
+        Err(_) | Ok("1") => true,
+        _ => {
+            return Err(
+                "STAR_SMOKE=0 requires the separate image lane; otherwise omit or use 1".into(),
+            );
+        }
+    };
+    let representative_flashes_visible = flash_control(
+        std::env::var("AESTRA_EXAMPLE_REPORT_FLASHES")
+            .ok()
+            .as_deref(),
+        images,
+    )?;
+    let sample_times = if let Ok(times) = std::env::var("AESTRA_EXAMPLE_REPORT_SAMPLE_TIMES") {
+        let times = times
+            .split(',')
+            .map(|s| s.trim().parse::<f32>().map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        if !images
+            || times.is_empty()
+            || times
+                .iter()
+                .any(|t| !t.is_finite() || *t <= 0.0 || *t > 37.0)
+            || times.windows(2).any(|w| w[0] >= w[1])
+        {
+            return Err("Image sample times must be finite, increasing and within (0,37]".into());
+        }
+        times
+    } else {
+        vec![8.0, 15.0, 17.45, 25.0, 32.0]
+    };
     if profiling {
         profile::install(app);
     }
+    apply_flash_control(
+        &mut app
+            .world_mut()
+            .resource_mut::<aestra_bevy::TransientLightSettings>(),
+        representative_flashes_visible,
+    );
     app.world()
         .resource::<GpuPlaybackDiagnostics>()
         .set_enabled(true);
@@ -83,6 +146,13 @@ pub fn install(app: &mut App) -> Result<(), String> {
     app.insert_resource(Report {
         path,
         images,
+        camera_name,
+        review_camera,
+        star_smoke_visible,
+        representative_flashes_visible,
+        sample_times,
+        star_paths: default(),
+        output_audit: default(),
         intervals: Vec::new(),
         previous: None,
         wall_start: None,
@@ -110,8 +180,84 @@ pub fn install(app: &mut App) -> Result<(), String> {
         max_schedule_error: 0.0,
         missing_scheduled_owner_frames: 0,
     })
+    .add_systems(Startup, review_camera_setup.after(super::setup))
+    .add_systems(
+        Update,
+        star_smoke_control
+            .after(aestra_bevy::AestraSet::Playback)
+            .before(aestra_bevy::AestraRenderSet::Prepare),
+    )
     .add_systems(Update, record.after(aestra_bevy::AestraSet::Playback));
     Ok(())
+}
+
+fn review_camera_setup(
+    report: Res<Report>,
+    mut cameras: Query<&mut Transform, With<AudienceCamera>>,
+) {
+    if let Some(transform) = report.review_camera {
+        for mut camera in &mut cameras {
+            *camera = transform;
+        }
+    }
+}
+
+fn flash_control(value: Option<&str>, images: bool) -> Result<bool, String> {
+    match value {
+        None | Some("1") => Ok(true),
+        Some("0") if images => Ok(false),
+        _ => Err("FLASHES=0 requires the separate image lane; otherwise omit or use 1".into()),
+    }
+}
+
+fn apply_flash_control(settings: &mut aestra_bevy::TransientLightSettings, visible: bool) {
+    // Zero intensity preserves admission, pooled proxies and event routes. Disabling
+    // the adapter would remove accepted flashes and change the control workload.
+    if !visible {
+        settings.max_lumens = 0.0;
+    }
+}
+
+fn star_smoke_control(
+    report: Res<Report>,
+    mut effects: Query<(Entity, &mut PresentedEffect)>,
+    mut applied: Local<std::collections::BTreeSet<Entity>>,
+) {
+    if report.star_smoke_visible {
+        return;
+    }
+    applied.retain(|owner| effects.contains(*owner));
+    for (owner, mut effect) in &mut effects {
+        if applied.contains(&owner) {
+            continue;
+        }
+        let materials: Vec<_> = effect
+            .effect()
+            .emitters
+            .iter()
+            .filter(|e| e.name == "Star path smoke")
+            .flat_map(|e| e.renderers.iter().map(|r| (e.source, r.material)))
+            .collect();
+        for (source, material) in materials {
+            let mut binding = effect
+                .material_binding_for_emitter(material, source)
+                .expect("authored star material")
+                .clone();
+            let density = binding
+                .program()
+                .reflection
+                .parameters
+                .iter()
+                .find(|p| p.name == "Density")
+                .expect("smoke density")
+                .id;
+            binding
+                .set_value(density, aestra_bevy::material::MaterialValue::Float(0.0))
+                .expect("float density");
+            effect.bind_material(material, binding);
+        }
+        applied.insert(owner);
+    }
 }
 
 fn distribution(samples: &[f64]) -> serde_json::Value {
@@ -140,6 +286,13 @@ fn record(
         Query<(&PresentedEffect, &aestra_bevy::EffectClipInstance)>,
         Res<GpuPlaybackDiagnostics>,
         Option<Res<profile::Profile>>,
+        Query<(
+            Entity,
+            &PresentedEffect,
+            &aestra_bevy::gpu::GpuEventLinkStatistics,
+        )>,
+        Query<&PointLight, With<aestra_bevy::TransientLightProxy>>,
+        MessageReader<aestra_bevy::AestraOutputEvent>,
     ),
     camera: Query<
         (
@@ -163,7 +316,7 @@ fn record(
     time: Res<Time<Real>>,
     game_time: Res<Time>,
 ) {
-    let (effects, clips, playback, profile) = probe;
+    let (effects, clips, playback, profile, links, flash_proxies, mut output_events) = probe;
     if time.elapsed_secs() > 110.0 {
         error!("Full-show report timed out");
         exit.write(AppExit::error());
@@ -173,6 +326,22 @@ fn record(
         return;
     }
     let Ok(player) = root.single() else { return };
+    for event in output_events.read() {
+        report.output_audit.observe(event, player.instance().time());
+    }
+    for (owner, effect, stats) in &links {
+        for (index, link) in effect.effect().event_links.iter().enumerate() {
+            if effect.effect().emitters[link.target].name != "Star path smoke" {
+                continue;
+            }
+            if let Some(counts) = stats.links.get(index) {
+                report.star_paths.insert(format!("{owner:?}"), json!({"effect":effect.effect().name,
+                    "readback_samples":stats.readback_samples,"source_overflow":stats.source_overflow,
+                    "counts":{"captured_demand":counts.captured_demand,"accepted":counts.accepted,
+                        "expansion_omitted":counts.expansion_omitted,"destination_rejected":counts.destination_rejected}}));
+            }
+        }
+    }
     let frame = playback.snapshot();
     if frame.sequence > report.playback_sequence {
         report.playback_sequence = frame.sequence;
@@ -245,16 +414,24 @@ fn record(
         report.max_invalid = report.max_invalid.max(sample.invalid_links);
         report.max_over_sort = report.max_over_sort.max(sample.over_sort_pixels);
     }
-    let samples = [8.0, 15.0, 17.45, 25.0, 32.0];
     let index = report.captures.len();
-    if report.images && index < samples.len() && player.elapsed() >= samples[index] {
+    if report.images
+        && let Some(sample) = report.sample_times.get(index).copied()
+        && player.elapsed() >= sample
+    {
         let name = format!(
             "{}-{}s.png",
             report.path.file_stem().unwrap().to_string_lossy(),
-            samples[index]
+            sample
         );
         let path = report.path.with_file_name(name);
-        report.captures.push(json!({"path":path,"nominal_seconds":samples[index],"request_seconds":player.elapsed(),"delivered":false}));
+        let flash_peak = flash_proxies
+            .iter()
+            .map(|p| p.intensity)
+            .fold(0.0, f32::max);
+        report.captures.push(json!({"path":path,"nominal_seconds":sample,"request_seconds":player.elapsed(),"delivered":false,
+            "representative_proxy_peak_lumens":flash_peak,"representative_active":lights.active,
+            "representative_accepted":lights.accepted}));
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(path))
@@ -296,6 +473,19 @@ fn record(
         "captures":report.captures,"audio_enabled":options.audio_root.is_some(),
         "scope":"Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval."});
     output["encoding_ledger"] = encoding_ledger;
+    output["review_camera"] = json!(report.camera_name);
+    output["star_smoke_visible"] = json!(report.star_smoke_visible);
+    output["representative_flashes_visible"] = json!(report.representative_flashes_visible);
+    output["flash_rejections"] = json!({"budget_dropped":lights.budget_dropped,
+        "expired":lights.expired,"invalid":lights.invalid,"disabled":lights.disabled});
+    output["flash_binding"] = json!({"packets_seen":lights.source_packets_seen,
+        "scan_dropped":lights.source_packets_dropped,"non_particle":lights.source_non_particle,
+        "missing_root":lights.source_missing_root,"epoch_mismatch":lights.source_epoch_mismatch,
+        "unbound":lights.source_unbound,"invalid":lights.binding_invalid,"bound":lights.source_bound,
+        "stale_intents":lights.stale,"duplicates":lights.duplicate});
+    output["particle_output_audit"] = report.output_audit.summary();
+    output["selected_lighting_enabled"] = json!(options.lighting_policy().particle.enabled);
+    output["star_path_admission"] = json!(report.star_paths);
     output["prepared_view"] = json!(preparation.map(|p| format!("{:?}", p.status())));
     if let Some(profile) = profile {
         output["lane"] = json!("profiling-timestamps-no-images");
@@ -309,3 +499,7 @@ fn record(
         exit.write(AppExit::Success);
     }
 }
+
+#[cfg(test)]
+#[path = "report_control_tests.rs"]
+mod tests;

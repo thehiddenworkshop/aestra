@@ -340,7 +340,9 @@ fn status(
         return;
     };
     *frame_ms += (time.delta_secs() * 1000.0 - *frame_ms) * 0.05;
-    let title = if options.smoke_art_show {
+    let title = if options.smoke_art_show && player.effect().name.contains("Star-Path") {
+        "AESTRA / STAR-PATH SMOKE ART CANDIDATE"
+    } else if options.smoke_art_show {
         "AESTRA / WISPY SMOKE ART CANDIDATE"
     } else if options.persistent_smoke_show {
         "AESTRA / PERSISTENT SMOKE SHOW CANDIDATE"

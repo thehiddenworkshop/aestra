@@ -27,6 +27,8 @@ struct EncodingOperation {
     initialized_bytes: u64,
     bind_groups: u64,
     dispatches: u64,
+    copy_bytes: u64,
+    queue_write_bytes: u64,
 }
 
 #[derive(Resource, Default)]
@@ -44,6 +46,11 @@ pub(super) struct Profile {
     operations: BTreeMap<&'static str, EncodingOperation>,
     scratch_peak: [u64; 3],
     scratch_last: [u64; 3],
+    parameter_peak: [u64; 5],
+    parameter_last: [u64; 5],
+    preparation_sequence: u64,
+    preparation_cpu: Vec<f64>,
+    preparation_births: Vec<serde_json::Value>,
 }
 
 pub(super) fn install(app: &mut App) {
@@ -94,6 +101,17 @@ fn collect(
         return;
     }
     let root_time = root.single().map_or(0.0, EffectPlayer::elapsed);
+    let preparation = ledger.stateful_preparation_snapshot();
+    if preparation.sequence > profile.preparation_sequence {
+        profile.preparation_sequence = preparation.sequence;
+        profile
+            .preparation_cpu
+            .push(preparation.cpu_ns as f64 / 1e6);
+        if preparation.allocated_emitters > 0 {
+            profile.preparation_births.push(json!({"observed_root_seconds":root_time,
+                "allocated_emitters":preparation.allocated_emitters,"cpu_ms":preparation.cpu_ns as f64/1e6}));
+        }
+    }
     for d in diagnostics.iter() {
         let path = d.path().as_str();
         if !path.ends_with("elapsed_gpu") {
@@ -127,11 +145,26 @@ fn collect(
             op.initialized_bytes += sample.initialized_bytes;
             op.bind_groups += sample.bind_groups;
             op.dispatches += sample.dispatches;
+            op.copy_bytes += sample.copy_bytes;
+            op.queue_write_bytes += sample.queue_write_bytes;
         }
         if let Some(scratch) = frame.event_scratch {
             profile.scratch_last = [scratch.links, scratch.buffers, scratch.bytes];
             for i in 0..3 {
                 profile.scratch_peak[i] = profile.scratch_peak[i].max(profile.scratch_last[i]);
+            }
+        }
+        if let Some(s) = frame.parameter_scratch {
+            profile.parameter_last = [
+                s.destinations,
+                s.destination_bytes,
+                s.bind_groups,
+                s.upload_pages,
+                s.upload_bytes,
+            ];
+            for i in 0..5 {
+                profile.parameter_peak[i] =
+                    profile.parameter_peak[i].max(profile.parameter_last[i]);
             }
         }
         for sample in frame.samples {
@@ -186,10 +219,13 @@ impl Profile {
         let operations: BTreeMap<_, _> = self.operations.iter().map(|(name, op)| (name, json!({
             "observed_frame_cpu_ms": distribution(&op.frames_ms), "calls":op.calls,
             "buffers":op.buffers,"requested_buffer_bytes":op.buffer_bytes,
-            "initialized_bytes":op.initialized_bytes,"bind_groups":op.bind_groups,"dispatches":op.dispatches
+            "initialized_bytes":op.initialized_bytes,"bind_groups":op.bind_groups,"dispatches":op.dispatches,
+            "copy_bytes":op.copy_bytes,"queue_write_bytes":op.queue_write_bytes
         }))).collect();
         json!({"cpu_playback_scope_ms":distribution(&self.playback_cpu),"cpu_simulation_encoding_scope_ms":distribution(&self.encoding_cpu),"gpu_phases_ms":gpu,"owners":owners,"activations":self.activations,
             "encoding_operations":operations,
+            "stateful_render_preparation":{"cpu_ms":distribution(&self.preparation_cpu),"observed_allocation_windows":self.preparation_births,"scope":"Latest CPU stateful preparation system windows only; excludes ShaderBuffer asset preparation, other render systems, submission, driver allocation and GPU execution. May skip frames."},
+            "parameter_scratch_retained":{"order":["destinations","destination_bytes","bind_groups","upload_pages","upload_bytes"],"observed_peak":self.parameter_peak,"last":self.parameter_last,"scope":"CPU-visible GPU handle ownership, not driver residency."},
             "event_scratch_retained":{"order":["links","buffers","bytes"],"observed_peak":self.scratch_peak,"last":self.scratch_last,"scope":"Render-world cache ownership, not driver residency or completed-submission frees."},
             "encoding_operations_scope":"Instrumented simulation-thread API call sites in observed latest-ledger frames only. Buffer bytes are requested sizes; initialized bytes are create-with-data payloads, not measured PCIe traffic. CPU scopes exclude parameter-byte construction and GPU execution. Initial render-world preparation, uninstrumented helpers, driver allocations and skipped ledger frames are not counted. Gather/spawn scopes include command encoding; other scopes measure allocation/bind-group calls.",
             "scope":"Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshot/capacity scan."})

@@ -44,6 +44,7 @@ mod material_shader;
 mod mesh_inputs;
 mod output_context;
 mod paged_trails;
+mod parameter_uploads;
 mod particle_light_inputs;
 pub mod particle_light_readback;
 mod particle_light_transport;
@@ -57,8 +58,8 @@ mod pipeline_preparation;
 pub use pipeline_preparation::{EffectPipelinePreparation, EffectPipelinePreparationStatus};
 mod playback_diagnostics;
 pub use playback_diagnostics::{
-    GpuActivationTiming, GpuEventScratchRetention, GpuPlaybackDiagnostics, GpuPlaybackFrame,
-    GpuPlaybackSample,
+    GpuActivationTiming, GpuEventScratchRetention, GpuParameterRetention, GpuPlaybackDiagnostics,
+    GpuPlaybackFrame, GpuPlaybackSample, GpuStatefulPreparationFrame,
 };
 mod preparation;
 mod preparation_context;
@@ -79,6 +80,7 @@ mod stage_coupling;
 mod stage_inputs;
 mod stage_output_delivery;
 mod stage_runtimes;
+mod stateful_parameters;
 mod stateful_simulation;
 mod stateful_trails;
 #[path = "gpu/storage_buffers.rs"]
@@ -859,6 +861,8 @@ mod coupled_tests {
     const TICKS_PER_SUBMISSION: u32 = 8;
 
     include!("gpu/tests/stateful_trails.rs");
+    include!("gpu/tests/parameter_uploads.rs");
+    include!("gpu/tests/particle_output_catchup.rs");
 
     struct Scene {
         device: RenderDevice,
@@ -1207,6 +1211,7 @@ mod coupled_tests {
                 links,
                 routes,
                 &StatefulRenderBuffers {
+                    uploads: None,
                     particles,
                     alive,
                     indirect,
@@ -1885,6 +1890,7 @@ mod coupled_tests {
                     &[],
                     &RouteWiring::default(),
                     &StatefulRenderBuffers {
+                        uploads: None,
                         particles,
                         alive,
                         indirect,
@@ -1997,6 +2003,7 @@ mod coupled_tests {
                     &[],
                     &RouteWiring::default(),
                     &StatefulRenderBuffers {
+                        uploads: None,
                         particles,
                         alive,
                         indirect,

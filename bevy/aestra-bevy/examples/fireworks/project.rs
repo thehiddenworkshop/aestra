@@ -234,6 +234,14 @@ mod smoke_cohorts_tests;
 mod persistent_smoke_show_tests;
 
 #[cfg(test)]
+#[path = "star_smoke_tests.rs"]
+mod star_smoke_tests;
+
+#[cfg(test)]
+#[path = "wind_smoke_tests.rs"]
+mod wind_smoke_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use aestra_bevy::{EffectPlaybackMode, EffectPlayer};

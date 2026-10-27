@@ -1,0 +1,3882 @@
+{
+  "milestone": "F8.1C4R",
+  "date": "2026-10-27",
+  "base_commit": "381b97f7",
+  "scope": "Reuse coupled-stateful parameter destinations/current-resource bind groups and unchanged physics uploads; batch immutable per-frame copy sources. Profile CPU stateful render preparation. Not GPU shader optimization, zero-driver-allocation, stable 60 FPS, exact visible registration, photographic approval or default migration.",
+  "result": {
+    "ordered_parameter_reuse_accepted": true,
+    "resource_invalidation_accepted": true,
+    "particle_and_trail_gpu_equivalence_accepted": true,
+    "all_four_new_runs_deliver_13_flashes": true,
+    "cache_ownership_drains": true,
+    "whole_host_60fps_accepted": false,
+    "universal_single_tick_latency_accepted": false,
+    "authored_effects_changed": false,
+    "catchup_policy_changed": false,
+    "history_policy_changed": false,
+    "renderer_defaults_changed": false
+  },
+  "implementation": {
+    "destination": "One reusable STORAGE|COPY_DST parameter buffer per coupled emitter, reused sequentially for tick and presentation. Cache lifetime is the persistent emitter state.",
+    "ordering": "Distinct immutable byte ranges in reusable COPY_SRC|COPY_DST upload pages feed encoder copies immediately before the consuming compute work. Pages are queue-written once per used page before any frame command buffer referencing them submits; the preceding frame submitted before this frame's writes. Queue writes NEVER directly overwrite live tick destinations.",
+    "groups": "Cached stateful group keyed by layout identity and all eleven other buffer identities. Changing current state/free-list/event/render/world/physics resources rebuilds it. Destination size changes rebuild the destination/group.",
+    "independent_path": "Independent tick batches retain separate ephemeral parameters per tick in their shared compute pass; they are not redirected through a shared mutable destination. Their final presentation can reuse its destination.",
+    "physics": "Per-effect packed physics words are compared exactly. Equal data reuses a buffer; changed words replace it and invalidate affected cached stateful groups.",
+    "retirement": "Emitter replacement, GPU extraction retirement or owner removal releases destination/group/physics cache ownership. Shared upload pages retain the busy period high-water capacity and release it when an encoded frame has no parameter uploads. No explicit destroy() on in-flight resources.",
+    "tradeoffs": "Adds ordered GPU buffer copies and queue page uploads; payload traffic is not eliminated. Queue internals may still allocate staging memory. Page high-water capacity can remain while any parameter workload stays active; no global memory hard cap or driver residency claim."
+  },
+  "profiling": {
+    "existing_flag": "AESTRA_EXAMPLE_PROFILE=1; images off",
+    "operations": [
+      "parameter_page",
+      "parameter_destination",
+      "parameter_copy",
+      "parameter_upload"
+    ],
+    "transfer_fields": "copy_bytes and queue_write_bytes count requested encoder copy/API queue-write payload bytes; initialized_bytes remains create-with-data only. No driver transfer measurement.",
+    "preparation": "GpuPlaybackDiagnostics::stateful_preparation_snapshot() exposes the latest optional CPU stateful preparation system window and allocated-emitter count. Excludes ShaderBuffer asset preparation, other render systems, submission and GPU execution; latest mailbox may skip windows.",
+    "retention": "GpuParameterRetention exposes owned destination/group counts and upload page capacity. Not driver frees.",
+    "limitations": "Latest-frame observation is incomplete. Six initial emitter destinations/groups and one initial page are prepared while the example clock is paused, outside the report's playback window. Therefore observed allocation requests 82 destinations/5 pages differ from peak owned 88 destinations/6 pages. No extrapolation to complete allocator traces. Only the outer GPU simulation phase is used; nested scopes must not be summed."
+  },
+  "environment": {
+    "os": "Windows",
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "rust": "1.98.1",
+    "bevy": "0.20.0",
+    "wgpu": "30.0.1",
+    "build": "dev application opt-level1 / dependencies opt-level3; fireworks-audio feature, --no-audio",
+    "resolution": [
+      1280,
+      720
+    ],
+    "hdr": true,
+    "tonemapping": "TonyMcMapface",
+    "bloom": 0.15,
+    "experimental_oit": "Off MSAA / average4 / K32 / 128MiB guard",
+    "history": "PlaybackOnly",
+    "duration_seconds": 37,
+    "cleanup_updates": 10,
+    "concurrent_builds_or_native_gpu_probes_during_measurements": false
+  },
+  "baseline": {
+    "evidence": "benchmarks/fireworks/reused-event-scratch-2026-10-27.json",
+    "description": "Previously recorded C4Q final binary and actual-window measurements, not a new fresh-buffer baseline. Same machine/toolchain/build/profile/host workload. One profile per implementation; actual frame counts differ. Extra preparation profiling exists only in final; no complete isolated speedup ratio.",
+    "provenance": {
+      "sources": [
+        {
+          "path": "assets/test/effects/ember_sigil.aestra.ron",
+          "sha256": "B69182E1EA95012A14843FECACE0FAB358D56036FF1BECC3E79F52C0EA440305"
+        },
+        {
+          "path": "assets/test/effects/fireworks_chrysanthemum.aestra.ron",
+          "sha256": "B4223D30FD5870D3FCF7D48AB857785D2E625C734001156EC6E024DEC9235C43"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crackle_persistent_smoke.aestra.ron",
+          "sha256": "0BA33D317842C3DDC7582B12FAAA72A8DEF330FAFBF400A94512A50455BCBCD0"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron",
+          "sha256": "5AECB28110A3295AD9E010EE001D4B1CF0B38900FBDB9473383ECE0F0CC6D12E"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crackle.aestra.ron",
+          "sha256": "4414A563BBFC7C7A02447AD044EAF7DA7189C6DE24EED4EA88E57C7610C21D63"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crossette_persistent_smoke.aestra.ron",
+          "sha256": "E03E96E5037B7D6ABDFB1CAFB138BA11FB02B4446555A69FA862A151CB0C624B"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron",
+          "sha256": "5ED106ECFED6A58F3AC59ACB7B4F991B5890929F2BCEA00AA64EFDC36ADAFD70"
+        },
+        {
+          "path": "assets/test/effects/fireworks_crossette.aestra.ron",
+          "sha256": "4E9A0E1BAF488865215E84016C031E7992E4530DE957FC49537225E181C68F56"
+        },
+        {
+          "path": "assets/test/effects/fireworks_multi_break_persistent_smoke.aestra.ron",
+          "sha256": "0F9FC062EB024C40173DDED37A53CF4E86ADCA5984954DC4EE2C06A440B4946E"
+        },
+        {
+          "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron",
+          "sha256": "1CA9DE6B0D3FFA093D6479B07952113AA7F5B42A58D993D0141CDAAD2CB5B8AB"
+        },
+        {
+          "path": "assets/test/effects/fireworks_multi_break.aestra.ron",
+          "sha256": "91CD5B6C696F37C988F59E33802EE99AD6C15C3A67D9692055D7F078D0AA7E78"
+        },
+        {
+          "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron",
+          "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5"
+        },
+        {
+          "path": "assets/test/effects/fireworks_particle_smoke_overlap.aestra.ron",
+          "sha256": "60C11B199D1E37EF105EF237A5575CD390C6E07FA53B716F1D13F59DD3C3F532"
+        },
+        {
+          "path": "assets/test/effects/fireworks_peony.aestra.ron",
+          "sha256": "2D1CB90697E9227E2FD8FA03385653CCFCA60927409B9E753692F32B779B0C32"
+        },
+        {
+          "path": "assets/test/effects/fireworks_pistil.aestra.ron",
+          "sha256": "EDED6581E2E7791DABDCDEFD8FCBBD3BC17E30D55E5875AE5AE12E7185EA5D49"
+        },
+        {
+          "path": "assets/test/effects/fireworks_reference_hero.aestra.ron",
+          "sha256": "89C5FDCE6152F0BEB789C16ACF523261F5770257BAA415E8B421BE454B457092"
+        },
+        {
+          "path": "assets/test/effects/fireworks_secondary_volley.aestra.ron",
+          "sha256": "E32D3BC3293AC9B8226499822B1763135E55EDF7530B69C5C0FAAB2D06036838"
+        },
+        {
+          "path": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron",
+          "sha256": "ED38F17F3A103DA58673EF753C550C291BBB6C7BB6C1C3FE5FDD3540B64634E5"
+        },
+        {
+          "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron",
+          "sha256": "FC22EB440F76FC4030A6C67C5B9A71AB45CE5AAC08AA1538976C0F31F9E4979C"
+        },
+        {
+          "path": "assets/test/effects/fireworks_show.aestra.ron",
+          "sha256": "DD2BC77CC19AAA84CFCDCCB24A5C1554B168F5EA664541EA4C28882E09A4C011"
+        },
+        {
+          "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron",
+          "sha256": "1EC41EB51EDBF14CED1631C3DEEE50B1FC4459F1F03B2BA3262FB8D2AF6105B6"
+        },
+        {
+          "path": "assets/test/effects/fireworks_smoke_lighting.aestra.ron",
+          "sha256": "1AA6948E412DF8C7211DE9347449980C650254935983B5831613252EA51D790F"
+        },
+        {
+          "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron",
+          "sha256": "0A32D0AA5DDA578830A7D1359633FB1A33C6F0EADCF59FB92E9611845E0C3E40"
+        },
+        {
+          "path": "assets/test/effects/fireworks_strobe_persistent_smoke.aestra.ron",
+          "sha256": "CB5629E77DDF49ABFC995C425386FEAA3CD73972FA58001BA60B2BF8D3BE9AEF"
+        },
+        {
+          "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron",
+          "sha256": "5AB53A9C477B2987DA245F73A1A448496B08777B3A61932168EFBD78049F1A32"
+        },
+        {
+          "path": "assets/test/effects/fireworks_strobe.aestra.ron",
+          "sha256": "C8CA64F617ABD86EFA1273C991676D58DB732A602D42ABF8092E0EDA7D19CA00"
+        },
+        {
+          "path": "assets/test/effects/fireworks_willow.aestra.ron",
+          "sha256": "D4151B1932ABDED733F2BE7F9A2AB571CF91FBB7FA7E3C857E2FB6A0DD762914"
+        },
+        {
+          "path": "assets/test/effects/material_graph_lab.aestra.ron",
+          "sha256": "520F126073B5F991972606337D65D29C5210C6F744D29FCEA5A96F1AD7BAFBCE"
+        },
+        {
+          "path": "assets/test/effects/mesh_material_lab.aestra.ron",
+          "sha256": "D61809B5D46C326A059874EB8542ADD8BBCF6A80D47D0EDA3140A73A3BE475E2"
+        },
+        {
+          "path": "assets/test/effects/moving_trail_lab.aestra.ron",
+          "sha256": "5DEA976BB8B44FAC187437A3E3D2A59D43BA6DB7F51EB80992B423685F439DFE"
+        },
+        {
+          "path": "assets/test/effects/nested_moving_trail_lab.aestra.ron",
+          "sha256": "55F895400BD3F2F5E2A80331F425334A8A8F16C375AD3F7265A8C5CE9F1A9C57"
+        },
+        {
+          "path": "assets/test/effects/nested_trail_carrier.aestra.ron",
+          "sha256": "FD6FEE08DDE3DA4F76885C8EF963A5DF6003A3B202D4CB2D3C099D3DF44F319B"
+        },
+        {
+          "path": "assets/test/effects/plasma_burst.aestra.ron",
+          "sha256": "67E91D3EAF1E715FAA5CCE4A2FB652C8D4E2657EAF3148D91A6BD9134A6A3084"
+        },
+        {
+          "path": "assets/test/effects/prism_bloom.aestra.ron",
+          "sha256": "64FE0A699CB80E39366DA81990BA89D90E917B05E903B207E8E660A8D568EDD7"
+        },
+        {
+          "path": "assets/test/effects/ribbon_lab.aestra.ron",
+          "sha256": "E032180FF560C5B458F50516FFC2889CE639E12D693AE84559E43DA8A9E2910B"
+        },
+        {
+          "path": "assets/test/effects/trail_lab.aestra.ron",
+          "sha256": "CE22A3803E130A00B174022186EBB4058EBA46603D409EA159AA1EAD415BF714"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/capabilities.rs",
+          "sha256": "84D5C9A933AB0B23FBDE5E24E7133AC6351435BE1C003D31834C54286E5075EC"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/cpu.rs",
+          "sha256": "960F61B8377FB7BEEF763146DA664E7CA095241CC9C2C9074D53520563555722"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/execution.rs",
+          "sha256": "CD36CCD5DD1929950E1AB3142415FEC5A281DFF0C657A17DF3F1582A7E3759CB"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/execution/event_scratch.rs",
+          "sha256": "E71D870EEACC37583D9674A01787315DB39397C804FE61D19566CDA891FFAAF4"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+          "sha256": "6BC7116499755C3A9AD4FE3B57C3363DBF6514CD44965021FABA2759445A95A9"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs",
+          "sha256": "9BAD19218428978DF4421AD040CA891C4566994FEC11693C06E9F30A6E570F0F"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.wgsl",
+          "sha256": "5F37B14A9110414055998D83D63EA0AE6C234DF5C0E209CB9BAF68A98D0DDCDE"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.rs",
+          "sha256": "709755DF6255C5A84663EFFA8AF27528FF6BD8014B5B2DF7F8BABE7D658E33E2"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl",
+          "sha256": "14C603D2F2B6BEC2592A65478A8B3501B2646339ACD704101F6C3A252BB389FF"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.rs",
+          "sha256": "BD6F0AD27A0D0B69693020E816E4D7A666994CB8F31EAA24BD3C1052B3989174"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.wesl",
+          "sha256": "77EF295C7B268F5D1C3337BDE7E01F73129512660E94E0849A1BD7DF4C9E3FCD"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu.rs",
+          "sha256": "AEF2A2F087D3F83D917818CE2B678F773BAA9C896496DDC4F9D01D75F4C6DF00"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/alpha_sort.rs",
+          "sha256": "8F17FD1B7A75B290F221CEEB1EE9E15E619BC44B1E957DE9C048049E529A887B"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/alpha_sort.wgsl",
+          "sha256": "8E8EB9C4CB97C33D0B87B8C00E16F8B6275489C7E9A16A06C27998810DCABDB0"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/bootstrap.rs",
+          "sha256": "25DC0661A6C90CC4D9731B6551B863E48A89E9BC6972EF1403B7B204C981F14D"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/bounds_test_types.rs",
+          "sha256": "2EDFDEED13CA619BFA867C7E6BE4B4DB199B3A5A835CABE2E572F0034DD7B89B"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/bounds.rs",
+          "sha256": "4DA718B49EFDBFE9F7F4580BA6C75B3E77C7AA089C61C25EA93D77059FCA7422"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/capability_publication.rs",
+          "sha256": "388D92E5D15CD98F54B19E525BD62A44EB275390D197FCDFEB5BE25BB9BC1886"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/catchup_pacing.rs",
+          "sha256": "EA49E035DDC0A956B1C871A0C615DB536219052F2E5C04CA3D7D6A753C304CC6"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/clone_extraction.rs",
+          "sha256": "D70B58CEDCD08D3BFF794BD25817E9A65A0ADD4B394318359DE12227FB6E8583"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs",
+          "sha256": "A255813582713D39031D63D044835F4693F41EA7C9A6B4A496FF50355C06B433"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/draw_commands.rs",
+          "sha256": "2247C5A3C968ED4CB1DE0EA0F3F457EBDA09A413DEB9192A8A58EB955A4B3137"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/draw_instance.rs",
+          "sha256": "1E879FAC9FCE278F04D024562C38B78EA3E53DDD60C68A7C7A609CE83E6E167E"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/draw_preparation.rs",
+          "sha256": "B931A9DCE6E99739AF01EDE3AD8C1C638ECA72F1C40E17198E8C580828413218"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/draw_resources.rs",
+          "sha256": "A087E7C5489B0A118EFFD6B8DB97B3161579C3EE708A834539F63BADA36DA36E"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/effect_inputs.rs",
+          "sha256": "FB3BDF033C27BD732B820CF7C2963319D9FBC34A3B86012C3981396FE394F793"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/encoding_profile.rs",
+          "sha256": "F46B1CFFC3774F06F8747431AE6412127E7BB98C5008F53A2809D3AA674BF115"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/event_link_scratch.rs",
+          "sha256": "853477454393A32C5FEDE97525D09362105576BB8AFBF9E9A8FA1C365AC3E9D1"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/event_statistics.rs",
+          "sha256": "7498A0D3B3CD750FE9990793801B96FECDDEDCC9C99372476673B0ED49C409AD"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/extension_stages.rs",
+          "sha256": "E8A44EF4C8B5B3A014171E44980235760F87DFCE5F5A2FCD2C782970AABA7BCD"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/extraction_cleanup.rs",
+          "sha256": "36792705FE4B10A6DD31AAE6A4A78E1314050C61EE21A79F6F68DC6CC8E6A926"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/extraction_systems.rs",
+          "sha256": "F309A5E0E23C12327AE318F97657482DC735E2362AEB65E5FB522A323C73C3B2"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/extraction.rs",
+          "sha256": "430A47FD7C98EDA92700D662D057030EDAD4E125C129AB6A01D085AE30022E3D"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/field_observations.rs",
+          "sha256": "629261A5B058588B9782545D9E26D148172687F4AB0FC0C9EDE0BC2C175178DC"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/geometry_sample.rs",
+          "sha256": "D016E39669E923B886B79F1FDFE56F5137B63936CF350B39B7B473A658643EDB"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/geometry_statistics.rs",
+          "sha256": "10FD35CA39B7AD545D8E13E10CC635BC0D8DFC72D013E9A9229A7EB55C64A79A"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/mapped_readback.rs",
+          "sha256": "94EC9677FD6AC872A094B1EE859C811561920FB7506A9F4EC280D5CCA7B9A6AC"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/material_lighting.rs",
+          "sha256": "0DB579AEB3019503751DA8729091A1559957C82D4AADB73143C3EDD98D786558"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/material_lighting.wgsl",
+          "sha256": "166EBC8F4FC862D2EA73A9AF24D7874B07FC60F9F4CAA0F978C53F45F30A3761"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/material_shader.rs",
+          "sha256": "19A34D5F6A3CCBD9625369DF2922801053ECD00FFB1E6E6679D24CFDEBD7E64C"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/mesh_inputs.rs",
+          "sha256": "F7E716E6517C38C3D3F8699ECC0F36577F7AC42C83F896419A88180A6D2BC9A8"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/output_context.rs",
+          "sha256": "D13CF4A3C5DBD790678B13DCFED76A546A8D37DEB9B1F63F970D7FEEFDFE7D45"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/paged_trails.rs",
+          "sha256": "9C1D657F777397AD85923BBCA6A6026BCFFD77EBCB7C211A0D00D7047D4734D2"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_light_inputs.rs",
+          "sha256": "D168B54D5A243B747FAC022AAD7A5538B2C6EEE3E377E2C5439B12F023D9B417"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_light_readback.rs",
+          "sha256": "3AE16EBDC40C688D81C4A22658A6787DC9175998C7D05A41D44F78192E62F9A1"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_light_transport.rs",
+          "sha256": "4200AEAFDBF9A1C70042F8F25B6E9717AFBDF2D3A7E2F784D0223C43FFEE1AE5"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_lights.rs",
+          "sha256": "F16A5399F433D0F08E074CB43E8E95DE6185F106BBFB162DEE75F2C03AF3AA7C"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_output_readback.rs",
+          "sha256": "1FF0981331BBDFE8092F77B502F272D1E4751A010986EF60354876328144057F"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_outputs.rs",
+          "sha256": "7ACDD08BA006EAF002E4801725FE214DE39306098ACEB2285DBF6864CF838DAE"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_statistics.rs",
+          "sha256": "FBE225585953C8496894DA82F5B96571A8A1109B19951F4A66D00E574056C5EB"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/physics.rs",
+          "sha256": "C1A554E1AA43FD707602DB21D17D1189D288B355CB72FC393436B0A297F6DDEC"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/pipeline_preparation.rs",
+          "sha256": "996DA1060750AAEF7098137AF4550852572C1C0395D326DE33EB01F362EA4473"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+          "sha256": "508637BD35061511932F2B8A2EA137436EDA6A1E127511A9230FD2EB56C932AA"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/playback_diagnostics.rs",
+          "sha256": "832B4A67572647E275943CE75D1A6976629BE8F965C652CFAC89A608D72EBB28"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation_context.rs",
+          "sha256": "76A33EF0D6037DE48FA184BBF2033579880857513738E5DC1A635B0209FB29ED"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation_observation.rs",
+          "sha256": "9BAA9B52242FA76DE884602D2B7DAFC74C664417CF7FECF66D4023C31C1207B9"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation_timing.rs",
+          "sha256": "44965CA633852E057FEA6B970FF110FE2885A60525D3F6D6E318C7951EBD0EF4"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation.rs",
+          "sha256": "B6C253E6D2F21768CFD483022AE9E3E811BEE26D689DB5EF7C69340803EF5E4B"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/presentation_readiness.rs",
+          "sha256": "A8C9F3A5572F914AD8994B25C4841EB7C2490044373443BF3421C335D1A6E0CB"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+          "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/ribbon_bounds.rs",
+          "sha256": "890F36E1A3DCF4AB4DBCB0492C62AD972B616AA885A6617FB68B950C65504E34"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/scene_depth.rs",
+          "sha256": "5B3212836CEF26C2568CD51D4D47AB328611F6E14B774A7720A82D2BFC539799"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs",
+          "sha256": "1A96DD860178958FEBA5B712FE22C4B183DF901D61DD42436E60BBA5009ED2F0"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_graph.rs",
+          "sha256": "7A081DEFE8CD4D44D89A93D5340AA9295B7525AA854E123ABDD6EA0560A5A77C"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_observation.rs",
+          "sha256": "0E76C24E799D50C31C1CD95DC59893E2D70C4717763B5D05731147E3B77F9DBA"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_pipeline.rs",
+          "sha256": "E55084D670312517353817477309C76FF277B15B109645C1F03AEF5F2B6118AE"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_timing.rs",
+          "sha256": "9D432D0FE5D9797B3AB174059970FCA24C8F31B8B66512A85106AE56214D0154"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/sprite_culling.rs",
+          "sha256": "E97A6CD0FEB394C817998DFEC72BF1C992C39170CE78BD71C7A06033863F61E5"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/stage_coupling.rs",
+          "sha256": "338C2B7941F7A552831A64E04DD3F2A16BB618431437820009F4B79F948C8B61"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/stage_inputs.rs",
+          "sha256": "20846AEA586FD55045432D9D523E83792CF8B2FB9850D828FCB7227E2C6FC19C"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/stage_output_delivery.rs",
+          "sha256": "72F2B8C23F1C572B6DA48013419BE5463ABEE9ED3C29A77EC3F58A8C426CBA1E"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/stage_runtimes.rs",
+          "sha256": "ABA55D539FE4E88963B605B649C9495F9E0FC1FEABB01012A64905DCF72F785B"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs",
+          "sha256": "F4CA97373D6A0C9B468FDF048479C62D20C796A5152E549FD68C02609552CD7E"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/stateful_trails.rs",
+          "sha256": "E21D3F0946D499B426307EE0E57DE6C8CE035ED88A37C0ACA7D66569D7F6ACA5"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/storage_buffers.rs",
+          "sha256": "EAE629F05510DFF16C6C4C2F68C0F31E65D109C7776C6310B6361CCEDF24FF0F"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/storage_encoding.rs",
+          "sha256": "E15DA54D4B1A30565F553A0032A8504B5E75B8586B53FF6C3DAA7F701372D984"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/alpha_sort.rs",
+          "sha256": "9338FDB72CAFAB724B35363BD914888856E6347A465F89C46DD5FF2AED765ACE"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/extraction_control.rs",
+          "sha256": "E402A38E1521832F6E70CC9C43BDD5CA39EF5C7CD979A6FE8C9538EFEA3BDE27"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/extraction_state.rs",
+          "sha256": "6379C474C1EC98F308F446211B4EC72D8AE1D410F1D6D3944E223B06CB38355A"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/extraction.rs",
+          "sha256": "A02C2EBAA73621343205B6BAA837DF7A00ED98EF677C079486451469B3E0B2F1"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/pipeline_preparation.rs",
+          "sha256": "4D6F06DA418C2399CC60BCC3673CF46EA81F3490FFE8C167AE81056DF9BE2D61"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/preparation.rs",
+          "sha256": "0B69FE6638055550E612CF6A58C7A5DCC990FCFF1D1B37F71361DA180972EC65"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/stateful_trails.rs",
+          "sha256": "D667B34D28E2F5C127FBE4F904464B6025CE60A1376E149894A5B1443BCC30A1"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/visibility.rs",
+          "sha256": "303ECD751CA51793CF467AE59D8A5080F7AA49B684FA85F5EB2D6DF95A46B887"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/timestamp_observation.rs",
+          "sha256": "5C52EFB9DF38EB9193E95C75C992AF249FA3DDD030A202972F1E2AF14FF6F18C"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs",
+          "sha256": "516091D2D8535C0F9F449BFC42501A3DD20E1131A164D82D6027CABD64259B33"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_checkpoints.rs",
+          "sha256": "AB8DFD2E431D62DFB38A0A8549BF486CD4E136ECC5F56C6B2204DEF00BB2D4E3"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_compaction.rs",
+          "sha256": "DEC29CFF165D74CAFA1E957D21912D64BCD57BAC20CC8905AF5E20E4B4056459"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_context.rs",
+          "sha256": "87B8ED0E8E44974D25889D78F8B3BFE9A59729B1D89DB98F132FB30C789DD31C"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_culling.rs",
+          "sha256": "DFDD5AF3C4F9859FCA607E495B26BE2B3E932E87420B8D7006D3D05B134DFE5B"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_replay.rs",
+          "sha256": "7390868D7D789AABA0ABBA77A67CB2A83C4D5BD81BFCCA19F5B1F7DC7400DB7F"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/transform_sync.rs",
+          "sha256": "BE2BD28EA1EC85E6028F1FC8D7DE75E357D71E191C07F72BD5F2D70B75C1BA16"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/view_phases.rs",
+          "sha256": "E7CB504747E301330692E2E65A906660AB9D413ACE122E1E49C476C22BF3E8BC"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/visibility_updates.rs",
+          "sha256": "DCCD516D4E9BEDD1D61DDB3BC464D29AEDC6B9D6BC2CC5C15B0300EFB2B3C546"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/volume_lighting.wgsl",
+          "sha256": "2D1D60A0A9F853D078754ADAEAF3B0986F15F52E89EE7CB7B2EE2F80C7D13219"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/volume_shader.rs",
+          "sha256": "071C921BAD5290F90A5384E72F3B4B079FB42AA8E3B72D3323A0FFA099B0D99E"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/volume.rs",
+          "sha256": "63E4D2742A6195FC630DDB51169F37A029AA2F21D705316329C991DEC1047DE9"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/wireframe.rs",
+          "sha256": "2BFAB667FAA6A7A637A82C587D632CF21594CCB6B12A8B6D41AE0CE080E9E091"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/gpu/world_sdf.rs",
+          "sha256": "07B4AAE9ED89E017BED1BB7C5638A03A23F802E4AE86179EE06641A9DE39E2F8"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/host_transform.rs",
+          "sha256": "0DDFB424BA1E488D29A2BC93FF341E22EE1870FC4F59082AA3C51760A275A2C1"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/lib.rs",
+          "sha256": "2806142D2ADD215757115CF4B8FF98B178C16D062EB7F5F208268D22676961FC"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/material_layout.rs",
+          "sha256": "B8DA0FDC2EC9AE672B6DD205D256F0AED4B0FA599007844853FC36A51C2E88FA"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/material.rs",
+          "sha256": "AAF5E91F56E6DB4F6DED0C44939B9F26ED6CC43E2F8854B02D6171A956A32C04"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/presented_effect.rs",
+          "sha256": "C5CC03D0C07D885AA6B886E635D2ADF0C2CF0358339428E862AF946BC69A4559"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/preview.rs",
+          "sha256": "38B948752FFAC1452435D1A87B88ED0C2C13F28D58C37C77C871C23464F2D467"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/project_assets.rs",
+          "sha256": "1198A19C5B157BAB5D187C1F3345BB9FAC5C60E024B5AFCEFC92CDA370A33624"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/render_plugin.rs",
+          "sha256": "6D14D1CED1118E4912C99DD7F32228778A55F674C42D0854D3FF2F3F3A10E025"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/render_set.rs",
+          "sha256": "56A66950615AB594D25E897DB0432608D3F4BEE85BBDC89AC76DFB1D418E4C37"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/render_settings.rs",
+          "sha256": "424A12DD330BDFC01941574FBB6B67F987252B9B8E0D0DEBB59ED6924C2DD288"
+        },
+        {
+          "path": "bevy/aestra-bevy-render/src/sampling.rs",
+          "sha256": "BB82812620A2EE9ECA77C0D7530681040917083C3A8CA7E5170C2489F1BA5EFF"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/custom_physics.rs",
+          "sha256": "D425A2E4E4B3AB66305A4F9EA33321E234569E17134A3E79DEE9818E67EDD28F"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks_event_chain.rs",
+          "sha256": "A399FF1AF8BB3158A99E0D1F1137E39269839E3A33378E8AB1094A4588FCB1B2"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks.rs",
+          "sha256": "2F77FC9E298A56B071DEAAA76691E3C9C5EFC687DF09A22B191D374F9FA73E66"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/audio.rs",
+          "sha256": "93AA2FCD7213BEDCE4A5438482FE8DCB9CD95F5B103EAB6D0D010935B7C45813"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/oit_tests.rs",
+          "sha256": "B7E31D03E1D8848931DEF06437345CEED4EDDD53E53E4F115AF02D34D9B1B375"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/oit.rs",
+          "sha256": "F838F0B9AE01E92DD8C68B5C40692F6E547F5AFB6DDAE76CE1A8A911529141EE"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/paths.rs",
+          "sha256": "A89CA2C5BED30EAD922CD29DB513A47AE36CAC0220F5B4EF619D092B6FB0F823"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/persistent_smoke_show_tests.rs",
+          "sha256": "21646096BB93ABA28D4BAB80E524B1DAFC8756DBEF9A366318D0C2C17883B239"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/project.rs",
+          "sha256": "A90BE1682926EE4CBDF7B33A97BF8EC473F5FC43502705FEB0B7587D2BB7CC03"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/readiness.rs",
+          "sha256": "EA53B31FF266C5E28ADCC2D44A0512CDB53A5CAA0F152A5F22D4EAB34C122BB4"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/report_profile.rs",
+          "sha256": "5107798EB5CFD2E28DF289E3DB20A5C89DEB935F06BECEDC543F2AB9B37EE835"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/report.rs",
+          "sha256": "DD46BB1B5CDACEE9575F8FD196483FDC57E9AD6EDB35415E8AE5D0A18E2CC00D"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fireworks/smoke_cohorts_tests.rs",
+          "sha256": "237AB4FEA184D2D28D63384DDCA8730918F06938FAB132B5382F3FA58B6D3C5D"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/fluid_world.rs",
+          "sha256": "7090D700031133016CE6B9433CD29DEE6FCE4D5811021C7C716AFA16379092E6"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/homing_projectile.rs",
+          "sha256": "049BA41CE363DB09141649AC05EFD4999F1D4BB1AB9CC3BAAE14357989FFE353"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/live_target_binding.rs",
+          "sha256": "DE74040179F4ED66937AB4A39FD706CC801094526CC86B102D003A0522A7069A"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/minimal_player.rs",
+          "sha256": "F0C796441733AB3940D8CD2E9067C5D53FF87985221622CE717BF5F4DD012604"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/scrub_recorded.rs",
+          "sha256": "A0890004FA55EE15CFA6E1C3116E4B0FC8D8B04BAD67B303AD6E17742E374C14"
+        },
+        {
+          "path": "bevy/aestra-bevy/examples/sword_trail.rs",
+          "sha256": "822581C90ED853F88C145263DAF164777F6EB07E5781A46FF6DF6F5218B6F279"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/bindings.rs",
+          "sha256": "4934FDF954B2F237BC731717F6B1ECD86B5D86E6925604C6DAD084FBEEE91D55"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/host_plugin.rs",
+          "sha256": "BC3A1BE467F608E35C2E4A6425AD3754CBFADAB0EE9462E4F6EE7E2EF7C2BD38"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/input_events.rs",
+          "sha256": "469ED1D14C773A923AA6EA967E04BBFA98D74745D62AE5BD07FEFE48F460FFAE"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/lib.rs",
+          "sha256": "C0875A3E2423468E9DE0F8AA2603032FDCB49F31FF854DEC7D9314AA17144345"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/lighting_quality.rs",
+          "sha256": "416385E78CA721A716705228CC837552A383A6A8AD5D09D7B31E14C2E010F12A"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/lights.rs",
+          "sha256": "9F0139540849939DAFFD81472EC786C72A1B0D4EE2786C028477FBCC590028B2"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/particle_light_boundary.rs",
+          "sha256": "68A507934DA7E9F35642D9280009C5FDB378AF14CE0CB2D52E94980B3555ADD1"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/particle_light_gpu.rs",
+          "sha256": "733B30FD94B47C03E653DAAC90202292E78556CBC078DE787FE0CE71482DB3E2"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/particle_light_gpu.wesl",
+          "sha256": "970857EFE524FA3248EFE89564462BDBD91FFE3859689EB95F982CE4DCBDB9FA"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/particle_lights.rs",
+          "sha256": "CE70F21709EF3F0D23637A5B57D397D152083394E3E954E37B5180CA12F5905D"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/playback.rs",
+          "sha256": "8D2E5344EDD82FFCBC981EEFAC18CC03E8D34B41DAE9DF558EFC03FE00622654"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/project_profile.rs",
+          "sha256": "D1D6A1527DECE007B11EF7A7EE89FC0299A47C646944D463C545BC38AB380988"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/project.rs",
+          "sha256": "6BA860C6E64732CFC168DEF49B2B1D59D527A76F4669B264D70FCA31CDC9C002"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/tests/choreography.rs",
+          "sha256": "F9656D0DFD58FB1660B48E8A2DB410A7128D51AB3C868E84DCF7B6808C1537D0"
+        },
+        {
+          "path": "bevy/aestra-bevy/src/world.rs",
+          "sha256": "4156DE203FCB715D1379AE268B3BF9DCD8D942DCC70BF1B39E83588B1B9ECC74"
+        },
+        {
+          "path": "crates/aestra-gpu/src/compute_program.rs",
+          "sha256": "5A88CA8F235FD22709194389BE9A88F666882B14932F5F586AB3E5263D9D1A93"
+        },
+        {
+          "path": "crates/aestra-gpu/src/host_bindings.rs",
+          "sha256": "D9D17B941BDEDBD2BA299F3AE2FEBEE50CBE5DE08436867EA53B11AD5C232333"
+        },
+        {
+          "path": "crates/aestra-gpu/src/lib.rs",
+          "sha256": "E996B38D14D8145FE9A9BDEBA116381196EBD01CE30A723676ED4AF89D6E0AFA"
+        },
+        {
+          "path": "crates/aestra-gpu/src/material.rs",
+          "sha256": "1619E357C397EBDB80EC6402CA2D4605DAF4F0046F6D1A6FF33C99423E633C47"
+        },
+        {
+          "path": "crates/aestra-gpu/src/material/varying.rs",
+          "sha256": "831876179FD0EAE7CE1566F804DC8F940B578B58088B7702D30D5A486E3C8EF4"
+        },
+        {
+          "path": "crates/aestra-gpu/src/mesh_bounds.rs",
+          "sha256": "C984704009568F4CB7EF2EB34DC9A72964AA1453B643F10EAA041490C113E569"
+        },
+        {
+          "path": "crates/aestra-gpu/src/particle_attributes.rs",
+          "sha256": "BB98050C974F47FCF780977504F10BB01BE4963E41FF0C5E821B03B0C9B7CADB"
+        },
+        {
+          "path": "crates/aestra-gpu/src/particle_lights.rs",
+          "sha256": "313E80CF4697FB64A9A1EF43A2015572BED77CA4F3F617E9BCCDAD1D8FC55AAC"
+        },
+        {
+          "path": "crates/aestra-gpu/src/reduce.rs",
+          "sha256": "055F6E2B116CE278D83233921366ACCA44AA1306267C25C8222CF182C46566CC"
+        },
+        {
+          "path": "crates/aestra-gpu/src/ribbon_bounds.rs",
+          "sha256": "F63620E8CAE1186514EE03FA9FC580E3006794D46BD8F747613FA7DA28D314BF"
+        },
+        {
+          "path": "crates/aestra-gpu/src/scan.rs",
+          "sha256": "53152E71D35FB58C987A17B9B8448DC6DF992464B0A8DCD84267F7C75EE5A82C"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shader.rs",
+          "sha256": "22508A684ADA9F23F64BC7F2056E439BA57FA7FA9130B63A3E7023F841996428"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_global_lights.wesl",
+          "sha256": "9B06E3D38A66BA5EC252666DC8F97EB81E7F887166622CF16E1F3D0FF1A723B9"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_light_merge.wesl",
+          "sha256": "E9B3847866DC72E06B71AEC2533BF856BB8B58B2DC1B7E2ABBDFB21C9F20BD51"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_light_order.wesl",
+          "sha256": "7068D104F6583812B7F7ECF9EB300FA9D4CFABC981CB4005BA43AD59204209D8"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_mesh_tangent.wesl",
+          "sha256": "0EEBC4CC238B7558A15698A7DAB27578A1B9BF39F183780D6A3912E16DD7B810"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_mesh_vertex.wesl",
+          "sha256": "06DFE83B661A344B55DDCDDA597B01CAB510EFA45B2B93D7BBEEA3B3675355F4"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_mesh_wireframe.wesl",
+          "sha256": "C88E2C94F6512E57E635C76EEB7E993C12B0AEBAB6E8E8281C23C3DB6009B1E3"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_normal_map.wesl",
+          "sha256": "3622ECDBAB741BFC9DE8A7468445B3B7E3ABE6B660450B7697ECAD453C889E30"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_particle_lights.wesl",
+          "sha256": "979F7858CB1B8A8D05126B408DF57FF606AA3EC8A18D0AB3DBA3A9AB2D5A5D81"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_ribbon_link.wesl",
+          "sha256": "95CAEBC33E02A78DA931D85804701029F5D3030E8DD31039FA77F621C2FD4E8B"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_ribbon_vertex.wesl",
+          "sha256": "8D482A2A7D6C8033108CAE7D0AB1170E0B3313E283CEEDBD1F51B519F366B0AD"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_simulation.wesl",
+          "sha256": "0764E1318C69ECF07FAA20BD9DB6E7C93F6362A917D54D8EF8E66B418BCF3ECE"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_sprite_render.wesl",
+          "sha256": "CEDBB143472D1E7AAEC8B39C62E98E61DB2DBA2ADB619C1E8E7FA1429D7C512B"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_sprite_sampling.wesl",
+          "sha256": "23BCEFE5C87078AEDC66FE2C64BFCD3FD8B80CF2BE3E0EE1C23436219647FF2D"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_sprite_vertex.wesl",
+          "sha256": "D4CC3D22DADD09780C437ED9ED22EA533B836275C4DF3DDC833CE5F78948BBBD"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_bounds.wesl",
+          "sha256": "B54AC03A75E8227CB0332AB2D1364FAFB447F229F455A3084DD313AFCAFCF30F"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_compact.wesl",
+          "sha256": "9CC4A7CBA758D72596847231A7552D36F1271579DFBDDECA9481C88D6FBA5F2A"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_cull.wesl",
+          "sha256": "005F90218CA0F0ADC7C640F0607A14CCF13B588E0603E5E9BC4FF34E92117A7A"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_geometry.wesl",
+          "sha256": "3113A112BCC5F5825EB8A6B7A4373DF136E294427768E628DF0BA3CF98EEE1DE"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_history.wesl",
+          "sha256": "3F8070DF3D475E91A94DCA5F6E8606C4929A43CF7A800382F89E8838AC6FDE06"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_paged.wesl",
+          "sha256": "F5DEAEA128DEDB3BDC019B705C49F51B5A266EDFDC1520AF48C5B50A26032E99"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_sample.wesl",
+          "sha256": "5DD31559C3391935AA5CD211616E088B40AC85EE31CE16C9AFE8410D1B3F7C78"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_vertex.wesl",
+          "sha256": "8D49F4FBFBAE0AFA8131514100B0BE0EBAEC99D8186C6E3C6E00998AD8ED837D"
+        },
+        {
+          "path": "crates/aestra-gpu/src/shaders/aestra_velocity.wesl",
+          "sha256": "512EB39BCEA74E086297F956161918328566078BC0471D99F80389A2C6064D90"
+        },
+        {
+          "path": "crates/aestra-gpu/src/trail_plan.rs",
+          "sha256": "ABEEF44868CDC4124544F465EFEA8C49CC43EE3F33841DE8D488A0E7307D84F9"
+        },
+        {
+          "path": "crates/aestra-gpu/src/volume.rs",
+          "sha256": "7335FCB244892611733EE5DFE9D8A5DBFBF5FF49012F4C1A82F22DA05C73AE57"
+        },
+        {
+          "path": "crates/aestra-gpu/src/world_sdf.rs",
+          "sha256": "9F2AF1ECA61FE49058D7728D56735AC568CE5008BEFC46AE4F41B1EB582F3080"
+        }
+      ],
+      "binary": "5EE3E1DD031BD779DC66D83891885BFC70BA52169F9D56C3ACC85CB9BC375343"
+    },
+    "runs": [
+      {
+        "name": "cached-wispy-profile",
+        "path": "target/fireworks-f8/encoding-2026-10-27/cached-wispy-profile.json",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.984805599999994,
+          "bevy_real_seconds": 36.984805599999994,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 13676,
+            "frames": 2192,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.03333282470703125,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "encoded_seconds": 17.266666412353516,
+              "requested_seconds": 17.299999237060547
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 58.7834,
+            "median_ms": 16.5415,
+            "over_16_67ms": 989,
+            "over_20ms": 375,
+            "over_33_33ms": 20,
+            "p95_ms": 26.6563,
+            "p99_ms": 32.4061,
+            "samples": 2181
+          },
+          "lane": "profiling-timestamps-no-images",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 2126,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "profile": {
+            "activations": [
+              {
+                "cpu_clip_construction_ms": 0.0131,
+                "cpu_preparation_ms": 0.9598,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 0.01666666753590107
+              },
+              {
+                "cpu_clip_construction_ms": 0.0148,
+                "cpu_preparation_ms": 0.2414,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 2.299999952316284
+              },
+              {
+                "cpu_clip_construction_ms": 0.0081,
+                "cpu_preparation_ms": 0.0493,
+                "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+                "root_seconds": 4.599999904632568
+              },
+              {
+                "cpu_clip_construction_ms": 0.0178,
+                "cpu_preparation_ms": 0.2788,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 4.599999904632568
+              },
+              {
+                "cpu_clip_construction_ms": 0.0054,
+                "cpu_preparation_ms": 0.8931,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_clip_construction_ms": 0.0054,
+                "cpu_preparation_ms": 0.8043,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_clip_construction_ms": 0.0133,
+                "cpu_preparation_ms": 0.8221,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 7.900000095367432
+              },
+              {
+                "cpu_clip_construction_ms": 0.0076,
+                "cpu_preparation_ms": 0.1891,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 12.016666412353516
+              },
+              {
+                "cpu_clip_construction_ms": 0.0207,
+                "cpu_preparation_ms": 0.3098,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 12.016666412353516
+              },
+              {
+                "cpu_clip_construction_ms": 0.0069,
+                "cpu_preparation_ms": 0.0784,
+                "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+                "root_seconds": 16.016666412353516
+              },
+              {
+                "cpu_clip_construction_ms": 0.0072,
+                "cpu_preparation_ms": 0.1238,
+                "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+                "root_seconds": 16.016666412353516
+              },
+              {
+                "cpu_clip_construction_ms": 0.0138,
+                "cpu_preparation_ms": 0.942,
+                "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+                "root_seconds": 16.016666412353516
+              },
+              {
+                "cpu_clip_construction_ms": 0.027800000000000002,
+                "cpu_preparation_ms": 0.3177,
+                "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+                "root_seconds": 17
+              }
+            ],
+            "cpu_playback_scope_ms": {
+              "max_ms": 0.42660000000000003,
+              "median_ms": 0.0996,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.1461,
+              "p99_ms": 0.1776,
+              "samples": 2191
+            },
+            "cpu_simulation_encoding_scope_ms": {
+              "max_ms": 8.5334,
+              "median_ms": 1.0532,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 3.33,
+              "p99_ms": 4.1328,
+              "samples": 2192
+            },
+            "encoding_operations": {
+              "event_gather": {
+                "bind_groups": 81000,
+                "buffers": 0,
+                "calls": 81000,
+                "dispatches": 162000,
+                "initialized_bytes": 0,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 0.997,
+                  "median_ms": 0.1194,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.3718,
+                  "p99_ms": 0.4688,
+                  "samples": 1882
+                },
+                "requested_buffer_bytes": 0
+              },
+              "event_gather_prepare": {
+                "bind_groups": 0,
+                "buffers": 225,
+                "calls": 75,
+                "dispatches": 0,
+                "initialized_bytes": 1800,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 0.149,
+                  "median_ms": 0.0787,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.1353,
+                  "p99_ms": 0.1353,
+                  "samples": 7
+                },
+                "requested_buffer_bytes": 311700
+              },
+              "event_list": {
+                "bind_groups": 0,
+                "buffers": 75,
+                "calls": 75,
+                "dispatches": 0,
+                "initialized_bytes": 0,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 0.017,
+                  "median_ms": 0.0138,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.0163,
+                  "p99_ms": 0.0163,
+                  "samples": 7
+                },
+                "requested_buffer_bytes": 273744
+              },
+              "event_spawn": {
+                "bind_groups": 162000,
+                "buffers": 0,
+                "calls": 81000,
+                "dispatches": 162000,
+                "initialized_bytes": 0,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 1.5699,
+                  "median_ms": 0.1943,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.6216,
+                  "p99_ms": 0.7798,
+                  "samples": 1882
+                },
+                "requested_buffer_bytes": 0
+              },
+              "event_spawn_prepare": {
+                "bind_groups": 0,
+                "buffers": 150,
+                "calls": 75,
+                "dispatches": 0,
+                "initialized_bytes": 1200,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 0.1575,
+                  "median_ms": 0.0669,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.0694,
+                  "p99_ms": 0.0694,
+                  "samples": 7
+                },
+                "requested_buffer_bytes": 3600
+              },
+              "physics_upload": {
+                "bind_groups": 0,
+                "buffers": 13676,
+                "calls": 13676,
+                "dispatches": 0,
+                "initialized_bytes": 218816,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 0.1706,
+                  "median_ms": 0.0342,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.0584,
+                  "p99_ms": 0.069,
+                  "samples": 2068
+                },
+                "requested_buffer_bytes": 218816
+              },
+              "present_params": {
+                "bind_groups": 0,
+                "buffers": 112207,
+                "calls": 112207,
+                "dispatches": 0,
+                "initialized_bytes": 85726148,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 0.9429,
+                  "median_ms": 0.1677,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.3963,
+                  "p99_ms": 0.4982,
+                  "samples": 2068
+                },
+                "requested_buffer_bytes": 85726148
+              },
+              "stateful_bind_group": {
+                "bind_groups": 207247,
+                "buffers": 0,
+                "calls": 207247,
+                "dispatches": 0,
+                "initialized_bytes": 0,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 2.0402,
+                  "median_ms": 0.267,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.802,
+                  "p99_ms": 1.0231,
+                  "samples": 2068
+                },
+                "requested_buffer_bytes": 0
+              },
+              "tick_params": {
+                "bind_groups": 0,
+                "buffers": 95040,
+                "calls": 95040,
+                "dispatches": 0,
+                "initialized_bytes": 72610560,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 0.9663,
+                  "median_ms": 0.1513,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.4103,
+                  "p99_ms": 0.499,
+                  "samples": 1882
+                },
+                "requested_buffer_bytes": 72610560
+              },
+              "trail_observation_upload": {
+                "bind_groups": 0,
+                "buffers": 16558,
+                "calls": 16558,
+                "dispatches": 0,
+                "initialized_bytes": 1125944,
+                "observed_frame_cpu_ms": {
+                  "max_ms": 0.147,
+                  "median_ms": 0.0278,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.063,
+                  "p99_ms": 0.0789,
+                  "samples": 2068
+                },
+                "requested_buffer_bytes": 1125944
+              }
+            },
+            "encoding_operations_scope": "Instrumented simulation-thread API call sites in observed latest-ledger frames only. Buffer bytes are requested sizes; initialized bytes are create-with-data payloads, not measured PCIe traffic. CPU scopes exclude parameter-byte construction and GPU execution. Initial render-world preparation, uninstrumented helpers, driver allocations and skipped ledger frames are not counted. Gather/spawn scopes include command encoding; other scopes measure allocation/bind-group calls.",
+            "event_scratch_retained": {
+              "last": [
+                0,
+                0,
+                0
+              ],
+              "observed_peak": [
+                75,
+                450,
+                589044
+              ],
+              "order": [
+                "links",
+                "buffers",
+                "bytes"
+              ],
+              "scope": "Render-world cache ownership, not driver residency or completed-submission frees."
+            },
+            "gpu_phases_ms": {
+              "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+                "max_ms": 0.99328,
+                "median_ms": 0.242688,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.40448,
+                "p99_ms": 0.543744,
+                "samples": 1971
+              },
+              "render/aestra::gpu::simulate/aestra::gpu::trail_history/elapsed_gpu": {
+                "max_ms": 0.883712,
+                "median_ms": 0.024576,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.253952,
+                "p99_ms": 0.461824,
+                "samples": 1971
+              },
+              "render/aestra::gpu::simulate/elapsed_gpu": {
+                "max_ms": 17.010688,
+                "median_ms": 2.564096,
+                "over_16_67ms": 1,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 7.10656,
+                "p99_ms": 9.23648,
+                "samples": 2094
+              },
+              "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+                "max_ms": 1.436672,
+                "median_ms": 0.246784,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.456704,
+                "p99_ms": 0.684032,
+                "samples": 2094
+              },
+              "render/aestra_oit_overflow_sort/elapsed_gpu": {
+                "max_ms": 0.602112,
+                "median_ms": 0.02048,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.116736,
+                "p99_ms": 0.351232,
+                "samples": 2094
+              },
+              "render/auxiliary_views/elapsed_gpu": {
+                "max_ms": 0.222208,
+                "median_ms": 0.002048,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.00512,
+                "p99_ms": 0.007168,
+                "samples": 2094
+              },
+              "render/bin_unpacking/elapsed_gpu": {
+                "max_ms": 0.346112,
+                "median_ms": 0.011264,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.019456,
+                "p99_ms": 0.032768,
+                "samples": 2094
+              },
+              "render/bloom/elapsed_gpu": {
+                "max_ms": 2.21696,
+                "median_ms": 0.086016,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.254976,
+                "p99_ms": 0.516096,
+                "samples": 2094
+              },
+              "render/clustering/elapsed_gpu": {
+                "max_ms": 1.330176,
+                "median_ms": 0.073728,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.157696,
+                "p99_ms": 0.29184,
+                "samples": 2094
+              },
+              "render/early prepass/elapsed_gpu": {
+                "max_ms": 0.014336,
+                "median_ms": 0.002048,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.006144,
+                "p99_ms": 0.009216,
+                "samples": 2094
+              },
+              "render/early_mesh_preprocessing/elapsed_gpu": {
+                "max_ms": 0.451584,
+                "median_ms": 0.012288,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0256,
+                "p99_ms": 0.04608,
+                "samples": 2094
+              },
+              "render/main_opaque_pass_3d/elapsed_gpu": {
+                "max_ms": 0.185344,
+                "median_ms": 0.022528,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.07168,
+                "p99_ms": 0.132096,
+                "samples": 2094
+              },
+              "render/main_transparent_pass_3d/elapsed_gpu": {
+                "max_ms": 0.754688,
+                "median_ms": 0.044032,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.09216,
+                "p99_ms": 0.206848,
+                "samples": 1971
+              },
+              "render/oit_resolve/elapsed_gpu": {
+                "max_ms": 5.521408,
+                "median_ms": 0.274432,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 1.69472,
+                "p99_ms": 3.551232,
+                "samples": 2094
+              },
+              "render/per_view_shadow_pass/elapsed_gpu": {
+                "max_ms": 0.009216,
+                "median_ms": 0.001024,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.002048,
+                "p99_ms": 0.004096,
+                "samples": 2094
+              },
+              "render/tonemapping/elapsed_gpu": {
+                "max_ms": 0.238592,
+                "median_ms": 0.01536,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.048128,
+                "p99_ms": 0.096256,
+                "samples": 2094
+              },
+              "render/ui/elapsed_gpu": {
+                "max_ms": 0.575488,
+                "median_ms": 0.004096,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.027648,
+                "p99_ms": 0.047104,
+                "samples": 2094
+              },
+              "render/uniform_allocation/elapsed_gpu": {
+                "max_ms": 0.24064,
+                "median_ms": 0.011264,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.02048,
+                "p99_ms": 0.033792,
+                "samples": 2094
+              },
+              "render/upscaling/elapsed_gpu": {
+                "max_ms": 0.1024,
+                "median_ms": 0.011264,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.047104,
+                "p99_ms": 0.083968,
+                "samples": 2094
+              }
+            },
+            "owners": {
+              "Fireworks Crackle — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 1.0391,
+                  "median_ms": 0.1823,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.4024,
+                  "p99_ms": 0.5257,
+                  "samples": 3150
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 4.557824,
+                  "median_ms": 0.391168,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.898048,
+                  "p99_ms": 1.354752,
+                  "samples": 2975
+                },
+                "max_fixed_ticks": 4,
+                "observed_fixed_ticks": 2854,
+                "trail_observations": 3468,
+                "trail_workgroups": 24276
+              },
+              "Fireworks Crossette — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 1.0493,
+                  "median_ms": 0.2483,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.5229,
+                  "p99_ms": 0.7019,
+                  "samples": 3149
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 2.702336,
+                  "median_ms": 0.49152,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 1.069056,
+                  "p99_ms": 1.618944,
+                  "samples": 2972
+                },
+                "max_fixed_ticks": 4,
+                "observed_fixed_ticks": 2833,
+                "trail_observations": 3444,
+                "trail_workgroups": 30996
+              },
+              "Fireworks Multi-break — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 0.7847,
+                  "median_ms": 0.1683,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.3484,
+                  "p99_ms": 0.4563,
+                  "samples": 5255
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 3.176448,
+                  "median_ms": 0.371712,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.98816,
+                  "p99_ms": 1.558528,
+                  "samples": 4955
+                },
+                "max_fixed_ticks": 4,
+                "observed_fixed_ticks": 4772,
+                "trail_observations": 5662,
+                "trail_workgroups": 33972
+              },
+              "Fireworks Strobe — Wispy Smoke Art Candidate": {
+                "checkpoint_capture_bytes": 0,
+                "cpu_encoding_ms": {
+                  "max_ms": 0.5522,
+                  "median_ms": 0.1332,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.2861,
+                  "p99_ms": 0.3748,
+                  "samples": 2096
+                },
+                "gpu_simulation_ms": {
+                  "max_ms": 1.629184,
+                  "median_ms": 0.269312,
+                  "over_16_67ms": 0,
+                  "over_20ms": 0,
+                  "over_33_33ms": 0,
+                  "p95_ms": 0.58368,
+                  "p99_ms": 0.94208,
+                  "samples": 1992
+                },
+                "max_fixed_ticks": 4,
+                "observed_fixed_ticks": 1929,
+                "trail_observations": 2324,
+                "trail_workgroups": 11620
+              }
+            },
+            "scope": "Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshot/capacity scan."
+          },
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1344357
+        }
+      },
+      {
+        "name": "cached-wispy-r1",
+        "path": "target/fireworks-f8/encoding-2026-10-27/cached-wispy-r1.json",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.98448829999992,
+          "bevy_real_seconds": 36.98448829999992,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 13772,
+            "frames": 2175,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.016666650772094727,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+              "encoded_seconds": 0,
+              "requested_seconds": 0.016666650772094727
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 60.6339,
+            "median_ms": 16.5599,
+            "over_16_67ms": 952,
+            "over_20ms": 342,
+            "over_33_33ms": 23,
+            "p95_ms": 26.8941,
+            "p99_ms": 33.196400000000004,
+            "samples": 2203
+          },
+          "lane": "host-pacing-no-scans-no-screenshots",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 2126,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1487409
+        }
+      },
+      {
+        "name": "cached-wispy-r2",
+        "path": "target/fireworks-f8/encoding-2026-10-27/cached-wispy-r2.json",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.992984600000035,
+          "bevy_real_seconds": 36.992984600000035,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 13653,
+            "frames": 2181,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.01666700839996338,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "encoded_seconds": 1.3666666746139526,
+              "requested_seconds": 1.383333683013916
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 52.810700000000004,
+            "median_ms": 16.6225,
+            "over_16_67ms": 978,
+            "over_20ms": 253,
+            "over_33_33ms": 29,
+            "p95_ms": 26.674,
+            "p99_ms": 34.2573,
+            "samples": 2174
+          },
+          "lane": "host-pacing-no-scans-no-screenshots",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 2126,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1729211
+        }
+      },
+      {
+        "name": "cached-persistent",
+        "path": "target/fireworks-f8/encoding-2026-10-27/cached-persistent.json",
+        "report": {
+          "adapter": {
+            "backend": "Vulkan",
+            "driver": "NVIDIA",
+            "name": "NVIDIA GeForce RTX 4070 SUPER"
+          },
+          "adoption_accepted": false,
+          "audio_enabled": false,
+          "backend": "Gpu",
+          "bevy_game_seconds": 36.984542900000065,
+          "bevy_real_seconds": 36.984542900000065,
+          "bloom_intensity": 0.15000000596046448,
+          "camera_physical_size": [
+            1280,
+            720
+          ],
+          "capacity": null,
+          "captures": [],
+          "completed": true,
+          "duration": 37,
+          "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_persistent_smoke.aestra.ron",
+          "encoding_ledger": {
+            "blocked_owner_frames": 0,
+            "encoded_owner_frames": 14031,
+            "frames": 2221,
+            "max_clip_schedule_error_seconds": 0,
+            "max_requested_minus_encoded_seconds": 0.016666650772094727,
+            "missing_scheduled_owner_frames": 0,
+            "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+            "worst_lag": {
+              "effect": "Fireworks Crackle — Persistent Smoke Candidate",
+              "encoded_seconds": 0,
+              "requested_seconds": 0.016666650772094727
+            }
+          },
+          "experimental_oit": true,
+          "final_seconds": 37,
+          "flashes_accepted": 13,
+          "flashes_peak": 3,
+          "hdr": true,
+          "history": "PlaybackOnly",
+          "host_intervals_including_vsync": {
+            "max_ms": 52.2846,
+            "median_ms": 16.562,
+            "over_16_67ms": 984,
+            "over_20ms": 300,
+            "over_33_33ms": 14,
+            "p95_ms": 24.8737,
+            "p99_ms": 30.7675,
+            "samples": 2210
+          },
+          "lane": "host-pacing-no-scans-no-screenshots",
+          "last_async_alive": 0,
+          "last_observed_owners": 0,
+          "msaa": "Off",
+          "native_gpu": true,
+          "node_head_allocated_bytes": 47923200,
+          "oit_estimated_bytes": 47923200,
+          "oit_rejection": null,
+          "paused_updates": 0,
+          "peak_async_alive": 1872,
+          "pending_pipeline_updates": 0,
+          "player_speed": 1,
+          "prepared_view": "Ready { pipelines: 4 }",
+          "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+          "seed": 17428930557923820000,
+          "static_renderers": 39,
+          "static_sprites": 27,
+          "static_trails": 12,
+          "tier": "high",
+          "tonemapping": "TonyMcMapface",
+          "wall_playback_seconds": 37.1361672
+        }
+      }
+    ]
+  },
+  "provenance": {
+    "current": {
+      "sources": [
+        {
+          "sha256": "B69182E1EA95012A14843FECACE0FAB358D56036FF1BECC3E79F52C0EA440305",
+          "path": "assets/test/effects/ember_sigil.aestra.ron"
+        },
+        {
+          "sha256": "B4223D30FD5870D3FCF7D48AB857785D2E625C734001156EC6E024DEC9235C43",
+          "path": "assets/test/effects/fireworks_chrysanthemum.aestra.ron"
+        },
+        {
+          "sha256": "0BA33D317842C3DDC7582B12FAAA72A8DEF330FAFBF400A94512A50455BCBCD0",
+          "path": "assets/test/effects/fireworks_crackle_persistent_smoke.aestra.ron"
+        },
+        {
+          "sha256": "5AECB28110A3295AD9E010EE001D4B1CF0B38900FBDB9473383ECE0F0CC6D12E",
+          "path": "assets/test/effects/fireworks_crackle_wispy_smoke.aestra.ron"
+        },
+        {
+          "sha256": "4414A563BBFC7C7A02447AD044EAF7DA7189C6DE24EED4EA88E57C7610C21D63",
+          "path": "assets/test/effects/fireworks_crackle.aestra.ron"
+        },
+        {
+          "sha256": "E03E96E5037B7D6ABDFB1CAFB138BA11FB02B4446555A69FA862A151CB0C624B",
+          "path": "assets/test/effects/fireworks_crossette_persistent_smoke.aestra.ron"
+        },
+        {
+          "sha256": "5ED106ECFED6A58F3AC59ACB7B4F991B5890929F2BCEA00AA64EFDC36ADAFD70",
+          "path": "assets/test/effects/fireworks_crossette_wispy_smoke.aestra.ron"
+        },
+        {
+          "sha256": "4E9A0E1BAF488865215E84016C031E7992E4530DE957FC49537225E181C68F56",
+          "path": "assets/test/effects/fireworks_crossette.aestra.ron"
+        },
+        {
+          "sha256": "0F9FC062EB024C40173DDED37A53CF4E86ADCA5984954DC4EE2C06A440B4946E",
+          "path": "assets/test/effects/fireworks_multi_break_persistent_smoke.aestra.ron"
+        },
+        {
+          "sha256": "1CA9DE6B0D3FFA093D6479B07952113AA7F5B42A58D993D0141CDAAD2CB5B8AB",
+          "path": "assets/test/effects/fireworks_multi_break_wispy_smoke.aestra.ron"
+        },
+        {
+          "sha256": "91CD5B6C696F37C988F59E33802EE99AD6C15C3A67D9692055D7F078D0AA7E78",
+          "path": "assets/test/effects/fireworks_multi_break.aestra.ron"
+        },
+        {
+          "sha256": "FD9061C29272A453A3C6F935772F982F5B8D9ECF7290532090FBED2539C9A0C5",
+          "path": "assets/test/effects/fireworks_particle_smoke_lighting.aestra.ron"
+        },
+        {
+          "sha256": "60C11B199D1E37EF105EF237A5575CD390C6E07FA53B716F1D13F59DD3C3F532",
+          "path": "assets/test/effects/fireworks_particle_smoke_overlap.aestra.ron"
+        },
+        {
+          "sha256": "2D1CB90697E9227E2FD8FA03385653CCFCA60927409B9E753692F32B779B0C32",
+          "path": "assets/test/effects/fireworks_peony.aestra.ron"
+        },
+        {
+          "sha256": "EDED6581E2E7791DABDCDEFD8FCBBD3BC17E30D55E5875AE5AE12E7185EA5D49",
+          "path": "assets/test/effects/fireworks_pistil.aestra.ron"
+        },
+        {
+          "sha256": "89C5FDCE6152F0BEB789C16ACF523261F5770257BAA415E8B421BE454B457092",
+          "path": "assets/test/effects/fireworks_reference_hero.aestra.ron"
+        },
+        {
+          "sha256": "E32D3BC3293AC9B8226499822B1763135E55EDF7530B69C5C0FAAB2D06036838",
+          "path": "assets/test/effects/fireworks_secondary_volley.aestra.ron"
+        },
+        {
+          "sha256": "ED38F17F3A103DA58673EF753C550C291BBB6C7BB6C1C3FE5FDD3540B64634E5",
+          "path": "assets/test/effects/fireworks_show_persistent_smoke.aestra.ron"
+        },
+        {
+          "sha256": "FC22EB440F76FC4030A6C67C5B9A71AB45CE5AAC08AA1538976C0F31F9E4979C",
+          "path": "assets/test/effects/fireworks_show_wispy_smoke.aestra.ron"
+        },
+        {
+          "sha256": "DD2BC77CC19AAA84CFCDCCB24A5C1554B168F5EA664541EA4C28882E09A4C011",
+          "path": "assets/test/effects/fireworks_show.aestra.ron"
+        },
+        {
+          "sha256": "1EC41EB51EDBF14CED1631C3DEEE50B1FC4459F1F03B2BA3262FB8D2AF6105B6",
+          "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron"
+        },
+        {
+          "sha256": "1AA6948E412DF8C7211DE9347449980C650254935983B5831613252EA51D790F",
+          "path": "assets/test/effects/fireworks_smoke_lighting.aestra.ron"
+        },
+        {
+          "sha256": "0A32D0AA5DDA578830A7D1359633FB1A33C6F0EADCF59FB92E9611845E0C3E40",
+          "path": "assets/test/effects/fireworks_smoke_persistence.aestra.ron"
+        },
+        {
+          "sha256": "CB5629E77DDF49ABFC995C425386FEAA3CD73972FA58001BA60B2BF8D3BE9AEF",
+          "path": "assets/test/effects/fireworks_strobe_persistent_smoke.aestra.ron"
+        },
+        {
+          "sha256": "5AB53A9C477B2987DA245F73A1A448496B08777B3A61932168EFBD78049F1A32",
+          "path": "assets/test/effects/fireworks_strobe_wispy_smoke.aestra.ron"
+        },
+        {
+          "sha256": "C8CA64F617ABD86EFA1273C991676D58DB732A602D42ABF8092E0EDA7D19CA00",
+          "path": "assets/test/effects/fireworks_strobe.aestra.ron"
+        },
+        {
+          "sha256": "D4151B1932ABDED733F2BE7F9A2AB571CF91FBB7FA7E3C857E2FB6A0DD762914",
+          "path": "assets/test/effects/fireworks_willow.aestra.ron"
+        },
+        {
+          "sha256": "520F126073B5F991972606337D65D29C5210C6F744D29FCEA5A96F1AD7BAFBCE",
+          "path": "assets/test/effects/material_graph_lab.aestra.ron"
+        },
+        {
+          "sha256": "D61809B5D46C326A059874EB8542ADD8BBCF6A80D47D0EDA3140A73A3BE475E2",
+          "path": "assets/test/effects/mesh_material_lab.aestra.ron"
+        },
+        {
+          "sha256": "5DEA976BB8B44FAC187437A3E3D2A59D43BA6DB7F51EB80992B423685F439DFE",
+          "path": "assets/test/effects/moving_trail_lab.aestra.ron"
+        },
+        {
+          "sha256": "55F895400BD3F2F5E2A80331F425334A8A8F16C375AD3F7265A8C5CE9F1A9C57",
+          "path": "assets/test/effects/nested_moving_trail_lab.aestra.ron"
+        },
+        {
+          "sha256": "FD6FEE08DDE3DA4F76885C8EF963A5DF6003A3B202D4CB2D3C099D3DF44F319B",
+          "path": "assets/test/effects/nested_trail_carrier.aestra.ron"
+        },
+        {
+          "sha256": "67E91D3EAF1E715FAA5CCE4A2FB652C8D4E2657EAF3148D91A6BD9134A6A3084",
+          "path": "assets/test/effects/plasma_burst.aestra.ron"
+        },
+        {
+          "sha256": "64FE0A699CB80E39366DA81990BA89D90E917B05E903B207E8E660A8D568EDD7",
+          "path": "assets/test/effects/prism_bloom.aestra.ron"
+        },
+        {
+          "sha256": "E032180FF560C5B458F50516FFC2889CE639E12D693AE84559E43DA8A9E2910B",
+          "path": "assets/test/effects/ribbon_lab.aestra.ron"
+        },
+        {
+          "sha256": "CE22A3803E130A00B174022186EBB4058EBA46603D409EA159AA1EAD415BF714",
+          "path": "assets/test/effects/trail_lab.aestra.ron"
+        },
+        {
+          "sha256": "84D5C9A933AB0B23FBDE5E24E7133AC6351435BE1C003D31834C54286E5075EC",
+          "path": "bevy/aestra-bevy-render/src/capabilities.rs"
+        },
+        {
+          "sha256": "960F61B8377FB7BEEF763146DA664E7CA095241CC9C2C9074D53520563555722",
+          "path": "bevy/aestra-bevy-render/src/cpu.rs"
+        },
+        {
+          "sha256": "CD36CCD5DD1929950E1AB3142415FEC5A281DFF0C657A17DF3F1582A7E3759CB",
+          "path": "bevy/aestra-bevy-render/src/execution.rs"
+        },
+        {
+          "sha256": "E71D870EEACC37583D9674A01787315DB39397C804FE61D19566CDA891FFAAF4",
+          "path": "bevy/aestra-bevy-render/src/execution/event_scratch.rs"
+        },
+        {
+          "sha256": "6BC7116499755C3A9AD4FE3B57C3363DBF6514CD44965021FABA2759445A95A9",
+          "path": "bevy/aestra-bevy-render/src/experimental_oit.rs"
+        },
+        {
+          "sha256": "9BAD19218428978DF4421AD040CA891C4566994FEC11693C06E9F30A6E570F0F",
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.rs"
+        },
+        {
+          "sha256": "5F37B14A9110414055998D83D63EA0AE6C234DF5C0E209CB9BAF68A98D0DDCDE",
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/diagnostics.wgsl"
+        },
+        {
+          "sha256": "709755DF6255C5A84663EFFA8AF27528FF6BD8014B5B2DF7F8BABE7D658E33E2",
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.rs"
+        },
+        {
+          "sha256": "14C603D2F2B6BEC2592A65478A8B3501B2646339ACD704101F6C3A252BB389FF",
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl"
+        },
+        {
+          "sha256": "BD6F0AD27A0D0B69693020E816E4D7A666994CB8F31EAA24BD3C1052B3989174",
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.rs"
+        },
+        {
+          "sha256": "77EF295C7B268F5D1C3337BDE7E01F73129512660E94E0849A1BD7DF4C9E3FCD",
+          "path": "bevy/aestra-bevy-render/src/experimental_oit/sort.wesl"
+        },
+        {
+          "sha256": "2B13F42AD8D62E5BCDC35B61C9632B94429662615702FDAAC4368DFBFF9F1EED",
+          "path": "bevy/aestra-bevy-render/src/gpu.rs"
+        },
+        {
+          "sha256": "8F17FD1B7A75B290F221CEEB1EE9E15E619BC44B1E957DE9C048049E529A887B",
+          "path": "bevy/aestra-bevy-render/src/gpu/alpha_sort.rs"
+        },
+        {
+          "sha256": "8E8EB9C4CB97C33D0B87B8C00E16F8B6275489C7E9A16A06C27998810DCABDB0",
+          "path": "bevy/aestra-bevy-render/src/gpu/alpha_sort.wgsl"
+        },
+        {
+          "sha256": "25DC0661A6C90CC4D9731B6551B863E48A89E9BC6972EF1403B7B204C981F14D",
+          "path": "bevy/aestra-bevy-render/src/gpu/bootstrap.rs"
+        },
+        {
+          "sha256": "2EDFDEED13CA619BFA867C7E6BE4B4DB199B3A5A835CABE2E572F0034DD7B89B",
+          "path": "bevy/aestra-bevy-render/src/gpu/bounds_test_types.rs"
+        },
+        {
+          "sha256": "4DA718B49EFDBFE9F7F4580BA6C75B3E77C7AA089C61C25EA93D77059FCA7422",
+          "path": "bevy/aestra-bevy-render/src/gpu/bounds.rs"
+        },
+        {
+          "sha256": "388D92E5D15CD98F54B19E525BD62A44EB275390D197FCDFEB5BE25BB9BC1886",
+          "path": "bevy/aestra-bevy-render/src/gpu/capability_publication.rs"
+        },
+        {
+          "sha256": "EA49E035DDC0A956B1C871A0C615DB536219052F2E5C04CA3D7D6A753C304CC6",
+          "path": "bevy/aestra-bevy-render/src/gpu/catchup_pacing.rs"
+        },
+        {
+          "sha256": "D70B58CEDCD08D3BFF794BD25817E9A65A0ADD4B394318359DE12227FB6E8583",
+          "path": "bevy/aestra-bevy-render/src/gpu/clone_extraction.rs"
+        },
+        {
+          "sha256": "90616D95FF644EDBCBA25BA74404CCE47A36084352B20A471C807A7C32ABBEB9",
+          "path": "bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs"
+        },
+        {
+          "sha256": "2247C5A3C968ED4CB1DE0EA0F3F457EBDA09A413DEB9192A8A58EB955A4B3137",
+          "path": "bevy/aestra-bevy-render/src/gpu/draw_commands.rs"
+        },
+        {
+          "sha256": "1E879FAC9FCE278F04D024562C38B78EA3E53DDD60C68A7C7A609CE83E6E167E",
+          "path": "bevy/aestra-bevy-render/src/gpu/draw_instance.rs"
+        },
+        {
+          "sha256": "B931A9DCE6E99739AF01EDE3AD8C1C638ECA72F1C40E17198E8C580828413218",
+          "path": "bevy/aestra-bevy-render/src/gpu/draw_preparation.rs"
+        },
+        {
+          "sha256": "A087E7C5489B0A118EFFD6B8DB97B3161579C3EE708A834539F63BADA36DA36E",
+          "path": "bevy/aestra-bevy-render/src/gpu/draw_resources.rs"
+        },
+        {
+          "sha256": "FB3BDF033C27BD732B820CF7C2963319D9FBC34A3B86012C3981396FE394F793",
+          "path": "bevy/aestra-bevy-render/src/gpu/effect_inputs.rs"
+        },
+        {
+          "sha256": "4A2A0272FA3034A87D0A66CEAC674D7C148743302B29BF4A8209C46411EC0A65",
+          "path": "bevy/aestra-bevy-render/src/gpu/encoding_profile.rs"
+        },
+        {
+          "sha256": "853477454393A32C5FEDE97525D09362105576BB8AFBF9E9A8FA1C365AC3E9D1",
+          "path": "bevy/aestra-bevy-render/src/gpu/event_link_scratch.rs"
+        },
+        {
+          "sha256": "7498A0D3B3CD750FE9990793801B96FECDDEDCC9C99372476673B0ED49C409AD",
+          "path": "bevy/aestra-bevy-render/src/gpu/event_statistics.rs"
+        },
+        {
+          "sha256": "E8A44EF4C8B5B3A014171E44980235760F87DFCE5F5A2FCD2C782970AABA7BCD",
+          "path": "bevy/aestra-bevy-render/src/gpu/extension_stages.rs"
+        },
+        {
+          "sha256": "36792705FE4B10A6DD31AAE6A4A78E1314050C61EE21A79F6F68DC6CC8E6A926",
+          "path": "bevy/aestra-bevy-render/src/gpu/extraction_cleanup.rs"
+        },
+        {
+          "sha256": "F309A5E0E23C12327AE318F97657482DC735E2362AEB65E5FB522A323C73C3B2",
+          "path": "bevy/aestra-bevy-render/src/gpu/extraction_systems.rs"
+        },
+        {
+          "sha256": "430A47FD7C98EDA92700D662D057030EDAD4E125C129AB6A01D085AE30022E3D",
+          "path": "bevy/aestra-bevy-render/src/gpu/extraction.rs"
+        },
+        {
+          "sha256": "629261A5B058588B9782545D9E26D148172687F4AB0FC0C9EDE0BC2C175178DC",
+          "path": "bevy/aestra-bevy-render/src/gpu/field_observations.rs"
+        },
+        {
+          "sha256": "D016E39669E923B886B79F1FDFE56F5137B63936CF350B39B7B473A658643EDB",
+          "path": "bevy/aestra-bevy-render/src/gpu/geometry_sample.rs"
+        },
+        {
+          "sha256": "10FD35CA39B7AD545D8E13E10CC635BC0D8DFC72D013E9A9229A7EB55C64A79A",
+          "path": "bevy/aestra-bevy-render/src/gpu/geometry_statistics.rs"
+        },
+        {
+          "sha256": "94EC9677FD6AC872A094B1EE859C811561920FB7506A9F4EC280D5CCA7B9A6AC",
+          "path": "bevy/aestra-bevy-render/src/gpu/mapped_readback.rs"
+        },
+        {
+          "sha256": "0DB579AEB3019503751DA8729091A1559957C82D4AADB73143C3EDD98D786558",
+          "path": "bevy/aestra-bevy-render/src/gpu/material_lighting.rs"
+        },
+        {
+          "sha256": "166EBC8F4FC862D2EA73A9AF24D7874B07FC60F9F4CAA0F978C53F45F30A3761",
+          "path": "bevy/aestra-bevy-render/src/gpu/material_lighting.wgsl"
+        },
+        {
+          "sha256": "19A34D5F6A3CCBD9625369DF2922801053ECD00FFB1E6E6679D24CFDEBD7E64C",
+          "path": "bevy/aestra-bevy-render/src/gpu/material_shader.rs"
+        },
+        {
+          "sha256": "F7E716E6517C38C3D3F8699ECC0F36577F7AC42C83F896419A88180A6D2BC9A8",
+          "path": "bevy/aestra-bevy-render/src/gpu/mesh_inputs.rs"
+        },
+        {
+          "sha256": "D13CF4A3C5DBD790678B13DCFED76A546A8D37DEB9B1F63F970D7FEEFDFE7D45",
+          "path": "bevy/aestra-bevy-render/src/gpu/output_context.rs"
+        },
+        {
+          "sha256": "9C1D657F777397AD85923BBCA6A6026BCFFD77EBCB7C211A0D00D7047D4734D2",
+          "path": "bevy/aestra-bevy-render/src/gpu/paged_trails.rs"
+        },
+        {
+          "sha256": "B274161F4F7552C74CD6D5D6867D26BB4C22B6EB0BF4B2269F12447BCE3F1AD1",
+          "path": "bevy/aestra-bevy-render/src/gpu/parameter_uploads.rs"
+        },
+        {
+          "sha256": "D168B54D5A243B747FAC022AAD7A5538B2C6EEE3E377E2C5439B12F023D9B417",
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_light_inputs.rs"
+        },
+        {
+          "sha256": "3AE16EBDC40C688D81C4A22658A6787DC9175998C7D05A41D44F78192E62F9A1",
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_light_readback.rs"
+        },
+        {
+          "sha256": "4200AEAFDBF9A1C70042F8F25B6E9717AFBDF2D3A7E2F784D0223C43FFEE1AE5",
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_light_transport.rs"
+        },
+        {
+          "sha256": "F16A5399F433D0F08E074CB43E8E95DE6185F106BBFB162DEE75F2C03AF3AA7C",
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_lights.rs"
+        },
+        {
+          "sha256": "1FF0981331BBDFE8092F77B502F272D1E4751A010986EF60354876328144057F",
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_output_readback.rs"
+        },
+        {
+          "sha256": "7ACDD08BA006EAF002E4801725FE214DE39306098ACEB2285DBF6864CF838DAE",
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_outputs.rs"
+        },
+        {
+          "sha256": "FBE225585953C8496894DA82F5B96571A8A1109B19951F4A66D00E574056C5EB",
+          "path": "bevy/aestra-bevy-render/src/gpu/particle_statistics.rs"
+        },
+        {
+          "sha256": "C1A554E1AA43FD707602DB21D17D1189D288B355CB72FC393436B0A297F6DDEC",
+          "path": "bevy/aestra-bevy-render/src/gpu/physics.rs"
+        },
+        {
+          "sha256": "996DA1060750AAEF7098137AF4550852572C1C0395D326DE33EB01F362EA4473",
+          "path": "bevy/aestra-bevy-render/src/gpu/pipeline_preparation.rs"
+        },
+        {
+          "sha256": "508637BD35061511932F2B8A2EA137436EDA6A1E127511A9230FD2EB56C932AA",
+          "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs"
+        },
+        {
+          "sha256": "E0DD1F2A2AE9A2DA6AF8DEA60A93F3BEBFE19F07D5AC26633E81DB28B53365F0",
+          "path": "bevy/aestra-bevy-render/src/gpu/playback_diagnostics.rs"
+        },
+        {
+          "sha256": "76A33EF0D6037DE48FA184BBF2033579880857513738E5DC1A635B0209FB29ED",
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation_context.rs"
+        },
+        {
+          "sha256": "9BAA9B52242FA76DE884602D2B7DAFC74C664417CF7FECF66D4023C31C1207B9",
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation_observation.rs"
+        },
+        {
+          "sha256": "44965CA633852E057FEA6B970FF110FE2885A60525D3F6D6E318C7951EBD0EF4",
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation_timing.rs"
+        },
+        {
+          "sha256": "B6C253E6D2F21768CFD483022AE9E3E811BEE26D689DB5EF7C69340803EF5E4B",
+          "path": "bevy/aestra-bevy-render/src/gpu/preparation.rs"
+        },
+        {
+          "sha256": "A8C9F3A5572F914AD8994B25C4841EB7C2490044373443BF3421C335D1A6E0CB",
+          "path": "bevy/aestra-bevy-render/src/gpu/presentation_readiness.rs"
+        },
+        {
+          "sha256": "9B7E0F9EE0896B4547FFC45BE92CED605A244647BCB17E8BC94C334311C0D1C1",
+          "path": "bevy/aestra-bevy-render/src/gpu/render.rs"
+        },
+        {
+          "sha256": "890F36E1A3DCF4AB4DBCB0492C62AD972B616AA885A6617FB68B950C65504E34",
+          "path": "bevy/aestra-bevy-render/src/gpu/ribbon_bounds.rs"
+        },
+        {
+          "sha256": "5B3212836CEF26C2568CD51D4D47AB328611F6E14B774A7720A82D2BFC539799",
+          "path": "bevy/aestra-bevy-render/src/gpu/scene_depth.rs"
+        },
+        {
+          "sha256": "1A96DD860178958FEBA5B712FE22C4B183DF901D61DD42436E60BBA5009ED2F0",
+          "path": "bevy/aestra-bevy-render/src/gpu/shader_composition.rs"
+        },
+        {
+          "sha256": "86887E473994531C98590E79215A6BB0ABBEFED849C53B1393255C7F55E71192",
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_graph.rs"
+        },
+        {
+          "sha256": "0E76C24E799D50C31C1CD95DC59893E2D70C4717763B5D05731147E3B77F9DBA",
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_observation.rs"
+        },
+        {
+          "sha256": "E55084D670312517353817477309C76FF277B15B109645C1F03AEF5F2B6118AE",
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_pipeline.rs"
+        },
+        {
+          "sha256": "9D432D0FE5D9797B3AB174059970FCA24C8F31B8B66512A85106AE56214D0154",
+          "path": "bevy/aestra-bevy-render/src/gpu/simulation_timing.rs"
+        },
+        {
+          "sha256": "E97A6CD0FEB394C817998DFEC72BF1C992C39170CE78BD71C7A06033863F61E5",
+          "path": "bevy/aestra-bevy-render/src/gpu/sprite_culling.rs"
+        },
+        {
+          "sha256": "338C2B7941F7A552831A64E04DD3F2A16BB618431437820009F4B79F948C8B61",
+          "path": "bevy/aestra-bevy-render/src/gpu/stage_coupling.rs"
+        },
+        {
+          "sha256": "20846AEA586FD55045432D9D523E83792CF8B2FB9850D828FCB7227E2C6FC19C",
+          "path": "bevy/aestra-bevy-render/src/gpu/stage_inputs.rs"
+        },
+        {
+          "sha256": "72F2B8C23F1C572B6DA48013419BE5463ABEE9ED3C29A77EC3F58A8C426CBA1E",
+          "path": "bevy/aestra-bevy-render/src/gpu/stage_output_delivery.rs"
+        },
+        {
+          "sha256": "ABA55D539FE4E88963B605B649C9495F9E0FC1FEABB01012A64905DCF72F785B",
+          "path": "bevy/aestra-bevy-render/src/gpu/stage_runtimes.rs"
+        },
+        {
+          "sha256": "C3FD47575160BD3E6CD7282A24E7261F5FE3C71941A83B8BDCFEF9DD3E27526D",
+          "path": "bevy/aestra-bevy-render/src/gpu/stateful_parameters.rs"
+        },
+        {
+          "sha256": "8BBF653BCEA42B7261BA57F8651E8D1932838BDEAB9985F92E33CB09E082BCE1",
+          "path": "bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs"
+        },
+        {
+          "sha256": "E21D3F0946D499B426307EE0E57DE6C8CE035ED88A37C0ACA7D66569D7F6ACA5",
+          "path": "bevy/aestra-bevy-render/src/gpu/stateful_trails.rs"
+        },
+        {
+          "sha256": "EAE629F05510DFF16C6C4C2F68C0F31E65D109C7776C6310B6361CCEDF24FF0F",
+          "path": "bevy/aestra-bevy-render/src/gpu/storage_buffers.rs"
+        },
+        {
+          "sha256": "E15DA54D4B1A30565F553A0032A8504B5E75B8586B53FF6C3DAA7F701372D984",
+          "path": "bevy/aestra-bevy-render/src/gpu/storage_encoding.rs"
+        },
+        {
+          "sha256": "9338FDB72CAFAB724B35363BD914888856E6347A465F89C46DD5FF2AED765ACE",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/alpha_sort.rs"
+        },
+        {
+          "sha256": "E402A38E1521832F6E70CC9C43BDD5CA39EF5C7CD979A6FE8C9538EFEA3BDE27",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/extraction_control.rs"
+        },
+        {
+          "sha256": "6379C474C1EC98F308F446211B4EC72D8AE1D410F1D6D3944E223B06CB38355A",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/extraction_state.rs"
+        },
+        {
+          "sha256": "A02C2EBAA73621343205B6BAA837DF7A00ED98EF677C079486451469B3E0B2F1",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/extraction.rs"
+        },
+        {
+          "sha256": "6B9A70A3871AA0D4A4676223A217B26BFC6C7952DB22F4492B6E70DE54C7E324",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/parameter_uploads.rs"
+        },
+        {
+          "sha256": "4D6F06DA418C2399CC60BCC3673CF46EA81F3490FFE8C167AE81056DF9BE2D61",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/pipeline_preparation.rs"
+        },
+        {
+          "sha256": "0B69FE6638055550E612CF6A58C7A5DCC990FCFF1D1B37F71361DA180972EC65",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/preparation.rs"
+        },
+        {
+          "sha256": "552CC0BAD0F3EFC52D457ED5E38E5AF62D2DFA0EAAA91758A89005CE2330051E",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/stateful_trails.rs"
+        },
+        {
+          "sha256": "303ECD751CA51793CF467AE59D8A5080F7AA49B684FA85F5EB2D6DF95A46B887",
+          "path": "bevy/aestra-bevy-render/src/gpu/tests/visibility.rs"
+        },
+        {
+          "sha256": "5C52EFB9DF38EB9193E95C75C992AF249FA3DDD030A202972F1E2AF14FF6F18C",
+          "path": "bevy/aestra-bevy-render/src/gpu/timestamp_observation.rs"
+        },
+        {
+          "sha256": "516091D2D8535C0F9F449BFC42501A3DD20E1131A164D82D6027CABD64259B33",
+          "path": "bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs"
+        },
+        {
+          "sha256": "AB8DFD2E431D62DFB38A0A8549BF486CD4E136ECC5F56C6B2204DEF00BB2D4E3",
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_checkpoints.rs"
+        },
+        {
+          "sha256": "DEC29CFF165D74CAFA1E957D21912D64BCD57BAC20CC8905AF5E20E4B4056459",
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_compaction.rs"
+        },
+        {
+          "sha256": "87B8ED0E8E44974D25889D78F8B3BFE9A59729B1D89DB98F132FB30C789DD31C",
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_context.rs"
+        },
+        {
+          "sha256": "DFDD5AF3C4F9859FCA607E495B26BE2B3E932E87420B8D7006D3D05B134DFE5B",
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_culling.rs"
+        },
+        {
+          "sha256": "7390868D7D789AABA0ABBA77A67CB2A83C4D5BD81BFCCA19F5B1F7DC7400DB7F",
+          "path": "bevy/aestra-bevy-render/src/gpu/trail_replay.rs"
+        },
+        {
+          "sha256": "BE2BD28EA1EC85E6028F1FC8D7DE75E357D71E191C07F72BD5F2D70B75C1BA16",
+          "path": "bevy/aestra-bevy-render/src/gpu/transform_sync.rs"
+        },
+        {
+          "sha256": "E7CB504747E301330692E2E65A906660AB9D413ACE122E1E49C476C22BF3E8BC",
+          "path": "bevy/aestra-bevy-render/src/gpu/view_phases.rs"
+        },
+        {
+          "sha256": "DCCD516D4E9BEDD1D61DDB3BC464D29AEDC6B9D6BC2CC5C15B0300EFB2B3C546",
+          "path": "bevy/aestra-bevy-render/src/gpu/visibility_updates.rs"
+        },
+        {
+          "sha256": "2D1D60A0A9F853D078754ADAEAF3B0986F15F52E89EE7CB7B2EE2F80C7D13219",
+          "path": "bevy/aestra-bevy-render/src/gpu/volume_lighting.wgsl"
+        },
+        {
+          "sha256": "071C921BAD5290F90A5384E72F3B4B079FB42AA8E3B72D3323A0FFA099B0D99E",
+          "path": "bevy/aestra-bevy-render/src/gpu/volume_shader.rs"
+        },
+        {
+          "sha256": "63E4D2742A6195FC630DDB51169F37A029AA2F21D705316329C991DEC1047DE9",
+          "path": "bevy/aestra-bevy-render/src/gpu/volume.rs"
+        },
+        {
+          "sha256": "2BFAB667FAA6A7A637A82C587D632CF21594CCB6B12A8B6D41AE0CE080E9E091",
+          "path": "bevy/aestra-bevy-render/src/gpu/wireframe.rs"
+        },
+        {
+          "sha256": "07B4AAE9ED89E017BED1BB7C5638A03A23F802E4AE86179EE06641A9DE39E2F8",
+          "path": "bevy/aestra-bevy-render/src/gpu/world_sdf.rs"
+        },
+        {
+          "sha256": "0DDFB424BA1E488D29A2BC93FF341E22EE1870FC4F59082AA3C51760A275A2C1",
+          "path": "bevy/aestra-bevy-render/src/host_transform.rs"
+        },
+        {
+          "sha256": "2806142D2ADD215757115CF4B8FF98B178C16D062EB7F5F208268D22676961FC",
+          "path": "bevy/aestra-bevy-render/src/lib.rs"
+        },
+        {
+          "sha256": "B8DA0FDC2EC9AE672B6DD205D256F0AED4B0FA599007844853FC36A51C2E88FA",
+          "path": "bevy/aestra-bevy-render/src/material_layout.rs"
+        },
+        {
+          "sha256": "AAF5E91F56E6DB4F6DED0C44939B9F26ED6CC43E2F8854B02D6171A956A32C04",
+          "path": "bevy/aestra-bevy-render/src/material.rs"
+        },
+        {
+          "sha256": "C5CC03D0C07D885AA6B886E635D2ADF0C2CF0358339428E862AF946BC69A4559",
+          "path": "bevy/aestra-bevy-render/src/presented_effect.rs"
+        },
+        {
+          "sha256": "38B948752FFAC1452435D1A87B88ED0C2C13F28D58C37C77C871C23464F2D467",
+          "path": "bevy/aestra-bevy-render/src/preview.rs"
+        },
+        {
+          "sha256": "1198A19C5B157BAB5D187C1F3345BB9FAC5C60E024B5AFCEFC92CDA370A33624",
+          "path": "bevy/aestra-bevy-render/src/project_assets.rs"
+        },
+        {
+          "sha256": "6D14D1CED1118E4912C99DD7F32228778A55F674C42D0854D3FF2F3F3A10E025",
+          "path": "bevy/aestra-bevy-render/src/render_plugin.rs"
+        },
+        {
+          "sha256": "56A66950615AB594D25E897DB0432608D3F4BEE85BBDC89AC76DFB1D418E4C37",
+          "path": "bevy/aestra-bevy-render/src/render_set.rs"
+        },
+        {
+          "sha256": "424A12DD330BDFC01941574FBB6B67F987252B9B8E0D0DEBB59ED6924C2DD288",
+          "path": "bevy/aestra-bevy-render/src/render_settings.rs"
+        },
+        {
+          "sha256": "BB82812620A2EE9ECA77C0D7530681040917083C3A8CA7E5170C2489F1BA5EFF",
+          "path": "bevy/aestra-bevy-render/src/sampling.rs"
+        },
+        {
+          "sha256": "D425A2E4E4B3AB66305A4F9EA33321E234569E17134A3E79DEE9818E67EDD28F",
+          "path": "bevy/aestra-bevy/examples/custom_physics.rs"
+        },
+        {
+          "sha256": "A399FF1AF8BB3158A99E0D1F1137E39269839E3A33378E8AB1094A4588FCB1B2",
+          "path": "bevy/aestra-bevy/examples/fireworks_event_chain.rs"
+        },
+        {
+          "sha256": "2F77FC9E298A56B071DEAAA76691E3C9C5EFC687DF09A22B191D374F9FA73E66",
+          "path": "bevy/aestra-bevy/examples/fireworks.rs"
+        },
+        {
+          "sha256": "93AA2FCD7213BEDCE4A5438482FE8DCB9CD95F5B103EAB6D0D010935B7C45813",
+          "path": "bevy/aestra-bevy/examples/fireworks/audio.rs"
+        },
+        {
+          "sha256": "B7E31D03E1D8848931DEF06437345CEED4EDDD53E53E4F115AF02D34D9B1B375",
+          "path": "bevy/aestra-bevy/examples/fireworks/oit_tests.rs"
+        },
+        {
+          "sha256": "F838F0B9AE01E92DD8C68B5C40692F6E547F5AFB6DDAE76CE1A8A911529141EE",
+          "path": "bevy/aestra-bevy/examples/fireworks/oit.rs"
+        },
+        {
+          "sha256": "A89CA2C5BED30EAD922CD29DB513A47AE36CAC0220F5B4EF619D092B6FB0F823",
+          "path": "bevy/aestra-bevy/examples/fireworks/paths.rs"
+        },
+        {
+          "sha256": "21646096BB93ABA28D4BAB80E524B1DAFC8756DBEF9A366318D0C2C17883B239",
+          "path": "bevy/aestra-bevy/examples/fireworks/persistent_smoke_show_tests.rs"
+        },
+        {
+          "sha256": "A90BE1682926EE4CBDF7B33A97BF8EC473F5FC43502705FEB0B7587D2BB7CC03",
+          "path": "bevy/aestra-bevy/examples/fireworks/project.rs"
+        },
+        {
+          "sha256": "EA53B31FF266C5E28ADCC2D44A0512CDB53A5CAA0F152A5F22D4EAB34C122BB4",
+          "path": "bevy/aestra-bevy/examples/fireworks/readiness.rs"
+        },
+        {
+          "sha256": "9A3FADA1B6544ABC03BD4320B69DC7F2672F065BD334ADD368A78DEBFCCC1AF3",
+          "path": "bevy/aestra-bevy/examples/fireworks/report_profile.rs"
+        },
+        {
+          "sha256": "DD46BB1B5CDACEE9575F8FD196483FDC57E9AD6EDB35415E8AE5D0A18E2CC00D",
+          "path": "bevy/aestra-bevy/examples/fireworks/report.rs"
+        },
+        {
+          "sha256": "237AB4FEA184D2D28D63384DDCA8730918F06938FAB132B5382F3FA58B6D3C5D",
+          "path": "bevy/aestra-bevy/examples/fireworks/smoke_cohorts_tests.rs"
+        },
+        {
+          "sha256": "7090D700031133016CE6B9433CD29DEE6FCE4D5811021C7C716AFA16379092E6",
+          "path": "bevy/aestra-bevy/examples/fluid_world.rs"
+        },
+        {
+          "sha256": "049BA41CE363DB09141649AC05EFD4999F1D4BB1AB9CC3BAAE14357989FFE353",
+          "path": "bevy/aestra-bevy/examples/homing_projectile.rs"
+        },
+        {
+          "sha256": "DE74040179F4ED66937AB4A39FD706CC801094526CC86B102D003A0522A7069A",
+          "path": "bevy/aestra-bevy/examples/live_target_binding.rs"
+        },
+        {
+          "sha256": "F0C796441733AB3940D8CD2E9067C5D53FF87985221622CE717BF5F4DD012604",
+          "path": "bevy/aestra-bevy/examples/minimal_player.rs"
+        },
+        {
+          "sha256": "A0890004FA55EE15CFA6E1C3116E4B0FC8D8B04BAD67B303AD6E17742E374C14",
+          "path": "bevy/aestra-bevy/examples/scrub_recorded.rs"
+        },
+        {
+          "sha256": "822581C90ED853F88C145263DAF164777F6EB07E5781A46FF6DF6F5218B6F279",
+          "path": "bevy/aestra-bevy/examples/sword_trail.rs"
+        },
+        {
+          "sha256": "4934FDF954B2F237BC731717F6B1ECD86B5D86E6925604C6DAD084FBEEE91D55",
+          "path": "bevy/aestra-bevy/src/bindings.rs"
+        },
+        {
+          "sha256": "BC3A1BE467F608E35C2E4A6425AD3754CBFADAB0EE9462E4F6EE7E2EF7C2BD38",
+          "path": "bevy/aestra-bevy/src/host_plugin.rs"
+        },
+        {
+          "sha256": "469ED1D14C773A923AA6EA967E04BBFA98D74745D62AE5BD07FEFE48F460FFAE",
+          "path": "bevy/aestra-bevy/src/input_events.rs"
+        },
+        {
+          "sha256": "C0875A3E2423468E9DE0F8AA2603032FDCB49F31FF854DEC7D9314AA17144345",
+          "path": "bevy/aestra-bevy/src/lib.rs"
+        },
+        {
+          "sha256": "416385E78CA721A716705228CC837552A383A6A8AD5D09D7B31E14C2E010F12A",
+          "path": "bevy/aestra-bevy/src/lighting_quality.rs"
+        },
+        {
+          "sha256": "9F0139540849939DAFFD81472EC786C72A1B0D4EE2786C028477FBCC590028B2",
+          "path": "bevy/aestra-bevy/src/lights.rs"
+        },
+        {
+          "sha256": "68A507934DA7E9F35642D9280009C5FDB378AF14CE0CB2D52E94980B3555ADD1",
+          "path": "bevy/aestra-bevy/src/particle_light_boundary.rs"
+        },
+        {
+          "sha256": "733B30FD94B47C03E653DAAC90202292E78556CBC078DE787FE0CE71482DB3E2",
+          "path": "bevy/aestra-bevy/src/particle_light_gpu.rs"
+        },
+        {
+          "sha256": "970857EFE524FA3248EFE89564462BDBD91FFE3859689EB95F982CE4DCBDB9FA",
+          "path": "bevy/aestra-bevy/src/particle_light_gpu.wesl"
+        },
+        {
+          "sha256": "CE70F21709EF3F0D23637A5B57D397D152083394E3E954E37B5180CA12F5905D",
+          "path": "bevy/aestra-bevy/src/particle_lights.rs"
+        },
+        {
+          "sha256": "8D2E5344EDD82FFCBC981EEFAC18CC03E8D34B41DAE9DF558EFC03FE00622654",
+          "path": "bevy/aestra-bevy/src/playback.rs"
+        },
+        {
+          "sha256": "D1D6A1527DECE007B11EF7A7EE89FC0299A47C646944D463C545BC38AB380988",
+          "path": "bevy/aestra-bevy/src/project_profile.rs"
+        },
+        {
+          "sha256": "6BA860C6E64732CFC168DEF49B2B1D59D527A76F4669B264D70FCA31CDC9C002",
+          "path": "bevy/aestra-bevy/src/project.rs"
+        },
+        {
+          "sha256": "F9656D0DFD58FB1660B48E8A2DB410A7128D51AB3C868E84DCF7B6808C1537D0",
+          "path": "bevy/aestra-bevy/src/tests/choreography.rs"
+        },
+        {
+          "sha256": "4156DE203FCB715D1379AE268B3BF9DCD8D942DCC70BF1B39E83588B1B9ECC74",
+          "path": "bevy/aestra-bevy/src/world.rs"
+        },
+        {
+          "sha256": "5A88CA8F235FD22709194389BE9A88F666882B14932F5F586AB3E5263D9D1A93",
+          "path": "crates/aestra-gpu/src/compute_program.rs"
+        },
+        {
+          "sha256": "D9D17B941BDEDBD2BA299F3AE2FEBEE50CBE5DE08436867EA53B11AD5C232333",
+          "path": "crates/aestra-gpu/src/host_bindings.rs"
+        },
+        {
+          "sha256": "E996B38D14D8145FE9A9BDEBA116381196EBD01CE30A723676ED4AF89D6E0AFA",
+          "path": "crates/aestra-gpu/src/lib.rs"
+        },
+        {
+          "sha256": "1619E357C397EBDB80EC6402CA2D4605DAF4F0046F6D1A6FF33C99423E633C47",
+          "path": "crates/aestra-gpu/src/material.rs"
+        },
+        {
+          "sha256": "831876179FD0EAE7CE1566F804DC8F940B578B58088B7702D30D5A486E3C8EF4",
+          "path": "crates/aestra-gpu/src/material/varying.rs"
+        },
+        {
+          "sha256": "C984704009568F4CB7EF2EB34DC9A72964AA1453B643F10EAA041490C113E569",
+          "path": "crates/aestra-gpu/src/mesh_bounds.rs"
+        },
+        {
+          "sha256": "BB98050C974F47FCF780977504F10BB01BE4963E41FF0C5E821B03B0C9B7CADB",
+          "path": "crates/aestra-gpu/src/particle_attributes.rs"
+        },
+        {
+          "sha256": "313E80CF4697FB64A9A1EF43A2015572BED77CA4F3F617E9BCCDAD1D8FC55AAC",
+          "path": "crates/aestra-gpu/src/particle_lights.rs"
+        },
+        {
+          "sha256": "055F6E2B116CE278D83233921366ACCA44AA1306267C25C8222CF182C46566CC",
+          "path": "crates/aestra-gpu/src/reduce.rs"
+        },
+        {
+          "sha256": "F63620E8CAE1186514EE03FA9FC580E3006794D46BD8F747613FA7DA28D314BF",
+          "path": "crates/aestra-gpu/src/ribbon_bounds.rs"
+        },
+        {
+          "sha256": "53152E71D35FB58C987A17B9B8448DC6DF992464B0A8DCD84267F7C75EE5A82C",
+          "path": "crates/aestra-gpu/src/scan.rs"
+        },
+        {
+          "sha256": "22508A684ADA9F23F64BC7F2056E439BA57FA7FA9130B63A3E7023F841996428",
+          "path": "crates/aestra-gpu/src/shader.rs"
+        },
+        {
+          "sha256": "9B06E3D38A66BA5EC252666DC8F97EB81E7F887166622CF16E1F3D0FF1A723B9",
+          "path": "crates/aestra-gpu/src/shaders/aestra_global_lights.wesl"
+        },
+        {
+          "sha256": "E9B3847866DC72E06B71AEC2533BF856BB8B58B2DC1B7E2ABBDFB21C9F20BD51",
+          "path": "crates/aestra-gpu/src/shaders/aestra_light_merge.wesl"
+        },
+        {
+          "sha256": "7068D104F6583812B7F7ECF9EB300FA9D4CFABC981CB4005BA43AD59204209D8",
+          "path": "crates/aestra-gpu/src/shaders/aestra_light_order.wesl"
+        },
+        {
+          "sha256": "0EEBC4CC238B7558A15698A7DAB27578A1B9BF39F183780D6A3912E16DD7B810",
+          "path": "crates/aestra-gpu/src/shaders/aestra_mesh_tangent.wesl"
+        },
+        {
+          "sha256": "06DFE83B661A344B55DDCDDA597B01CAB510EFA45B2B93D7BBEEA3B3675355F4",
+          "path": "crates/aestra-gpu/src/shaders/aestra_mesh_vertex.wesl"
+        },
+        {
+          "sha256": "C88E2C94F6512E57E635C76EEB7E993C12B0AEBAB6E8E8281C23C3DB6009B1E3",
+          "path": "crates/aestra-gpu/src/shaders/aestra_mesh_wireframe.wesl"
+        },
+        {
+          "sha256": "3622ECDBAB741BFC9DE8A7468445B3B7E3ABE6B660450B7697ECAD453C889E30",
+          "path": "crates/aestra-gpu/src/shaders/aestra_normal_map.wesl"
+        },
+        {
+          "sha256": "979F7858CB1B8A8D05126B408DF57FF606AA3EC8A18D0AB3DBA3A9AB2D5A5D81",
+          "path": "crates/aestra-gpu/src/shaders/aestra_particle_lights.wesl"
+        },
+        {
+          "sha256": "95CAEBC33E02A78DA931D85804701029F5D3030E8DD31039FA77F621C2FD4E8B",
+          "path": "crates/aestra-gpu/src/shaders/aestra_ribbon_link.wesl"
+        },
+        {
+          "sha256": "8D482A2A7D6C8033108CAE7D0AB1170E0B3313E283CEEDBD1F51B519F366B0AD",
+          "path": "crates/aestra-gpu/src/shaders/aestra_ribbon_vertex.wesl"
+        },
+        {
+          "sha256": "0764E1318C69ECF07FAA20BD9DB6E7C93F6362A917D54D8EF8E66B418BCF3ECE",
+          "path": "crates/aestra-gpu/src/shaders/aestra_simulation.wesl"
+        },
+        {
+          "sha256": "CEDBB143472D1E7AAEC8B39C62E98E61DB2DBA2ADB619C1E8E7FA1429D7C512B",
+          "path": "crates/aestra-gpu/src/shaders/aestra_sprite_render.wesl"
+        },
+        {
+          "sha256": "23BCEFE5C87078AEDC66FE2C64BFCD3FD8B80CF2BE3E0EE1C23436219647FF2D",
+          "path": "crates/aestra-gpu/src/shaders/aestra_sprite_sampling.wesl"
+        },
+        {
+          "sha256": "D4CC3D22DADD09780C437ED9ED22EA533B836275C4DF3DDC833CE5F78948BBBD",
+          "path": "crates/aestra-gpu/src/shaders/aestra_sprite_vertex.wesl"
+        },
+        {
+          "sha256": "B54AC03A75E8227CB0332AB2D1364FAFB447F229F455A3084DD313AFCAFCF30F",
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_bounds.wesl"
+        },
+        {
+          "sha256": "9CC4A7CBA758D72596847231A7552D36F1271579DFBDDECA9481C88D6FBA5F2A",
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_compact.wesl"
+        },
+        {
+          "sha256": "005F90218CA0F0ADC7C640F0607A14CCF13B588E0603E5E9BC4FF34E92117A7A",
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_cull.wesl"
+        },
+        {
+          "sha256": "3113A112BCC5F5825EB8A6B7A4373DF136E294427768E628DF0BA3CF98EEE1DE",
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_geometry.wesl"
+        },
+        {
+          "sha256": "3F8070DF3D475E91A94DCA5F6E8606C4929A43CF7A800382F89E8838AC6FDE06",
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_history.wesl"
+        },
+        {
+          "sha256": "F5DEAEA128DEDB3BDC019B705C49F51B5A266EDFDC1520AF48C5B50A26032E99",
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_paged.wesl"
+        },
+        {
+          "sha256": "5DD31559C3391935AA5CD211616E088B40AC85EE31CE16C9AFE8410D1B3F7C78",
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_sample.wesl"
+        },
+        {
+          "sha256": "8D49F4FBFBAE0AFA8131514100B0BE0EBAEC99D8186C6E3C6E00998AD8ED837D",
+          "path": "crates/aestra-gpu/src/shaders/aestra_trail_vertex.wesl"
+        },
+        {
+          "sha256": "512EB39BCEA74E086297F956161918328566078BC0471D99F80389A2C6064D90",
+          "path": "crates/aestra-gpu/src/shaders/aestra_velocity.wesl"
+        },
+        {
+          "sha256": "ABEEF44868CDC4124544F465EFEA8C49CC43EE3F33841DE8D488A0E7307D84F9",
+          "path": "crates/aestra-gpu/src/trail_plan.rs"
+        },
+        {
+          "sha256": "7335FCB244892611733EE5DFE9D8A5DBFBF5FF49012F4C1A82F22DA05C73AE57",
+          "path": "crates/aestra-gpu/src/volume.rs"
+        },
+        {
+          "sha256": "9F2AF1ECA61FE49058D7728D56735AC568CE5008BEFC46AE4F41B1EB582F3080",
+          "path": "crates/aestra-gpu/src/world_sdf.rs"
+        }
+      ],
+      "binary": "C4A50687963682C40A1791B11B293DC59B6CA9E68E29251A606E11CFB3B4CCD2"
+    },
+    "files": [
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/wispy-profile.json",
+        "sha256": "D68E44865C0C3442CC33A920FEC9310B8A9C3471459EBD4A07E261DF1186807B"
+      },
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/wispy-profile.log",
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/wispy-r1.json",
+        "sha256": "D102AE1DB1445CE0D9A2C7D830F9D2DD412ADBEEB2AF7EDF5D3CCEB9547AFAC5"
+      },
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/wispy-r1.log",
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/wispy-r2.json",
+        "sha256": "993F0BF680CC21B209D81E40C618FCD234556402151CC68FF380E23D1064435C"
+      },
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/wispy-r2.log",
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/persistent.json",
+        "sha256": "78DB285CB7760448D2381D51B36572701A1167185B58F82E74BDBB91A0A357CD"
+      },
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/persistent.log",
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      {
+        "path": "target/fireworks-f8/parameters-2026-10-27/provenance.json",
+        "sha256": "7DF7E43A5ED0FB29BF388F4F634C77B9F026B5A011383F624EFF421B7724E9E4"
+      },
+      {
+        "path": "target/fireworks-f8-parameters-render-tests.log",
+        "sha256": "A66D172F014E2C3C2B6D4C9BBC9A8A6195247BC56105DC210D21AC4FDC40AD5D"
+      },
+      {
+        "path": "target/fireworks-f8-parameters-host-tests.log",
+        "sha256": "D97F4DCE7EB576BF9C08B18415939651713F84FF4304585EDAE396257B91D114"
+      },
+      {
+        "path": "target/fireworks-f8-parameters-clippy.log",
+        "sha256": "DA5ECC3067FE5652F0FF7092CF25FCF61DFF514C6AFB336D218CB94722FA96F1"
+      },
+      {
+        "path": "target/debug/examples/fireworks.exe",
+        "sha256": "C4A50687963682C40A1791B11B293DC59B6CA9E68E29251A606E11CFB3B4CCD2"
+      },
+      {
+        "path": "benchmarks/fireworks/reused-event-scratch-2026-10-27.json",
+        "sha256": "CA7B5931C055DABD78BE70A3E077D5E1960F94184A13C173EB41E63F76563FDB"
+      },
+      {
+        "path": "Cargo.toml",
+        "sha256": "9ED441D49D2EAD9E9FC45687216BE62A1F5C04295F37CB48C4D5508026071DF9"
+      },
+      {
+        "path": "Cargo.lock",
+        "sha256": "7C23AE9878199DE28D2A800DAEA196BDA44A24B759638606F1C3EB732BD75C4F"
+      },
+      {
+        "path": "rust-toolchain.toml",
+        "sha256": "86810D0ACE88A635A96ED7A8D7D432AFA6950C0C0B99F78F6E905ED9616A9882"
+      }
+    ],
+    "authored_sources_equal": true
+  },
+  "runs": [
+    {
+      "name": "wispy-profile",
+      "path": "target/fireworks-f8/parameters-2026-10-27/wispy-profile.json",
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.98483429999996,
+        "bevy_real_seconds": 36.98483429999996,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": null,
+        "captures": [],
+        "completed": true,
+        "duration": 37,
+        "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+        "encoding_ledger": {
+          "blocked_owner_frames": 0,
+          "encoded_owner_frames": 14017,
+          "frames": 2226,
+          "max_clip_schedule_error_seconds": 0,
+          "max_requested_minus_encoded_seconds": 0.016666650772094727,
+          "missing_scheduled_owner_frames": 0,
+          "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+          "worst_lag": {
+            "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+            "encoded_seconds": 0,
+            "requested_seconds": 0.016666650772094727
+          }
+        },
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 47.550399999999996,
+          "median_ms": 16.555899999999998,
+          "over_16_67ms": 1002,
+          "over_20ms": 338,
+          "over_33_33ms": 25,
+          "p95_ms": 27.042099999999998,
+          "p99_ms": 33.6877,
+          "samples": 2215
+        },
+        "lane": "profiling-timestamps-no-images",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 2126,
+        "pending_pipeline_updates": 0,
+        "player_speed": 1,
+        "prepared_view": "Ready { pipelines: 4 }",
+        "profile": {
+          "activations": [
+            {
+              "cpu_clip_construction_ms": 0.011899999999999999,
+              "cpu_preparation_ms": 1.1646,
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "root_seconds": 0
+            },
+            {
+              "cpu_clip_construction_ms": 0.013699999999999999,
+              "cpu_preparation_ms": 0.1918,
+              "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+              "root_seconds": 2.299999952316284
+            },
+            {
+              "cpu_clip_construction_ms": 0.0076,
+              "cpu_preparation_ms": 0.0531,
+              "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+              "root_seconds": 4.599999904632568
+            },
+            {
+              "cpu_clip_construction_ms": 0.0152,
+              "cpu_preparation_ms": 0.308,
+              "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+              "root_seconds": 4.599999904632568
+            },
+            {
+              "cpu_clip_construction_ms": 0.0049,
+              "cpu_preparation_ms": 0.9369,
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "root_seconds": 7.900000095367432
+            },
+            {
+              "cpu_clip_construction_ms": 0.005,
+              "cpu_preparation_ms": 0.8313,
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "root_seconds": 7.900000095367432
+            },
+            {
+              "cpu_clip_construction_ms": 0.011399999999999999,
+              "cpu_preparation_ms": 0.8641,
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "root_seconds": 7.900000095367432
+            },
+            {
+              "cpu_clip_construction_ms": 0.006,
+              "cpu_preparation_ms": 0.1224,
+              "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+              "root_seconds": 12
+            },
+            {
+              "cpu_clip_construction_ms": 0.0143,
+              "cpu_preparation_ms": 0.2662,
+              "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+              "root_seconds": 12
+            },
+            {
+              "cpu_clip_construction_ms": 0.0065,
+              "cpu_preparation_ms": 0.047,
+              "effect": "Fireworks Strobe — Wispy Smoke Art Candidate",
+              "root_seconds": 16.016666412353516
+            },
+            {
+              "cpu_clip_construction_ms": 0.0072,
+              "cpu_preparation_ms": 0.1443,
+              "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+              "root_seconds": 16.016666412353516
+            },
+            {
+              "cpu_clip_construction_ms": 0.0115,
+              "cpu_preparation_ms": 1.1079,
+              "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+              "root_seconds": 16.016666412353516
+            },
+            {
+              "cpu_clip_construction_ms": 0.023200000000000002,
+              "cpu_preparation_ms": 0.3255,
+              "effect": "Fireworks Crossette — Wispy Smoke Art Candidate",
+              "root_seconds": 17.016666412353516
+            }
+          ],
+          "cpu_playback_scope_ms": {
+            "max_ms": 0.6177999999999999,
+            "median_ms": 0.0994,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1389,
+            "p99_ms": 0.1718,
+            "samples": 2225
+          },
+          "cpu_simulation_encoding_scope_ms": {
+            "max_ms": 3.616,
+            "median_ms": 0.4708,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.7289,
+            "p99_ms": 2.4296,
+            "samples": 2226
+          },
+          "encoding_operations": {
+            "event_gather": {
+              "bind_groups": 81000,
+              "buffers": 0,
+              "calls": 81000,
+              "copy_bytes": 0,
+              "dispatches": 162000,
+              "initialized_bytes": 0,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.9261,
+                "median_ms": 0.1242,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.3959,
+                "p99_ms": 0.6013,
+                "samples": 1853
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 0
+            },
+            "event_gather_prepare": {
+              "bind_groups": 0,
+              "buffers": 225,
+              "calls": 75,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 1800,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.1408,
+                "median_ms": 0.0591,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0885,
+                "p99_ms": 0.0885,
+                "samples": 7
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 311700
+            },
+            "event_list": {
+              "bind_groups": 0,
+              "buffers": 75,
+              "calls": 75,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 0,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.0214,
+                "median_ms": 0.0128,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0171,
+                "p99_ms": 0.0171,
+                "samples": 7
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 273744
+            },
+            "event_spawn": {
+              "bind_groups": 162000,
+              "buffers": 0,
+              "calls": 81000,
+              "copy_bytes": 0,
+              "dispatches": 162000,
+              "initialized_bytes": 0,
+              "observed_frame_cpu_ms": {
+                "max_ms": 1.2697,
+                "median_ms": 0.2033,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.6632,
+                "p99_ms": 0.9442,
+                "samples": 1853
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 0
+            },
+            "event_spawn_prepare": {
+              "bind_groups": 0,
+              "buffers": 150,
+              "calls": 75,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 1200,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.1123,
+                "median_ms": 0.0597,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0743,
+                "p99_ms": 0.0743,
+                "samples": 7
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 3600
+            },
+            "parameter_copy": {
+              "bind_groups": 0,
+              "buffers": 0,
+              "calls": 210993,
+              "copy_bytes": 161198652,
+              "dispatches": 0,
+              "initialized_bytes": 0,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.1411,
+                "median_ms": 0.0104,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0351,
+                "p99_ms": 0.0557,
+                "samples": 2099
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 0
+            },
+            "parameter_destination": {
+              "bind_groups": 0,
+              "buffers": 82,
+              "calls": 82,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 0,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.0166,
+                "median_ms": 0.0149,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.015,
+                "p99_ms": 0.015,
+                "samples": 6
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 62648
+            },
+            "parameter_page": {
+              "bind_groups": 0,
+              "buffers": 5,
+              "calls": 5,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 0,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.0024,
+                "median_ms": 0.0019,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0019,
+                "p99_ms": 0.0019,
+                "samples": 5
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 327680
+            },
+            "parameter_upload": {
+              "bind_groups": 0,
+              "buffers": 0,
+              "calls": 3562,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 0,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.2024,
+                "median_ms": 0.0093,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0238,
+                "p99_ms": 0.0347,
+                "samples": 2099
+              },
+              "queue_write_bytes": 161198652,
+              "requested_buffer_bytes": 0
+            },
+            "physics_upload": {
+              "bind_groups": 0,
+              "buffers": 12,
+              "calls": 12,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 192,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.0068,
+                "median_ms": 0.0055,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0066,
+                "p99_ms": 0.0066,
+                "samples": 6
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 192
+            },
+            "stateful_bind_group": {
+              "bind_groups": 82,
+              "buffers": 0,
+              "calls": 82,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 0,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.0589,
+                "median_ms": 0.0539,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0586,
+                "p99_ms": 0.0586,
+                "samples": 6
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 0
+            },
+            "trail_observation_upload": {
+              "bind_groups": 0,
+              "buffers": 17111,
+              "calls": 17111,
+              "copy_bytes": 0,
+              "dispatches": 0,
+              "initialized_bytes": 1163548,
+              "observed_frame_cpu_ms": {
+                "max_ms": 0.1413,
+                "median_ms": 0.0273,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.0617,
+                "p99_ms": 0.0888,
+                "samples": 2099
+              },
+              "queue_write_bytes": 0,
+              "requested_buffer_bytes": 1163548
+            }
+          },
+          "encoding_operations_scope": "Instrumented simulation-thread API call sites in observed latest-ledger frames only. Buffer bytes are requested sizes; initialized bytes are create-with-data payloads, not measured PCIe traffic. CPU scopes exclude parameter-byte construction and GPU execution. Initial render-world preparation, uninstrumented helpers, driver allocations and skipped ledger frames are not counted. Gather/spawn scopes include command encoding; other scopes measure allocation/bind-group calls.",
+          "event_scratch_retained": {
+            "last": [
+              0,
+              0,
+              0
+            ],
+            "observed_peak": [
+              75,
+              450,
+              589044
+            ],
+            "order": [
+              "links",
+              "buffers",
+              "bytes"
+            ],
+            "scope": "Render-world cache ownership, not driver residency or completed-submission frees."
+          },
+          "gpu_phases_ms": {
+            "render/aestra::gpu::alpha_sort/elapsed_gpu": {
+              "max_ms": 1.393664,
+              "median_ms": 0.272384,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.45568,
+              "p99_ms": 0.589824,
+              "samples": 1966
+            },
+            "render/aestra::gpu::simulate/aestra::gpu::trail_history/elapsed_gpu": {
+              "max_ms": 0.447488,
+              "median_ms": 0.029696,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.182272,
+              "p99_ms": 0.32256,
+              "samples": 1966
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 14.235648,
+              "median_ms": 2.74432,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 6.894592,
+              "p99_ms": 9.576448,
+              "samples": 2087
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 1.073152,
+              "median_ms": 0.275456,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.49664,
+              "p99_ms": 0.607232,
+              "samples": 2087
+            },
+            "render/aestra_oit_overflow_sort/elapsed_gpu": {
+              "max_ms": 0.694272,
+              "median_ms": 0.033792,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.128,
+              "p99_ms": 0.3328,
+              "samples": 2087
+            },
+            "render/auxiliary_views/elapsed_gpu": {
+              "max_ms": 0.234496,
+              "median_ms": 0.002048,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.00512,
+              "p99_ms": 0.006144,
+              "samples": 2087
+            },
+            "render/bin_unpacking/elapsed_gpu": {
+              "max_ms": 0.287744,
+              "median_ms": 0.011264,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.018432,
+              "p99_ms": 0.02048,
+              "samples": 2087
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.879616,
+              "median_ms": 0.104448,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.236544,
+              "p99_ms": 0.311296,
+              "samples": 2087
+            },
+            "render/clustering/elapsed_gpu": {
+              "max_ms": 0.437248,
+              "median_ms": 0.08192,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.147456,
+              "p99_ms": 0.1792,
+              "samples": 2087
+            },
+            "render/early prepass/elapsed_gpu": {
+              "max_ms": 0.009216,
+              "median_ms": 0.002048,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.00512,
+              "p99_ms": 0.006144,
+              "samples": 2087
+            },
+            "render/early_mesh_preprocessing/elapsed_gpu": {
+              "max_ms": 0.4608,
+              "median_ms": 0.013312,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.022528,
+              "p99_ms": 0.0256,
+              "samples": 2087
+            },
+            "render/main_opaque_pass_3d/elapsed_gpu": {
+              "max_ms": 0.090112,
+              "median_ms": 0.026624,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.065536,
+              "p99_ms": 0.078848,
+              "samples": 2087
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "max_ms": 0.644096,
+              "median_ms": 0.0512,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.1792,
+              "p99_ms": 0.260096,
+              "samples": 1966
+            },
+            "render/oit_resolve/elapsed_gpu": {
+              "max_ms": 2.518016,
+              "median_ms": 0.268288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 1.457152,
+              "p99_ms": 1.508352,
+              "samples": 2087
+            },
+            "render/per_view_shadow_pass/elapsed_gpu": {
+              "max_ms": 0.01024,
+              "median_ms": 0.001024,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.002048,
+              "p99_ms": 0.00512,
+              "samples": 2087
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.26624,
+              "median_ms": 0.017408,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.044032,
+              "p99_ms": 0.057344,
+              "samples": 2087
+            },
+            "render/ui/elapsed_gpu": {
+              "max_ms": 0.028672,
+              "median_ms": 0.00512,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.019456,
+              "p99_ms": 0.023552,
+              "samples": 2087
+            },
+            "render/uniform_allocation/elapsed_gpu": {
+              "max_ms": 0.249856,
+              "median_ms": 0.012288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.02048,
+              "p99_ms": 0.024576,
+              "samples": 2087
+            },
+            "render/upscaling/elapsed_gpu": {
+              "max_ms": 0.05632,
+              "median_ms": 0.01536,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.049152,
+              "p99_ms": 0.0512,
+              "samples": 2087
+            }
+          },
+          "owners": {
+            "Fireworks Crackle — Wispy Smoke Art Candidate": {
+              "checkpoint_capture_bytes": 0,
+              "cpu_encoding_ms": {
+                "max_ms": 0.4081,
+                "median_ms": 0.0913,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.2242,
+                "p99_ms": 0.2839,
+                "samples": 3228
+              },
+              "gpu_simulation_ms": {
+                "max_ms": 2.095104,
+                "median_ms": 0.398336,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 1.101824,
+                "p99_ms": 1.665024,
+                "samples": 2963
+              },
+              "max_fixed_ticks": 3,
+              "observed_fixed_ticks": 2597,
+              "trail_observations": 3354,
+              "trail_workgroups": 23478
+            },
+            "Fireworks Crossette — Wispy Smoke Art Candidate": {
+              "checkpoint_capture_bytes": 0,
+              "cpu_encoding_ms": {
+                "max_ms": 0.6682,
+                "median_ms": 0.1189,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.293,
+                "p99_ms": 0.4012,
+                "samples": 3230
+              },
+              "gpu_simulation_ms": {
+                "max_ms": 2.531328,
+                "median_ms": 0.499712,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 1.189888,
+                "p99_ms": 2.031616,
+                "samples": 2970
+              },
+              "max_fixed_ticks": 3,
+              "observed_fixed_ticks": 2602,
+              "trail_observations": 3339,
+              "trail_workgroups": 30051
+            },
+            "Fireworks Multi-break — Wispy Smoke Art Candidate": {
+              "checkpoint_capture_bytes": 0,
+              "cpu_encoding_ms": {
+                "max_ms": 0.5718,
+                "median_ms": 0.0847,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.192,
+                "p99_ms": 0.2551,
+                "samples": 5381
+              },
+              "gpu_simulation_ms": {
+                "max_ms": 2.168832,
+                "median_ms": 0.36864,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.943104,
+                "p99_ms": 1.528832,
+                "samples": 4909
+              },
+              "max_fixed_ticks": 3,
+              "observed_fixed_ticks": 4362,
+              "trail_observations": 5449,
+              "trail_workgroups": 32694
+            },
+            "Fireworks Strobe — Wispy Smoke Art Candidate": {
+              "checkpoint_capture_bytes": 0,
+              "cpu_encoding_ms": {
+                "max_ms": 0.3448,
+                "median_ms": 0.0622,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.1482,
+                "p99_ms": 0.2067,
+                "samples": 2152
+              },
+              "gpu_simulation_ms": {
+                "max_ms": 2.219008,
+                "median_ms": 0.270336,
+                "over_16_67ms": 0,
+                "over_20ms": 0,
+                "over_33_33ms": 0,
+                "p95_ms": 0.726016,
+                "p99_ms": 1.140736,
+                "samples": 1992
+              },
+              "max_fixed_ticks": 3,
+              "observed_fixed_ticks": 1779,
+              "trail_observations": 2263,
+              "trail_workgroups": 11315
+            }
+          },
+          "parameter_scratch_retained": {
+            "last": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "observed_peak": [
+              88,
+              67232,
+              88,
+              6,
+              393216
+            ],
+            "order": [
+              "destinations",
+              "destination_bytes",
+              "bind_groups",
+              "upload_pages",
+              "upload_bytes"
+            ],
+            "scope": "CPU-visible GPU handle ownership, not driver residency."
+          },
+          "scope": "Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshot/capacity scan.",
+          "stateful_render_preparation": {
+            "cpu_ms": {
+              "max_ms": 0.4961,
+              "median_ms": 0.006,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.0132,
+              "p99_ms": 0.0221,
+              "samples": 2200
+            },
+            "observed_allocation_windows": [
+              {
+                "allocated_emitters": 7,
+                "cpu_ms": 0.1923,
+                "observed_root_seconds": 2.3333332538604736
+              },
+              {
+                "allocated_emitters": 14,
+                "cpu_ms": 0.3644,
+                "observed_root_seconds": 4.633333206176758
+              },
+              {
+                "allocated_emitters": 18,
+                "cpu_ms": 0.4961,
+                "observed_root_seconds": 7.933333396911621
+              },
+              {
+                "allocated_emitters": 16,
+                "cpu_ms": 0.3726,
+                "observed_root_seconds": 12.033333778381348
+              },
+              {
+                "allocated_emitters": 18,
+                "cpu_ms": 0.4582,
+                "observed_root_seconds": 16.049999237060547
+              }
+            ],
+            "scope": "Latest CPU stateful preparation system windows only; excludes ShaderBuffer asset preparation, other render systems, submission, driver allocation and GPU execution. May skip frames."
+          }
+        },
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "high",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.1349146
+      }
+    },
+    {
+      "name": "wispy-r1",
+      "path": "target/fireworks-f8/parameters-2026-10-27/wispy-r1.json",
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.98492839999996,
+        "bevy_real_seconds": 36.98492839999996,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": null,
+        "captures": [],
+        "completed": true,
+        "duration": 37,
+        "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+        "encoding_ledger": {
+          "blocked_owner_frames": 0,
+          "encoded_owner_frames": 13851,
+          "frames": 2213,
+          "max_clip_schedule_error_seconds": 0,
+          "max_requested_minus_encoded_seconds": 0.05000019073486328,
+          "missing_scheduled_owner_frames": 0,
+          "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+          "worst_lag": {
+            "effect": "Fireworks Crackle — Wispy Smoke Art Candidate",
+            "encoded_seconds": 15.016666412353516,
+            "requested_seconds": 15.066666603088379
+          }
+        },
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 73.38210000000001,
+          "median_ms": 16.5261,
+          "over_16_67ms": 989,
+          "over_20ms": 340,
+          "over_33_33ms": 15,
+          "p95_ms": 26.0378,
+          "p99_ms": 31.4409,
+          "samples": 2202
+        },
+        "lane": "host-pacing-no-scans-no-screenshots",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 2126,
+        "pending_pipeline_updates": 0,
+        "player_speed": 1,
+        "prepared_view": "Ready { pipelines: 4 }",
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "high",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.1347816
+      }
+    },
+    {
+      "name": "wispy-r2",
+      "path": "target/fireworks-f8/parameters-2026-10-27/wispy-r2.json",
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.985147899999994,
+        "bevy_real_seconds": 36.985147899999994,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": null,
+        "captures": [],
+        "completed": true,
+        "duration": 37,
+        "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+        "encoding_ledger": {
+          "blocked_owner_frames": 0,
+          "encoded_owner_frames": 13968,
+          "frames": 2222,
+          "max_clip_schedule_error_seconds": 0,
+          "max_requested_minus_encoded_seconds": 0.01666736602783203,
+          "missing_scheduled_owner_frames": 0,
+          "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+          "worst_lag": {
+            "effect": "Fireworks Multi-break — Wispy Smoke Art Candidate",
+            "encoded_seconds": 8.949999809265137,
+            "requested_seconds": 8.966667175292969
+          }
+        },
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 51.5602,
+          "median_ms": 16.545,
+          "over_16_67ms": 982,
+          "over_20ms": 306,
+          "over_33_33ms": 22,
+          "p95_ms": 25.1271,
+          "p99_ms": 32.7105,
+          "samples": 2211
+        },
+        "lane": "host-pacing-no-scans-no-screenshots",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 2126,
+        "pending_pipeline_updates": 0,
+        "player_speed": 1,
+        "prepared_view": "Ready { pipelines: 4 }",
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "high",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.1353813
+      }
+    },
+    {
+      "name": "persistent",
+      "path": "target/fireworks-f8/parameters-2026-10-27/persistent.json",
+      "report": {
+        "adapter": {
+          "backend": "Vulkan",
+          "driver": "NVIDIA",
+          "name": "NVIDIA GeForce RTX 4070 SUPER"
+        },
+        "adoption_accepted": false,
+        "audio_enabled": false,
+        "backend": "Gpu",
+        "bevy_game_seconds": 36.98473350000005,
+        "bevy_real_seconds": 36.98473350000005,
+        "bloom_intensity": 0.15000000596046448,
+        "camera_physical_size": [
+          1280,
+          720
+        ],
+        "capacity": null,
+        "captures": [],
+        "completed": true,
+        "duration": 37,
+        "effect": "\\\\?\\C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\assets\\test\\effects\\fireworks_show_persistent_smoke.aestra.ron",
+        "encoding_ledger": {
+          "blocked_owner_frames": 0,
+          "encoded_owner_frames": 14032,
+          "frames": 2227,
+          "max_clip_schedule_error_seconds": 0,
+          "max_requested_minus_encoded_seconds": 0.016666650772094727,
+          "missing_scheduled_owner_frames": 0,
+          "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+          "worst_lag": {
+            "effect": "Fireworks Crackle — Persistent Smoke Candidate",
+            "encoded_seconds": 0,
+            "requested_seconds": 0.016666650772094727
+          }
+        },
+        "experimental_oit": true,
+        "final_seconds": 37,
+        "flashes_accepted": 13,
+        "flashes_peak": 3,
+        "hdr": true,
+        "history": "PlaybackOnly",
+        "host_intervals_including_vsync": {
+          "max_ms": 42.1761,
+          "median_ms": 16.5645,
+          "over_16_67ms": 1000,
+          "over_20ms": 292,
+          "over_33_33ms": 8,
+          "p95_ms": 24.5293,
+          "p99_ms": 30.314,
+          "samples": 2216
+        },
+        "lane": "host-pacing-no-scans-no-screenshots",
+        "last_async_alive": 0,
+        "last_observed_owners": 0,
+        "msaa": "Off",
+        "native_gpu": true,
+        "node_head_allocated_bytes": 47923200,
+        "oit_estimated_bytes": 47923200,
+        "oit_rejection": null,
+        "paused_updates": 0,
+        "peak_async_alive": 1872,
+        "pending_pipeline_updates": 0,
+        "player_speed": 1,
+        "prepared_view": "Ready { pipelines: 4 }",
+        "scope": "Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval.",
+        "seed": 17428930557923820000,
+        "static_renderers": 39,
+        "static_sprites": 27,
+        "static_trails": 12,
+        "tier": "high",
+        "tonemapping": "TonyMcMapface",
+        "wall_playback_seconds": 37.134934200000004
+      }
+    }
+  ],
+  "validation": {
+    "renderer_library": {
+      "passed": 182,
+      "ignored": 3,
+      "native_gpu_required": true
+    },
+    "host_library": {
+      "passed": 65
+    },
+    "audio_enabled_example": {
+      "passed": 29
+    },
+    "workspace_clippy": "--workspace --all-targets --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked --offline -- -D warnings",
+    "workspace_clippy_passed": true,
+    "formatting_passed": true,
+    "diff_check_passed": true,
+    "current_file_hashes_verified": 238,
+    "full_workspace_tests_rerun": false,
+    "tests": "GPU particle/trail equality with fresh buffers; empty-event ticks; existing rewind/mixed/large-pool cohorts; distinct upload ranges across page rollover and two submissions with no inter-frame CPU wait; cache hits and physics/resource invalidation; owner retirement."
+  },
+  "next": "Resume continuous star-path smoke and bright/quiet-phase public HDR art review with separate paced cost controls. CPU encoding/allocation gate is accepted narrowly; whole-host/GPU tail latency and universal visible registration remain open, without raising catch-up budgets or changing default show."
+}

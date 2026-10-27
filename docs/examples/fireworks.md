@@ -236,6 +236,107 @@ flashes and zero late pipelines; host p95 remains 24.9–26.9 ms, so stable 60 F
 and final smoke-art acceptance remain open. See
 [scratch reuse and native controls](../../benchmarks/fireworks/reused-event-scratch-2026-10-27.md).
 
+### Ordered stateful parameters (F8.1C4R)
+
+Coupled stateful playback also reuses parameter destinations and groups bound to
+current resources. Distinct upload ranges feed ordered encoder copies before each
+tick/presentation; live destinations are never repeatedly queue-written. Independent
+multi-tick compute batches retain separate per-tick parameters. Unchanged packed
+physics inputs reuse their upload buffer; changed data/resources invalidate groups.
+
+Profiling adds copy/queue-write payload counters, parameter/page ownership and the
+latest CPU `stateful_render_preparation` window. That window excludes other render
+preparation systems, GPU work and driver behavior. Pages retain busy-period high
+water capacity and release on an encoded frame without parameter uploads.
+
+The measured simulation CPU p95 falls from 3.33 to 1.73 ms; all full-show controls
+retain 13 flashes and zero late pipelines. Host p95 remains 24.5–26.0 ms, and one
+control still has a 73 ms interval/three ticks of sampled lag. Stable 60 FPS remains
+open. See [parameter reuse evidence](../../benchmarks/fireworks/reused-stateful-parameters-2026-10-27.md).
+
+### Saved star-path smoke candidate (F8.1C4S)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --effect effects/fireworks_show_star_path_smoke.aestra.ron --experimental-oit
+```
+
+This separate saved 13-clip candidate deposits smoke at Main stars' distance
+crossings with zero velocity inheritance and zero independent emission. Puffs
+remain along the paths, drift slowly, expand and fade over 7–9 seconds. A smoother
+dedicated density material and subdued shell haze reduce the earlier granular
+puffs. Original rocket/star emitters, choreography and cue/light routes are retained.
+The normal, persistent and wispy shows keep their saved assets unchanged.
+
+Final high-tier audience/close and density-hidden native reviews each observe
+37,996 accepted births across 13 owners, zero source/destination admission drops,
+13 flashes, zero observed OIT fragment loss/invalid links and a full drain.
+The image runs each record one global-cache pending update; they do not establish
+zero late pipeline work. Separate cost runs record zero pending updates, but
+candidate host p95 varies 20.3–26.7 ms versus 18.4 ms for the retained wispy control
+in this batch. These vsync-inclusive dev-build intervals are not isolated GPU cost
+or stable 60 FPS acceptance. All tiers compile; native medium/low art gates remain.
+Strand regularity and broad haze still need tuning before photographic art/default
+adoption. See [captures, rejected drafts and reproduction](../../benchmarks/fireworks/star-path-smoke-2026-10-27.md).
+
+F8.1C4T now extends native audience/close and flash-muted review to all tiers.
+High/medium/low retain 37,996/18,959/9,313 smoke births with zero observed admission
+or fragment drops and a full drain. Representative flashes recolor older smoke;
+selected-star lighting is not enabled in this candidate. Low explicitly rejects
+two flashes at its two-light ceiling. An initial medium close run loses one flash
+without a reported rejection and records 1.1 seconds of sampled encoding lag; a
+successful repeat does not erase that failure. Robust flash delivery remains open.
+`AESTRA_EXAMPLE_REPORT_FLASHES=0` is an image-only zero-intensity control that
+preserves admission and simulation. See the
+[all-tier review, retained failure and runner](../../benchmarks/fireworks/star-path-tiers-lighting-2026-10-27.md).
+
+F8.1C4U fixes two coupled source-cue suppression cases: a paced forward backlog
+classified as replay, and first trail initialization suppressing a launch. Native
+regressions reproduce both failures and preserve seek/pause/restart guards.
+Five final native controls each account for13 launch and13 main-break cues and13
+bound intents; high/medium accept13 flashes, while low accepts11 with two explicit
+budget rejections. A bounded report audit and new source-binding counters retain
+stage accounting. Earlier failures remain recorded; this is not lossless transport
+or pacing/art approval. See
+[forward cue fixes and controls](../../benchmarks/fireworks/forward-output-cues-2026-10-27.md).
+
+### Single-shell point-star reference calibration
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --effect effects/fireworks_point_star_candidate.aestra.ron --experimental-oit --no-audio
+```
+
+This separate 18-second shell targets the user's video reference: small bright
+white-to-warm heads, short thin tails and a 2.4–3.2-second varied burn. The explicit
+high/medium/low budgets are 128/64/32 stars with matching trail capacities. Main
+head/tail radiance are separately exposed; launch/flash materials stay unchanged.
+Replace `candidate` with `control` to compare the retained shorter burn and longer
+tails with the same white palette. Both isolate the shell from secondary breaks
+and deposited star smoke; launch/burst haze remains. The normal show is unchanged.
+
+`author_fireworks_point_stars` regenerates both editable assets offline. Six native
+camera/tier runs deliver 78 lifecycle captures with cue/flash/drain controls. This is
+a point-star art candidate, not gold-tail, smoke integration, performance or default
+approval. See [images, evidence and reproduction](../../benchmarks/fireworks/point-star-calibration-2026-10-27.md).
+
+### Wind-drifted smoke art variant (F8.1C4V)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --effect effects/fireworks_show_wind_haze_smoke.aestra.ron --experimental-oit
+```
+
+This separate saved variant gives deposited smoke more drift/turbulence, uneven
+age growth/fade and softer density masks. Older smoke spreads into a wider field;
+original stars, rockets, shell/launch haze, choreography, cues and budgets remain
+unchanged. C4S and the default show remain comparison choices. Rebuild only the
+new effects with `author_fireworks_wind_smoke` after editing its offline recipe.
+
+Six native image controls pass cue/admission/capacity/drain checks at all tiers,
+with separate flash-muted and path-density-hidden high controls. Two larger drafts
+remain rejected for fragment loss. A single ordinary pacing pair measures host
+p95 27.94/27.84 ms for retained/new sources; it is not isolated GPU cost or stable
+60 FPS acceptance. Individual puffs, volumetric depth and final art approval remain
+open. See [before/after, controls and reproduction](../../benchmarks/fireworks/wind-haze-smoke-2026-10-27.md).
+
 The new native transparency oracle uses pure-red/blue half-alpha sheets in separate
 players, opposite cameras and reversed spawn orders. It checks linear source-over
 against a deliberately wrong-order control, rather than using repeatability as proof.

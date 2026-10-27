@@ -6,6 +6,7 @@ fn event_link_scratch_reuses_buffers_without_stale_births_and_retires_removed_li
         return;
     };
     let mut fresh = sized_event_trail_scene(false, 16).unwrap();
+    fresh.reuse_parameters = false;
     cached.effect.history_policy = PlaybackHistoryPolicy::PlaybackOnly;
     fresh.effect.history_policy = PlaybackHistoryPolicy::PlaybackOnly;
     let mut identity = None;
@@ -66,6 +67,8 @@ fn event_link_scratch_reuses_buffers_without_stale_births_and_retires_removed_li
 }
 
 struct EventTrailScene {
+    uploads: std::cell::RefCell<super::parameter_uploads::ParameterUploads>,
+    reuse_parameters: bool,
     scene: Scene,
     effect: GpuEffectBuffers,
     buffers: [Buffer; 8],
@@ -369,6 +372,8 @@ fn event_trail_scene_with_pool(
         physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
     };
     Some(EventTrailScene {
+        uploads: default(),
+        reuse_parameters: true,
         scene,
         effect,
         buffers,
@@ -382,6 +387,7 @@ fn event_trail_scene_with_pool(
 
 impl EventTrailScene {
     fn frame(&mut self, target: u32, budget: u32) -> GpuSimulationWork {
+        self.uploads.borrow_mut().begin();
         let scene = &mut self.scene;
         for state in &mut scene.states {
             state.set_history_policy(self.effect.history_policy);
@@ -440,8 +446,14 @@ impl EventTrailScene {
                 gatherer: &scene.gatherer,
             },
             &self.effect.event_links,
-            &RouteWiring::default(),
+            &RouteWiring {
+                bursts: &self.effect.host_events.bursts,
+                outputs: &self.effect.particle_outputs,
+                output_epoch: self.effect.history_epoch,
+                output_suppress_through: self.effect.output_suppress_through,
+            },
             &StatefulRenderBuffers {
+                uploads: self.reuse_parameters.then_some(&self.uploads),
                 particles,
                 alive,
                 indirect,
@@ -461,6 +473,7 @@ impl EventTrailScene {
                 * (u64::from(self.effect.trail_workgroups)
                     + paged.as_ref().map_or(0, |p| p.workgroups())),
         };
+        self.uploads.borrow_mut().flush(&scene.queue);
         scene.queue.submit([encoder.finish()]);
         scene
             .device

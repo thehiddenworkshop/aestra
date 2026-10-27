@@ -94,6 +94,14 @@ pub struct TransientLightStatistics {
     /// Includes unbound cues; this is not a count of known lost light intents.
     pub source_packets_dropped: u64,
     pub binding_invalid: u64,
+    /// Authored-source packets offered to the bounded binding scan (includes dropped packets).
+    pub source_packets_seen: u64,
+    pub source_non_particle: u64,
+    pub source_missing_root: u64,
+    pub source_epoch_mismatch: u64,
+    pub source_unbound: u64,
+    /// Valid authored intents written to realization, before budget/expiry checks.
+    pub source_bound: u64,
 }
 
 /// Adapter-owned pooled entity. Hosts can inspect lights, not use it as a cue ID.
@@ -138,15 +146,19 @@ fn bind_authored(
         return;
     }
     let limit = settings.max_requests_per_frame.min(MAX_REQUESTS_PER_FRAME);
+    stats.source_packets_seen += outputs.len() as u64;
     stats.source_packets_dropped += outputs.len().saturating_sub(limit) as u64;
     for output in outputs.read().take(limit) {
         let Some(spatial) = &output.particle else {
+            stats.source_non_particle += 1;
             continue;
         };
         let Ok(player) = roots.get(output.effect) else {
+            stats.source_missing_root += 1;
             continue;
         };
         if output.playback_epoch != Some(player.instance().history_epoch()) {
+            stats.source_epoch_mismatch += 1;
             continue;
         }
         let parameters = player.instance().parameter_values();
@@ -167,12 +179,13 @@ fn bind_authored(
         match resolved {
             Ok(Some((_, pulse))) => {
                 if let Some(intent) = AestraLightOutput::from_particle(output, pulse) {
+                    stats.source_bound += 1;
                     lights.write(intent);
                 } else {
                     stats.binding_invalid += 1;
                 }
             }
-            Ok(None) => {}
+            Ok(None) => stats.source_unbound += 1,
             Err(_) => stats.binding_invalid += 1,
         }
     }
@@ -513,6 +526,15 @@ mod tests {
         app.world_mut().write_message(unbound);
         app.update();
         let stats = app.world().resource::<TransientLightStatistics>();
+        assert_eq!(
+            (
+                stats.source_packets_seen,
+                stats.source_bound,
+                stats.source_non_particle,
+                stats.source_unbound
+            ),
+            (4, 2, 1, 1)
+        );
         assert_eq!(
             (
                 stats.accepted,

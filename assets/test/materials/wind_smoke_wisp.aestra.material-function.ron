@@ -1,0 +1,16 @@
+(
+    id: "a3574a00-0000-4000-8000-000000f85600", schema_version: 1,
+    name: "Drifting Star Smoke Wisps",
+    inputs: [
+        (id: "a3574a00-0000-4000-8000-000000f85601", name: "UV", value_type: Vec2),
+        (id: "a3574a00-0000-4000-8000-000000f85602", name: "Seed", value_type: Float),
+        (id: "a3574a00-0000-4000-8000-000000f85603", name: "Normalized age", value_type: Float),
+    ],
+    outputs: [(id: "a3574a00-0000-4000-8000-000000f85604", name: "Density", value_type: Float, expression: "a3574a00-0000-4000-8000-000000f85605")],
+    expressions: [],
+    custom_wesl: Some((
+        evaluation_domain: Fragment,
+        source: "fn billow(uv: vec2<f32>, seed: f32, age: f32) -> f32 {\n    var p = uv * 1.8 + vec2<f32>(seed * 47.0, seed * 19.0) + vec2<f32>(0.65, -0.4) * age;\n    let weights = array<f32, 3>(0.80, 0.17, 0.03);\n    var n = 0.0;\n    for (var octave = 0u; octave < 3u; octave += 1u) {\n        let i = floor(p);\n        let f = fract(p);\n        let u = f * f * (vec2<f32>(3.0) - 2.0 * f);\n        var corners: array<f32, 4>;\n        for (var corner = 0u; corner < 4u; corner += 1u) {\n            let point = i + vec2<f32>(f32(corner % 2u), f32(corner / 2u));\n            var q = fract(vec3<f32>(point.x, point.y, point.x) * 0.1031);\n            q += vec3<f32>(dot(q, q.yzx + vec3<f32>(33.33)));\n            corners[corner] = fract((q.x + q.y) * q.z);\n        }\n        n += mix(mix(corners[0], corners[1], u.x), mix(corners[2], corners[3], u.x), u.y) * weights[octave];\n        p = p * 2.03 + vec2<f32>(7.1);\n    }\n    let angle = seed * 6.2831853;\n    let centered = uv - vec2<f32>(0.5);\n    let rotated = vec2<f32>(cos(angle) * centered.x - sin(angle) * centered.y, sin(angle) * centered.x + cos(angle) * centered.y);\n    let warped = rotated * vec2<f32>(0.75, 1.25) + vec2<f32>(n - 0.5, 0.5 - n) * 0.28;\n    let radius = length(warped) + (n - 0.5) * 0.12;\n    let cloud = smoothstep(0.60, 0.85, seed);\n    let spread = smoothstep(0.15, 0.75, age);\n    let extent = mix(0.44, mix(0.31, 0.48, cloud), spread);\n    let normalized = radius / extent;\n    let edge = exp(-2.4 * normalized * normalized) * (1.0 - smoothstep(0.78, 1.0, normalized));\n    let erosion = 0.75 + 0.25 * smoothstep(mix(0.10, 0.30, age), 0.85, n);\n    return edge * erosion * (0.65 + 0.35 * seed);\n}\n",
+        entry_points: {"a3574a00-0000-4000-8000-000000f85604": "billow"},
+    )),
+)
