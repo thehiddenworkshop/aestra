@@ -29,6 +29,9 @@ mod cameras;
 #[path = "cross_pool_overflow.rs"]
 mod overflow;
 
+#[path = "cross_pool_identity.rs"]
+mod identity;
+
 fn enable(app: &mut App) -> Entity {
     let mut cameras = app.world_mut().query_filtered::<Entity, With<Camera3d>>();
     let camera = cameras.iter(app.world()).next().unwrap();

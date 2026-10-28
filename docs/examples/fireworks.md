@@ -1,17 +1,30 @@
 # Bevy fireworks showcase
 
-`bevy/aestra-bevy/examples/fireworks.rs` is the public integration host. It loads the
+`demos/fireworks/src/main.rs` is the public integration host. It loads the
 same saved effects and materials as the editor, not an implementation imported from
 `aestra-viewer`. The viewer remains the capture, regression and benchmark harness.
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks
-cargo run --release --locked -p aestra-bevy --example fireworks -- --tier medium
-cargo run --release --locked -p aestra-bevy --example fireworks -- --history replay-enabled
+cargo run --release --locked -p aestra-demo-fireworks
+cargo run --release --locked -p aestra-demo-fireworks -- --tier medium
+cargo run --release --locked -p aestra-demo-fireworks -- --history replay-enabled
 ```
 
-The default is native GPU presentation, high quality, fixed HDR exposure and bloom,
-and **playback-only** history. The 26-second, play-once show uses 13 clips referencing
+The default is **host-owned rockets**: five scheduled launches plus Enter to launch,
+with host-owned position, velocity, gravity and fuse. The host publishes current
+world poses before `ResolveHostInputs`; attached emitters deposit particles into a
+stationary VFX owner. Detonation stops wake emission, removes the gameplay rocket,
+and starts a separate calibrated burst at the host's position. Wake/burst owners
+remain alive for their finite visual tails. Normal host admission has no owner-count
+ceiling; `--max-owners N` is an optional host policy for controlled workloads.
+Sound is bound directly to the host detonation; GPU output events do not decide hits.
+Space and R affect the host and VFX together. This is a host-integration demo;
+smoke appearance still needs the existing F8 art review.
+
+Native GPU presentation, high quality, fixed HDR exposure/bloom and **playback-only**
+history remain the defaults. `--cinematic` selects the original authored show.
+Selecting a smoke candidate, lab or explicit `--effect` also selects authored playback.
+The 26-second, play-once cinematic show uses 13 clips referencing
 four reusable shell effects: multi-break, crackle, crossette and strobe. Restart with R.
 High/medium/low select authored particle/event/trail budgets at compilation and separate
 host representative-light ceilings of 8/4/2. These are policies, not hardware-independent
@@ -28,11 +41,194 @@ consuming the beginning of the show. Representative flash lights use the saved
 The environment is deliberately minimal: dark background, ground and two dark
 PBR receiver structures (non-emissive, lit by moon/burst lights).
 
+The executable and offline authoring tools now live in `demos/fireworks`; Cargo
+workspace CI still builds and tests them. The editable asset project remains in
+`assets/test`, shared with editor/viewer qualification to avoid divergent copies.
+Historical evidence retains its original source paths and hashes. The focused
+`cargo run -p aestra-bevy --example host_projectile` example teaches the same
+ownership boundary without the demo's sound, cameras, art variants or review tools.
+
+## Calibrated selected-star lighting (2026-10-28)
+
+`author_fireworks_star_lights` adds one material-free point-light output to each
+calibrated shell's Main stars. Its separate saved effects preserve every particle
+module, renderer, material, event link, smoke budget, sound output and burst flash.
+No smoke, dense ember or Burst flash emitter gains selected-particle lights.
+The output samples the exposed Main-star gradient, so the pair's blue override
+also controls its light color. Its age curve cools 6000 → 3000 → 0 lumens, with
+12-unit range, radius 0.1 and shadows off. These are scene tuning values rather
+than calibrated photometry.
+
+Authored per-output ceilings are high 32, medium 16, low 24. Low deliberately
+retains the previously qualified sparse-star admission, rather than the rejected
+eight-light draft. Host global ceilings remain independently bounded at 96/48/24.
+These are capacity bounds; neither the HUD nor reports call them live-light counts.
+The native same-frame adapter does not copy selected particle positions to the CPU.
+
+The default host controller opts into this art and plugin using `--star-lights`.
+Representative flashes have an independent `--no-flash-lights` switch. L toggles
+flashes and P toggles selected lighting after launch; both affect presentation only.
+Particle selection, transport and realization caps change together through the
+public host policy. An explicit cinematic asset without authored outputs is rejected
+when `--star-lights` is requested, avoiding a silently ineffective option.
+
+```powershell
+cargo run --release --locked -p aestra-demo-fireworks -- --star-lights
+cargo run --release --locked -p aestra-demo-fireworks -- --star-lights --no-flash-lights
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-art-show --effect effects/fireworks_shell_star_lights.aestra.ron --experimental-oit --star-lights --no-audio
+```
+
+The retained two-shell timeline permits matched neither/flash-only/star-only/combined
+controls. `benchmarks/fireworks/run-star-light-review.ps1` runs that matrix and
+records binary/source fingerprints. `-Cost` uses a separate ordinary lane, without
+image requests or capacity scans. The baseline host and cinematic show remain
+unchanged unless opted in; final smoke art and expanded-show costs remain open.
+The [native integration review](../../benchmarks/fireworks/star-light-smoke-integration-2026-10-28.md)
+records 84 control captures, a separate medium host screenshot, the subtle blue
+smoke response and the single ordinary timing pair, including their limits.
+
+## Eroding smoke and host overlap
+
+The newer [eroding smoke/host overlap review](../../benchmarks/fireworks/smoke-look-host-overlap-2026-10-28.md)
+uses separate assets and `--tuned-smoke --launch-pattern overlap` in the host demo.
+Host admission has no default count ceiling; `--max-owners N` is optional. The
+review runner names a 24-owner workload budget explicitly. It records twelve
+host launches/detonations, retained tails and all-tier cleanup, along with the
+ordinary pacing outliers. This does not promote either smoke draft to final art.
+
+## Independent player preparation and launch pacing
+
+`AestraPlugin` now maintains `EffectPresentationCache` for independently spawned
+players. Repeated uses of the same compiled artifact share immutable material
+programs; each presentation still owns its mutable values, bindings and history.
+Same-ID artifact replacements get new programs, and unused artifacts retire from
+the cache. A loaded compiled catalog intentionally keeps its programs warm.
+
+The demo prepares the same cache during loading and passes fresh presentations
+to the camera request, through the public SDK:
+
+```rust,ignore
+// In a loading system with ResMut<EffectPresentationCache>:
+let request = EffectPipelinePreparation::new(
+    std::iter::once(project.root.clone())
+        .chain(project.dependencies.values().cloned())
+        .map(|effect| presentations.instantiate(effect)),
+);
+commands.entity(camera).insert(request);
+```
+
+Without explicit loading preparation, the first player for an artifact still
+pays compilation once. This cache does not pool mutable simulation buffers or
+introduce an owner-count ceiling. The [native activation review](../../benchmarks/fireworks/host-activation-2026-10-28.md)
+measures presentation construction falling from roughly 31 ms to 0.011 ms, and
+launch-phase ordinary p95 falling from 47.0 ms to 17.6–17.7 ms in the same
+twelve-rocket workload. It preserves admission totals and final cleanup.
+
+The smoke review runner accepts `-Cost -Instrumented` for a separate timestamp
+lane; `-Cost` alone remains ordinary pacing. Reports split launch/overlap, active
+sparks, smoke drain and idle using host state and asynchronous population
+observations. These are window/vsync measurements on the documented hardware,
+not release/finale performance guarantees or final smoke-art acceptance.
+
+## Audience smoke revision (2026-10-28)
+
+The `--tuned-smoke` candidate now makes deposited launch smoke visible within
+roughly 100 ms, strengthens thin star filaments at audience distance, and dilutes
+older smoke while retaining a local response to later bursts. Particle births,
+motion, lifetimes, luminous art, sampler/event budgets and light-count limits are
+unchanged. Ambient brightness is unchanged; the material's scene-light gain and
+smoke appearance curves are tuned instead.
+
+```powershell
+cargo run --release --locked -p aestra-demo-fireworks -- --tuned-smoke --star-lights
+```
+
+The [audience-camera review](../../benchmarks/fireworks/audience-smoke-2026-10-28.md)
+records before/after wakes, four matched older-haze lighting/visibility controls,
+all-tier twelve-rocket overlap and cleanup, 102 captures and separate pacing
+runs. One noisy ordinary run remains recorded; whole-game performance and final
+photographic acceptance remain open. CLI defaults and calibrated control assets
+stay unchanged. The following camera review now covers moving/side views.
+
+## Side, near and moving-camera smoke review
+
+The report hook and smoke review runner now accept `-Camera side`, `near` and
+`orbit`. Orbit smoothly sweeps the camera using the existing playback clock;
+capture records include the requested camera translation/rotation and root time.
+The unparented camera publishes its current world pose before render preparation.
+No effect seek, replay, material or budget edit is involved, and moving-camera
+review is rejected in ordinary cost/profiling lanes.
+
+The [camera review](../../benchmarks/fireworks/smoke-views-2026-10-28.md) records
+209 captures, two sampled motion previews, unchanged demand and clean retirement.
+Side/moving views retain spatially placed haze; the near view exposes more of the
+mottled puff structure. The pair's 7,379 near-view pixels above the local fast-sort
+threshold already use the existing overflow merge sort; a separate GPU profile
+confirms that pass runs. The counter is not itself a dropped-layer failure.
+
+The following independent-host transparency review now records both failed
+capacity cases and a bounded low-tier configuration. Close-up art, general
+transparent-scene participation and default adoption remain separate.
+
+## Independent-host shared transparency: capacity qualification
+
+`--experimental-oit` now admits the independently spawned host wake/burst catalog
+through the same compiled-renderer audit as the saved show candidates. It preserves
+particle births, trajectories, lifetimes and light policies. Ordinary transparency
+remains the default, and normal host admission still has no owner-count ceiling.
+
+The [native review](../../benchmarks/fireworks/host-shared-transparency-2026-10-28.md)
+records eight image runs and 97 captures at 1280x720 on RTX 4070 SUPER/Vulkan.
+Both ordinary/shared controls explicitly use `Msaa::Off`. The default four-node-per-pixel
+reservation loses up to 19,144,079 fragments in a high-tier near-view frame; high
+orbit and low near fail too. Completing a report is not a capacity pass.
+
+An explicit low-tier reservation of eight passes observed near/orbit capacity,
+admission and cleanup, using 92,160,000 bytes (87.89 MiB) for nodes/heads:
+
+```powershell
+cargo run --release --locked -p aestra-demo-fireworks -- --tuned-smoke --star-lights --tier low --launch-pattern overlap --experimental-oit --oit-fragments-per-pixel 8 --no-audio
+```
+
+This changes reservation within the existing 128 MiB ceiling, not the ceiling or
+default. Larger windows can be rejected by the same budget. Normal interactive
+experimental mode enables bounded asynchronous capacity/integrity scans and stops
+with an error after observed fragment loss or invalid links; it never silently
+switches rendering modes. Detection cannot prevent an earlier failed frame.
+
+The runner accepts `-Transparency ordinary|shared -MatchMsaa`, an explicit
+`-FragmentsPerPixel 8`, and `-RequireLossFree` to fail a scanned qualification while
+retaining its raw report. Cost/profile runs omit health scans and cannot certify
+capacity or the full cost of the guarded interactive mode. High-tier near demand
+would need at least 264.79 MiB just for nodes/heads: filling the remaining current
+budget cannot fix it. Next is memory-scalable high-density compositing; this is
+not general host, photographic or production-finale acceptance.
+
+The subsequent [packed-zero review](../../benchmarks/fireworks/packed-identity-2026-10-28.md)
+removes exact identities of the existing RGB9E5/alpha8 compositor before node
+allocation. Black absorbers and faint additive light are preserved by a 20-case
+frozen native oracle. High near capture demand falls 11.93%, while allocated
+buffers remain unchanged; it still needs roughly 234 MiB for observed nodes/heads
+and fails the 128 MiB policy. Low reserve-eight near/orbit remains loss-free in
+observed samples with unchanged demand and cleanup. Forward host screenshots are
+not bit-identical frozen references.
+
+The [isolated partition prototype](../../benchmarks/fireworks/partition-probe-2026-10-28.md)
+now reuses one node pool between disjoint scissored regions. Three native repeats
+match the complete HDR reference exactly, preserve total fragment attempts and
+recover after forced overflow. Sixteen regions use 82.73% fewer node/head bytes
+than a tightly sized full-screen control, but cost roughly 5.5–5.7 times its GPU
+span in the small 48-layer fixture. Four regions halve storage at about twice
+the time. Aggregate timing uses two timestamp writes per frame, with detailed
+profiling separate. This is test-only evidence; no runtime mode is exposed yet.
+Next is guarded opt-in host transport and actual near/orbit memory/cost review,
+including real material and repeated trail-geometry work. Ordinary remains default.
+
 ## Opt-in persistent lit-smoke show candidate (F8.1C3)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --persistent-smoke-show
-cargo run --release --locked -p aestra-bevy --example fireworks --features fireworks-audio -- --persistent-smoke-show --tier medium
+cargo run --release --locked -p aestra-demo-fireworks -- --persistent-smoke-show
+cargo run --release --locked -p aestra-demo-fireworks --features fireworks-audio -- --persistent-smoke-show --tier medium
 ```
 
 This loads `effects/fireworks_show_persistent_smoke.aestra.ron` and four separate saved
@@ -59,7 +255,7 @@ for reproducible controls, matched live costs and the retained failed cue-bounda
 ## Wispy smoke art draft, transparency probes and rocket deposition (F8.1C4A–D)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-art-show
 ```
 
 This is a separate saved 37-second draft, not a replacement for the default show or
@@ -106,14 +302,15 @@ convincing illuminated cloud depth and photographic art approval remain open.
 ### Experimental shared transparency in the public host (F8.1C4N)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --experimental-oit
-cargo run --release --locked -p aestra-bevy --example fireworks -- --persistent-smoke-show --experimental-oit
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-art-show --experimental-oit
+cargo run --release --locked -p aestra-demo-fireworks -- --persistent-smoke-show --experimental-oit
 ```
 
 This explicit opt-in preserves the show's HDR, Tony display transform, bloom, environment,
 sound bindings, tier policy and controls. The normal show/candidates still use ordinary
-transparency without the flag. The option requires one of the two show-candidate flags;
-the small smoke labs and default show are outside its admission policy.
+transparency without the flag. The option admits the independent host catalog or
+one of the two show-candidate flags; small smoke labs and the default cinematic
+show are outside its admission policy.
 
 Before opening a window, the host audits the compiled root and every dependency using
 the renderer's shared `ExperimentalOitSettings::supports_renderer` predicate. The saved
@@ -129,14 +326,16 @@ bytes (45.70 MiB); at 1080p it needs 102.83 MiB. These are node/head bytes, not 
 VRAM. Actual camera/device admission is required before playback starts. Budget/backend
 rejection pauses playback and exits with a reason, including rejection after resizing;
 there is no silent ordinary-rendering fallback or automatic reduction in resolution.
-Global fragment loss is a separate possibility; the memory guard is not a loss detector.
+The memory guard alone cannot detect fragment loss. Interactive mode additionally
+scans capacity/integrity asynchronously and exits after observed loss. Report
+lanes deliberately retain failed runs for review; only image reports scan capacity.
 
 An optional development qualification hook records the actual window's full show:
 
 ```powershell
 $env:AESTRA_EXAMPLE_REPORT = "$PWD/target/fireworks-f8/my-host-run-1.json"
 $env:AESTRA_EXAMPLE_REPORT_IMAGES = "0"
-cargo run --locked -p aestra-bevy --example fireworks --features fireworks-audio -- --smoke-art-show --experimental-oit --no-audio
+cargo run --locked -p aestra-demo-fireworks --features fireworks-audio -- --smoke-art-show --experimental-oit --no-audio
 ```
 
 Use a fresh absolute report filename. The hook exits after the show and ten cleanup
@@ -181,7 +380,7 @@ Keep the camera active while waiting: status describes its latest extracted conf
 The initial API supports rendered 3D sprites, trails and flipbooks. Meshes, ribbons and
 extension stages fail explicitly instead of reporting partial readiness. Asset residency,
 arbitrary material replacement and simulation readiness are separate responsibilities.
-The example also retains its compute/global-pipeline and device-admission loading gates.
+The demo also retains its compute/global-pipeline and device-admission loading gates.
 
 Full-show reports opt into `gpu::GpuPlaybackDiagnostics`, a bounded latest-frame CPU
 command-encoding ledger. Reports distinguish blocked owners, requested versus encoded
@@ -257,7 +456,7 @@ open. See [parameter reuse evidence](../../benchmarks/fireworks/reused-stateful-
 ### Saved star-path smoke candidate (F8.1C4S)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --effect effects/fireworks_show_star_path_smoke.aestra.ron --experimental-oit
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-art-show --effect effects/fireworks_show_star_path_smoke.aestra.ron --experimental-oit
 ```
 
 This separate saved 13-clip candidate deposits smoke at Main stars' distance
@@ -302,7 +501,7 @@ or pacing/art approval. See
 ### Single-shell point-star reference calibration
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --effect effects/fireworks_point_star_candidate.aestra.ron --experimental-oit --no-audio
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-art-show --effect effects/fireworks_point_star_candidate.aestra.ron --experimental-oit --no-audio
 ```
 
 This separate 18-second shell targets the user's video reference: small bright
@@ -318,10 +517,52 @@ camera/tier runs deliver 78 lifecycle captures with cue/flash/drain controls. Th
 a point-star art candidate, not gold-tail, smoke integration, performance or default
 approval. See [images, evidence and reproduction](../../benchmarks/fireworks/point-star-calibration-2026-10-27.md).
 
+### Dense gold-tail reference calibration
+
+```powershell
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-art-show --effect effects/fireworks_gold_tail_candidate.aestra.ron --experimental-oit --no-audio
+```
+
+This opt-in 18-second shell uses 64/32/16 ballistic stars and dense distance-born
+gold embers. Six embers every 0.4 units produce a scattered shower that cools and
+falls behind the heads. Explicit high/medium/low ember pools are 32,768/16,384/8,192;
+sprites avoid adding a ribbon history for every shed spark. Main head, tail and
+ember radiance are independently exposed. The existing launch/flash bindings remain.
+
+`author_fireworks_gold_tails` regenerates the candidate and an isolated warm control.
+Native counts admit all 67,254/33,324/15,354 tier ember births with full drain.
+Six selected camera/tier cases deliver 84 captures; a separate ordinary host pair
+records pacing. This remains single-shell art/admission review. Deposited smoke,
+show composition, final art and production performance are subsequent work.
+See [density comparison, counts, costs and reproduction](../../benchmarks/fireworks/gold-tail-calibration-2026-10-27.md).
+
+### Calibrated shells with deposited smoke
+
+```powershell
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-art-show --effect effects/fireworks_shell_smoke_candidate.aestra.ron --experimental-oit --no-audio
+```
+
+This 24-second review pair adds deposited smoke to separate variants of the
+calibrated dense gold and point-star shells. Gold fires first; blue point stars
+start 5.5 seconds later and their representative flash lights older haze. The
+original calibrated luminous emitters, cues and dense ember recipe are retained.
+
+`author_fireworks_shell_smoke` regenerates the two source variants and
+candidate/control roots. Gold smoke shares the ember source's 0.4/max2 distance
+sampler; point smoke uses 0.8/max2. Both use zero inherited velocity and no
+independent emission. Explicit pools support the longer lives and denser paths.
+The original sources remain available through `fireworks_shell_smoke_control`.
+
+Eight native image cases deliver 128 captures across camera/tier and independent
+light/density controls; a nine-capture population witness proves natural expiry
+before clip retirement at high tier. Selected-star lighting, final smoke art and
+production-show performance remain subsequent work. See
+[images, counts, lifetime observations and costs](../../benchmarks/fireworks/shell-smoke-integration-2026-10-28.md).
+
 ### Wind-drifted smoke art variant (F8.1C4V)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-art-show --effect effects/fireworks_show_wind_haze_smoke.aestra.ron --experimental-oit
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-art-show --effect effects/fireworks_show_wind_haze_smoke.aestra.ron --experimental-oit
 ```
 
 This separate saved variant gives deposited smoke more drift/turbulence, uneven
@@ -413,12 +654,12 @@ for controls, retained failed art iteration and remaining gates.
 1. In the editor, use File → Open Project and select `assets/test`.
 2. Open `effects/fireworks_show.aestra.ron` to edit clips, placement, timing and overrides.
 3. Open its four shared shell effects or referenced material programs to edit their appearance.
-4. Save, then restart the example. It reads saved source files at launch, not stale embedded text.
+4. Save, then restart the demo. It reads saved source files at launch, not stale embedded text.
 
 For a separate project, pass its **asset root**, not necessarily its repository root:
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --project C:/MyShow/assets --effect effects/my_show.aestra.ron
+cargo run --release --locked -p aestra-demo-fireworks -- --project C:/MyShow/assets --effect effects/my_show.aestra.ron
 ```
 
 `fireworks/project.rs` shows load → resolve → compile → `EffectPlayer::from_project`.
@@ -448,7 +689,7 @@ The editor's saved/recent project selection still takes precedence over its exam
 
 `cargo run` uses Cargo's **runtime** `CARGO_MANIFEST_DIR` for development, including
 custom target directories. Direct execution from the standard `target/{profile}`
-layout also works without that variable. For nonstandard standalone example layouts,
+layout also works without that variable. For nonstandard standalone demo layouts,
 use explicit `--project` and `--audio-root` paths. Relative CLI paths remain relative
 to the launch working directory; existing audio folders are made absolute before
 registering the Bevy asset source. Release builds omit `dev-dynamic-linking`; see
@@ -457,11 +698,11 @@ content-layout contract, not a clean-machine installer certification.
 
 ## Optional host sound
 
-Audio is outside the portable VFX runtime. Enable the example's WAV decoder explicitly:
+Audio is outside the portable VFX runtime. Enable the demo's WAV decoder explicitly:
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks --features fireworks-audio
-cargo run --release --locked -p aestra-bevy --example fireworks --features fireworks-audio -- --audio-root C:/MySounds/fireworks
+cargo run --release --locked -p aestra-demo-fireworks --features fireworks-audio
+cargo run --release --locked -p aestra-demo-fireworks --features fireworks-audio -- --audio-root C:/MySounds/fireworks
 ```
 
 The development default is `bevy/aestra-bevy/assets/audio/fireworks`; a relocated
@@ -496,8 +737,8 @@ spatial audio is simple panning, not HRTF/occlusion/acoustic simulation.
 ## Verification and remaining work
 
 ```powershell
-cargo test --locked -p aestra-bevy --example fireworks --features fireworks-audio
-cargo clippy --locked -p aestra-bevy --example fireworks --example fireworks_event_chain --features fireworks-audio -- -D warnings
+cargo test --locked -p aestra-demo-fireworks --features fireworks-audio
+cargo clippy --locked -p aestra-demo-fireworks --all-targets --features fireworks-audio -- -D warnings
 ```
 
 GPU-free tests resolve all three tiers, shared materials and automatic renderer bindings,
@@ -529,7 +770,7 @@ smoke/mix approval; see the
 ## Smoke lighting qualification fixture (F8.3B)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-lighting --no-audio
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-lighting --no-audio
 ```
 
 This opt-in mode plays `assets/test/effects/fireworks_smoke_lighting.aestra.ron`, not the
@@ -556,7 +797,7 @@ for evidence and the visit-budget constraint found during qualification.
 ## Lit particle-smoke fixture (F8.3C)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --particle-smoke-lighting --no-audio
+cargo run --release --locked -p aestra-demo-fireworks -- --particle-smoke-lighting --no-audio
 ```
 
 This mode loads `effects/fireworks_particle_smoke_lighting.aestra.ron`: one isolated
@@ -585,7 +826,7 @@ art/persistence and full-show costs remain open. See
 ## Overlapping alpha smoke (F8.3D)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --particle-smoke-lighting --effect effects/fireworks_particle_smoke_overlap.aestra.ron --no-audio
+cargo run --release --locked -p aestra-demo-fireworks -- --particle-smoke-lighting --effect effects/fireworks_particle_smoke_overlap.aestra.ron --no-audio
 ```
 
 The particle-smoke lab now opts into `TransparentOrderMode::DepthBackToFront`. Hosts can
@@ -615,7 +856,7 @@ acceptance. See
 ## Accumulating particle-smoke prototype (F8.1A)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-persistence --no-audio
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-persistence --no-audio
 ```
 
 This opt-in mode loads `effects/fireworks_smoke_persistence.aestra.ron`, the reusable
@@ -644,7 +885,7 @@ See [`smoke-persistence-2026-10-08.md`](../../benchmarks/fireworks/smoke-persist
 ## Shell-born smoke cohorts (F8.1B)
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-cohorts --no-audio
+cargo run --release --locked -p aestra-demo-fireworks -- --smoke-cohorts --no-audio
 ```
 
 This opt-in mode loads `effects/fireworks_smoke_cohorts.aestra.ron`. Two ballistic rockets

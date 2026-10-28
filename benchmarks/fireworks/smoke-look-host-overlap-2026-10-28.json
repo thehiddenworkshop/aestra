@@ -1,0 +1,1211 @@
+{
+  "date": "2026-10-28",
+  "binary_sha256": "20F44F94095CC5597D95754F724CEFE3C5041AE68A375854D4FD184700EFD103",
+  "scope": "Separate eroding-smoke look and twelve host-owned overlapping rockets. Normal demo admission has no fixed owner limit; benchmarks explicitly choose 24.",
+  "source_hashes": [
+    {
+      "path": "demos\\fireworks\\src\\audio.rs",
+      "sha256": "54918DB3E6F62D5659A4DF101F40B58A8E5C4A679C8466A8B584ACB1C20DCB76"
+    },
+    {
+      "path": "demos\\fireworks\\src\\host.rs",
+      "sha256": "34386C67CA3E739E48640CA32E794C28749C6395C8028FFED6E3FFA50B4C35E0"
+    },
+    {
+      "path": "demos\\fireworks\\src\\lighting.rs",
+      "sha256": "F14BE19FCD5805F6915475616E2DA183D9C203D6384C60CD4D94E405A76C0725"
+    },
+    {
+      "path": "demos\\fireworks\\src\\main.rs",
+      "sha256": "90169572D6D5C19EA8E73F7A5385E84EAA7B75C50E5BB02ECEE300FF4E4C6506"
+    },
+    {
+      "path": "demos\\fireworks\\src\\oit_tests.rs",
+      "sha256": "B7E31D03E1D8848931DEF06437345CEED4EDDD53E53E4F115AF02D34D9B1B375"
+    },
+    {
+      "path": "demos\\fireworks\\src\\oit.rs",
+      "sha256": "F838F0B9AE01E92DD8C68B5C40692F6E547F5AFB6DDAE76CE1A8A911529141EE"
+    },
+    {
+      "path": "demos\\fireworks\\src\\paths.rs",
+      "sha256": "86ABACA11B11E07EF01022D703A4B296399AFBED5AE989C1C80D28927422526D"
+    },
+    {
+      "path": "demos\\fireworks\\src\\persistent_smoke_show_tests.rs",
+      "sha256": "21646096BB93ABA28D4BAB80E524B1DAFC8756DBEF9A366318D0C2C17883B239"
+    },
+    {
+      "path": "demos\\fireworks\\src\\project.rs",
+      "sha256": "AD80F4A3F524C8203E69A9DC2F6ED3F18C45CB97A577873D1F7F30DB6012F0F2"
+    },
+    {
+      "path": "demos\\fireworks\\src\\readiness.rs",
+      "sha256": "EA53B31FF266C5E28ADCC2D44A0512CDB53A5CAA0F152A5F22D4EAB34C122BB4"
+    },
+    {
+      "path": "demos\\fireworks\\src\\report_control_tests.rs",
+      "sha256": "BD94A51BEA1F1CF314DC4E5C89E00FCD3CE0C48589462A44694830FE1F6ED60A"
+    },
+    {
+      "path": "demos\\fireworks\\src\\report_outputs.rs",
+      "sha256": "8BA72D31191B3F7EE9DBF0125401CA0A305A7AC20DC14A3834E6093A8C68E1A1"
+    },
+    {
+      "path": "demos\\fireworks\\src\\report_profile.rs",
+      "sha256": "9A3FADA1B6544ABC03BD4320B69DC7F2672F065BD334ADD368A78DEBFCCC1AF3"
+    },
+    {
+      "path": "demos\\fireworks\\src\\report.rs",
+      "sha256": "4FD72BD733C11F77238AC5B8EE3D68A935D945B2CD2C6905056C464F2612991B"
+    },
+    {
+      "path": "demos\\fireworks\\src\\smoke_cohorts_tests.rs",
+      "sha256": "237AB4FEA184D2D28D63384DDCA8730918F06938FAB132B5382F3FA58B6D3C5D"
+    },
+    {
+      "path": "demos\\fireworks\\src\\star_smoke_authoring.rs",
+      "sha256": "2D92681547C8FCF2C6069626A0154245533BA0E72D8B5FFBE2EFDC3C18D9E978"
+    },
+    {
+      "path": "demos\\fireworks\\src\\star_smoke_tests.rs",
+      "sha256": "1531A0D4487D0BED2A9427543021CA3CEEFC4D16E413807A33C6EFE2D9D1B140"
+    },
+    {
+      "path": "demos\\fireworks\\src\\wind_smoke_authoring.rs",
+      "sha256": "ECEB2A01EB5866D2BD710E86178376EF3A3C8A070CC1989E07DE5239DEB6EED9"
+    },
+    {
+      "path": "demos\\fireworks\\src\\wind_smoke_tests.rs",
+      "sha256": "4BBCDC57AF9D9106874D6DA462D04DFBDF0FC6321FC5A6556EAB6A4D9DF8CA95"
+    },
+    {
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_gold_tails.rs",
+      "sha256": "FBB4657ED64683F45311A5F96BBC223D963ADE6F5FF2A32F99A33BB3B2343F3D"
+    },
+    {
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_point_stars.rs",
+      "sha256": "70014D1342D68B6A613FE90D88BFD2AF89E4A3C85B4E1636EFAB5151C968559F"
+    },
+    {
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_shell_smoke.rs",
+      "sha256": "A4F8D6952594A8BD6EEE50D7B2DF6E3F4E58F6CB29CDBD5BAC0F12E4CF6E22DF"
+    },
+    {
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_smoke_look.rs",
+      "sha256": "EBBD657188E148B6C7BF7DA0895492D7130273328ACA616D58D4CCF34E19ADEE"
+    },
+    {
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_star_lights.rs",
+      "sha256": "075ABDA286511B25D045DF47EA7C25C0EA39144ECFEFF2E14279B6555CB11E4C"
+    },
+    {
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_star_smoke.rs",
+      "sha256": "62877C341E3EB39AE04EE21670E2E416AF41B40D004746EE5972850DEBCBB0C0"
+    },
+    {
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_wind_smoke.rs",
+      "sha256": "ED12FEC573E3D4D412D2FF53E8FA0680D5DCFD1BBC5CAA9A074482B86BDE2F00"
+    },
+    {
+      "path": "assets\\test\\materials\\additive_flame.aestra.material-preset.ron",
+      "sha256": "C9D476126706B209D0CDA41625C4C00517226D2CBCAD1332CD320ABD4EFCE183"
+    },
+    {
+      "path": "assets\\test\\materials\\dissolve_edge.aestra.material-function.ron",
+      "sha256": "E4F0688CF06E9EA684A578B682CBF9D3D995A51AC941CA42458479525C21B119"
+    },
+    {
+      "path": "assets\\test\\materials\\energy_beam.aestra.material-preset.ron",
+      "sha256": "BA8EF19DD6816AB9DBFB7732BD047D362A9B18566B95CF2F75597B5832A408BE"
+    },
+    {
+      "path": "assets\\test\\materials\\eroding_smoke_wisp.aestra.material-function.ron",
+      "sha256": "30457467467A37482FDCDEF5B9A90820BE56C48E6AB93F74B8036420144165AE"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_eroding_smoke.aestra.material.ron",
+      "sha256": "6067975CEE742C42E5605FB2A8227943C0A301F23C54AB0B474968D0CA81F558"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_hero_star.aestra.material.ron",
+      "sha256": "5350E4C64BB017B8D14B947969E1E34EBF0DE2AD504FE80314589C1AC79EA932"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_hero_trail.aestra.material.ron",
+      "sha256": "9BEECD239E416DC39F25F6E659EDB9C311B55B45AA0D329EBDEF9175D5C26D24"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_lit_smoke.aestra.material.ron",
+      "sha256": "ED47199076350898859F2B046B339CD2EADDE1BD48B9625EB7AFCA169E100E2C"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_persistent_smoke.aestra.material.ron",
+      "sha256": "C1E37B06BB5E9DE3109FC87784122A23604A902884037DF5F9E752C432661CC4"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_smoke.aestra.material.ron",
+      "sha256": "E1A26E654787835D33AFEFFEC767FB0829F8ACB15A9268B081E341231B424140"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_star_path_smoke.aestra.material.ron",
+      "sha256": "06C2AE7E4CE0113227B5E7127C30C67A05F1A374A7772FA0ED400B4739DBAE13"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_star.aestra.material.ron",
+      "sha256": "950D8B2257BA202B3A5B495C4776B6A608AFF0C85581E34E4B93A699DB504BF9"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_strobe_star.aestra.material.ron",
+      "sha256": "BE51C63C89FE9079B07B94787DBC746665B097EFE0E314DEAFF4EFA3E7A81608"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_trail.aestra.material.ron",
+      "sha256": "01BA1D32EFE6B032A6949661F9422FFAFA2B40FC06AEC6E1E209BA6B434B3492"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_wind_haze_smoke.aestra.material.ron",
+      "sha256": "6EE4EBF040E37D9363EF46BA260434560C15978DA685A5F12853CBE8635F5B9D"
+    },
+    {
+      "path": "assets\\test\\materials\\fireworks_wispy_smoke.aestra.material.ron",
+      "sha256": "642E3704EBC4F37110E00A1146A1641B6CB53C3E37EB451C4CBB0C4EF99E1395"
+    },
+    {
+      "path": "assets\\test\\materials\\ghost.aestra.material-preset.ron",
+      "sha256": "47C017A3B602E1CEB21735AD893D4A72E08635B30E8CC27742A9BAB50B942B88"
+    },
+    {
+      "path": "assets\\test\\materials\\hologram.aestra.material-preset.ron",
+      "sha256": "E6FAD64138AC4C1F883AB41258B37D7F1DB0C32697DFD4B58553A81C15C5B663"
+    },
+    {
+      "path": "assets\\test\\materials\\impact_flash.aestra.material-preset.ron",
+      "sha256": "F82FF9D6F8F42D55EF2DF9F77EB022CCC6AE6E579ABF3351EB7349F7407F2AEB"
+    },
+    {
+      "path": "assets\\test\\materials\\magic_shield.aestra.material-preset.ron",
+      "sha256": "77CDA3BC67599474926D0658B9D5A7F2B102ADD8A71815791C8B12856CD9DC08"
+    },
+    {
+      "path": "assets\\test\\materials\\material_graph_lab.aestra.material.ron",
+      "sha256": "F21033CA474C02F2CE0E5EEE66D8B78A237EC111EF16CABF6464E7A7D6D120AB"
+    },
+    {
+      "path": "assets\\test\\materials\\mesh_material_lab.aestra.material.ron",
+      "sha256": "235C70F3BE81B7C136D078CDF159B781CF2814387F64BEF4F1AB12B5D52AF3BD"
+    },
+    {
+      "path": "assets\\test\\materials\\periodic_gate.aestra.material-function.ron",
+      "sha256": "F08127AD7DB9F26DEB8F90E30CE9FE3A87F7C66407680EF32F252FB559FB0027"
+    },
+    {
+      "path": "assets\\test\\materials\\portal.aestra.material-preset.ron",
+      "sha256": "ADFBFABE6CFBA68E84BD3CD51C3FD640D3980B4109CB4FCC95182899E7D99A69"
+    },
+    {
+      "path": "assets\\test\\materials\\pulse_wave.aestra.material-function.ron",
+      "sha256": "EE32633BCD87F3669E67FA583697399C052EF7C2B6BA63BBC8DA0D83A3CDCCB2"
+    },
+    {
+      "path": "assets\\test\\materials\\ribbon_lab.aestra.material.ron",
+      "sha256": "637063E1A7E0D0BC7553F1DDD7195B7FA343B104CB1FEB6AAC816930A53F2B58"
+    },
+    {
+      "path": "assets\\test\\materials\\smoke_billow.aestra.material-function.ron",
+      "sha256": "6A8818220A54B6980B751601C22763B8318E73DE8C50387816E89E3BD5456C21"
+    },
+    {
+      "path": "assets\\test\\materials\\smoke_wisp.aestra.material-function.ron",
+      "sha256": "827DCE626644D242BE4DCF74BBB7C27FA4A2D80B65CA750C344198E98D9112C9"
+    },
+    {
+      "path": "assets\\test\\materials\\soft_smoke.aestra.material-preset.ron",
+      "sha256": "3A5095ADAAC7C80F80B50F6BA4D81DA5E5410017D025676D659378CFE84D5AC0"
+    },
+    {
+      "path": "assets\\test\\materials\\star_smoke_wisp.aestra.material-function.ron",
+      "sha256": "A4B190C6114DF68769445A43A7844BE952C901FA706B4E44FE94ED24086050B5"
+    },
+    {
+      "path": "assets\\test\\materials\\trail_lab.aestra.material.ron",
+      "sha256": "2C3E9DAC7E2C2E5D1E416D61E1E4CF907BE589C84B9A5DEE8B628848E1C14D78"
+    },
+    {
+      "path": "assets\\test\\materials\\wind_smoke_wisp.aestra.material-function.ron",
+      "sha256": "035E722EA2406B136E0D918AE78B02228B9657548E9DCF06BF97F9CA7F70CB4F"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_crackle_persistent_smoke.aestra.ron",
+      "sha256": "0BA33D317842C3DDC7582B12FAAA72A8DEF330FAFBF400A94512A50455BCBCD0"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_crackle_star_path_smoke.aestra.ron",
+      "sha256": "35743F68549354454D6248AB1B419E3287A75FC9372B6BD4C275BCEEE9E89B93"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_crackle_wind_haze_smoke.aestra.ron",
+      "sha256": "1DE7CA99716080D80092F25052930757D90117487A1E9AC9E09955F629DF3DB6"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_crackle_wispy_smoke.aestra.ron",
+      "sha256": "5AECB28110A3295AD9E010EE001D4B1CF0B38900FBDB9473383ECE0F0CC6D12E"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_crossette_persistent_smoke.aestra.ron",
+      "sha256": "E03E96E5037B7D6ABDFB1CAFB138BA11FB02B4446555A69FA862A151CB0C624B"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_crossette_star_path_smoke.aestra.ron",
+      "sha256": "9E327C9EF4962D66B24829117A77681B5B4FE06EB7A80FBD81A75E223670EB1C"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_crossette_wind_haze_smoke.aestra.ron",
+      "sha256": "D1B813841AE5D69FAF7B5F32A07C76B3A0169F1BCB94579784BD37458A90A7A8"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_crossette_wispy_smoke.aestra.ron",
+      "sha256": "5ED106ECFED6A58F3AC59ACB7B4F991B5890929F2BCEA00AA64EFDC36ADAFD70"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_gold_tail_lit_smoke.aestra.ron",
+      "sha256": "1CDE0F644233130CE84B7749E15092223C550E2CFFD0026687B7DD9749377B71"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_gold_tail_smoke.aestra.ron",
+      "sha256": "6EB204503F68815D50B800828BAAE39C23ACB6C458726BB5DC503D720E86CA9A"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_gold_tail_tuned_smoke.aestra.ron",
+      "sha256": "2DDB31825051A65250D7E8E3B170E6FDC8C7C10772A9DC3246C5CC35F3B2B15D"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_multi_break_persistent_smoke.aestra.ron",
+      "sha256": "0F9FC062EB024C40173DDED37A53CF4E86ADCA5984954DC4EE2C06A440B4946E"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_multi_break_star_path_smoke.aestra.ron",
+      "sha256": "26329DBD92876A3EEBA2F73692A6F60177F00A56AD25A9469C5A5E93A493D9DE"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_multi_break_wind_haze_smoke.aestra.ron",
+      "sha256": "8CB3EA3E8DDD5F1D593039CEABC023C3A7B1CA0FF351BBF73A257190AC62A7DC"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_multi_break_wispy_smoke.aestra.ron",
+      "sha256": "1CA9DE6B0D3FFA093D6479B07952113AA7F5B42A58D993D0141CDAAD2CB5B8AB"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_point_star_lit_smoke.aestra.ron",
+      "sha256": "4690423C6031E86A0D7235C92FD98867F0065D96B447AA4966EFDAB89DEFBA47"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_point_star_smoke.aestra.ron",
+      "sha256": "23B6C12926AF048202F7A89B40FE864234050EACD6421D24750E6F7B999050D5"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_point_star_tuned_smoke.aestra.ron",
+      "sha256": "AF83AA7904F1DD221FCA082511157FBA6E30907E53F6930120E5F6377232ED91"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_shell_tuned_smoke.aestra.ron",
+      "sha256": "E6DB38E1C234BCA117B0578112B217DDBBC36190B02CD1F5B65357404D2901E2"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_show_persistent_smoke.aestra.ron",
+      "sha256": "ED38F17F3A103DA58673EF753C550C291BBB6C7BB6C1C3FE5FDD3540B64634E5"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_show_star_path_smoke.aestra.ron",
+      "sha256": "53D76EEA3BE3B1DA19137CD752D293D5B3FC21988FA272328DF01A773A63D36F"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_show_wind_haze_smoke.aestra.ron",
+      "sha256": "72279C1ADB2DF4825E9B8B03EA5A43D816B42FD48FFB2A844F9AB57C24D90CBB"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_show_wispy_smoke.aestra.ron",
+      "sha256": "FC22EB440F76FC4030A6C67C5B9A71AB45CE5AAC08AA1538976C0F31F9E4979C"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_strobe_persistent_smoke.aestra.ron",
+      "sha256": "CB5629E77DDF49ABFC995C425386FEAA3CD73972FA58001BA60B2BF8D3BE9AEF"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_strobe_star_path_smoke.aestra.ron",
+      "sha256": "9C287640B505003A71E8817E94E0F534B307D3F97BDDF727206577D99F550FCC"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_strobe_wind_haze_smoke.aestra.ron",
+      "sha256": "E838DF1BC44A15C805D30321D87DFD7759F017DC669BC1A9FE883CBDBE32C84D"
+    },
+    {
+      "path": "assets\\test\\effects\\fireworks_strobe_wispy_smoke.aestra.ron",
+      "sha256": "5AB53A9C477B2987DA245F73A1A448496B08777B3A61932168EFBD78049F1A32"
+    },
+    {
+      "path": "assets/test/effects/fireworks_shell_star_lights.aestra.ron",
+      "sha256": "43544D7731A377E9A642DAE69636AACE9322D2B91E4FAA5B17EF5A7563AB8221"
+    }
+  ],
+  "preserved_asset_hashes": [
+    {
+      "sha256": "43544D7731A377E9A642DAE69636AACE9322D2B91E4FAA5B17EF5A7563AB8221",
+      "path": "assets/test/effects/fireworks_shell_star_lights.aestra.ron"
+    },
+    {
+      "sha256": "4690423C6031E86A0D7235C92FD98867F0065D96B447AA4966EFDAB89DEFBA47",
+      "path": "assets/test/effects/fireworks_point_star_lit_smoke.aestra.ron"
+    },
+    {
+      "sha256": "1CDE0F644233130CE84B7749E15092223C550E2CFFD0026687B7DD9749377B71",
+      "path": "assets/test/effects/fireworks_gold_tail_lit_smoke.aestra.ron"
+    }
+  ],
+  "runs": [
+    {
+      "group": "pair",
+      "name": "control-high",
+      "report": {
+        "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high.json",
+        "sha256": "9D8165909C3ABE049806C2BD0BD7227A8F5222015CD8BDCCF4D0843DE9691EE6"
+      },
+      "host": null,
+      "tier": "high",
+      "tuned": false,
+      "routes": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "accepted_births": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1420,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1420
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 64,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "last_alive": 0,
+      "peak_async_alive": 23301,
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 5104,
+        "observations": 1449
+      },
+      "pending_pipeline_updates": 1,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2163,
+        "frames": 1449,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      },
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "pair",
+      "name": "tuned-high",
+      "report": {
+        "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high.json",
+        "sha256": "0EC5D1B16BF9B6FA03D04372355CE266445FDD97D4267523BAA5C404577BFC9B"
+      },
+      "host": null,
+      "tier": "high",
+      "tuned": false,
+      "routes": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "accepted_births": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1417,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1417
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 64,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "last_alive": 0,
+      "peak_async_alive": 23301,
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 3210,
+        "observations": 1449
+      },
+      "pending_pipeline_updates": 1,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2163,
+        "frames": 1449,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      },
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "host",
+      "name": "control-high",
+      "report": {
+        "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high.json",
+        "sha256": "0704EF6915C4F46D2A0ED7B03E4E43B7FAEDBACB985359611471385AE6A059EC"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "tier": "high",
+      "tuned": false,
+      "routes": {
+        "main_break": 12
+      },
+      "accepted_births": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1331,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1331
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 96,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "last_alive": 0,
+      "peak_async_alive": 153867,
+      "capacity": null,
+      "pending_pipeline_updates": 1,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25302,
+        "frames": 2366,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "host",
+      "name": "tuned-high",
+      "report": {
+        "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high.json",
+        "sha256": "7E97EBC27DD9B33C13BE37A65C9466035D34E9D0CA726859F0ED6C7A6A107D81"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "tier": "high",
+      "tuned": true,
+      "routes": {
+        "main_break": 12
+      },
+      "accepted_births": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1338,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1338
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 96,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "last_alive": 0,
+      "peak_async_alive": 153907,
+      "capacity": null,
+      "pending_pipeline_updates": 1,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25523,
+        "frames": 2378,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "host-lower",
+      "name": "tuned-medium",
+      "report": {
+        "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium.json",
+        "sha256": "18A9EF89E8C4DC742E654BB70B66E83902547A6310A6507E53E50AA298E78F25"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "tier": "medium",
+      "tuned": true,
+      "routes": {
+        "main_break": 12
+      },
+      "accepted_births": {
+        "Star path smoke": 57603,
+        "Gold tail embers": 187992
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 3840,
+          "capacity_bound": 0,
+          "dispatches": 1310,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 48,
+          "sequence": 1310
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 48,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "last_alive": 0,
+      "peak_async_alive": 77177,
+      "capacity": null,
+      "pending_pipeline_updates": 1,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 24959,
+        "frames": 2340,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "host-lower",
+      "name": "tuned-low",
+      "report": {
+        "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low.json",
+        "sha256": "8EB87AD98A89A20274089FF29495D29BE1775F3517C92B1327950867268107C4"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "tier": "low",
+      "tuned": true,
+      "routes": {
+        "main_break": 12
+      },
+      "accepted_births": {
+        "Star path smoke": 29509,
+        "Gold tail embers": 98046
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 1920,
+          "capacity_bound": 0,
+          "dispatches": 1335,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 24,
+          "sequence": 1335
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 24,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "last_alive": 0,
+      "peak_async_alive": 40341,
+      "capacity": null,
+      "pending_pipeline_updates": 1,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25503,
+        "frames": 2378,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "host-cost",
+      "name": "control-high",
+      "report": {
+        "path": "target/fireworks-f8/smoke-look-host-cost-2026-10-28/control-high.json",
+        "sha256": "D9CB735FBF667699B22045F7BCEF76E52AD54A00DDA294B67A9BEAC794178AD4"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "tier": "high",
+      "tuned": false,
+      "routes": {
+        "main_break": 12
+      },
+      "accepted_births": {},
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1337,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1337
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 96,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "last_alive": 0,
+      "peak_async_alive": 153928,
+      "capacity": null,
+      "pending_pipeline_updates": 0,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25645,
+        "frames": 2384,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "ordinary_pacing": {
+        "max_ms": 66.7551,
+        "median_ms": 16.6566,
+        "over_16_67ms": 1165,
+        "over_20ms": 26,
+        "over_33_33ms": 23,
+        "p95_ms": 17.536800000000003,
+        "p99_ms": 22.849999999999998,
+        "samples": 2397
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "host-cost",
+      "name": "tuned-high",
+      "report": {
+        "path": "target/fireworks-f8/smoke-look-host-cost-2026-10-28/tuned-high.json",
+        "sha256": "3C146CCDE45BDF14AF6F9D59E079B90D3C900DD590E547B098925CDEDC84DA7D"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "tier": "high",
+      "tuned": true,
+      "routes": {
+        "main_break": 12
+      },
+      "accepted_births": {},
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1338,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1338
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 96,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "last_alive": 0,
+      "peak_async_alive": 153867,
+      "capacity": null,
+      "pending_pipeline_updates": 0,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25646,
+        "frames": 2384,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "ordinary_pacing": {
+        "max_ms": 51.062400000000004,
+        "median_ms": 16.6689,
+        "over_16_67ms": 1208,
+        "over_20ms": 26,
+        "over_33_33ms": 23,
+        "p95_ms": 17.4664,
+        "p99_ms": 31.3863,
+        "samples": 2397
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    }
+  ],
+  "image_captures": 58,
+  "evidence": [
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/manifest.json",
+      "sha256": "A5FE07EBDC38F6F736D3C6B55C8D707FB881C7F83C8A43850D7C046C206FBCA2"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-1.8s.png",
+      "sha256": "A673E4313E06E10753AE927C45D5491079C4312527884587584A19260BF00C62"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-2.8s.png",
+      "sha256": "38876F773F09C7E6472E8B8ED575007E41739B92A46EA08D3F9CBBA798379C20"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-4s.png",
+      "sha256": "872624811163F77CC30439E505559A652F7D8969D262E77B38EFB94646EED16B"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-5s.png",
+      "sha256": "D2478408B67A4FDDB4EC3FF072B5ACA2E828EF40CE5C1050830F150923F2C850"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-6.9s.png",
+      "sha256": "18F5F7D0AD55F407E35779D91F4AAE0DA0CF3610C484C410775C6EC79EE8F9AD"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-8s.png",
+      "sha256": "ED0420B54656BAD4896B7CF2D4B1A32FAF87C8F7A55DA71F0B3355D4791637A4"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-12s.png",
+      "sha256": "B911430489E9FDC7280FFA90A5534E4B6E30B9CB89C52095830E8E5224A84E1D"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-16s.png",
+      "sha256": "A594AD737216F05D692CBB91E42E0EE18A9087C5AD6280FF7E24FB932A8AB535"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high-23s.png",
+      "sha256": "AA8FA60C86A68F3312AB0C3A7ED0B19C62284E394AC1778ABE7A602FAFD0F2D7"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/control-high.json",
+      "sha256": "9D8165909C3ABE049806C2BD0BD7227A8F5222015CD8BDCCF4D0843DE9691EE6"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-1.8s.png",
+      "sha256": "44850CFDBE030973D8E51E06CDE4D40E028C65A3EC89CF73384E95D840019C11"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-2.8s.png",
+      "sha256": "9840ECC704899FA8785C8F0F21570B5A5FE982CDF1396563A80348996C465B7E"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-4s.png",
+      "sha256": "73216CB05E8B35EE8D43D4AD1C187353AC2298E1191715CC9A3B375A197B3663"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-5s.png",
+      "sha256": "AE3E1FBBFF5ACA1639F83EB6AECD6C298B7AA38F4F132AB17CB55FEA47D05D43"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-6.9s.png",
+      "sha256": "8D291DFB064B2CF29F0E87DDB744C3C348532A7E1B1728D427323DE3F1AA126C"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-8s.png",
+      "sha256": "4CFD52DD519DDCDF359E6500B4A6B9C00BF03DF42CFD262AD388E03627ECD104"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-12s.png",
+      "sha256": "2147DC26FD8635C9B96A7AFB162553BDB59342F8D68E66EEE88D25C6B10FC6F3"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-16s.png",
+      "sha256": "AA359C27262FA07081C75D475706F277CACEF97D171549186C5BAADDB4FD42C8"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high-23s.png",
+      "sha256": "AA8FA60C86A68F3312AB0C3A7ED0B19C62284E394AC1778ABE7A602FAFD0F2D7"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-pair-2026-10-28/tuned-high.json",
+      "sha256": "0EC5D1B16BF9B6FA03D04372355CE266445FDD97D4267523BAA5C404577BFC9B"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/manifest.json",
+      "sha256": "0EF30DCB66B01C2EA907F8A6D0C6AF14CD8C5B61615AE5A85A7DE8086CCA7EE7"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-1.8s.png",
+      "sha256": "ED085D545CE8A24EA0D559E97E5291EDE16F414BF1B1F7274630CDF93AD7B456"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-2.8s.png",
+      "sha256": "056211BD156C6E64725DD65C13AD734B8DCDBB2D2A361E3176294ADD502EE95A"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-4s.png",
+      "sha256": "3EF762D0B0ED7FE74104FA680B38A20AE80C5865ABF9E2581FED93EF0C3F91F6"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-5s.png",
+      "sha256": "4E5F65B8C0E4A118BA9EA438627D4920E47BE3682439412ED4DEA0EE0E3CDE05"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-6.9s.png",
+      "sha256": "B94A59CC0EEA0D20CE896628660E6D9F0068E3DD8BA67F861FCEEB55D3C7079B"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-8s.png",
+      "sha256": "161D543743F968DB22F198E6B3CAA08D617FAD27CED6CF73D6EB5E0434C95A65"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-12s.png",
+      "sha256": "2CF8DF51B21707B45FBD444E98C1FBA1248C7C8ABBA35D2509532C7BA16C3D36"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-16s.png",
+      "sha256": "03B68475D2193F9AC51F8057A93D97E17C5378AEA9F5F57E1DBC728D4541162B"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-23s.png",
+      "sha256": "F08EA52D2A4639E6E6465DE80E264FEB43F04CB9E334045ADF87E7874AFDF7CA"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high-36s.png",
+      "sha256": "0B96881F3BAD2EA927712FB36EB627E31EC46FC3C6DF6FC8A9591F6F3166315C"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/control-high.json",
+      "sha256": "0704EF6915C4F46D2A0ED7B03E4E43B7FAEDBACB985359611471385AE6A059EC"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-1.8s.png",
+      "sha256": "1A07B98536EDF40E69EC153AC6BD488F13D54F6D1FC7CAB37FE4949AAEA2F3DB"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-2.8s.png",
+      "sha256": "24AB114FDA9CF5B1F20144BE194172B6FA30E27005106727BEACDA1FB89EA523"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-4s.png",
+      "sha256": "F8421EEEF1D415DA7CE86178115E273CD25AD0E132C0E6137E6C7775651DF56A"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-5s.png",
+      "sha256": "DFBD55ED2C957FF1240541476E607044CC90CDE7C49F89807D4FF5030D893D48"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-6.9s.png",
+      "sha256": "041CD67B50B824FB3E218AA1934D93F6D978FE8D7AB3577EB0BD1B06056FBBFE"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-8s.png",
+      "sha256": "14BF8B04DBBAC71147DB52B355C7587DFEAA28D80645E46AA0025490E12F0DB4"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-12s.png",
+      "sha256": "B50C936A164D4EFA9CA78A3B4EC1A82AA2D86CE7284191A4BC458C13AC2C3B82"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-16s.png",
+      "sha256": "77DE1A64011F7E8A7DAA10B78B28C67E0A3CFD3CC7C6135F26C6F1F51CADB6A3"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-23s.png",
+      "sha256": "F08EA52D2A4639E6E6465DE80E264FEB43F04CB9E334045ADF87E7874AFDF7CA"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high-36s.png",
+      "sha256": "0B96881F3BAD2EA927712FB36EB627E31EC46FC3C6DF6FC8A9591F6F3166315C"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-2026-10-28/tuned-high.json",
+      "sha256": "7E97EBC27DD9B33C13BE37A65C9466035D34E9D0CA726859F0ED6C7A6A107D81"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/manifest.json",
+      "sha256": "ACB9C432D5A199CF39080157554860466D9016AB63B0FBCF5CD1AFF78CB27D0A"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-1.8s.png",
+      "sha256": "CE6F236959E0BDC3036DA6699873D774F8E528B8D5C428E515B565963BBA90BA"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-2.8s.png",
+      "sha256": "72E406828EB00BEF04967A0E8866506339B03DFD95AFC453F8B35DF9CE220B94"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-4s.png",
+      "sha256": "96F85041B8C7F678FD213A7F7F27C7FF910E7E356472D0D44CBD414B67648FEA"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-5s.png",
+      "sha256": "7765A3250B92D202738D7D2B22626C221A90002009667358920BD67E921DD6A9"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-6.9s.png",
+      "sha256": "97A0CF74113B1902CEC63D5683245DBAE72049B8B9005E7A13194D03DCCA41FD"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-8s.png",
+      "sha256": "4D026A843D593FE118816E4D69E86054591AF93CB9DB86E5456349CCAC1A791E"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-12s.png",
+      "sha256": "7C48ACA163E1CD63DD10557AF873367DEFA6073AA446BD542BB424D2E4297857"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-16s.png",
+      "sha256": "4EE1B7E43FFE42FFC05F5EB792017991FF6F691B7AFDF1C2477AC9FE7ED04831"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-23s.png",
+      "sha256": "43392637053B28046C01429A3DDC901E47C5F3F7C435DCA9AF9ABE2A8D1BA6B9"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium-36s.png",
+      "sha256": "7B987049349F519F0B629C49AE538A298CCD7A5DCADE0B917D2B510725DF7B09"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-medium.json",
+      "sha256": "18A9EF89E8C4DC742E654BB70B66E83902547A6310A6507E53E50AA298E78F25"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-1.8s.png",
+      "sha256": "C2C5E1D914C9735704BB7615F7A8BD371601D7EE1AE1529F39A20AD4E91A0B1A"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-2.8s.png",
+      "sha256": "DF2E2F0A0B268E876EE5D0DD6CF2B8E11A07E969168929A31F5AD20AE88D6B7E"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-4s.png",
+      "sha256": "AFEAA46226E0859DB7602B173722CB90E403ECEDA54B79E62F407AE11808ED27"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-5s.png",
+      "sha256": "4B445A96F61838C06317E2123F9474F2323E7177809AA3D430786B67DAFF98B2"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-6.9s.png",
+      "sha256": "14432455F87F7F2F81D9F9DA0063F514E7DE8B741AC25D27E51EB4134007C86E"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-8s.png",
+      "sha256": "7ECDD03BA2355B7BE63A3047374961BCE351CFAEE055AF9F20AA442D4BAAB1FF"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-12s.png",
+      "sha256": "63AAC3C200B441C154B95277C183A15B3D18F0B17095A514E5ADF2B72C18F0CB"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-16s.png",
+      "sha256": "B9E18E2503A4E2B9CFC38225038616BBB855C9E70F436D05C549412959E5AD59"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-23s.png",
+      "sha256": "0A58CCA69D544C437AFC3FB171E0B977AC3D9DB765B12D3161D39F64A182BAA6"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low-36s.png",
+      "sha256": "4E0873E462C35EFE3996B4BAEEC74C89EA1E3732451148E7E2955DC9362EBF57"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-lower-2026-10-28/tuned-low.json",
+      "sha256": "8EB87AD98A89A20274089FF29495D29BE1775F3517C92B1327950867268107C4"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-cost-2026-10-28/manifest.json",
+      "sha256": "F0E36878C681B9E72FEF83A7569B8B702A4F80E81E6F18241BC8CD672587F512"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-cost-2026-10-28/control-high.json",
+      "sha256": "D9CB735FBF667699B22045F7BCEF76E52AD54A00DDA294B67A9BEAC794178AD4"
+    },
+    {
+      "path": "target/fireworks-f8/smoke-look-host-cost-2026-10-28/tuned-high.json",
+      "sha256": "3C146CCDE45BDF14AF6F9D59E079B90D3C900DD590E547B098925CDEDC84DA7D"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/smoke-look-host-2026-10-28/pair-control.png",
+      "sha256": "18F5F7D0AD55F407E35779D91F4AAE0DA0CF3610C484C410775C6EC79EE8F9AD"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/smoke-look-host-2026-10-28/pair-tuned.png",
+      "sha256": "8D291DFB064B2CF29F0E87DDB744C3C348532A7E1B1728D427323DE3F1AA126C"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/smoke-look-host-2026-10-28/overlap-control.png",
+      "sha256": "4E5F65B8C0E4A118BA9EA438627D4920E47BE3682439412ED4DEA0EE0E3CDE05"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/smoke-look-host-2026-10-28/overlap-tuned.png",
+      "sha256": "DFBD55ED2C957FF1240541476E607044CC90CDE7C49F89807D4FF5030D893D48"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/smoke-look-host-2026-10-28/retained-smoke.png",
+      "sha256": "B50C936A164D4EFA9CA78A3B4EC1A82AA2D86CE7284191A4BC458C13AC2C3B82"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/smoke-look-host-2026-10-28/quiet.png",
+      "sha256": "0B96881F3BAD2EA927712FB36EB627E31EC46FC3C6DF6FC8A9591F6F3166315C"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/smoke-look-host-2026-10-28/overlap-low.png",
+      "sha256": "4B445A96F61838C06317E2123F9474F2323E7177809AA3D430786B67DAFF98B2"
+    }
+  ],
+  "validation": "49 audio-enabled package/authoring tests; strict Clippy both audio configurations; formatting/diff; optional owner budget can be removed in regression test and admission exceeds 24.",
+  "remaining": [
+    "Final photographic art/volume approval",
+    "Repeated active-phase GPU and host timing",
+    "Broader host launch/overload policies",
+    "General per-view transparency/layers"
+  ]
+}

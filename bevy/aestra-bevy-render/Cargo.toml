@@ -24,3 +24,4 @@ naga.workspace = true
 aestra-core = { path = "../../crates/aestra-core" }
 encase.workspace = true
 pollster.workspace = true
+serde_json.workspace = true

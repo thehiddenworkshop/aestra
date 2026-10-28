@@ -1,0 +1,30 @@
+[package]
+name = "aestra-demo-fireworks"
+description = "Host-driven fireworks demonstration built with Aestra's public Bevy API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+default-run = "fireworks"
+
+[[bin]]
+name = "fireworks"
+path = "src/main.rs"
+
+[features]
+fireworks-audio = ["bevy/wav"]
+
+[dependencies]
+aestra-bevy = { path = "../../bevy/aestra-bevy" }
+aestra-core = { path = "../../crates/aestra-core" }
+aestra-runtime = { path = "../../crates/aestra-runtime" }
+aestra-project = { path = "../../crates/aestra-project" }
+aestra-fluid = { path = "../../extensions/aestra-fluid" }
+bevy.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+aestra-compiler = { path = "../../crates/aestra-compiler" }
+wesl.workspace = true

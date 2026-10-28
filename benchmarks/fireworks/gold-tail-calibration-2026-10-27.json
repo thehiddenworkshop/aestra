@@ -1,0 +1,1390 @@
+{
+  "date": "2026-10-27",
+  "base_commit": "eba806dd",
+  "scope": "Gold-tail art candidate; all births/motion are saved modules. No renderer/runtime/default changes.",
+  "binary_sha256": "71DEAFC98121851DAEB5B8FBE792834C8A9D4832FFE24BE73ABCD399696787C9",
+  "build": {
+    "command": "cargo rustc --locked --offline -p aestra-bevy --example fireworks -- -C link-arg=/PDB:NONE",
+    "note": "Original MSVC link failed LNK1140 on the reused PDB. /PDB:NONE actually created a fresh PDB named NONE; moved afterward into ignored target/fireworks-f8/gold-tail-validation.pdb. It did not disable symbols or change Cargo profiles."
+  },
+  "density": {
+    "superseded": {
+      "spacing": 0.8,
+      "count": 2,
+      "embers_per_unit": 2.5
+    },
+    "candidate": {
+      "spacing": 0.4,
+      "count": 6,
+      "embers_per_unit": 15
+    },
+    "factor": 6
+  },
+  "iterations": [
+    {
+      "name": "initial sparse tail",
+      "outcome": "superseded art; admission passed",
+      "sources": [
+        {
+          "path": "target/fireworks-f8/gold-tail-preview-2026-10-27/sources/author_fireworks_gold_tails.rs",
+          "sha256": "DC9AA8805A3736FB68D620F1D513874174EC42C06AEDCAFE0568E95E4FC1C0C7"
+        },
+        {
+          "path": "target/fireworks-f8/gold-tail-preview-2026-10-27/sources/fireworks_gold_tail_candidate.aestra.ron",
+          "sha256": "1279CA8A7856A3F7C147D101059A68E78CB4722775310CB37ADA4523AA162408"
+        },
+        {
+          "path": "target/fireworks-f8/gold-tail-preview-2026-10-27/sources/fireworks_gold_tail_control.aestra.ron",
+          "sha256": "1B4DA065FDAED6A81B18AADC9AD3B6B72BAB7AFD18E4D7878599CD8AD28FAEA9"
+        }
+      ],
+      "report": {
+        "path": "target/fireworks-f8/gold-tail-preview-2026-10-27/candidate-high-close.json",
+        "sha256": "AA035AC8DC67FD0018B8EBE4361110ACF9770EBA233ED2F91BC32E810CBD8419"
+      },
+      "embers_accepted": 5592
+    },
+    {
+      "name": "wider two-ember tail",
+      "outcome": "superseded after user requested denser embers; admission passed",
+      "sources": [
+        {
+          "path": "target/fireworks-f8/gold-tail-refined-2026-10-27/sources/author_fireworks_gold_tails.rs",
+          "sha256": "8D6A52FECA2CE30B679FD43FEBA8E42FB2D6CF4A7983B804F21ADB71798F4DBF"
+        },
+        {
+          "path": "target/fireworks-f8/gold-tail-refined-2026-10-27/sources/fireworks_gold_tail_candidate.aestra.ron",
+          "sha256": "84A0BA47C6E6EAC44705376974D20826D852B66707B839111C255EE9709DA88B"
+        },
+        {
+          "path": "target/fireworks-f8/gold-tail-refined-2026-10-27/sources/fireworks_gold_tail_control.aestra.ron",
+          "sha256": "1B4DA065FDAED6A81B18AADC9AD3B6B72BAB7AFD18E4D7878599CD8AD28FAEA9"
+        }
+      ],
+      "report": {
+        "path": "target/fireworks-f8/gold-tail-refined-2026-10-27/candidate-high-close.json",
+        "sha256": "8C92580E3C3C476CEF4F6ABBA9DFECCE76E3AA6CA63093FA2F64A3A9B7F77BEA"
+      },
+      "embers_accepted": 11184
+    }
+  ],
+  "source_hashes": [
+    {
+      "path": "bevy/aestra-bevy/examples/author_fireworks_gold_tails.rs",
+      "sha256": "FBB4657ED64683F45311A5F96BBC223D963ADE6F5FF2A32F99A33BB3B2343F3D"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/report.rs",
+      "sha256": "CB01948092F12E923B8C1736C78E9AF41991199E8987C19095A5828509EFD7BD"
+    },
+    {
+      "path": "benchmarks/fireworks/run-point-star-review.ps1",
+      "sha256": "60689A21278BCFE84EA7ED40345F7BAF0D881EEB73CBB05991299FC2DDA8AA72"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_tail_control.aestra.ron",
+      "sha256": "1B4DA065FDAED6A81B18AADC9AD3B6B72BAB7AFD18E4D7878599CD8AD28FAEA9"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_tail_candidate.aestra.ron",
+      "sha256": "CE3396B93187B511DE27D64C85753271E03A81831AE38F88A796B4BA94D65E06"
+    }
+  ],
+  "preservation": {
+    "reference": {
+      "path": "benchmarks/fireworks/point-star-calibration-2026-10-27.json",
+      "sha256": "870C3607BFBCCCD6C9C81BE1FA407CFF67A640512925418C724C2CB55B8AB66D"
+    },
+    "verified_prior_asset_and_runtime_sources": 208
+  },
+  "runs": {
+    "control-high-audience": {
+      "tier": "high",
+      "review_camera": "audience",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 21,
+        "observations": 1087
+      },
+      "peak_async_alive": 156,
+      "last_async_alive": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87000"
+          },
+          "487v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87000"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 1,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 1,
+        "packets_seen": 3,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 1
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 1,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "487v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Control",
+          "readback_samples": 1105,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "487v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Control",
+          "readback_samples": 1105,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "487v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Control",
+          "readback_samples": 1105,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "487v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Control",
+          "readback_samples": 1105,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        }
+      },
+      "event_link_admission_truncated": false,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 1088,
+        "frames": 1088,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "report": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience.json",
+      "captures": 14
+    },
+    "control-high-close": {
+      "tier": "high",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 35,
+        "observations": 1088
+      },
+      "peak_async_alive": 156,
+      "last_async_alive": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.03333333134651184,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87000"
+          },
+          "487v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87000"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 1,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 1,
+        "packets_seen": 3,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 1
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 1,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "487v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Control",
+          "readback_samples": 1108,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "487v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Control",
+          "readback_samples": 1108,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "487v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Control",
+          "readback_samples": 1108,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "487v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Control",
+          "readback_samples": 1108,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        }
+      },
+      "event_link_admission_truncated": false,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 1088,
+        "frames": 1088,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "report": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close.json",
+      "captures": 14
+    },
+    "candidate-high-close": {
+      "tier": "high",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 90,
+        "observations": 1089
+      },
+      "peak_async_alive": 16308,
+      "last_async_alive": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          },
+          "487v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 1,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 1,
+        "packets_seen": 3,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 1
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 1,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "487v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1110,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "487v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1110,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "487v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1110,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "487v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1110,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "487v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1110,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        }
+      },
+      "event_link_admission_truncated": false,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 1089,
+        "frames": 1089,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "report": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close.json",
+      "captures": 14
+    },
+    "candidate-high-audience": {
+      "tier": "high",
+      "review_camera": "audience",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 113,
+        "observations": 1089
+      },
+      "peak_async_alive": 16308,
+      "last_async_alive": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.05000000447034836,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          },
+          "487v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 1,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 1,
+        "packets_seen": 3,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 1
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 1,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "487v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "487v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "487v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "487v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "487v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        }
+      },
+      "event_link_admission_truncated": false,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 1089,
+        "frames": 1089,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "report": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience.json",
+      "captures": 14
+    },
+    "candidate-medium-close": {
+      "tier": "medium",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 27,
+        "observations": 1089
+      },
+      "peak_async_alive": 8112,
+      "last_async_alive": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          },
+          "487v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 1,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 1,
+        "packets_seen": 3,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 1
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 1,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "487v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1109,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "487v0/1": {
+          "counts": {
+            "accepted": 32,
+            "captured_demand": 32,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1109,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "487v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1109,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "487v0/3": {
+          "counts": {
+            "accepted": 24,
+            "captured_demand": 24,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1109,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "487v0/4": {
+          "counts": {
+            "accepted": 33324,
+            "captured_demand": 33324,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1109,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        }
+      },
+      "event_link_admission_truncated": false,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 1089,
+        "frames": 1089,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "report": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close.json",
+      "captures": 14
+    },
+    "candidate-low-close": {
+      "tier": "low",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 6,
+        "observations": 1089
+      },
+      "peak_async_alive": 3921,
+      "last_async_alive": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.05000000447034836,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          },
+          "487v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 1,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 1,
+        "packets_seen": 3,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 1
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 1,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "487v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "487v0/1": {
+          "counts": {
+            "accepted": 16,
+            "captured_demand": 16,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "487v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "487v0/3": {
+          "counts": {
+            "accepted": 12,
+            "captured_demand": 12,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "487v0/4": {
+          "counts": {
+            "accepted": 15354,
+            "captured_demand": 15354,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1107,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        }
+      },
+      "event_link_admission_truncated": false,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 1089,
+        "frames": 1089,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "report": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close.json",
+      "captures": 14
+    }
+  },
+  "ordinary_cost_pair": {
+    "control": {
+      "host_intervals_including_vsync": {
+        "max_ms": 31.282999999999998,
+        "median_ms": 16.6835,
+        "over_16_67ms": 578,
+        "over_20ms": 3,
+        "over_33_33ms": 0,
+        "p95_ms": 17.2438,
+        "p99_ms": 19.102999999999998,
+        "samples": 1078
+      },
+      "pending_pipeline_updates": 0,
+      "last_async_alive": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.05000000447034836,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87000"
+          },
+          "487v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87000"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flashes_accepted": 1,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 1089,
+        "frames": 1089,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      }
+    },
+    "candidate": {
+      "host_intervals_including_vsync": {
+        "max_ms": 19.6812,
+        "median_ms": 16.6847,
+        "over_16_67ms": 573,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 17.1139,
+        "p99_ms": 18.8888,
+        "samples": 1078
+      },
+      "pending_pipeline_updates": 0,
+      "last_async_alive": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.05000000447034836,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          },
+          "487v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flashes_accepted": 1,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 1089,
+        "frames": 1089,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      }
+    }
+  },
+  "cost_scope": "One vsync-inclusive development-host pair, different authored work; no GPU timing, equivalence or production/60FPS acceptance.",
+  "evidence": [
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-0.8s.png",
+      "sha256": "68E5247370DA128B3A53295CF8BAECB7B49177DD048F520BD18D10E9F04C9AA9"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-1.3s.png",
+      "sha256": "1722315ECC6CD016C905068BB3541CBFD257A708B383D6079126AA3160DD53F2"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-1.5s.png",
+      "sha256": "C6197FCA41F69FBF377AB7406AA2CA9CFB7181DF083747D39C16AEA5B4ABC19D"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-1.8s.png",
+      "sha256": "53D74AAF8E8EE8096FC7D6D3A616B116EBC3ADAB4D9B422EB55C66098A6AE1BF"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-2.3s.png",
+      "sha256": "AF9FD683F8D9D0AE56E8121F6230778A5E20FED011731F9FA29A9FF426DA0F8A"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-2.8s.png",
+      "sha256": "B69682908A40C899A415D2CB0F9770AB323018FD46679968305AAE3C8F462E9F"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-3.3s.png",
+      "sha256": "122D143F425613DBA69F4B5A56F31C7A714DFB551DED4D7F22635D5891D70474"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-3.8s.png",
+      "sha256": "1E701FEAAE0D73D7D42A7DD97C48ED165FE486CE95C0FA5F54EF38D59977A99F"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-4.3s.png",
+      "sha256": "7969D3372A4471A923466C1AB1494487D300A2788BF02E43A189F38417E8418D"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-5s.png",
+      "sha256": "82EEAAA82D2F5E5AD22C61CF728C44E49B0239F92823D7345867E58A1BEE130A"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-6s.png",
+      "sha256": "80740D8C6DCB034CA088626120497B2D322690046458F1E4097B58CE4EA13F4B"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-7s.png",
+      "sha256": "1C5BEC7906A85F553AE852EC2FABB2411F93F90B7BF49D0FA8B84A751891A8D2"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-12s.png",
+      "sha256": "001FB3FD1B50BEB63A2DAC5DC02DA7313056BA133D51D3CCCE2A7AC6E6568761"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience-17s.png",
+      "sha256": "4BCBE86683F3A0C66FF6546B5F4459BAB4E8BAC7487BFFE3AA0C318F8B720DD1"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-audience.json",
+      "sha256": "144E5DF0D062F52E008242A52D5DD501FD4A699217184A6038AD3616EF4CA9B8"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-0.8s.png",
+      "sha256": "0B78053BAAFC9013A38B12B12366F6EF1F503025E165281FD417EC92C58485F2"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-1.3s.png",
+      "sha256": "B60EB7009FFBCB53709DFAF96A4803010292091136A7AC81866590A49A8322A2"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-1.5s.png",
+      "sha256": "2C0B8D04DE19A31429F260B6DF175B2AD2BB3B8628552DC79E8F82E6773CFA3E"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-1.8s.png",
+      "sha256": "058DEDE892E3484ABC5D5C424609A7F9953CF599E2AFD384EDCA4CEF5FEF4D05"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-2.3s.png",
+      "sha256": "07AE7E709A7B0EA3EBC8AF39E13D42FAAD450D2CD23B2BA57C01DBD03B5BF8D5"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-2.8s.png",
+      "sha256": "986898555A5A53BD055B39F9534040D4B3975CA7C5546C9DCBB9E1E11E22B301"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-3.3s.png",
+      "sha256": "0DFCE331782D68807D3FBD23C8EDBA5608F0C9E3D75081FA65D0CA8F31945D45"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-3.8s.png",
+      "sha256": "4FA0DE265423235AFF07D7109EB8C979AB5994707AA4317B85188E26E6993E84"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-4.3s.png",
+      "sha256": "66B3EFBED9FEA484A3AA7660725847D38A233C979D2E68763B152C286097DC32"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-5s.png",
+      "sha256": "7858D6940799AD98F79F9192E94484E82B4AFBE9EE024F5CEF90F50571FA1FEF"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-6s.png",
+      "sha256": "3143FC1B9B9ED668484673BADA5F3F2FAB0587EB9DCA7C4AF5C6651CA9F7691B"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-7s.png",
+      "sha256": "67E9B038E188A6DDFAD71F2E5C8C79ECFAD9976F5497EA7AE6DC62BCE97A8086"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-12s.png",
+      "sha256": "9F56B40893D6FAD72628500EC9F0DF640AE8FAC21523D1B55BB7CFF32C886D01"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close-17s.png",
+      "sha256": "05AD7C3FD40537325C2B303BFF1E931861DDB1C4CD31002FA4B83FB5415E3D03"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-final-high-2026-10-27/control-high-close.json",
+      "sha256": "99E959AF441CEED6DF2E07A5C74EE3B1F62721D7E280508E3C7A38B969F2982A"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-0.8s.png",
+      "sha256": "9429E81D74F7B298267BCB79F501DD3A8EA9867777E2852A7805F1353A97BA13"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-1.3s.png",
+      "sha256": "ACB0218F5F227EA9DF336F788267390799C3B09CD367EF8EF82AC8436B4A9910"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-1.5s.png",
+      "sha256": "0556C9769C6A6745D6097B7BCA2394C549921EB7D17FAE79C8C7601C74D475D7"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-1.8s.png",
+      "sha256": "BBBCD5074FD9DA67330B57FF3757CABFD7C023AD8FF0D345657DD551F1754BDD"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-2.3s.png",
+      "sha256": "BDC70B714BDBB7532AC2F098363B201A8D3777D934AB0983405A37AEFE0DC821"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-2.8s.png",
+      "sha256": "0DBBDED26E6EEA93314DC99AF920E2381E60BD3D3B43370060B2B4D6710696C6"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-3.3s.png",
+      "sha256": "DD86929770AA150A65DA8A73596A1C219457D35E7F37D7D30668EA6A29844401"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-3.8s.png",
+      "sha256": "E29F62A2C2D32B1AE8CF14202AB2DE7552008DF57286813BE445872682AE8D0B"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-4.3s.png",
+      "sha256": "3A4DAC5D14DDA5635C84D481F85ABE2B283AABFAD2F07F8D4BF65339076855B3"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-5s.png",
+      "sha256": "34296885CA854717DCEA1A6AFB9A8ABE424B5DD61834F7F40FBF776B7D79CE08"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-6s.png",
+      "sha256": "99DB5924A5EAFBF3A8ED53ED4F3C4806626671776E1920FD80C191F66009BEBF"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-7s.png",
+      "sha256": "67E9B038E188A6DDFAD71F2E5C8C79ECFAD9976F5497EA7AE6DC62BCE97A8086"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-12s.png",
+      "sha256": "9F56B40893D6FAD72628500EC9F0DF640AE8FAC21523D1B55BB7CFF32C886D01"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close-17s.png",
+      "sha256": "05AD7C3FD40537325C2B303BFF1E931861DDB1C4CD31002FA4B83FB5415E3D03"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-preview-2026-10-27/candidate-high-close.json",
+      "sha256": "559B87F5AF84FCAA75842641249E90CC8C8CCD1E0A6D03198D7D6EB356566ECC"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-0.8s.png",
+      "sha256": "26BDB8F92577458BC0B4E35A42387F149526D7C556CA6EE431266A840A0771A3"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-1.3s.png",
+      "sha256": "A20F6653721DF6092F28298807AE822677B4D4AA5C7B10627F8DAFBAE962DE65"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-1.5s.png",
+      "sha256": "6414CBC4FB6BD9473B8EE5D1352AB14E4A9F0D35E1183A0E0513FE9E4A067CF4"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-1.8s.png",
+      "sha256": "79D6444B49E6118FB218EDB25A1EE37B0D62A88D341483A553E886FFDAB8EE3C"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-2.3s.png",
+      "sha256": "F53781DE1BADAB23495A688C6B562EE0C4248CC535EBBA6E8C248D4C811DC6F0"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-2.8s.png",
+      "sha256": "A2B528C7C198CBA0D0FDFD87DC71766FB8407E747584F1CFC4B0530CF6975503"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-3.3s.png",
+      "sha256": "A379F970457E56C02C687297635D02AC1B8E18366DF7897BDB7AD3E7FFC2D234"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-3.8s.png",
+      "sha256": "BE74893A0B3E93BC1F078D914FA62349BD564A9907367C8FB80BF3F46C5C1EE1"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-4.3s.png",
+      "sha256": "72529EA03C4DE868C92692C125A4F79E05D9CAA11D42956085D0B1D494ED0FBA"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-5s.png",
+      "sha256": "83BA6F142A252C8A0A86500016C99D243C6FFC84C6235F939FA623E78B452297"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-6s.png",
+      "sha256": "665E1C0680751B3424CDB69967A2B3E91F5D0948647EAE6742FEE1D2E3E566AB"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-7s.png",
+      "sha256": "1C5BEC7906A85F553AE852EC2FABB2411F93F90B7BF49D0FA8B84A751891A8D2"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-12s.png",
+      "sha256": "001FB3FD1B50BEB63A2DAC5DC02DA7313056BA133D51D3CCCE2A7AC6E6568761"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience-17s.png",
+      "sha256": "4BCBE86683F3A0C66FF6546B5F4459BAB4E8BAC7487BFFE3AA0C318F8B720DD1"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-audience-2026-10-27/candidate-high-audience.json",
+      "sha256": "7117B16AA0B8561430B912D2C3871D872BAA58D637ADC95E2E7824CDBF0B8CBA"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-0.8s.png",
+      "sha256": "5F95528907F16638D2F208171E692EA32D6A0CC6E5B2FAC09C9ADD2979B4EEAF"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-1.3s.png",
+      "sha256": "F7EB2F159C6C5A97CC665FCC7EBFAACCEB5EAC0F290976DDF876798C8317A886"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-1.5s.png",
+      "sha256": "57C56305457707E318ED91DE0490013A3E2C1CB2A8DEE81B0CE919593806AB00"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-1.8s.png",
+      "sha256": "2244F42D9FDEAD9BBCD08557B0307C6680AD6E510E91128A7CE97F371FC01B57"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-2.3s.png",
+      "sha256": "A6493D44FE6BD9184C274DB7B44370A0DA3D517E5EECE9AE5BC1DEDFECD4C345"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-2.8s.png",
+      "sha256": "43D57D3B53031C6BEC55BAE17340C8D049341229A98E6A3DC354171EE846BE0E"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-3.3s.png",
+      "sha256": "F539EB46775EEA15E08EC4D7582F03FC99BCFBB7C7C02971648CEA111CF8503A"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-3.8s.png",
+      "sha256": "360205DADCCEA76C0F7E7FBF4FB47630903F75A1D190C836D6DEF9392C1DE24A"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-4.3s.png",
+      "sha256": "451B41D397BC8CD6476542481EBEE6E20AFD37327388917EFC7604F55B21950B"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-5s.png",
+      "sha256": "3CBA6827F235645FA394B827C292721F16155AF4C366FB452C33488BCFC8D304"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-6s.png",
+      "sha256": "4A236D36BD28BACC1D4EE97C82BF007B08394B88DAAFEA355E8642E66326A182"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-7s.png",
+      "sha256": "AD397D3C6FC00124B59D002C06C308BBD0C99271EE7E24E55EBC14D40A2C866D"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-12s.png",
+      "sha256": "CB80682AE8ACE02AF51F06C1545D9B040FA835EF90A7E3671A1BDEDA5F841AFC"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close-17s.png",
+      "sha256": "87B5C198B4F5AD6362CAD2186E54242BA1C42C89799461F1CC27347AB7DCEEC6"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-medium-close.json",
+      "sha256": "17A486C911C5B285A839B33A7A8F3F63CC9147DA587A42388C9E8BE296733185"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-0.8s.png",
+      "sha256": "A4D9A1D9125833CE3EE222E2887711EA3A128873B46CE48E6D478BBB0D82F5AF"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-1.3s.png",
+      "sha256": "0B920EE157F20F2BA237ADB7FAA6CDEC984517CA663422535C60FACCEDD416F9"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-1.5s.png",
+      "sha256": "7F38B8D4A26E588826C5AC6453CD3090BCEC7B51EF1DA11A3984772C1C171363"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-1.8s.png",
+      "sha256": "8887CB94ED51F542473AFA82107A106463B1275E47796D5C3420B50CBAF0C79B"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-2.3s.png",
+      "sha256": "4D26334E61E61ED21C0E45E591B76504E524A29B60A9FAEC3B70EFA83851DD17"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-2.8s.png",
+      "sha256": "B05BC2C30F823F093D7893AAE8F9FF163833E301C49F5E12768C03370573D521"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-3.3s.png",
+      "sha256": "5A26E1E078B4F2C5EAFD8A25C17CF73F45B35B3E47C2779DBBE0D4224F4C6EC9"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-3.8s.png",
+      "sha256": "EFF788D7EF58F59C02804A16F1213C1AF984BF14596A467B7667D18FE2BB7CF7"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-4.3s.png",
+      "sha256": "5CD0136BD34DCA59EEE3222FE17A0DD4FB9776F6EA9ECC25EE9D5C25FDD17C16"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-5s.png",
+      "sha256": "32377ED8E931B5E8F130A20E9C6F8CAB0CE5DFC2BF91FB2C4F829F6A0F07E1B7"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-6s.png",
+      "sha256": "4C2C40D14CCD6BBFC644345648E03A5BD3EC81D1B158A8E1BF28269CF92EEB50"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-7s.png",
+      "sha256": "3DF105616608C83150A3282043AFB856BA057EEE149F7FC3514ED0F15AE853B2"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-12s.png",
+      "sha256": "1E75C3969BC3180407E9EB1F5B39BBBB2A13C4B1371498B1ED73B2465009B2FE"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close-17s.png",
+      "sha256": "28C1ADEC082150395325DF665DAE93AA0C10717FA53F743185492E7E0C46463B"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-tiers-2026-10-27/candidate-low-close.json",
+      "sha256": "2047FEAFE5A6143E5A719689D8B02E311116A1B6A8E6258B9BC4AD5A18879449"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-cost-2026-10-27/control-high-audience.json",
+      "sha256": "2692B75F6AE78525D34354E86563E2F35757BDDE9B455280D6EB4D79F1ED471A"
+    },
+    {
+      "path": "target/fireworks-f8/gold-tail-dense-cost-2026-10-27/candidate-high-audience.json",
+      "sha256": "9DCF0669D101D3DE689E16503EFDBAC4D63D43AB2B55E021D659D8F56CB00190"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/gold-tails-2026-10-27/control.png",
+      "sha256": "986898555A5A53BD055B39F9534040D4B3975CA7C5546C9DCBB9E1E11E22B301"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/gold-tails-2026-10-27/sparse.png",
+      "sha256": "12917DFB9FC146EB8AF3A359549427A4DE775ED16EA3C396BFAD3C2541B27F90"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/gold-tails-2026-10-27/dense.png",
+      "sha256": "0DBBDED26E6EEA93314DC99AF920E2381E60BD3D3B43370060B2B4D6710696C6"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/gold-tails-2026-10-27/dense-cooling.png",
+      "sha256": "E29F62A2C2D32B1AE8CF14202AB2DE7552008DF57286813BE445872682AE8D0B"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/gold-tails-2026-10-27/dense-audience.png",
+      "sha256": "A2B528C7C198CBA0D0FDFD87DC71766FB8407E747584F1CFC4B0530CF6975503"
+    }
+  ],
+  "remaining": "Dense gold/point shells with deposited smoke; bounded relighting; show composition and ordinary repeated production-load performance."
+}

@@ -194,6 +194,7 @@ dependencies = [
  "naga",
  "pollster",
  "serde",
+ "serde_json",
  "tracing",
  "wgpu",
 ]
@@ -220,6 +221,21 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "uuid",
+]
+
+[[package]]
+name = "aestra-demo-fireworks"
+version = "0.1.0"
+dependencies = [
+ "aestra-bevy",
+ "aestra-compiler",
+ "aestra-core",
+ "aestra-fluid",
+ "aestra-project",
+ "aestra-runtime",
+ "bevy",
+ "serde_json",
+ "wesl",
 ]
 
 [[package]]

@@ -7,7 +7,7 @@ use aestra_bevy::{
     RendererProperties, RendererTypeId,
 };
 
-const MESH: AssetId = AssetId::from_u128(0xa3574a00000040008000000000f81b80);
+pub(super) const MESH: AssetId = AssetId::from_u128(0xa3574a00000040008000000000f81b80);
 
 #[derive(Clone, Copy, Debug)]
 enum Scene {
@@ -33,7 +33,7 @@ struct Layer {
     additive: bool,
 }
 
-fn sheet_project(
+pub(super) fn sheet_project(
     count: u32,
     color: [f32; 3],
     alpha: f32,

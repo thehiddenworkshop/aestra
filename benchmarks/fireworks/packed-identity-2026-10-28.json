@@ -1,0 +1,1815 @@
+{
+  "date": "2026-10-28",
+  "qualification": "Exact packed-identity pruning passes the 20-case frozen native oracle and low8 near/orbit capacity/lifecycle; high4 near still fails global capacity.",
+  "baseline": {
+    "path": "benchmarks/fireworks/host-shared-transparency-2026-10-28.json",
+    "sha256": "8cd80848aa02f321e0bd71f9dbaff21e81ec7920619996bd73d1d1f9ee333d08"
+  },
+  "runs": [
+    {
+      "name": "packed-identity-high-near",
+      "report": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high.json",
+      "report_sha256": "d8ead427284725291ef15bcfec6c89b5fd9b756140abb65ae1fdc0b6d14bfd5d",
+      "manifest_sha256": "e52506c8bd93876793d1a3e1223100e6b8a3e9ae957d28b2a7d164d9fe6c15c0",
+      "binary_sha256": "9387902B07A7E8995B08948FF469F09F9902219850002AC4A9E0B509A1E3959F",
+      "composition_sha256": "4AC4FF495D1038A8B0D58CF1EA4100246BACA663BE7FEFC484F24D5650EA75EA",
+      "arguments": [
+        "--tier",
+        "high",
+        "--no-audio",
+        "--star-lights",
+        "--launch-pattern",
+        "overlap",
+        "--max-owners",
+        "24",
+        "--tuned-smoke",
+        "--experimental-oit"
+      ],
+      "tier": "high",
+      "camera": "near",
+      "capacity": {
+        "loss_free": false,
+        "max_attempted_fragments": 20107767,
+        "max_dropped": 16421367,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14812,
+        "observations": 2404
+      },
+      "allocated_node_head_bytes": 47923200,
+      "admission_totals": {
+        "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 52864,
+          "captured_demand": 52864,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Gold tail embers": {
+          "accepted": 374514,
+          "captured_demand": 374514,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 62419,
+          "captured_demand": 62419,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        }
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1339,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1339
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 96,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "peak_async_alive": 153908,
+      "last_async_alive": 0,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25778,
+        "frames": 2402,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "captures": [
+        {
+          "seconds": 4.0,
+          "request_seconds": 4.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high-4s.png",
+          "sha256": "a06e9ec9c226a95e714205d1b1b62dec808578186f7044873c01e8f039e37351"
+        },
+        {
+          "seconds": 5.0,
+          "request_seconds": 5.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high-5s.png",
+          "sha256": "110f3721b14503b114ca447bce4e2dbdee2a2349a61f8e4a08fc710500487f80"
+        },
+        {
+          "seconds": 6.900000095367432,
+          "request_seconds": 6.900000095367432,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high-6.9s.png",
+          "sha256": "e72421ab5f26a65b49f2f08db67b5df03ffe46012490573910265895944684b1"
+        },
+        {
+          "seconds": 8.0,
+          "request_seconds": 8.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high-8s.png",
+          "sha256": "95e2bd16e7f67954535d94e024b0ad6b575dd3775baf1df060f08287b83420e3"
+        },
+        {
+          "seconds": 12.0,
+          "request_seconds": 12.016666412353516,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high-12s.png",
+          "sha256": "91b5eab68e55eed061daa738833196fdd32072d0ac9e6692bb78deb550248e9f"
+        },
+        {
+          "seconds": 16.0,
+          "request_seconds": 16.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high-16s.png",
+          "sha256": "f915852e95f74f1c5aedf5b56ff31882c98f8dbd4c776d6c0f25728aff07ad79"
+        },
+        {
+          "seconds": 23.0,
+          "request_seconds": 23.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high-23s.png",
+          "sha256": "a8bb575acf2872f1c6245ec90aed8a00f1d30e091ecc1350863f9989eae63f62"
+        },
+        {
+          "seconds": 36.0,
+          "request_seconds": 36.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-2026-10-28/tuned-high-36s.png",
+          "sha256": "f259e036510620ef9185395bc9d75ac45fe7e295576b11710385512bdddc8b1e"
+        }
+      ]
+    },
+    {
+      "name": "packed-identity-low-near8",
+      "report": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low.json",
+      "report_sha256": "ebee0668bb64f95bf352125407e59c4ce99661c27667f3f2a6b1a3250e5c837f",
+      "manifest_sha256": "16642aef32617d84c28171ed8195c9cc292de4156ec434063323deb03faff143",
+      "binary_sha256": "9387902B07A7E8995B08948FF469F09F9902219850002AC4A9E0B509A1E3959F",
+      "composition_sha256": "4AC4FF495D1038A8B0D58CF1EA4100246BACA663BE7FEFC484F24D5650EA75EA",
+      "arguments": [
+        "--tier",
+        "low",
+        "--no-audio",
+        "--star-lights",
+        "--launch-pattern",
+        "overlap",
+        "--max-owners",
+        "24",
+        "--tuned-smoke",
+        "--experimental-oit",
+        "--oit-fragments-per-pixel",
+        "8"
+      ],
+      "tier": "low",
+      "camera": "near",
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5542656,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 2171,
+        "observations": 2399
+      },
+      "allocated_node_head_bytes": 92160000,
+      "admission_totals": {
+        "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 13168,
+          "captured_demand": 13168,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Gold tail embers": {
+          "accepted": 98046,
+          "captured_demand": 98046,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 16341,
+          "captured_demand": 16341,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        }
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 1920,
+          "capacity_bound": 0,
+          "dispatches": 1330,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 24,
+          "sequence": 1330
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 24,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "peak_async_alive": 40343,
+      "last_async_alive": 0,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25581,
+        "frames": 2394,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "captures": [
+        {
+          "seconds": 4.0,
+          "request_seconds": 4.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low-4s.png",
+          "sha256": "392a0ef80d93b889919e5d403b9aa32583c2a6c87357672806bb28d86f2bd6fb"
+        },
+        {
+          "seconds": 5.0,
+          "request_seconds": 5.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low-5s.png",
+          "sha256": "1f1e1da6915199f997b05d847bd356cee202622b9a2771d51785f119d10b7bae"
+        },
+        {
+          "seconds": 6.900000095367432,
+          "request_seconds": 6.900000095367432,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low-6.9s.png",
+          "sha256": "e7cffe205b4c91ec4c16d4f93d55add8c57e7c135c8d9020d37873eb3166ffe1"
+        },
+        {
+          "seconds": 8.0,
+          "request_seconds": 8.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low-8s.png",
+          "sha256": "74579ed812ecb4d9b4f0457825479b2604f9eab100f7a7656aacdfe50b8e403a"
+        },
+        {
+          "seconds": 12.0,
+          "request_seconds": 12.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low-12s.png",
+          "sha256": "6647247cdc877721747de311b1afb3b25fd9a31e6343f86b105663bed3235b10"
+        },
+        {
+          "seconds": 16.0,
+          "request_seconds": 16.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low-16s.png",
+          "sha256": "736579b3698306ec4f111f3e50a002f2a58027d300bc8b5f5a5edfb7ab1da2d7"
+        },
+        {
+          "seconds": 23.0,
+          "request_seconds": 23.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low-23s.png",
+          "sha256": "8bdc0f31120ef685abb5153002eebb00c2841ed60250408bc9f64bd3e2fe1f15"
+        },
+        {
+          "seconds": 36.0,
+          "request_seconds": 36.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-2026-10-28/tuned-low-36s.png",
+          "sha256": "b09f2f79bd21d9e500d3e029faa7c20f1d170f4e3ee33f31d065159bdf061d6a"
+        }
+      ]
+    },
+    {
+      "name": "packed-identity-high-near-final",
+      "report": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high.json",
+      "report_sha256": "f86260fccd5415659d5df6efb1455799ff4e81b844fa1c41f7292146fd692246",
+      "manifest_sha256": "cad73146bd6890fa0e22ee642f3698d99d2411d3a6cb967b09288d72ed61a3fa",
+      "binary_sha256": "1E02437285108E6F575F90002C40A0D1B4F5722FCF747A730F5D2E7ADFA70775",
+      "composition_sha256": "4D6DD26A1AE4CC59EF118C2D3ED41E284C41AD66FA8E939AE2544C5BD17B726C",
+      "arguments": [
+        "--tier",
+        "high",
+        "--no-audio",
+        "--star-lights",
+        "--launch-pattern",
+        "overlap",
+        "--max-owners",
+        "24",
+        "--tuned-smoke",
+        "--experimental-oit"
+      ],
+      "tier": "high",
+      "camera": "near",
+      "capacity": {
+        "loss_free": false,
+        "max_attempted_fragments": 20107637,
+        "max_dropped": 16421237,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14806,
+        "observations": 2408
+      },
+      "allocated_node_head_bytes": 47923200,
+      "admission_totals": {
+        "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 52864,
+          "captured_demand": 52864,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Gold tail embers": {
+          "accepted": 374514,
+          "captured_demand": 374514,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 62419,
+          "captured_demand": 62419,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        }
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1338,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1338
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 96,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "peak_async_alive": 153908,
+      "last_async_alive": 0,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25778,
+        "frames": 2402,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "captures": [
+        {
+          "seconds": 4.0,
+          "request_seconds": 4.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high-4s.png",
+          "sha256": "95b26e7a6f829f7ef28a2514e1096ca43148c6a6d7bbe0d6cef355f372e2c913"
+        },
+        {
+          "seconds": 5.0,
+          "request_seconds": 5.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high-5s.png",
+          "sha256": "b3679b8b9036c793907af6c1f0cec40502df0121cb31b352c8ad581bccdfce6f"
+        },
+        {
+          "seconds": 6.900000095367432,
+          "request_seconds": 6.900000095367432,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high-6.9s.png",
+          "sha256": "2d39d3a3d2726c402e572744bb818129591dc90fb7c5627c24aa52386e81aced"
+        },
+        {
+          "seconds": 8.0,
+          "request_seconds": 8.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high-8s.png",
+          "sha256": "be63818239d7501a6acf3c0f18fed579a56fe579e2d08594399bb39f72ff5ef2"
+        },
+        {
+          "seconds": 12.0,
+          "request_seconds": 12.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high-12s.png",
+          "sha256": "6053176360973d2f2a5ed4b5f3e84e534765e648ab8544bde476b060565b5505"
+        },
+        {
+          "seconds": 16.0,
+          "request_seconds": 16.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high-16s.png",
+          "sha256": "f915852e95f74f1c5aedf5b56ff31882c98f8dbd4c776d6c0f25728aff07ad79"
+        },
+        {
+          "seconds": 23.0,
+          "request_seconds": 23.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high-23s.png",
+          "sha256": "3b9f7c29c5c4b56ecbf32164f2005c82c65141eda788ee1c796ddc7b7f06909f"
+        },
+        {
+          "seconds": 36.0,
+          "request_seconds": 36.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-high-near-final-2026-10-28/tuned-high-36s.png",
+          "sha256": "e17c12b74024ad674a6cb425fe32c435b8231fcad702192370abde990e6de45a"
+        }
+      ]
+    },
+    {
+      "name": "packed-identity-low-near8-final",
+      "report": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low.json",
+      "report_sha256": "7bf50f40def534b35759e7f3d9a6d1c6d160b05d79b4010392c7c05630d17ce9",
+      "manifest_sha256": "a18015bd3c9782a971454fa57523f6dc107df5ee753fc35cd585bb43725046d7",
+      "binary_sha256": "1E02437285108E6F575F90002C40A0D1B4F5722FCF747A730F5D2E7ADFA70775",
+      "composition_sha256": "4D6DD26A1AE4CC59EF118C2D3ED41E284C41AD66FA8E939AE2544C5BD17B726C",
+      "arguments": [
+        "--tier",
+        "low",
+        "--no-audio",
+        "--star-lights",
+        "--launch-pattern",
+        "overlap",
+        "--max-owners",
+        "24",
+        "--tuned-smoke",
+        "--experimental-oit",
+        "--oit-fragments-per-pixel",
+        "8"
+      ],
+      "tier": "low",
+      "camera": "near",
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5542579,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 2160,
+        "observations": 2405
+      },
+      "allocated_node_head_bytes": 92160000,
+      "admission_totals": {
+        "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 13168,
+          "captured_demand": 13168,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Gold tail embers": {
+          "accepted": 98046,
+          "captured_demand": 98046,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 16341,
+          "captured_demand": 16341,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        }
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 1920,
+          "capacity_bound": 0,
+          "dispatches": 1338,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 24,
+          "sequence": 1338
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 24,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "peak_async_alive": 40333,
+      "last_async_alive": 0,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25804,
+        "frames": 2400,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "captures": [
+        {
+          "seconds": 4.0,
+          "request_seconds": 4.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low-4s.png",
+          "sha256": "552c64e025c0a5abf5e71be0312654bf8160bbf642a139e1c0b38f106b592796"
+        },
+        {
+          "seconds": 5.0,
+          "request_seconds": 5.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low-5s.png",
+          "sha256": "4c3d71cf033184ec3c1afd7a74756e3378c2c20fc61a6b70278f1019730644ae"
+        },
+        {
+          "seconds": 6.900000095367432,
+          "request_seconds": 6.900000095367432,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low-6.9s.png",
+          "sha256": "9514550d7ac2e80ba828b663f56048d42b44aebaa22fcf7394b143ffe5e5f997"
+        },
+        {
+          "seconds": 8.0,
+          "request_seconds": 8.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low-8s.png",
+          "sha256": "78cddfa6cc23bdf0268e348170fc1391a63b3feb2f2fcaee7d6db9cc47aaa3fe"
+        },
+        {
+          "seconds": 12.0,
+          "request_seconds": 12.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low-12s.png",
+          "sha256": "c47da37defa71e242028bba02f01bc13aafe7dcaa5a86ff5a8488ca35a080776"
+        },
+        {
+          "seconds": 16.0,
+          "request_seconds": 16.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low-16s.png",
+          "sha256": "4c51d38b53f7fa68496cd89cfeb75fafecf98875ef456c84a0ce0930eda49819"
+        },
+        {
+          "seconds": 23.0,
+          "request_seconds": 23.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low-23s.png",
+          "sha256": "b567fa1ae0c15c1802a99db893199b61f1b5ace670f4741cb237dec1296c4fb0"
+        },
+        {
+          "seconds": 36.0,
+          "request_seconds": 36.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-near8-final-2026-10-28/tuned-low-36s.png",
+          "sha256": "b09f2f79bd21d9e500d3e029faa7c20f1d170f4e3ee33f31d065159bdf061d6a"
+        }
+      ]
+    },
+    {
+      "name": "packed-identity-low-orbit8-final",
+      "report": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low.json",
+      "report_sha256": "1d09d89926c6c99d03fe15058b530ad477f9472e6efc62ca7d132d1181c4207c",
+      "manifest_sha256": "f16fb65bf3b8b884c109d848e9405db82405f9ffd2893217a4615d28c67a765c",
+      "binary_sha256": "1E02437285108E6F575F90002C40A0D1B4F5722FCF747A730F5D2E7ADFA70775",
+      "composition_sha256": "4D6DD26A1AE4CC59EF118C2D3ED41E284C41AD66FA8E939AE2544C5BD17B726C",
+      "arguments": [
+        "--tier",
+        "low",
+        "--no-audio",
+        "--star-lights",
+        "--launch-pattern",
+        "overlap",
+        "--max-owners",
+        "24",
+        "--tuned-smoke",
+        "--experimental-oit",
+        "--oit-fragments-per-pixel",
+        "8"
+      ],
+      "tier": "low",
+      "camera": "orbit",
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 1854671,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 8271,
+        "observations": 2408
+      },
+      "allocated_node_head_bytes": 92160000,
+      "admission_totals": {
+        "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 13168,
+          "captured_demand": 13168,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Gold tail embers": {
+          "accepted": 98046,
+          "captured_demand": 98046,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look \u2014 host detonation / Main stars -> Star path smoke": {
+          "accepted": 16341,
+          "captured_demand": 16341,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        }
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 1920,
+          "capacity_bound": 0,
+          "dispatches": 1338,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 24,
+          "sequence": 1338
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 24,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "peak_async_alive": 40343,
+      "last_async_alive": 0,
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 25654,
+        "frames": 2397,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.0,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": null
+      },
+      "captures": [
+        {
+          "seconds": 6.0,
+          "request_seconds": 6.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.041406985372304916,
+              0.6618214249610901,
+              0.03665507212281227,
+              0.7476190328598022
+            ],
+            "translation": [
+              178.67091369628906,
+              48.0,
+              21.83356285095215
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-6s.png",
+          "sha256": "26023243bb940505d49ca8aa4301d000fddfffc64cde5ed8a803ef3a79e4e964"
+        },
+        {
+          "seconds": 6.5,
+          "request_seconds": 6.5,
+          "pose": {
+            "rotation_xyzw": [
+              -0.0382896363735199,
+              0.7204158902168274,
+              0.03990033268928528,
+              0.6913341283798218
+            ],
+            "translation": [
+              179.8472900390625,
+              48.0,
+              -7.412781715393066
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-6.5s.png",
+          "sha256": "d900096a10a9fff80eb378614fe909a0007c132c7f36a8bf067fbdb43837e41b"
+        },
+        {
+          "seconds": 7.0,
+          "request_seconds": 7.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.035807836800813675,
+              0.7608864903450012,
+              0.04214180260896683,
+              0.6465242505073547
+            ],
+            "translation": [
+              177.63861083984375,
+              48.0,
+              -29.060699462890625
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-7s.png",
+          "sha256": "4e48352bd74819222c8171b11f3365b10036106d051fad68e95f07d65d8f524f"
+        },
+        {
+          "seconds": 7.5,
+          "request_seconds": 7.5,
+          "pose": {
+            "rotation_xyzw": [
+              -0.03421381115913391,
+              0.7844328284263611,
+              0.04344592243432999,
+              0.6177434325218201
+            ],
+            "translation": [
+              174.98329162597656,
+              48.0,
+              -42.2000617980957
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-7.5s.png",
+          "sha256": "e72019551179aa5984c6b01e189b9ec84fe87cfefe6f88dc71d2eb17f563a069"
+        },
+        {
+          "seconds": 8.0,
+          "request_seconds": 8.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.03366474434733391,
+              0.7921392917633057,
+              0.04387275129556656,
+              0.6078299283981323
+            ],
+            "translation": [
+              173.8666534423828,
+              48.0,
+              -46.58742904663086
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-8s.png",
+          "sha256": "1925480394c7eb03f39a35df7f140c13cf71a0b858f9bc17e504ddc098aba301"
+        },
+        {
+          "seconds": 8.5,
+          "request_seconds": 8.5,
+          "pose": {
+            "rotation_xyzw": [
+              -0.03421381488442421,
+              0.7844328284263611,
+              0.04344592243432999,
+              0.6177435517311096
+            ],
+            "translation": [
+              174.98330688476562,
+              48.0,
+              -42.200042724609375
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-8.5s.png",
+          "sha256": "9d7a712159cc82855ec875217b5f4ea2620edf5f4fd8061330bb34bb851c9526"
+        },
+        {
+          "seconds": 9.0,
+          "request_seconds": 9.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.03580784052610397,
+              0.7608863711357117,
+              0.04214179888367653,
+              0.6465243101119995
+            ],
+            "translation": [
+              177.63861083984375,
+              48.0,
+              -29.06065559387207
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-9s.png",
+          "sha256": "6115b4398982d94993cc8e4b1783c0061db79d8f25d417631c7047111763cb3c"
+        },
+        {
+          "seconds": 9.5,
+          "request_seconds": 9.5,
+          "pose": {
+            "rotation_xyzw": [
+              -0.038289640098810196,
+              0.7204157114028931,
+              0.03990032896399498,
+              0.6913341879844666
+            ],
+            "translation": [
+              179.8472900390625,
+              48.0,
+              -7.412738800048828
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-9.5s.png",
+          "sha256": "9d48814fa2fed099ba40ea42943aff2244aa039c0227baf8e743580ef16a1926"
+        },
+        {
+          "seconds": 10.0,
+          "request_seconds": 10.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.041406985372304916,
+              0.6618213653564453,
+              0.03665506839752197,
+              0.747619092464447
+            ],
+            "translation": [
+              178.67091369628906,
+              48.0,
+              21.833585739135742
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-10s.png",
+          "sha256": "0580477b9a85e951ea042cc8331c2857e46fd8a143b009e555000d8ddfc280ea"
+        },
+        {
+          "seconds": 12.0,
+          "request_seconds": 12.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.05341607332229614,
+              0.25842300057411194,
+              0.014312795363366604,
+              0.9644477963447571
+            ],
+            "translation": [
+              90.0,
+              48.0,
+              155.8845672607422
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-12s.png",
+          "sha256": "6f5cd6d434e40bb98cb56b2987b5eacc3b79f86809c44c2c8ed3326a79cd2844"
+        },
+        {
+          "seconds": 16.0,
+          "request_seconds": 16.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.051090896129608154,
+              -0.38209787011146545,
+              -0.021162543445825577,
+              0.9224658012390137
+            ],
+            "translation": [
+              -127.27922058105469,
+              48.0,
+              127.27922058105469
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-16s.png",
+          "sha256": "5bb5536764629382ee3abce233e356daa77e352ae97e00e62581875a30d7b0db"
+        },
+        {
+          "seconds": 23.0,
+          "request_seconds": 23.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.03580784052610397,
+              0.7608863711357117,
+              0.04214179888367653,
+              0.6465243101119995
+            ],
+            "translation": [
+              177.63861083984375,
+              48.0,
+              -29.06065559387207
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-23s.png",
+          "sha256": "6d19e5b6bc03f9d84b34562609c66aef7722a3537140b082b1874485d993e74f"
+        },
+        {
+          "seconds": 36.0,
+          "request_seconds": 36.0,
+          "pose": {
+            "rotation_xyzw": [
+              -0.05341607332229614,
+              0.25842300057411194,
+              0.014312795363366604,
+              0.9644477963447571
+            ],
+            "translation": [
+              90.0,
+              48.0,
+              155.8845672607422
+            ]
+          },
+          "path": "target/fireworks-f8/packed-identity-low-orbit8-final-2026-10-28/tuned-low-36s.png",
+          "sha256": "d18e22d8a4257a19eaa9c9338a332af9ff012e43b0a0ace8fd3ff686d01bb14f"
+        }
+      ]
+    }
+  ],
+  "oracle": {
+    "cases": [
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 0.0,
+        "name": "tiny-alpha-rgb-view-0",
+        "particles": 64
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 0.0,
+        "name": "black-additive-view-0",
+        "particles": 64
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 0.0,
+        "name": "tiny-additive-view-0",
+        "particles": 64
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562504529953,
+          0.2015562504529953,
+          0.2015562504529953
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 2.9802322387695312e-08,
+        "name": "below-rgb-half-step-view-0",
+        "particles": 64
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562504529953,
+          0.2015562504529953,
+          0.2015562504529953
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 2.9802322387695312e-08,
+        "name": "above-rgb-half-step-view-0",
+        "particles": 1
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 0.0,
+        "name": "below-alpha-half-step-view-0",
+        "particles": 64
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.19806934893131256,
+          0.19806934893131256,
+          0.19806934893131256
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.20076580345630646,
+          0.20076580345630646,
+          0.20076580345630646
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 0.0026964545249938965,
+        "name": "above-alpha-half-step-view-0",
+        "particles": 1
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.09989878535270691,
+          0.09989878535270691,
+          0.09989878535270691
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.10038289427757263,
+          0.10038289427757263,
+          0.10038289427757263
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 0.00048410892486572266,
+        "name": "black-absorber-view-0",
+        "particles": 1
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.20863696932792664,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2095562219619751,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 0.0009192526340484619,
+        "name": "sub-alpha-emission-view-0",
+        "particles": 1
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.32777801156044006,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.3265562057495117,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 0.0012218058109283447,
+        "name": "additive-light-view-0",
+        "particles": 1
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 0.0,
+        "name": "tiny-alpha-rgb-view-1",
+        "particles": 64
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 0.0,
+        "name": "black-additive-view-1",
+        "particles": 64
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 0.0,
+        "name": "tiny-additive-view-1",
+        "particles": 64
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562504529953,
+          0.2015562504529953,
+          0.2015562504529953
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 2.9802322387695312e-08,
+        "name": "below-rgb-half-step-view-1",
+        "particles": 64
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562504529953,
+          0.2015562504529953,
+          0.2015562504529953
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 2.9802322387695312e-08,
+        "name": "above-rgb-half-step-view-1",
+        "particles": 1
+      },
+      {
+        "attempts": 47524,
+        "center_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2015562206506729,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": true,
+        "invalid_links": 0,
+        "max_linear_error": 0.0,
+        "name": "below-alpha-half-step-view-1",
+        "particles": 64
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.19806934893131256,
+          0.19806934893131256,
+          0.19806934893131256
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.20076580345630646,
+          0.20076580345630646,
+          0.20076580345630646
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 0.0026964545249938965,
+        "name": "above-alpha-half-step-view-1",
+        "particles": 1
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.09989878535270691,
+          0.09989878535270691,
+          0.09989878535270691
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.10038289427757263,
+          0.10038289427757263,
+          0.10038289427757263
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 0.00048410892486572266,
+        "name": "black-absorber-view-1",
+        "particles": 1
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.20863696932792664,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.2095562219619751,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 0.0009192526340484619,
+        "name": "sub-alpha-emission-view-1",
+        "particles": 1
+      },
+      {
+        "attempts": 101348,
+        "center_linear": [
+          0.32777801156044006,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "control_attempts": 47524,
+        "dropped": 0,
+        "expected_linear": [
+          0.3265562057495117,
+          0.2015562206506729,
+          0.2015562206506729
+        ],
+        "identity": false,
+        "invalid_links": 0,
+        "max_linear_error": 0.0012218058109283447,
+        "name": "additive-light-view-1",
+        "particles": 1
+      }
+    ],
+    "passed": true,
+    "scope": "Native RGB9E5 and rounded-alpha packing, 20 opposite-view semantic-mesh cases. Exact identities only; not an epsilon policy or arbitrary-density qualification.",
+    "report": "target/fireworks-f8/packed-identity-oracle-boundaries-2026-10-28/fragment-list-packed-identity/report.json",
+    "report_sha256": "7b31783b007c4fcaf28e8dfab031f3a7ce7429c3b6262891728ce6af19a5db54",
+    "binary_sha256": "60a66e91890624692ab8c6af8f361cba0041a7c91fa44e04fef5484f7745b7f4",
+    "log_sha256": "b62f41a3cf80b307b85527def897619ae02f10a7db43445b17b52b2ae9512cca"
+  },
+  "demand": {
+    "baseline_observed_attempts": 22830479,
+    "final_observed_attempts": 20107637,
+    "removed_peak_attempts": 2722842,
+    "fraction_reduction": 0.11926346354800532,
+    "final_observed_nodes_heads_required_bytes": 244978044,
+    "unchanged_ceiling_bytes": 134217728,
+    "scope": "Observed asynchronous peak comparison, not per-frame paired counters. Fixed allocated bytes remain unchanged. First high run overlaps renderer tests; final high repeat has no concurrent GPU test."
+  },
+  "animated_low_comparison": {
+    "rows": [
+      {
+        "nominal_seconds": 4.0,
+        "request_time_delta": 0.0,
+        "scene_max_byte_error": 194,
+        "scene_mean_byte_error": 0.05526925223214286,
+        "scene_changed_pixels": 25030
+      },
+      {
+        "nominal_seconds": 5.0,
+        "request_time_delta": 0.0,
+        "scene_max_byte_error": 159,
+        "scene_mean_byte_error": 0.19702334449404763,
+        "scene_changed_pixels": 124403
+      },
+      {
+        "nominal_seconds": 6.900000095367432,
+        "request_time_delta": 0.0,
+        "scene_max_byte_error": 14,
+        "scene_mean_byte_error": 0.02334356398809524,
+        "scene_changed_pixels": 18894
+      },
+      {
+        "nominal_seconds": 8.0,
+        "request_time_delta": 0.0,
+        "scene_max_byte_error": 202,
+        "scene_mean_byte_error": 0.41094354538690475,
+        "scene_changed_pixels": 148946
+      },
+      {
+        "nominal_seconds": 12.0,
+        "request_time_delta": -0.016666412353515625,
+        "scene_max_byte_error": 2,
+        "scene_mean_byte_error": 0.006395554315476191,
+        "scene_changed_pixels": 13322
+      },
+      {
+        "nominal_seconds": 16.0,
+        "request_time_delta": 0.0,
+        "scene_max_byte_error": 1,
+        "scene_mean_byte_error": 0.00011114211309523809,
+        "scene_changed_pixels": 239
+      },
+      {
+        "nominal_seconds": 23.0,
+        "request_time_delta": 0.0,
+        "scene_max_byte_error": 0,
+        "scene_mean_byte_error": 0.0,
+        "scene_changed_pixels": 0
+      },
+      {
+        "nominal_seconds": 36.0,
+        "request_time_delta": 0.0,
+        "scene_max_byte_error": 0,
+        "scene_mean_byte_error": 0.0,
+        "scene_changed_pixels": 0
+      }
+    ],
+    "scope": "RGB y=120..680, all x; HUD excluded. Asynchronous forward captures retain nonzero byte differences and cannot establish exact image equivalence. Frozen neutral-sheet controls require exact full-image equality."
+  },
+  "final_source_sha256": {
+    "bevy/aestra-bevy-render/src/gpu/shader_composition.rs": "4d6dd26a1ae4cc59ef118c2d3ed41e284c41ad66fa8e939ae2544c5bd17b726c",
+    "apps/aestra-viewer/src/volume_light_images/cross_pool_identity.rs": "c9d862b28845ac395b2d8c19c2823ca19f55ac6fa9eb809ab29c9d988e715642",
+    "apps/aestra-viewer/src/volume_light_images/cross_pool_oit.rs": "64fa55ec49815fff1524644b34bc34dbf2898e24f9a8f143e589de11c7ccd9d3",
+    "apps/aestra-viewer/src/volume_light_images/cross_pool_overflow.rs": "4a989ce955716725734344b0518bb6e2b129cf81ee09b84612d5d02304e4ec6a",
+    "demos/fireworks/src/report.rs": "33e8258a26100cb87bb3cd3a6d8ba918a2c633d1082d68291105d4c1e0c3e11b",
+    "benchmarks/fireworks/run-smoke-look-review.ps1": "98c74342a9efac806f7c70dd87a87b7057f02365d043672b3a686a2ff73c9a5f"
+  },
+  "limits": "No new visibility epsilon, particle reduction, owner limit, target scaling or memory-ceiling change. Only existing packed RGB9E5/alpha8 identities are removed. Ordinary rendering is unchanged. No before/after GPU cost acceptance; extra packing/branch work is not claimed free. Global loss, arbitrary depth ties and mixed-scene restrictions remain."
+}

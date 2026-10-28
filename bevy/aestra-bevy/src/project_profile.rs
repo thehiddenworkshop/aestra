@@ -197,17 +197,19 @@ mod tests {
             dependencies: BTreeMap::from([(carrier.source, carrier), (leaf.source, leaf.clone())]),
         });
         let mut app = App::new();
-        app.init_resource::<GpuCapabilities>().add_systems(
-            Update,
-            (
-                prepare_player_presentations,
-                prepare_effect_profiles,
-                project::sync_project_instances,
-                sync_player_presentations,
-                update_project_profiles,
-            )
-                .chain(),
-        );
+        app.init_resource::<GpuCapabilities>()
+            .init_resource::<crate::EffectPresentationCache>()
+            .add_systems(
+                Update,
+                (
+                    prepare_player_presentations,
+                    prepare_effect_profiles,
+                    project::sync_project_instances,
+                    sync_player_presentations,
+                    update_project_profiles,
+                )
+                    .chain(),
+            );
         let spawn = |app: &mut App| {
             app.world_mut()
                 .spawn((

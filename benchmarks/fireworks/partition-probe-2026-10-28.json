@@ -1,0 +1,1036 @@
+{
+  "date": "2026-10-28",
+  "qualification": "Isolated exact-HDR partition feasibility passes; memory/time tradeoff, no runtime/default adoption.",
+  "runs": [
+    {
+      "adapter": {
+        "backend": "Vulkan",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "analytic_patch_max_error": 0.0034084320068359375,
+      "cases": [
+        {
+          "aggregate_only": {
+            "max_ms": 0.315392,
+            "p50_ms": 0.295936,
+            "p95_ms": 0.313344,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.058367999999999996,
+            "p50_ms": 0.057344,
+            "p95_ms": 0.058367999999999996,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.31929599999999997,
+            "p50_ms": 0.305152,
+            "p95_ms": 0.31744,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-reference",
+          "node_capacity": 2380848,
+          "node_head_bytes": 28768580,
+          "regions": 1,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.09318399999999999,
+            "p50_ms": 0.079872,
+            "p95_ms": 0.09318399999999999,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.158336,
+            "p50_ms": 0.15481599999999998,
+            "p95_ms": 0.158016,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.316416,
+            "p50_ms": 0.294912,
+            "p95_ms": 0.3072,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.055296,
+            "p50_ms": 0.055136,
+            "p95_ms": 0.055296,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.325536,
+            "p50_ms": 0.302016,
+            "p95_ms": 0.31839999999999996,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-tight-control",
+          "node_capacity": 1228172,
+          "node_head_bytes": 14936468,
+          "regions": 1,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.10336,
+            "p50_ms": 0.078848,
+            "p95_ms": 0.094208,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.15756799999999999,
+            "p50_ms": 0.15523199999999998,
+            "p95_ms": 0.157056,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.054272,
+            "p50_ms": 0.052224,
+            "p95_ms": 0.053248,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.030656,
+            "p50_ms": 0.028672,
+            "p95_ms": 0.029696,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.061439999999999995,
+            "p50_ms": 0.059392,
+            "p95_ms": 0.061439999999999995,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 1029768,
+          "exact_reference_match": false,
+          "expected_healthy": false,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-small-negative",
+          "node_capacity": 198404,
+          "node_head_bytes": 2579252,
+          "regions": 1,
+          "repeat_image_match": false,
+          "resolve": {
+            "max_ms": 0.008192,
+            "p50_ms": 0.007168,
+            "p95_ms": 0.008192,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": false,
+          "sort": {
+            "max_ms": 0.01328,
+            "p50_ms": 0.011328,
+            "p95_ms": 0.012544,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.6092799999999999,
+            "p50_ms": 0.598016,
+            "p95_ms": 0.607232,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 369012,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.06752,
+            "p50_ms": 0.065536,
+            "p95_ms": 0.067488,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.651264,
+            "p50_ms": 0.637952,
+            "p95_ms": 0.643072,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 24,
+          "draw_submissions": 192,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            2,
+            2
+          ],
+          "name": "four-regions",
+          "node_capacity": 600624,
+          "node_head_bytes": 7405892,
+          "regions": 4,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.177152,
+            "p50_ms": 0.172,
+            "p95_ms": 0.17715199999999998,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.340832,
+            "p50_ms": 0.333792,
+            "p95_ms": 0.3392319999999999,
+            "samples": 30
+          },
+          "submitted_vertices": 1152
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 1.700864,
+            "p50_ms": 1.68448,
+            "p95_ms": 1.695744,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 119808,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.100864,
+            "p50_ms": 0.09804799999999997,
+            "p95_ms": 0.10044799999999998,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 1.878016,
+            "p50_ms": 1.85856,
+            "p95_ms": 1.876928,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 96,
+          "draw_submissions": 768,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            4,
+            4
+          ],
+          "name": "sixteen-regions",
+          "node_capacity": 198404,
+          "node_head_bytes": 2579252,
+          "regions": 16,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.549856,
+            "p50_ms": 0.5476479999999999,
+            "p95_ms": 0.5497599999999999,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.95568,
+            "p50_ms": 0.9379839999999999,
+            "p95_ms": 0.955392,
+            "samples": 30
+          },
+          "submitted_vertices": 4608
+        }
+      ],
+      "cleanup": "Every frame checks zero heads/counter after resolve, including overflow. Healthy pools recover in place, drain empty, and retain allocation size. Buffers are explicitly destroyed after completed GPU submissions; fresh-pool output matches. Not driver VRAM/free-history proof.",
+      "format": "Rgba16Float",
+      "layers": 48,
+      "passed": true,
+      "scope": "Isolated native raster/scissor experiment using production sort/resolve bodies with fixture interfaces and Bevy-0.20 codec. Full projection, odd extent, opaque depth, premultiplied alpha and additive HDR. Detailed timing uses six queries and an attempt copy per region; aggregate-only uses two queries/frame and no per-region counter copies. Missing aggregate counters are not zero loss; that lane checks images and final reset only. Spans exclude initialization, opaque fixture, CPU work and post-pass readback; inter-region reset clears remain included. No simulation, material/light evaluation, actual Bevy phase integration, foreign transparency, MSAA, arbitrary views or game-performance acceptance.",
+      "size": [
+        257,
+        193
+      ],
+      "report_path": "target/fireworks-f8/partition-probe-aggregate-1-2026-10-28/report.json",
+      "report_sha256": "ec011cdcc12be0c1bf4d39d0168f3407acfaf876e7c600b9f6781c4d51dc5178",
+      "log_sha256": "63af0b4c8c800e61168a2173acc902f927e147fa80a03fc2a69b4c0b5f7c2fc2",
+      "images": {
+        "full-reference": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-1-2026-10-28/full-reference.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "full-tight-control": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-1-2026-10-28/full-tight-control.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "full-small-negative": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-1-2026-10-28/full-small-negative.rgba16",
+          "sha256": "8a1881659e41db6c00fef33cfae6d2141a9cfdc793f6523f8cb5186f59621b3c"
+        },
+        "four-regions": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-1-2026-10-28/four-regions.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "sixteen-regions": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-1-2026-10-28/sixteen-regions.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        }
+      }
+    },
+    {
+      "adapter": {
+        "backend": "Vulkan",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "analytic_patch_max_error": 0.0034084320068359375,
+      "cases": [
+        {
+          "aggregate_only": {
+            "max_ms": 0.324608,
+            "p50_ms": 0.29184,
+            "p95_ms": 0.3072,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.058367999999999996,
+            "p50_ms": 0.057184,
+            "p95_ms": 0.058336,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.333632,
+            "p50_ms": 0.30207999999999996,
+            "p95_ms": 0.31846399999999997,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-reference",
+          "node_capacity": 2380848,
+          "node_head_bytes": 28768580,
+          "regions": 1,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.109568,
+            "p50_ms": 0.079872,
+            "p95_ms": 0.096256,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.15536,
+            "p50_ms": 0.15273599999999998,
+            "p95_ms": 0.155136,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.31744,
+            "p50_ms": 0.29081599999999996,
+            "p95_ms": 0.305152,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.055136,
+            "p50_ms": 0.054272,
+            "p95_ms": 0.054272,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.32255999999999996,
+            "p50_ms": 0.29696,
+            "p95_ms": 0.316416,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-tight-control",
+          "node_capacity": 1228172,
+          "node_head_bytes": 14936468,
+          "regions": 1,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.101376,
+            "p50_ms": 0.07782399999999999,
+            "p95_ms": 0.09727999999999999,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.155744,
+            "p50_ms": 0.153312,
+            "p95_ms": 0.155104,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.053248,
+            "p50_ms": 0.051199999999999996,
+            "p95_ms": 0.053248,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.029696,
+            "p50_ms": 0.028672,
+            "p95_ms": 0.029599999999999998,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.060416,
+            "p50_ms": 0.059295999999999995,
+            "p95_ms": 0.060416,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 1029768,
+          "exact_reference_match": false,
+          "expected_healthy": false,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-small-negative",
+          "node_capacity": 198404,
+          "node_head_bytes": 2579252,
+          "regions": 1,
+          "repeat_image_match": false,
+          "resolve": {
+            "max_ms": 0.008192,
+            "p50_ms": 0.007168,
+            "p95_ms": 0.008192,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": false,
+          "sort": {
+            "max_ms": 0.012223999999999999,
+            "p50_ms": 0.010879999999999999,
+            "p95_ms": 0.012032,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.6000639999999999,
+            "p50_ms": 0.591872,
+            "p95_ms": 0.596992,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 369012,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.066464,
+            "p50_ms": 0.065248,
+            "p95_ms": 0.0664,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.642048,
+            "p50_ms": 0.62976,
+            "p95_ms": 0.6410239999999999,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 24,
+          "draw_submissions": 192,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            2,
+            2
+          ],
+          "name": "four-regions",
+          "node_capacity": 600624,
+          "node_head_bytes": 7405892,
+          "regions": 4,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.17919999999999997,
+            "p50_ms": 0.168864,
+            "p95_ms": 0.17715199999999998,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.336128,
+            "p50_ms": 0.33104,
+            "p95_ms": 0.335008,
+            "samples": 30
+          },
+          "submitted_vertices": 1152
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 1.6916479999999998,
+            "p50_ms": 1.677312,
+            "p95_ms": 1.6896,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 119808,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.10006399999999997,
+            "p50_ms": 0.096096,
+            "p95_ms": 0.09843199999999999,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 1.8575359999999999,
+            "p50_ms": 1.837056,
+            "p95_ms": 1.8573439999999999,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 96,
+          "draw_submissions": 768,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            4,
+            4
+          ],
+          "name": "sixteen-regions",
+          "node_capacity": 198404,
+          "node_head_bytes": 2579252,
+          "regions": 16,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.5433279999999999,
+            "p50_ms": 0.5405439999999999,
+            "p95_ms": 0.542688,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.9475199999999999,
+            "p50_ms": 0.9244479999999999,
+            "p95_ms": 0.9464640000000001,
+            "samples": 30
+          },
+          "submitted_vertices": 4608
+        }
+      ],
+      "cleanup": "Every frame checks zero heads/counter after resolve, including overflow. Healthy pools recover in place, drain empty, and retain allocation size. Buffers are explicitly destroyed after completed GPU submissions; fresh-pool output matches. Not driver VRAM/free-history proof.",
+      "format": "Rgba16Float",
+      "layers": 48,
+      "passed": true,
+      "scope": "Isolated native raster/scissor experiment using production sort/resolve bodies with fixture interfaces and Bevy-0.20 codec. Full projection, odd extent, opaque depth, premultiplied alpha and additive HDR. Detailed timing uses six queries and an attempt copy per region; aggregate-only uses two queries/frame and no per-region counter copies. Missing aggregate counters are not zero loss; that lane checks images and final reset only. Spans exclude initialization, opaque fixture, CPU work and post-pass readback; inter-region reset clears remain included. No simulation, material/light evaluation, actual Bevy phase integration, foreign transparency, MSAA, arbitrary views or game-performance acceptance.",
+      "size": [
+        257,
+        193
+      ],
+      "report_path": "target/fireworks-f8/partition-probe-aggregate-2-2026-10-28/report.json",
+      "report_sha256": "0978f9ae31f7d39172d49c44030d81d280fef1c1352cd47539d4ef9da02ccb51",
+      "log_sha256": "2c18aacf9da89a1f2b1a57a621fa5cc70dc915bc810e5c5b25fe6f76103caa93",
+      "images": {
+        "full-reference": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-2-2026-10-28/full-reference.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "full-tight-control": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-2-2026-10-28/full-tight-control.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "full-small-negative": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-2-2026-10-28/full-small-negative.rgba16",
+          "sha256": "b9ecfaf3ff3c059b3a7edda0c3fe07e95b921685abe5bc6e4b599f42bdcc8f04"
+        },
+        "four-regions": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-2-2026-10-28/four-regions.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "sixteen-regions": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-2-2026-10-28/sixteen-regions.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        }
+      }
+    },
+    {
+      "adapter": {
+        "backend": "Vulkan",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "analytic_patch_max_error": 0.0034084320068359375,
+      "cases": [
+        {
+          "aggregate_only": {
+            "max_ms": 0.293888,
+            "p50_ms": 0.26624,
+            "p95_ms": 0.282624,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.052224,
+            "p50_ms": 0.051199999999999996,
+            "p95_ms": 0.052224,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.27955199999999997,
+            "p50_ms": 0.272128,
+            "p95_ms": 0.278528,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-reference",
+          "node_capacity": 2380848,
+          "node_head_bytes": 28768580,
+          "regions": 1,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.07782399999999999,
+            "p50_ms": 0.069504,
+            "p95_ms": 0.074752,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.14048,
+            "p50_ms": 0.138816,
+            "p95_ms": 0.140032,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.284672,
+            "p50_ms": 0.263168,
+            "p95_ms": 0.27136,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.050176,
+            "p50_ms": 0.049152,
+            "p95_ms": 0.049152,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.293888,
+            "p50_ms": 0.269312,
+            "p95_ms": 0.29184,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-tight-control",
+          "node_capacity": 1228172,
+          "node_head_bytes": 14936468,
+          "regions": 1,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.093024,
+            "p50_ms": 0.069632,
+            "p95_ms": 0.091136,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.141568,
+            "p50_ms": 0.139232,
+            "p95_ms": 0.14128,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.048128,
+            "p50_ms": 0.046079999999999996,
+            "p95_ms": 0.048128,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 1228172,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.026624,
+            "p50_ms": 0.025599999999999998,
+            "p95_ms": 0.026624,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.055296,
+            "p50_ms": 0.054272,
+            "p95_ms": 0.055104,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 6,
+          "draw_submissions": 48,
+          "dropped_sum": 1029768,
+          "exact_reference_match": false,
+          "expected_healthy": false,
+          "grid": [
+            1,
+            1
+          ],
+          "name": "full-small-negative",
+          "node_capacity": 198404,
+          "node_head_bytes": 2579252,
+          "regions": 1,
+          "repeat_image_match": false,
+          "resolve": {
+            "max_ms": 0.007168,
+            "p50_ms": 0.006144,
+            "p95_ms": 0.007168,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": false,
+          "sort": {
+            "max_ms": 0.010976,
+            "p50_ms": 0.009984,
+            "p95_ms": 0.010784,
+            "samples": 30
+          },
+          "submitted_vertices": 288
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 0.543744,
+            "p50_ms": 0.535552,
+            "p95_ms": 0.543744,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 369012,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.060031999999999995,
+            "p50_ms": 0.058367999999999996,
+            "p95_ms": 0.059968,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 0.582656,
+            "p50_ms": 0.5702079999999999,
+            "p95_ms": 0.5814079999999999,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 24,
+          "draw_submissions": 192,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            2,
+            2
+          ],
+          "name": "four-regions",
+          "node_capacity": 600624,
+          "node_head_bytes": 7405892,
+          "regions": 4,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.16064,
+            "p50_ms": 0.1536,
+            "p95_ms": 0.15952,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.303904,
+            "p50_ms": 0.296512,
+            "p95_ms": 0.302304,
+            "samples": 30
+          },
+          "submitted_vertices": 1152
+        },
+        {
+          "aggregate_only": {
+            "max_ms": 1.5411199999999998,
+            "p50_ms": 1.52576,
+            "p95_ms": 1.534976,
+            "samples": 30
+          },
+          "aggregate_timestamp_writes": 2,
+          "attempts_peak_region": 119808,
+          "attempts_sum": 1228172,
+          "capture": {
+            "max_ms": 0.08963199999999999,
+            "p50_ms": 0.08671999999999999,
+            "p95_ms": 0.089312,
+            "samples": 30
+          },
+          "capture_through_resolve": {
+            "max_ms": 1.6801279999999998,
+            "p50_ms": 1.6701439999999999,
+            "p95_ms": 1.67936,
+            "samples": 30
+          },
+          "detailed_timestamp_writes": 96,
+          "draw_submissions": 768,
+          "dropped_sum": 0,
+          "exact_reference_match": true,
+          "expected_healthy": true,
+          "grid": [
+            4,
+            4
+          ],
+          "name": "sixteen-regions",
+          "node_capacity": 198404,
+          "node_head_bytes": 2579252,
+          "regions": 16,
+          "repeat_image_match": true,
+          "resolve": {
+            "max_ms": 0.4915839999999999,
+            "p50_ms": 0.488288,
+            "p95_ms": 0.49110399999999993,
+            "samples": 30
+          },
+          "same_pool_overflow_recovery_and_empty": true,
+          "sort": {
+            "max_ms": 0.8460799999999999,
+            "p50_ms": 0.8357439999999999,
+            "p95_ms": 0.8460799999999999,
+            "samples": 30
+          },
+          "submitted_vertices": 4608
+        }
+      ],
+      "cleanup": "Every frame checks zero heads/counter after resolve, including overflow. Healthy pools recover in place, drain empty, and retain allocation size. Buffers are explicitly destroyed after completed GPU submissions; fresh-pool output matches. Not driver VRAM/free-history proof.",
+      "format": "Rgba16Float",
+      "layers": 48,
+      "passed": true,
+      "scope": "Isolated native raster/scissor experiment using production sort/resolve bodies with fixture interfaces and Bevy-0.20 codec. Full projection, odd extent, opaque depth, premultiplied alpha and additive HDR. Detailed timing uses six queries and an attempt copy per region; aggregate-only uses two queries/frame and no per-region counter copies. Missing aggregate counters are not zero loss; that lane checks images and final reset only. Spans exclude initialization, opaque fixture, CPU work and post-pass readback; inter-region reset clears remain included. No simulation, material/light evaluation, actual Bevy phase integration, foreign transparency, MSAA, arbitrary views or game-performance acceptance.",
+      "size": [
+        257,
+        193
+      ],
+      "report_path": "target/fireworks-f8/partition-probe-aggregate-3-2026-10-28/report.json",
+      "report_sha256": "69737a1563683e44ee66f27dad7bb0fa377b87bd92ebf35bcbb0f67badd5d0a2",
+      "log_sha256": "e6e7532e698e895942b5ada4f2fae4a930a04ffbb58c0703b0e03b590949cb2c",
+      "images": {
+        "full-reference": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-3-2026-10-28/full-reference.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "full-tight-control": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-3-2026-10-28/full-tight-control.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "full-small-negative": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-3-2026-10-28/full-small-negative.rgba16",
+          "sha256": "2923c957579e697e271d88fdd6fe444fa06f35c672843477c92b2bf7b2ec880d"
+        },
+        "four-regions": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-3-2026-10-28/four-regions.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        },
+        "sixteen-regions": {
+          "path": "target/fireworks-f8/partition-probe-aggregate-3-2026-10-28/sixteen-regions.rgba16",
+          "sha256": "318b1fc0b86f62007d6efe11016a6298c38871e9556cacb6cfec192f22e84201"
+        }
+      }
+    }
+  ],
+  "summary": [
+    {
+      "name": "full-reference",
+      "node_head_bytes": 28768580,
+      "regions": 1,
+      "draw_submissions": 48,
+      "submitted_vertices": 288,
+      "drops": 0,
+      "exact_reference_match": true,
+      "aggregate_p95_ms_range": [
+        0.282624,
+        0.313344
+      ],
+      "aggregate_p50_ms_range": [
+        0.26624,
+        0.295936
+      ]
+    },
+    {
+      "name": "full-tight-control",
+      "node_head_bytes": 14936468,
+      "regions": 1,
+      "draw_submissions": 48,
+      "submitted_vertices": 288,
+      "drops": 0,
+      "exact_reference_match": true,
+      "aggregate_p95_ms_range": [
+        0.27136,
+        0.3072
+      ],
+      "aggregate_p50_ms_range": [
+        0.263168,
+        0.294912
+      ]
+    },
+    {
+      "name": "full-small-negative",
+      "node_head_bytes": 2579252,
+      "regions": 1,
+      "draw_submissions": 48,
+      "submitted_vertices": 288,
+      "drops": 1029768,
+      "exact_reference_match": false,
+      "aggregate_p95_ms_range": [
+        0.048128,
+        0.053248
+      ],
+      "aggregate_p50_ms_range": [
+        0.046079999999999996,
+        0.052224
+      ]
+    },
+    {
+      "name": "four-regions",
+      "node_head_bytes": 7405892,
+      "regions": 4,
+      "draw_submissions": 192,
+      "submitted_vertices": 1152,
+      "drops": 0,
+      "exact_reference_match": true,
+      "aggregate_p95_ms_range": [
+        0.543744,
+        0.607232
+      ],
+      "aggregate_p50_ms_range": [
+        0.535552,
+        0.598016
+      ]
+    },
+    {
+      "name": "sixteen-regions",
+      "node_head_bytes": 2579252,
+      "regions": 16,
+      "draw_submissions": 768,
+      "submitted_vertices": 4608,
+      "drops": 0,
+      "exact_reference_match": true,
+      "aggregate_p95_ms_range": [
+        1.534976,
+        1.695744
+      ],
+      "aggregate_p50_ms_range": [
+        1.52576,
+        1.68448
+      ]
+    }
+  ],
+  "node_head_reduction_vs_tight_full": 0.827318479844097,
+  "source_sha256": {
+    "bevy/aestra-bevy-render/Cargo.toml": "dcf0e898b53d6f049dda91bb72e6c587af130c868ed44aa6ca3ce9d0bc083368",
+    "bevy/aestra-bevy-render/src/experimental_oit.rs": "4105915d2c355d9cc676bf4608a226cd3eb50c005cbb81cd8a3a551aa11e5659",
+    "bevy/aestra-bevy-render/src/experimental_oit/partition_probe.rs": "fcf446c175ad37195eb54209b8e2222a3920a94c2df327af510366b132097eb2",
+    "bevy/aestra-bevy-render/src/experimental_oit/partition_gpu.rs": "a2f9a63e2fffcc881de15a5f4e96764aaaeceebebbaef72dc857222306bbb979",
+    "bevy/aestra-bevy-render/src/experimental_oit/partition_capture.wgsl": "dfe9308c77f3a4af3573b4ebdf80e0d30b2c662a799a40a3b2afa553e3fe69c3",
+    "bevy/aestra-bevy-render/src/experimental_oit/partition_codec.wgsl": "ed6c144915accb58fd666f875f98b188faa4d6781df513772acda9964e896e49",
+    "bevy/aestra-bevy-render/src/experimental_oit/sort.wesl": "77ef295c7b268f5d1c3337bde7e01f73129512660e94e0849a1bd7df4c9e3fcd",
+    "bevy/aestra-bevy-render/src/experimental_oit/resolve.wesl": "14c603d2f2b6bec2592a65478a8b3501b2646339acd704101f6c3a252bb389ff"
+  },
+  "binary": {
+    "path": "target/debug/deps/aestra_bevy_render-31226762e97e72e3.exe",
+    "sha256": "913279195fecbe3f3f394f1289155d68f7243ebb6e06330671e7fd8e75992ef0"
+  },
+  "retained_pilots": [
+    {
+      "path": "target/fireworks-f8/partition-probe-2026-10-28/report.json",
+      "sha256": "d5855c010ff7dca72a90ee800a4e90325cc2d3117bff2d7ef77845856dcb2d66",
+      "cases": 4,
+      "scope": "Earlier detailed-only pilot; not the final constant-two-query timing lane. No final-source/binary equivalence is claimed."
+    },
+    {
+      "path": "target/fireworks-f8/partition-probe-final-1-2026-10-28/report.json",
+      "sha256": "0048159493133d7068e84971665d97251e04af527c2ae6c9e5950f94d775da93",
+      "cases": 5,
+      "scope": "Earlier detailed-only pilot; not the final constant-two-query timing lane. No final-source/binary equivalence is claimed."
+    },
+    {
+      "path": "target/fireworks-f8/partition-probe-final-2-2026-10-28/report.json",
+      "sha256": "a0d8e14e6ed6e57f2036abe050c5c01e9ba6987d60d021fd2a0556f74219e3f3",
+      "cases": 5,
+      "scope": "Earlier detailed-only pilot; not the final constant-two-query timing lane. No final-source/binary equivalence is claimed."
+    },
+    {
+      "path": "target/fireworks-f8/partition-probe-final-3-2026-10-28/report.json",
+      "sha256": "8f89c3f50bdd59548720152e42c615034b189de91ab57936d0a7b22fcd8f6a09",
+      "cases": 5,
+      "scope": "Earlier detailed-only pilot; not the final constant-two-query timing lane. No final-source/binary equivalence is claimed."
+    }
+  ],
+  "review_png_sha256": {
+    "benchmarks/fireworks/reviews/partition-probe-2026-10-28/full-small-negative.png": "112baeb88841a50f22cb3a4b36caf0a4669186259a8f8e2e994ed8590f228dca",
+    "benchmarks/fireworks/reviews/partition-probe-2026-10-28/reference.png": "ed649a23d9d61ef25e6b0e800ae89d68cc9dff2aeea27183a1bfb88c25f8f70a",
+    "benchmarks/fireworks/reviews/partition-probe-2026-10-28/sixteen-regions.png": "ed649a23d9d61ef25e6b0e800ae89d68cc9dff2aeea27183a1bfb88c25f8f70a"
+  },
+  "image_scope": "Raw native Rgba16Float files are the exact comparison. PNG witnesses use Reinhard x/(1+x) then linear-to-sRGB, with identical conversion for all modes. They show an oracle fixture, not fireworks art.",
+  "timing_scope": "Ranges summarize three per-run p95s, not a pooled p95 or sum of phase percentiles. Aggregate lane has two timestamp writes/frame and no per-region attempt copies. Detailed phase timings remain separate. Fixed-size synthetic fixture, fences/readback between frames, not whole-game or production-finale costs.",
+  "limits": "cfg(test)-only transport. Fixture interfaces/codec replace native Bevy bindings; production sort/resolve algorithm bodies are reused. No actual Bevy phase integration, host shader/material/light/simulation cost, CPU frame timing, driver VRAM/free trace, MSAA, foreign transparent participation or general-view qualification. View rejection is a private declared-input guard, not automatic host-draw auditing."
+}

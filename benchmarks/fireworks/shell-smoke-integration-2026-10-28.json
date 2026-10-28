@@ -1,0 +1,3614 @@
+{
+  "date": "2026-10-28",
+  "base_commit": "eba806dd",
+  "scope": "Calibrated shells with deposited smoke and representative flash response; bounded two-shell review, not full-show acceptance.",
+  "art_binary_sha256": "71DEAFC98121851DAEB5B8FBE792834C8A9D4832FFE24BE73ABCD399696787C9",
+  "art_report_source": {
+    "path": "target/fireworks-f8/shell-smoke-art-report.rs",
+    "sha256": "CB01948092F12E923B8C1736C78E9AF41991199E8987C19095A5828509EFD7BD"
+  },
+  "population_witness_binary_sha256": "DBFB2C412FD3DBF790467822ED5B4396A8D1E6532E450D7404BF073018B4816F",
+  "population_witness_build": "cargo rustc --locked --offline -p aestra-bevy --example fireworks -- -C link-arg=/PDB:C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final.pdb",
+  "cost_binary_sha256": "44C9A9261E8B280FF833FAA16365AD66A32C83E12A4398FBFF49395CB94E3698",
+  "cost_report_source": {
+    "path": "target/fireworks-f8/shell-smoke-witness-source-before-label.rs",
+    "sha256": "924CBC220FE2AB33436089ECADA514849A6A85043430AC12ED5F21290BFD3C2A"
+  },
+  "intermediate_witness_report": {
+    "path": "target/fireworks-f8/shell-smoke-witness-2026-10-28/candidate-high-close.json",
+    "sha256": "87EFE1C40616866C561A2C6355F052C07930255A6377881B485DA241A94D532C"
+  },
+  "source_hashes": [
+    {
+      "path": "bevy/aestra-bevy/examples/author_fireworks_shell_smoke.rs",
+      "sha256": "A4F8D6952594A8BD6EEE50D7B2DF6E3F4E58F6CB29CDBD5BAC0F12E4CF6E22DF"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/report.rs",
+      "sha256": "5FBF4EAA45FB023C7E1DD820A42F69F2AC23C2084A299F9B952E6E7619A6BD47"
+    },
+    {
+      "path": "benchmarks/fireworks/run-point-star-review.ps1",
+      "sha256": "040121AFB70AC65E8C91A55D4E417601F874970C00E6492FA33DE464F89DF061"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_tail_smoke.aestra.ron",
+      "sha256": "6EB204503F68815D50B800828BAAE39C23ACB6C458726BB5DC503D720E86CA9A"
+    },
+    {
+      "path": "assets/test/effects/fireworks_point_star_smoke.aestra.ron",
+      "sha256": "23B6C12926AF048202F7A89B40FE864234050EACD6421D24750E6F7B999050D5"
+    }
+  ],
+  "preservation": {
+    "reference": {
+      "path": "benchmarks/fireworks/point-star-calibration-2026-10-27.json",
+      "sha256": "870C3607BFBCCCD6C9C81BE1FA407CFF67A640512925418C724C2CB55B8AB66D"
+    },
+    "gold_reference": {
+      "path": "benchmarks/fireworks/gold-tail-calibration-2026-10-27.json",
+      "sha256": "DDF58CB01EEF1F9DAB183BE2D1AA31A456C1E21FF35CE33AC40A570CD8A26393"
+    },
+    "verified_prior_sources": 211
+  },
+  "art_runs": {
+    "control": {
+      "tier": "high",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 94,
+        "observations": 1449
+      },
+      "peak_async_alive": 16308,
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f87100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.04999971389770508,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f86100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.0666666030883789,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f86100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 2,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 3,
+        "packets_seen": 7,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 2
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 2,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "491v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1094,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "491v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1094,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "491v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1094,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "491v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1094,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "491v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Gold-Tail Calibration Candidate",
+          "readback_samples": 1094,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "532v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point-Star Calibration Candidate",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "532v0/1": {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point-Star Calibration Candidate",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "532v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point-Star Calibration Candidate",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "532v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point-Star Calibration Candidate",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2158,
+        "frames": 1446,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point-Star Calibration Candidate",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    },
+    "close": {
+      "tier": "high",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 5104,
+        "observations": 1449
+      },
+      "peak_async_alive": 23301,
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.04999971389770508,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.0666666030883789,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 2,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 3,
+        "packets_seen": 7,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 2
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 2,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "491v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "491v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "491v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "491v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "491v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "491v0/5": {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        "533v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "533v0/1": {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "533v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "533v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "533v0/4": {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2163,
+        "frames": 1449,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    },
+    "audience": {
+      "tier": "high",
+      "review_camera": "audience",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 3330,
+        "observations": 1449
+      },
+      "peak_async_alive": 23301,
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.04999971389770508,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.0666666030883789,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 2,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 3,
+        "packets_seen": 7,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 2
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 2,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "491v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "491v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "491v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "491v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "491v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "491v0/5": {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        "533v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "533v0/1": {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "533v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "533v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "533v0/4": {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2163,
+        "frames": 1449,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    },
+    "muted": {
+      "tier": "high",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 5104,
+        "observations": 1435
+      },
+      "peak_async_alive": 23301,
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.05000000447034836,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.04999971389770508,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.0666666030883789,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 2,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 3,
+        "packets_seen": 7,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 2
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 2,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "491v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "491v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "491v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "491v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "491v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "491v0/5": {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1098,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        "533v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1076,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "533v0/1": {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1076,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "533v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1076,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "533v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1076,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "533v0/4": {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1076,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2160,
+        "frames": 1446,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    },
+    "hidden": {
+      "tier": "high",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 94,
+        "observations": 1447
+      },
+      "peak_async_alive": 23301,
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.04999971389770508,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.0666666030883789,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 2,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 3,
+        "packets_seen": 7,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 2
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 2,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "491v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1100,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "491v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1100,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "491v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1100,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "491v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1100,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "491v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1100,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "491v0/5": {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1100,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        "533v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "533v0/1": {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "533v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "533v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "533v0/4": {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2162,
+        "frames": 1448,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    },
+    "hidden-muted": {
+      "tier": "high",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 94,
+        "observations": 1422
+      },
+      "peak_async_alive": 23301,
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.04999971389770508,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.0666666030883789,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 2,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 3,
+        "packets_seen": 7,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 2
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 2,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "491v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "491v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "491v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "491v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "491v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "491v0/5": {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        "533v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1058,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "533v0/1": {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1058,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "533v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1058,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "533v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1058,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "533v0/4": {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1058,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2119,
+        "frames": 1427,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.033333778381347656,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "encoded_seconds": 6.699999809265137,
+          "requested_seconds": 6.733333587646484
+        }
+      }
+    },
+    "medium": {
+      "tier": "medium",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 741,
+        "observations": 1449
+      },
+      "peak_async_alive": 11528,
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.04999971389770508,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.0666666030883789,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 2,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 3,
+        "packets_seen": 7,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 2
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 2,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "491v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1096,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "491v0/1": {
+          "counts": {
+            "accepted": 32,
+            "captured_demand": 32,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1096,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "491v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1096,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "491v0/3": {
+          "counts": {
+            "accepted": 24,
+            "captured_demand": 24,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1096,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "491v0/4": {
+          "counts": {
+            "accepted": 33324,
+            "captured_demand": 33324,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1096,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "491v0/5": {
+          "counts": {
+            "accepted": 5554,
+            "captured_demand": 5554,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1096,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        "533v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "533v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "533v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "533v0/3": {
+          "counts": {
+            "accepted": 24,
+            "captured_demand": 24,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "533v0/4": {
+          "counts": {
+            "accepted": 4585,
+            "captured_demand": 4585,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2163,
+        "frames": 1449,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    },
+    "low": {
+      "tier": "low",
+      "review_camera": "close",
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 25,
+        "observations": 1449
+      },
+      "peak_async_alive": 5426,
+      "last_async_alive": 0,
+      "last_observed_owners": 0,
+      "particle_output_audit": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a0)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a0"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88200"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/launch": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.04999971389770508,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          },
+          "487v0/[EffectClipId(a3574a00-0000-4000-8000-000000f880a1)]/Emitter(0)/main_break": {
+            "clip_path": [
+              "a3574a00-0000-4000-8000-000000f880a1"
+            ],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.0666666030883789,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000f88100"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "flash_binding": {
+        "bound": 2,
+        "duplicates": 0,
+        "epoch_mismatch": 0,
+        "invalid": 0,
+        "missing_root": 0,
+        "non_particle": 3,
+        "packets_seen": 7,
+        "scan_dropped": 0,
+        "stale_intents": 0,
+        "unbound": 2
+      },
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 2,
+      "pending_pipeline_updates": 1,
+      "event_link_admission": {
+        "491v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "491v0/1": {
+          "counts": {
+            "accepted": 16,
+            "captured_demand": 16,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "491v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "491v0/3": {
+          "counts": {
+            "accepted": 12,
+            "captured_demand": 12,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "491v0/4": {
+          "counts": {
+            "accepted": 15354,
+            "captured_demand": 15354,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "491v0/5": {
+          "counts": {
+            "accepted": 2559,
+            "captured_demand": 2559,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1097,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        "533v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "533v0/1": {
+          "counts": {
+            "accepted": 32,
+            "captured_demand": 32,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "533v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "533v0/3": {
+          "counts": {
+            "accepted": 12,
+            "captured_demand": 12,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "533v0/4": {
+          "counts": {
+            "accepted": 2280,
+            "captured_demand": 2280,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2163,
+        "frames": 1449,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    }
+  },
+  "art_captures": 128,
+  "lifecycle": {
+    "captures": [
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 64,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 43,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 14368,
+                "name": "Gold tail embers"
+              },
+              {
+                "alive": 4951,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 2.75,
+            "source_seconds": 2.799999952316284
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 2.799999952316284,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-2.8s.png",
+        "representative_accepted": 1,
+        "representative_active": 0,
+        "representative_proxy_peak_lumens": 0.0,
+        "request_seconds": 2.799999952316284
+      },
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 28,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 43,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 10884,
+                "name": "Gold tail embers"
+              },
+              {
+                "alive": 10925,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 4.949999809265137,
+            "source_seconds": 5.0
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 5.0,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-5s.png",
+        "representative_accepted": 1,
+        "representative_active": 0,
+        "representative_proxy_peak_lumens": 0.0,
+        "request_seconds": 5.0
+      },
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 43,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 22,
+                "name": "Gold tail embers"
+              },
+              {
+                "alive": 11209,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 6.25,
+            "source_seconds": 6.300000190734863
+          },
+          {
+            "effect": "Fireworks Point Stars with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88100",
+            "emitters": [
+              {
+                "alive": 1,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 27,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 0.75,
+            "source_seconds": 0.8000001907348633
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 6.300000190734863,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-6.3s.png",
+        "representative_accepted": 1,
+        "representative_active": 0,
+        "representative_proxy_peak_lumens": 0.0,
+        "request_seconds": 6.300000190734863
+      },
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 43,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Gold tail embers"
+              },
+              {
+                "alive": 11209,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 6.849999904632568,
+            "source_seconds": 6.900000095367432
+          },
+          {
+            "effect": "Fireworks Point Stars with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88100",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 128,
+                "name": "Main stars"
+              },
+              {
+                "alive": 1,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 43,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 1.3333333730697632,
+            "source_seconds": 1.4000000953674316
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 6.900000095367432,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-6.9s.png",
+        "representative_accepted": 2,
+        "representative_active": 1,
+        "representative_proxy_peak_lumens": 208638.15625,
+        "request_seconds": 6.900000095367432
+      },
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 39,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Gold tail embers"
+              },
+              {
+                "alive": 10852,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 8.949999809265137,
+            "source_seconds": 9.0
+          },
+          {
+            "effect": "Fireworks Point Stars with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88100",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 128,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 43,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 7040,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 3.433333396911621,
+            "source_seconds": 3.5
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 9.0,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-9s.png",
+        "representative_accepted": 2,
+        "representative_active": 0,
+        "representative_proxy_peak_lumens": 0.0,
+        "request_seconds": 9.0
+      },
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 0,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Gold tail embers"
+              },
+              {
+                "alive": 2832,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 11.949999809265137,
+            "source_seconds": 12.0
+          },
+          {
+            "effect": "Fireworks Point Stars with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88100",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 43,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 9130,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 6.449999809265137,
+            "source_seconds": 6.5
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 12.0,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-12s.png",
+        "representative_accepted": 2,
+        "representative_active": 0,
+        "representative_proxy_peak_lumens": 0.0,
+        "request_seconds": 12.0
+      },
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 0,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Gold tail embers"
+              },
+              {
+                "alive": 0,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 15.949999809265137,
+            "source_seconds": 16.0
+          },
+          {
+            "effect": "Fireworks Point Stars with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88100",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 9,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 48,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 5139,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 10.449999809265137,
+            "source_seconds": 10.5
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 16.0,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-16s.png",
+        "representative_accepted": 2,
+        "representative_active": 0,
+        "representative_proxy_peak_lumens": 0.0,
+        "request_seconds": 16.0
+      },
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Point Stars with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88100",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 0,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 27,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 14.449999809265137,
+            "source_seconds": 14.5
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 20.0,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-20s.png",
+        "representative_accepted": 2,
+        "representative_active": 0,
+        "representative_proxy_peak_lumens": 0.0,
+        "request_seconds": 20.0
+      },
+      {
+        "asynchronous_populations": [
+          {
+            "effect": "Fireworks Point Stars with Deposited Smoke",
+            "effect_id": "a3574a00-0000-4000-8000-000000f88100",
+            "emitters": [
+              {
+                "alive": 0,
+                "name": "Launch shell"
+              },
+              {
+                "alive": 0,
+                "name": "Main stars"
+              },
+              {
+                "alive": 0,
+                "name": "Burst flash"
+              },
+              {
+                "alive": 0,
+                "name": "Launch smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Burst smoke"
+              },
+              {
+                "alive": 0,
+                "name": "Star path smoke"
+              }
+            ],
+            "observed_source_seconds": 17.450000762939453,
+            "source_seconds": 17.5
+          }
+        ],
+        "delivered": true,
+        "nominal_seconds": 23.0,
+        "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\shell-smoke-witness-final-2026-10-28\\candidate-high-close-23s.png",
+        "representative_accepted": 2,
+        "representative_active": 0,
+        "representative_proxy_peak_lumens": 0.0,
+        "request_seconds": 23.0
+      }
+    ],
+    "event_link_admission": {
+      "491v0/0": {
+        "counts": {
+          "accepted": 43,
+          "captured_demand": 43,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+        "readback_samples": 1088,
+        "source": "Launch shell",
+        "source_overflow": 0,
+        "target": "Launch smoke"
+      },
+      "491v0/1": {
+        "counts": {
+          "accepted": 64,
+          "captured_demand": 64,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+        "readback_samples": 1088,
+        "source": "Launch shell",
+        "source_overflow": 0,
+        "target": "Main stars"
+      },
+      "491v0/2": {
+        "counts": {
+          "accepted": 1,
+          "captured_demand": 1,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+        "readback_samples": 1088,
+        "source": "Launch shell",
+        "source_overflow": 0,
+        "target": "Burst flash"
+      },
+      "491v0/3": {
+        "counts": {
+          "accepted": 48,
+          "captured_demand": 48,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+        "readback_samples": 1088,
+        "source": "Launch shell",
+        "source_overflow": 0,
+        "target": "Burst smoke"
+      },
+      "491v0/4": {
+        "counts": {
+          "accepted": 67254,
+          "captured_demand": 67254,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+        "readback_samples": 1088,
+        "source": "Main stars",
+        "source_overflow": 0,
+        "target": "Gold tail embers"
+      },
+      "491v0/5": {
+        "counts": {
+          "accepted": 11209,
+          "captured_demand": 11209,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+        "readback_samples": 1088,
+        "source": "Main stars",
+        "source_overflow": 0,
+        "target": "Star path smoke"
+      },
+      "524v0/0": {
+        "counts": {
+          "accepted": 43,
+          "captured_demand": 43,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Point Stars with Deposited Smoke",
+        "readback_samples": 1069,
+        "source": "Launch shell",
+        "source_overflow": 0,
+        "target": "Launch smoke"
+      },
+      "524v0/1": {
+        "counts": {
+          "accepted": 128,
+          "captured_demand": 128,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Point Stars with Deposited Smoke",
+        "readback_samples": 1069,
+        "source": "Launch shell",
+        "source_overflow": 0,
+        "target": "Main stars"
+      },
+      "524v0/2": {
+        "counts": {
+          "accepted": 1,
+          "captured_demand": 1,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Point Stars with Deposited Smoke",
+        "readback_samples": 1069,
+        "source": "Launch shell",
+        "source_overflow": 0,
+        "target": "Burst flash"
+      },
+      "524v0/3": {
+        "counts": {
+          "accepted": 48,
+          "captured_demand": 48,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Point Stars with Deposited Smoke",
+        "readback_samples": 1069,
+        "source": "Launch shell",
+        "source_overflow": 0,
+        "target": "Burst smoke"
+      },
+      "524v0/4": {
+        "counts": {
+          "accepted": 9130,
+          "captured_demand": 9130,
+          "destination_rejected": 0,
+          "expansion_omitted": 0
+        },
+        "effect": "Fireworks Point Stars with Deposited Smoke",
+        "readback_samples": 1069,
+        "source": "Main stars",
+        "source_overflow": 0,
+        "target": "Star path smoke"
+      }
+    },
+    "gold_persists_after_sparks": {
+      "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+      "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+      "emitters": [
+        {
+          "alive": 0,
+          "name": "Launch shell"
+        },
+        {
+          "alive": 0,
+          "name": "Main stars"
+        },
+        {
+          "alive": 0,
+          "name": "Burst flash"
+        },
+        {
+          "alive": 43,
+          "name": "Launch smoke"
+        },
+        {
+          "alive": 48,
+          "name": "Burst smoke"
+        },
+        {
+          "alive": 0,
+          "name": "Gold tail embers"
+        },
+        {
+          "alive": 11209,
+          "name": "Star path smoke"
+        }
+      ],
+      "observed_source_seconds": 6.849999904632568,
+      "source_seconds": 6.900000095367432
+    },
+    "gold_empty_before_clip_end": {
+      "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+      "effect_id": "a3574a00-0000-4000-8000-000000f88200",
+      "emitters": [
+        {
+          "alive": 0,
+          "name": "Launch shell"
+        },
+        {
+          "alive": 0,
+          "name": "Main stars"
+        },
+        {
+          "alive": 0,
+          "name": "Burst flash"
+        },
+        {
+          "alive": 0,
+          "name": "Launch smoke"
+        },
+        {
+          "alive": 0,
+          "name": "Burst smoke"
+        },
+        {
+          "alive": 0,
+          "name": "Gold tail embers"
+        },
+        {
+          "alive": 0,
+          "name": "Star path smoke"
+        }
+      ],
+      "observed_source_seconds": 15.949999809265137,
+      "source_seconds": 16.0
+    },
+    "point_empty_before_clip_end": {
+      "effect": "Fireworks Point Stars with Deposited Smoke",
+      "effect_id": "a3574a00-0000-4000-8000-000000f88100",
+      "emitters": [
+        {
+          "alive": 0,
+          "name": "Launch shell"
+        },
+        {
+          "alive": 0,
+          "name": "Main stars"
+        },
+        {
+          "alive": 0,
+          "name": "Burst flash"
+        },
+        {
+          "alive": 0,
+          "name": "Launch smoke"
+        },
+        {
+          "alive": 0,
+          "name": "Burst smoke"
+        },
+        {
+          "alive": 0,
+          "name": "Star path smoke"
+        }
+      ],
+      "observed_source_seconds": 17.450000762939453,
+      "source_seconds": 17.5
+    },
+    "scope": "Latest asynchronous per-owner observations before clip retirement, not a GPU completion fence."
+  },
+  "older_haze_response": {
+    "root_seconds": 6.9,
+    "roi_xyxy": [
+      440,
+      140,
+      590,
+      330
+    ],
+    "mean_srgb_8bit_rgb": {
+      "close": [
+        3.216842105263158,
+        5.131473684210526,
+        8.157929824561403
+      ],
+      "muted": [
+        2.929298245614035,
+        4.331508771929824,
+        6.532315789473684
+      ],
+      "hidden": [
+        2.408736842105263,
+        3.8983157894736844,
+        6.270526315789474
+      ],
+      "hidden-muted": [
+        2.3201754385964914,
+        3.6645263157894736,
+        5.814140350877193
+      ]
+    },
+    "difference_in_differences_rgb": [
+      0.19898245614035087,
+      0.5661754385964912,
+      1.1692280701754385
+    ],
+    "scope": "Qualitative async LDR color response outside the fresh burst. Tone mapping/bloom prevent physical radiometric interpretation."
+  },
+  "ordinary_cost_pair": {
+    "control": {
+      "host_intervals_including_vsync": {
+        "max_ms": 30.616500000000002,
+        "median_ms": 16.6831,
+        "over_16_67ms": 738,
+        "over_20ms": 6,
+        "over_33_33ms": 0,
+        "p95_ms": 18.115699999999997,
+        "p99_ms": 19.5335,
+        "samples": 1438
+      },
+      "last_async_alive": 0,
+      "pending_pipeline_updates": 0,
+      "flashes_accepted": 2,
+      "star_path_admission": {},
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2163,
+        "frames": 1449,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point-Star Calibration Candidate",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    },
+    "candidate": {
+      "host_intervals_including_vsync": {
+        "max_ms": 46.2999,
+        "median_ms": 16.6633,
+        "over_16_67ms": 710,
+        "over_20ms": 9,
+        "over_33_33ms": 1,
+        "p95_ms": 17.8213,
+        "p99_ms": 19.675,
+        "samples": 1435
+      },
+      "last_async_alive": 0,
+      "pending_pipeline_updates": 0,
+      "flashes_accepted": 2,
+      "star_path_admission": {
+        "491v0": {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke",
+          "readback_samples": 1107,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        "518v0": {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "readback_samples": 1075,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "encoding_ledger": {
+        "blocked_owner_frames": 0,
+        "encoded_owner_frames": 2160,
+        "frames": 1446,
+        "max_clip_schedule_error_seconds": 0.0,
+        "max_requested_minus_encoded_seconds": 0.016666650772094727,
+        "missing_scheduled_owner_frames": 0,
+        "scope": "CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected.",
+        "worst_lag": {
+          "effect": "Fireworks Point Stars with Deposited Smoke",
+          "encoded_seconds": 0.5166666507720947,
+          "requested_seconds": 0.5333333015441895
+        }
+      }
+    }
+  },
+  "cost_scope": "One vsync-inclusive development pair with different authored workloads; not GPU cost equivalence or production/60FPS qualification.",
+  "initial_gain_sources": [
+    {
+      "path": "target/fireworks-f8/shell-smoke-preview-2026-10-27/sources/author_fireworks_shell_smoke.rs",
+      "sha256": "FF358074F4B5A0C2617ACD2224E5940D733C17AFF1FBF1A8DDEFB6C12D909E2F"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-preview-2026-10-27/sources/fireworks_gold_tail_smoke.aestra.ron",
+      "sha256": "1DC45D48A073A0F355FACF737A2F71F31AE30DCCFE413099D1267A2CD942CB56"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-preview-2026-10-27/sources/fireworks_point_star_smoke.aestra.ron",
+      "sha256": "DF242DF8DBE1F752F6C45CF3C1FC0A27A8FEBE662035CC35BA8EBB59158534B4"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-preview-2026-10-27/sources/fireworks_shell_smoke_candidate.aestra.ron",
+      "sha256": "C9F07931529EB65CAB91E49E54F1DEF7719961EA1A3E8CBC1C77D32CB5A8A5ED"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-preview-2026-10-27/sources/fireworks_shell_smoke_control.aestra.ron",
+      "sha256": "BAB03892C81B2D33D84890EA2A12ADFF9A8076271E08A3A4E3774168ECC42D74"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-1.3s.png",
+      "sha256": "583CD7A037FAAF703725973FD17CF9251D701CAC897772308AD726BFB71059B1"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-1.8s.png",
+      "sha256": "5F6C47D114933AE35A052B7CBBB1FBA9338BADB4D3C3C602B9544AEDF50CA37A"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-2.8s.png",
+      "sha256": "873277A3C63E4319B1B50764614091D48D28915D0400575D456BE988A12263E2"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-4s.png",
+      "sha256": "11AA8CC3BF114AFF8C3D806683D6DAD78AD828396244E2E62E7240D0827A61D8"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-5s.png",
+      "sha256": "2F8456EA584F50AD2A19FEAFB390E08FABA2BDC7C11B8D6C00BCAA2EAD87A85E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-6.3s.png",
+      "sha256": "AA367FD4CA1687DD87DB390F888E28B7DFED37E38E1738164C5FE53D181F1726"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-6.7s.png",
+      "sha256": "802ADBC6062C5D2B3EFCB82CDCFF28A33E78F593C5F592B6091246D501AE9FD3"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-6.9s.png",
+      "sha256": "60D6212356213E263E0477C40CAB845E183368E728F5BB4A778DC0B5CC27A419"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-7.1s.png",
+      "sha256": "A184FD080071B5AA50A40933E264D80D1F0D51DD53B40F9FA46283B471343F01"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-7.4s.png",
+      "sha256": "6D8B9F144ACDF2C8C89507351FD8415A9E9A0DFD57880353002F88EB4BBCE881"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-8s.png",
+      "sha256": "797F69C05239CD0A292108C3B5D043FC3CFFFA26CE0C6224FEF6DF24B4145D7C"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-9s.png",
+      "sha256": "2FE0EB474758AE742331FE6F30AA897AF3B4F85327C411EEC5884A5694EF978E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-12s.png",
+      "sha256": "933413CA6A3D606EECCD20DCFA09C76D5E318D1664E10BF9DA71F652D4A61C91"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-16s.png",
+      "sha256": "C6AC1AB3D08037045DD51D86059C1E09D6B84BCA208383C2182A4177183711B6"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-20s.png",
+      "sha256": "91DB026D5F70568293985AB77C9294C7A9388652B8ADB3FA826ABBD2E605A0D1"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close-23s.png",
+      "sha256": "255A1CB81EADC564A936DE8A5B8C4BD5A26EB1A1BA13284F24039F7AF00A9685"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/control-high-close.json",
+      "sha256": "DB8288A5ADB5C76E40D7E69C7D5625D9227A3F66A9B5C5B21882D0834E496121"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-control-2026-10-27/manifest.json",
+      "sha256": "26F4ED9CCCA57516649E3BE682286061E0CF14B1AD11D2F1ADE5F50890A7332E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-1.3s.png",
+      "sha256": "583CD7A037FAAF703725973FD17CF9251D701CAC897772308AD726BFB71059B1"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-1.8s.png",
+      "sha256": "DFDA303B0C2D42CBDE9D94A0AB8C5C976A4E594B1EADB674DD5B5BB64FC7369C"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-2.8s.png",
+      "sha256": "04E4A45D7132A080C22FB1039AB4CD556FB5EC17F689F3F98CFD2C7904454661"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-4s.png",
+      "sha256": "D3002A1EC2E66FD1023E3C5F30A3CB4DFD654056C16D6BA63544315722F47657"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-5s.png",
+      "sha256": "649AD1C3C41CD0A75F4C3572127E90C4A23467F0877FF63B90A17276687A5E76"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-6.3s.png",
+      "sha256": "728D91BE9F93EDC487DF82CC022C4399E0FA91CA967C62B68DD98FC54315AF85"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-6.7s.png",
+      "sha256": "4284E16FC93DFF9E2BECE53EFF84B0F963163B047FF3A98ADC74162E1D56F671"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-6.9s.png",
+      "sha256": "CEC84322354EA4159B5E61B9419F19C18322A9473344851459E18EB1268ED07D"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-7.1s.png",
+      "sha256": "F32FCE58BAD222BEA7D20DBAE1C085FFFB6AFE58E0C232913D2D79490695D63D"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-7.4s.png",
+      "sha256": "A3D7E80DCC45E5CBF750AF7BC300F9E69A3AA2151E5984F5CDD61A35B6DC736B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-8s.png",
+      "sha256": "5F264E826DB68FA417C759FD0B372292C4F985FCD6F207A41054D3F3BA3D59B9"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-9s.png",
+      "sha256": "0D4DB3D1CEF027D39C32E5339EBF8498EEBDFC310C2D77918C4D9AD22852B0D5"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-12s.png",
+      "sha256": "4D53773BFEC5EFFC2154DB4AAAC55A6EED4A161A831622EF13B3E064CF6F1F76"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-16s.png",
+      "sha256": "22A2031E0A9446F852E79C9E27EB08C1ECAA56FCB98E4EB4A150146EAD3E2451"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-20s.png",
+      "sha256": "8DEF998F5A4D518236C6CCD82862D9E62F3EA3F609B999DFC763E120EF0B0A4B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close-23s.png",
+      "sha256": "255A1CB81EADC564A936DE8A5B8C4BD5A26EB1A1BA13284F24039F7AF00A9685"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/candidate-high-close.json",
+      "sha256": "2B72A287A5F9CB2219285DCBCC85C17D04385D90DB2626D98CF9C13E781A57A4"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-preview-2026-10-27/manifest.json",
+      "sha256": "D7EE702DCD64A5072A2C167C5A510C939C1C7CCE9A9877F6BCD30F83CA56B453"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-1.3s.png",
+      "sha256": "E5352AEEB87C46836C231B8D1F9EC0BBEC05CC99A2EAE239D73F243A42736BCA"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-1.8s.png",
+      "sha256": "34C205F1023FADE865DE37A56927ACEBBD011C005B192EFCCA7E8F8FE08EDDDA"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-2.8s.png",
+      "sha256": "37E169BEDAB0B0CAFA613CCFA85146DBCFFC44453BCECFE5DD964E457CA2F56F"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-4s.png",
+      "sha256": "6DDA55408A3626B0E5ADA5C86FD3B20F10E9DE2415F5943CFE190C015D9A8BAA"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-5s.png",
+      "sha256": "3B9FD99E62CA15A2BA8FC7D99DF419942C84CDE15202752993944985E10AE0F7"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-6.3s.png",
+      "sha256": "4FF8B70772632D31CF86131A17DF572A580D9653B03D8CA600EA1EEAD4B8F09B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-6.7s.png",
+      "sha256": "1E4E252F20FD74E88D809FCDE3CF5E39DCB94F2597D3D0134DFE8B00A5D1374B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-6.9s.png",
+      "sha256": "4F7C10D5819EECE5BDFE199BA49C1A8D589F0417A9F1D3B33D1B6E33298A8F43"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-7.1s.png",
+      "sha256": "3A12D82A273F645A99979C1BCD0AFF38A5805F7E553DF08B8BF719F5E45A707D"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-7.4s.png",
+      "sha256": "22C997C8E7606560DB658D486DB2D5FDD711EE051D232DC11F2ED30D22DA06D8"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-8s.png",
+      "sha256": "1B0A6053B2BB6FBC154DE72C79D119A3B0968DACE94399B88CA635722050A141"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-9s.png",
+      "sha256": "AECDF64932E315E12FFB2457E6FDC7668AFBB5C5B3C52167358C757822447097"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-12s.png",
+      "sha256": "CCEE7FB01001938ADB91E0023A0E0B1D72381EDDC5925DDABEFAADF58CFB29F8"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-16s.png",
+      "sha256": "C872B64F8A34ADBC59A3773A8BB5A244EBD2F2633C197F369492F6473F1B5B54"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-20s.png",
+      "sha256": "E872695724F3F3F47E1ACA28CB885BFFE727DBB628D6B440956F57825B94BA1F"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience-23s.png",
+      "sha256": "CE9E0D6B6A9E910CE6E22798CF593B91143C4EEAFA3C16D83517917EA86EC51C"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/candidate-high-audience.json",
+      "sha256": "16E61093DF207F7B843D8E9F643E04E199DE1D203415FB6D0F3FA9A4BAA9938A"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-audience-2026-10-27/manifest.json",
+      "sha256": "A6CD8289C528F4F8EB2AA59082CEFEEBA02990E7F865A050DC65B9976FE1F4AC"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-1.3s.png",
+      "sha256": "583CD7A037FAAF703725973FD17CF9251D701CAC897772308AD726BFB71059B1"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-1.8s.png",
+      "sha256": "42D8DE56A36D34573218EFBFEFAD9E9667DA1316A5999AEB3D528DCAD5B0A864"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-2.8s.png",
+      "sha256": "04E4A45D7132A080C22FB1039AB4CD556FB5EC17F689F3F98CFD2C7904454661"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-4s.png",
+      "sha256": "AF2BEF2ABD30721A60AE960C9FC97A1E98A010A1F5C8ACEB32B95C81E89EDF25"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-5s.png",
+      "sha256": "649AD1C3C41CD0A75F4C3572127E90C4A23467F0877FF63B90A17276687A5E76"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-6.3s.png",
+      "sha256": "728D91BE9F93EDC487DF82CC022C4399E0FA91CA967C62B68DD98FC54315AF85"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-6.7s.png",
+      "sha256": "9EF36E89CD9341677302A146E86A40B6BC6A9FBEE308140B9AE5EC1A7B5540EF"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-6.9s.png",
+      "sha256": "7F8EA5573B3AB1F4944D8F7F9492124CC707493C0D1C9830913A72D98A1C2E1E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-7.1s.png",
+      "sha256": "0160527BCB8B8CF94A8186FD4B5EC20150EF7EDFCCA92A7390DC6752AD70E135"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-7.4s.png",
+      "sha256": "9A7FB1D5FD6FB6C5EB78B42B923A7349984330339DB70209EC2765F34E87133F"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-8s.png",
+      "sha256": "5F264E826DB68FA417C759FD0B372292C4F985FCD6F207A41054D3F3BA3D59B9"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-9s.png",
+      "sha256": "0D4DB3D1CEF027D39C32E5339EBF8498EEBDFC310C2D77918C4D9AD22852B0D5"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-12s.png",
+      "sha256": "E2421770DCC3707F825676E59C1BDEBB000345DF1934FD00119905341E96840C"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-16s.png",
+      "sha256": "7663A06619DFD68C29A34427D907F075B4AC4F56FA159B94F58D288C4C61F98F"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-20s.png",
+      "sha256": "91DB026D5F70568293985AB77C9294C7A9388652B8ADB3FA826ABBD2E605A0D1"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close-23s.png",
+      "sha256": "BF85F483B40B854B0D8A0A711AC203D5E890D0D091BB7391C7BF8BD1A5F228D1"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/candidate-high-close.json",
+      "sha256": "82DFD3ED15BBCD1E779422B7DAD8824A30AA73A70C1627FCF2D76AF74D552F5A"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-muted-2026-10-27/manifest.json",
+      "sha256": "D18681132838F2151D6F38DA7F4EED6439A4253F94BA3B2350474775CFDFBA33"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-1.3s.png",
+      "sha256": "CFD27AA5CA999D275628E190F61B0358A5D838EB10AEA1038EB08D20A52C0383"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-1.8s.png",
+      "sha256": "02B02671F59B62EE09B10D2952CBA290C11E9C7CB24265DBF01CBC34FB9586E7"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-2.8s.png",
+      "sha256": "A25C07805AD4BB8714C1D1B6F6E9274A977198E3F8AE36662279206E606D0399"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-4s.png",
+      "sha256": "CBBAB78F9966514D15FB8364C2535437BDFEBA7BB7A6EC241A4194914414C9BE"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-5s.png",
+      "sha256": "2F8456EA584F50AD2A19FEAFB390E08FABA2BDC7C11B8D6C00BCAA2EAD87A85E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-6.3s.png",
+      "sha256": "AA367FD4CA1687DD87DB390F888E28B7DFED37E38E1738164C5FE53D181F1726"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-6.7s.png",
+      "sha256": "802ADBC6062C5D2B3EFCB82CDCFF28A33E78F593C5F592B6091246D501AE9FD3"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-6.9s.png",
+      "sha256": "60D6212356213E263E0477C40CAB845E183368E728F5BB4A778DC0B5CC27A419"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-7.1s.png",
+      "sha256": "A184FD080071B5AA50A40933E264D80D1F0D51DD53B40F9FA46283B471343F01"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-7.4s.png",
+      "sha256": "6D8B9F144ACDF2C8C89507351FD8415A9E9A0DFD57880353002F88EB4BBCE881"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-8s.png",
+      "sha256": "797F69C05239CD0A292108C3B5D043FC3CFFFA26CE0C6224FEF6DF24B4145D7C"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-9s.png",
+      "sha256": "2FE0EB474758AE742331FE6F30AA897AF3B4F85327C411EEC5884A5694EF978E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-12s.png",
+      "sha256": "933413CA6A3D606EECCD20DCFA09C76D5E318D1664E10BF9DA71F652D4A61C91"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-16s.png",
+      "sha256": "C6AC1AB3D08037045DD51D86059C1E09D6B84BCA208383C2182A4177183711B6"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-20s.png",
+      "sha256": "8DEF998F5A4D518236C6CCD82862D9E62F3EA3F609B999DFC763E120EF0B0A4B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close-23s.png",
+      "sha256": "255A1CB81EADC564A936DE8A5B8C4BD5A26EB1A1BA13284F24039F7AF00A9685"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/candidate-high-close.json",
+      "sha256": "344C4744E083F78247843FB587B62A17E807C83B62BEF929B1122D9A7F8FF6BB"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-2026-10-27/manifest.json",
+      "sha256": "54093327CDB44D7664A96023FCF0150FD623897AD50723C3100F2A9733F615E0"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-1.3s.png",
+      "sha256": "583CD7A037FAAF703725973FD17CF9251D701CAC897772308AD726BFB71059B1"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-1.8s.png",
+      "sha256": "02920DC2E11E22295C4E7EA06754F7FCAE20BB765E4ED1B68A386E0AB739B180"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-2.8s.png",
+      "sha256": "873277A3C63E4319B1B50764614091D48D28915D0400575D456BE988A12263E2"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-4s.png",
+      "sha256": "11AA8CC3BF114AFF8C3D806683D6DAD78AD828396244E2E62E7240D0827A61D8"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-5s.png",
+      "sha256": "2F8456EA584F50AD2A19FEAFB390E08FABA2BDC7C11B8D6C00BCAA2EAD87A85E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-6.3s.png",
+      "sha256": "AA367FD4CA1687DD87DB390F888E28B7DFED37E38E1738164C5FE53D181F1726"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-6.7s.png",
+      "sha256": "FCF0DFE75C667BA8BFC52B8F1477AC65A812CEDA3604BA5C79E3E6B44E6C70AC"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-6.9s.png",
+      "sha256": "1B7BB5CC308F9052B6DF9C92AF38F254A78A4A1F51AD8CA22D6386ABF7DF3FDE"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-7.1s.png",
+      "sha256": "12F103B205B23D320F2DC5DB703EEB9764EE807F1364D896C7FE748AF7C20DA5"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-7.4s.png",
+      "sha256": "005646599397F3EF757D690CC88C1E37B0D511AD15EBF396CAF5BDCE6776F7A5"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-8s.png",
+      "sha256": "797F69C05239CD0A292108C3B5D043FC3CFFFA26CE0C6224FEF6DF24B4145D7C"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-9s.png",
+      "sha256": "2FE0EB474758AE742331FE6F30AA897AF3B4F85327C411EEC5884A5694EF978E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-12s.png",
+      "sha256": "8380BF114D30165399AAB75E0A152668A4F6744B0427CF71BF59711F265E18CA"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-16s.png",
+      "sha256": "C6AC1AB3D08037045DD51D86059C1E09D6B84BCA208383C2182A4177183711B6"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-20s.png",
+      "sha256": "8DEF998F5A4D518236C6CCD82862D9E62F3EA3F609B999DFC763E120EF0B0A4B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close-23s.png",
+      "sha256": "255A1CB81EADC564A936DE8A5B8C4BD5A26EB1A1BA13284F24039F7AF00A9685"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/candidate-high-close.json",
+      "sha256": "A0DDC1F33B6B876154AB8130853CC982B610DBB52405D2080CB6D3641A38B451"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-hidden-muted-2026-10-27/manifest.json",
+      "sha256": "5EE49F45CDD9570070E82837B5BC002DE6472FF856DD8D4D3F202FEEEFF8E4DC"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-1.3s.png",
+      "sha256": "16A09A41C6A2041B5620998602B8228095F7A90CEDE2F438796EB0DE9C1AB246"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-1.8s.png",
+      "sha256": "4C338E80BF9222FAE6F9CE92FCF1923E84423EFFB305A369DE99749DEFFFC525"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-2.8s.png",
+      "sha256": "0AF1041CF5F362CA105AC12C9DAEB3C993D7B751A51FDC758681F7D6E7309584"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-4s.png",
+      "sha256": "3C862E16FCA5A87AB8D878AD8E7E8F5EF1965F2E99AA70F05500783D408E43E6"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-5s.png",
+      "sha256": "4503D812FAA1DC3849DD2D12670C051250955FCE920084C6437A98AC5D032980"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-6.3s.png",
+      "sha256": "5BB56DBC1F51CD75D3C1F572AAD90BE4B7A77B77FB64B5891238508A8965D45C"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-6.7s.png",
+      "sha256": "E35E0CC68C6EA39F1827D0B76407A7CBE3E7571821336ACF260E5D2ED1F29B66"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-6.9s.png",
+      "sha256": "B453FAE7EBD57DFF6DE0B334D5A77BC5F657F809B28E5620E3C8C377D5C2516F"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-7.1s.png",
+      "sha256": "159611239A6B8696213C41AA25CA3D8DA23668CD4367F86783096AA1B6D04115"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-7.4s.png",
+      "sha256": "05D7368030B07428FB646DC23892A09EE41B2F727133008E6E48E1D4AD511FA8"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-8s.png",
+      "sha256": "0435171BE2A68F8611465A683D02F01EA7E1A876E8AE82637607133D5B799BC0"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-9s.png",
+      "sha256": "E45A3DAF4DDD30F31227A2F18A19D05A87AF09C4632F6B1B9DCAB62023BA4641"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-12s.png",
+      "sha256": "3A614DA26EA0B42E8BEA4E410D157D6A386A0E6753FC419B7B52D621FAB41ACB"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-16s.png",
+      "sha256": "73A787A844EDED0FE8683FF4D2B9569378003FE3350B7A6F4994C0FF6693D542"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-20s.png",
+      "sha256": "573FBD0DFD05C92160636678DAFB72CDD04AD4B37989569FB96C42627CE4F4B1"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close-23s.png",
+      "sha256": "66D387F96E3C58CF2DEC108E44F285812D5F649BCFDC7D16B48B04FF6E314BBC"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-medium-close.json",
+      "sha256": "63DCC839BCA42C42444C3C69039EF2C6530D691F3DFB30CDC9380D63B69F3BA6"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/manifest.json",
+      "sha256": "C07FE8FA82ED6D48B0D57070DE5735BAA2DCAF3D9C1993EB15442FEE2FBDFC39"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-1.3s.png",
+      "sha256": "8C14B3900FFD88D972C608C5EF4AC6625908AFF7AD85D21CC5D0DD6E2B5B5BF0"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-1.8s.png",
+      "sha256": "AE6C2530A57FA12C94FF832463079CF783F4126DE47E517D6B70143CBB0B48ED"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-2.8s.png",
+      "sha256": "E75FFBDFDE09C0ABB0E2778F75C13D634C0ED28F4B4072A554FA5C50640096A0"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-4s.png",
+      "sha256": "E381E062A2C6F98C99B49EF3E2E71246414AFD1F081930382520484F4310F01E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-5s.png",
+      "sha256": "76B54B253F194DBABF12222D1A317E3A8597FF42C86319FAB1F2D9EB51C1205A"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-6.3s.png",
+      "sha256": "0E55DA9F48150BA8ABA99CEE9A300DF2B550B743937EC450161D84BF47DABFEB"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-6.7s.png",
+      "sha256": "44995E5425C32A2F4C70EE2C78F655B6333C2B5DECB8C6572E594C60E5EB907E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-6.9s.png",
+      "sha256": "F61BEE15A8DF67C0F84B4AE200CFDF66CF5DA0C5275BE46100FE53631CBB76E6"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-7.1s.png",
+      "sha256": "5C7201733A5E696DB9C9F89FB87F7A369B0EE7B71288A1BB43F1FDACDE46181A"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-7.4s.png",
+      "sha256": "3CE85AA100E5AEFBE17D94952C948670D3A7744B90A4CF8999BADF0151322868"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-8s.png",
+      "sha256": "C6152D3BDBF81327FFB8A367160C01632BCB6B6ACD56CE9B028D19F29452AC09"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-9s.png",
+      "sha256": "2DBD5C35CC5364A4AC91C76E25F567C0D01646064E96ACBA8EED63EDC1DC699B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-12s.png",
+      "sha256": "7A1344287242D6526645353B33E08626A0747D1A5E0053B64DFD18D01E306661"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-16s.png",
+      "sha256": "09965926DC326375557DD74E697B3DCF7855DB6A8E9E90E33DCB07F65AF63281"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-20s.png",
+      "sha256": "91078DA08646A450F475BBE80AA3FE3C0F7A1DEACB8A62D2B6CA738606B6D5B8"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close-23s.png",
+      "sha256": "7B205CB781966D2FBF3668441A2EB9A920B3BA4AA123C7AE0506F8F3E2E97091"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/candidate-low-close.json",
+      "sha256": "9D6B453FB4E577DD7D790E266030C2CCE53C631AE09E35964436E5A2AD94FC3E"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-lit-tiers-2026-10-27/manifest.json",
+      "sha256": "C07FE8FA82ED6D48B0D57070DE5735BAA2DCAF3D9C1993EB15442FEE2FBDFC39"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close.json",
+      "sha256": "F67D51CC9131ACF835D9C9FB8F70D27A3F0BA2A8AC6F76F04C0AAB712B7A1DE8"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/manifest.json",
+      "sha256": "4E39A992747762E33C0EC0C69597E7568B941862827F4BB1629C3467E6165BE7"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-2.8s.png",
+      "sha256": "04E4A45D7132A080C22FB1039AB4CD556FB5EC17F689F3F98CFD2C7904454661"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-5s.png",
+      "sha256": "649AD1C3C41CD0A75F4C3572127E90C4A23467F0877FF63B90A17276687A5E76"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-6.3s.png",
+      "sha256": "728D91BE9F93EDC487DF82CC022C4399E0FA91CA967C62B68DD98FC54315AF85"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-6.9s.png",
+      "sha256": "CEC84322354EA4159B5E61B9419F19C18322A9473344851459E18EB1268ED07D"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-9s.png",
+      "sha256": "0D4DB3D1CEF027D39C32E5339EBF8498EEBDFC310C2D77918C4D9AD22852B0D5"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-12s.png",
+      "sha256": "EBED5C438D93710A3B215A501E5B3A2FB404CCD2AD5971E0BB0C1616EC8554E7"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-16s.png",
+      "sha256": "89D7857D7B8E05B3A8E86D38837F8FABA363FA56E47D5B50EB05E84DB5E78369"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-20s.png",
+      "sha256": "8DEF998F5A4D518236C6CCD82862D9E62F3EA3F609B999DFC763E120EF0B0A4B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-witness-final-2026-10-28/candidate-high-close-23s.png",
+      "sha256": "2CD62520604003E94606566DE205F7C55E1378EC6AE3F3EB3B6BA6F93BDC2275"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-cost-2026-10-28/control-high-audience.json",
+      "sha256": "CF7706CDF939EB192D11F9EFBEB5C0B9751FF892E360B04A845B1D5CD3945E2B"
+    },
+    {
+      "path": "target/fireworks-f8/shell-smoke-cost-2026-10-28/candidate-high-audience.json",
+      "sha256": "13059AAA7DCB682AF27245D54DBCC373F792B67F2DEC1ED486B4CA2A1233F0C7"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/shell-smoke-2026-10-28/old-haze.png",
+      "sha256": "4284E16FC93DFF9E2BECE53EFF84B0F963163B047FF3A98ADC74162E1D56F671"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/shell-smoke-2026-10-28/relit.png",
+      "sha256": "CEC84322354EA4159B5E61B9419F19C18322A9473344851459E18EB1268ED07D"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/shell-smoke-2026-10-28/muted.png",
+      "sha256": "7F8EA5573B3AB1F4944D8F7F9492124CC707493C0D1C9830913A72D98A1C2E1E"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/shell-smoke-2026-10-28/hidden.png",
+      "sha256": "60D6212356213E263E0477C40CAB845E183368E728F5BB4A778DC0B5CC27A419"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/shell-smoke-2026-10-28/point-stars.png",
+      "sha256": "0D4DB3D1CEF027D39C32E5339EBF8498EEBDFC310C2D77918C4D9AD22852B0D5"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/shell-smoke-2026-10-28/quiet.png",
+      "sha256": "4D53773BFEC5EFFC2154DB4AAAC55A6EED4A161A831622EF13B3E064CF6F1F76"
+    }
+  ],
+  "validation": {
+    "host_tests": "32 passed",
+    "authoring_test": "1 passed, four assets at all tiers",
+    "clippy": "all host targets passed -D warnings",
+    "format": "workspace check passed"
+  },
+  "remaining": "Bounded selected-star light outputs/host enablement, stronger art review, volume/depth limitations, expanded show composition and production-load performance."
+}

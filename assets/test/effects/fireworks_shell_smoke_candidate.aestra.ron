@@ -1,0 +1,69 @@
+(
+    format_version: 4,
+    id: "a3574a00-0000-4000-8000-000000f88000",
+    name: "Fireworks Calibrated Shell Smoke Pair",
+    duration: 24.0,
+    playback_mode: Once,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    emitters: [],
+    effect_clips: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f880a0",
+            source: "a3574a00-0000-4000-8000-000000f88200",
+            start_time: 0.0,
+            source_offset: 0.0,
+            duration: 18.0,
+            transform: (
+                translation: (-10.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            seed: Fixed(17428930557923819521),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f880a1",
+            source: "a3574a00-0000-4000-8000-000000f88100",
+            start_time: 5.5,
+            source_offset: 0.0,
+            duration: 18.0,
+            transform: (
+                translation: (6.0, 5.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            seed: Fixed(17428930557923819521),
+            parameter_overrides: {
+                "a3574a00-0000-4000-8000-0000000f803d": Gradient((
+                    id: "a3574a00-0000-4000-8000-000000f880b0",
+                    keys: [
+                        (
+                            time: 0.0,
+                            color: (0.25, 0.6, 1.0, 1.0),
+                        ),
+                        (
+                            time: 0.65,
+                            color: (0.12, 0.4, 1.0, 1.0),
+                        ),
+                        (
+                            time: 1.0,
+                            color: (0.04, 0.08, 0.25, 1.0),
+                        ),
+                    ],
+                )),
+            },
+        ),
+    ],
+    metadata: {
+        "notes": "Opt-in two-shell smoke integration: dense gold at 0s, blue point stars at 5.5s, fixed source seeds. Later representative flash illuminates older deposited smoke. Existing 13-clip shows unchanged; selected-star lighting off; native image/cost approval separate.",
+    },
+)

@@ -132,21 +132,21 @@ jobs:
           free -h
 
       - name: Check Linux workspace including audio-enabled showcase
-        run: cargo check --workspace --all-targets --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked
+        run: cargo check --workspace --all-targets --features aestra-bench/gpu,aestra-demo-fireworks/fireworks-audio --locked
 
       - name: Run strict Linux Clippy
-        run: cargo clippy --workspace --all-targets --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --features aestra-bench/gpu,aestra-demo-fireworks/fireworks-audio --locked -- -D warnings
 
       - name: Run Linux workspace and example tests
-        # --all-targets runs the fireworks example's tests, not its windowed main.
+        # --all-targets runs the fireworks demo's tests, not its windowed main.
         # Ignored native GPU probes remain opt-in; no virtual GPU acceptance is inferred.
         # GNU time preserves Cargo's exit status and records elapsed time/max RSS,
         # including on a signalled child. Exit 143 alone does not identify its cause.
-        run: /usr/bin/time -v cargo test --workspace --all-targets --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked
+        run: /usr/bin/time -v cargo test --workspace --all-targets --features aestra-bench/gpu,aestra-demo-fireworks/fireworks-audio --locked
 
       - name: Run Linux documentation tests
         # Cargo's --all-targets above excludes doctests. Keep the same feature graph.
-        run: /usr/bin/time -v cargo test --workspace --doc --features aestra-bench/gpu,aestra-bevy/fireworks-audio --locked
+        run: /usr/bin/time -v cargo test --workspace --doc --features aestra-bench/gpu,aestra-demo-fireworks/fireworks-audio --locked
 
       - name: Report Linux resources and compiler cache
         if: always()

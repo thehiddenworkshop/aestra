@@ -180,7 +180,14 @@ fn {entry}(input: {input_type}) -> @location(0) vec4<f32> {{
         // intensity: additive light must not absorb later layers.
         var extinction = color.a;
         @if(AESTRA_FRAGMENT_LIST_ADDITIVE) {{ extinction = 0.0; }}
-        oit_draw(input.{position}, vec4<f32>(color.rgb * color.a, extinction));
+        let payload = vec4<f32>(color.rgb * color.a, extinction);
+        // Compare the actual stored representation, never a visibility epsilon.
+        // Zero RGB mantissas AND zero extinction are the source-over identity.
+        // Black absorbers and zero-extinction light must retain their nodes.
+        if (pack_24bit_depth_8bit_alpha(0.0, payload.a) & 0xffu) != 0u ||
+            (vec3_to_rgb9e5_(payload.rgb) & 0x07ffffffu) != 0u {{
+            oit_draw(input.{position}, payload);
+        }}
         discard;
     }}
     return color;
@@ -209,7 +216,9 @@ fn {entry}(input: {input_type}) -> @location(0) vec4<f32> {{
     };
     format!(
         r#"@if(AESTRA_FRAGMENT_LIST_OIT)
-import bevy_core_pipeline::oit::draw::oit_draw;
+import bevy_core_pipeline::oit::draw::{{oit_draw, pack_24bit_depth_8bit_alpha}};
+@if(AESTRA_FRAGMENT_LIST_OIT)
+import bevy_pbr::render::rgb9e5::vec3_to_rgb9e5_;
 @if(AESTRA_FRAGMENT_LIST_OIT && !AESTRA_SCENE_POINT_LIGHTING)
 import bevy_pbr::render::mesh_view_bindings::view;
 {source}
@@ -238,11 +247,8 @@ mod tests {
     #[test]
     fn fragment_list_wraps_alpha_and_additive_without_changing_portable_source() {
         let source = compose_fragment_list(aestra_gpu::shader::SPRITE_RENDER_WESL, false);
-        assert!(
-            source.contains(
-                "oit_draw(input.clip_position, vec4<f32>(color.rgb * color.a, extinction))"
-            )
-        );
+        assert!(source.contains("let payload = vec4<f32>(color.rgb * color.a, extinction)"));
+        assert!(source.contains("oit_draw(input.clip_position, payload)"));
         assert!(source.contains("fn aestra_oit_color(input: VertexOutput)"));
         assert!(source.contains("fn fragment_additive(input: VertexOutput)"));
         assert!(source.contains("fn aestra_oit_additive_color(input: VertexOutput)"));
@@ -304,12 +310,15 @@ mod tests {
         }
         // Check the actual input struct with Naga, not only a generated string.
         // Native tests separately qualify Bevy's real imported implementation.
-        let source = source.replace("@if(AESTRA_FRAGMENT_LIST_OIT)\nimport bevy_core_pipeline::oit::draw::oit_draw;", "")
+        let source = source.replace("@if(AESTRA_FRAGMENT_LIST_OIT)\nimport bevy_core_pipeline::oit::draw::{oit_draw, pack_24bit_depth_8bit_alpha};", "")
+            .replace("@if(AESTRA_FRAGMENT_LIST_OIT)\nimport bevy_pbr::render::rgb9e5::vec3_to_rgb9e5_;", "")
             .replace("@if(AESTRA_FRAGMENT_LIST_OIT && !AESTRA_SCENE_POINT_LIGHTING)\nimport bevy_pbr::render::mesh_view_bindings::view;", "")
             .replace("@if(!AESTRA_FRAGMENT_LIST_OIT)", "")
             .replace("@if(AESTRA_FRAGMENT_LIST_OIT)", "")
             .replace("@if(AESTRA_FRAGMENT_LIST_ADDITIVE)", "");
-        let source = format!("{source}\nfn oit_draw(position: vec4<f32>, color: vec4<f32>) {{}}");
+        let source = format!(
+            "{source}\nfn oit_draw(position: vec4<f32>, color: vec4<f32>) {{}}\nfn pack_24bit_depth_8bit_alpha(depth: f32, alpha: f32) -> u32 {{ return 0u; }}\nfn vec3_to_rgb9e5_(rgb: vec3<f32>) -> u32 {{ return 0u; }}"
+        );
         let module = naga::front::wgsl::parse_str(&source).unwrap();
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),

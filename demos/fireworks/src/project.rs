@@ -1,0 +1,613 @@
+//! Host-side loading only. Shipping applications can load an offline compiled artifact instead.
+use aestra_bevy::{
+    CompiledEffectProject, EffectAsset, EffectCompiler, ExtensionRegistry, LightingQualityPolicy,
+    PlaybackHistoryPolicy, QualityTier,
+};
+use aestra_project::ProjectAssetIndex;
+use bevy::prelude::Resource;
+use std::{path::PathBuf, sync::Arc};
+
+#[path = "paths.rs"]
+mod paths;
+
+pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
+pub const USAGE: &str = "cargo run --release -p aestra-demo-fireworks -- [--cinematic] [--smoke-art-show | --persistent-smoke-show | --smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--experimental-oit] [--oit-fragments-per-pixel N] [--star-lights] [--no-flash-lights] [--tuned-smoke] [--launch-pattern spaced|overlap] [--max-owners N] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--experimental-oit supports host rockets or a qualified show candidate; it audits renderer eligibility, uses Msaa::Off and an explicit 128 MiB shared transparency guard, and exits on admission failure. The default reservation is 4 fragments/pixel; an explicit --oit-fragments-per-pixel changes reservation within the same ceiling. Interactive mode stops after observed loss. It is not default-show adoption.\n--smoke-art-show plays the separate F8.1C4 smaller distributed wisp draft; --persistent-smoke-show plays the opt-in F8.1C3 authored show candidate, not final art approval. --smoke-lighting plays F8.3B fluid; --particle-smoke-lighting plays F8.3C sprites; --smoke-persistence plays F8.1A billows; --smoke-cohorts plays F8.1B death-linked shell smoke (these labs are not the full show). Default: host-owned rockets; Enter launches, and --cinematic restores the authored reference show. Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles flashes, P toggles selected lights when enabled, M mutes, Esc exits.";
+
+#[derive(Resource)]
+pub struct ShowProject(pub Arc<CompiledEffectProject>);
+
+#[derive(Resource)]
+pub struct Options {
+    pub max_owners: Option<usize>,
+    pub tuned_smoke: bool,
+    pub launch_pattern: String,
+    pub star_lights: bool,
+    pub no_flash_lights: bool,
+    pub host_driven: bool,
+    pub tier: String,
+    pub history: PlaybackHistoryPolicy,
+    pub project_root: PathBuf,
+    pub effect_path: PathBuf,
+    pub audio_root: Option<PathBuf>,
+    pub smoke_lighting: bool,
+    pub particle_smoke_lighting: bool,
+    pub smoke_persistence: bool,
+    pub smoke_cohorts: bool,
+    pub persistent_smoke_show: bool,
+    pub smoke_art_show: bool,
+    pub experimental_oit: bool,
+    pub oit_fragments_per_pixel: f32,
+}
+
+impl Options {
+    pub fn lighting_policy(&self) -> LightingQualityPolicy {
+        let mut policy = LightingQualityPolicy::preset(&self.tier).unwrap();
+        policy.particle.enabled = self.smoke_lighting || self.star_lights;
+        policy.representative.enabled = !self.no_flash_lights;
+        if self.smoke_lighting {
+            // Two saved outputs at 4/2/1 lights each; no 96-slot reservation for an 8-light lab.
+            policy.particle.max_lights = match self.tier.as_str() {
+                "high" => 8,
+                "medium" => 4,
+                _ => 2,
+            };
+            policy.representative.max_lights = 2;
+        }
+        policy
+    }
+
+    pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
+        let executable =
+            std::env::current_exe().map_err(|e| format!("Executable location: {e}"))?;
+        let manifest = std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from);
+        let (project, audio) = paths::default_paths(&executable, manifest.as_deref());
+        Self::parse_with_paths(args, project, audio)
+    }
+
+    fn parse_with_paths(
+        args: impl IntoIterator<Item = String>,
+        project_root: PathBuf,
+        audio_root: PathBuf,
+    ) -> Result<Self, String> {
+        let mut options = Self {
+            max_owners: None,
+            tuned_smoke: false,
+            launch_pattern: "spaced".into(),
+            star_lights: false,
+            no_flash_lights: false,
+            host_driven: true,
+            tier: "high".into(),
+            smoke_lighting: false,
+            particle_smoke_lighting: false,
+            smoke_persistence: false,
+            smoke_cohorts: false,
+            persistent_smoke_show: false,
+            smoke_art_show: false,
+            experimental_oit: false,
+            oit_fragments_per_pixel: 4.0,
+            history: PlaybackHistoryPolicy::PlaybackOnly,
+            project_root,
+            effect_path: "effects/fireworks_show.aestra.ron".into(),
+            audio_root: if cfg!(feature = "fireworks-audio") {
+                Some(audio_root)
+            } else {
+                None
+            },
+        };
+        let mut args = args.into_iter();
+        let mut explicit_effect = false;
+        let mut fluid_lab = false;
+        let mut particle_lab = false;
+        let mut explicit_oit_reserve = false;
+        while let Some(arg) = args.next() {
+            if arg == "--tuned-smoke" {
+                options.tuned_smoke = true;
+                continue;
+            }
+            if arg == "--star-lights" {
+                options.star_lights = true;
+                continue;
+            }
+            if arg == "--no-flash-lights" {
+                options.no_flash_lights = true;
+                continue;
+            }
+            if arg == "--cinematic" {
+                options.host_driven = false;
+                continue;
+            }
+            if arg == "--experimental-oit" {
+                options.experimental_oit = true;
+                continue;
+            }
+            if arg == "--smoke-art-show" {
+                options.smoke_art_show = true;
+                continue;
+            }
+            if arg == "--persistent-smoke-show" {
+                options.persistent_smoke_show = true;
+                continue;
+            }
+            if arg == "--smoke-cohorts" {
+                options.smoke_lighting = true;
+                options.particle_smoke_lighting = true;
+                options.smoke_cohorts = true;
+                continue;
+            }
+            if arg == "--smoke-persistence" {
+                options.smoke_lighting = true;
+                options.particle_smoke_lighting = true;
+                options.smoke_persistence = true;
+                continue;
+            }
+            if arg == "--smoke-lighting" {
+                options.smoke_lighting = true;
+                fluid_lab = true;
+                continue;
+            }
+            if arg == "--particle-smoke-lighting" {
+                options.smoke_lighting = true;
+                options.particle_smoke_lighting = true;
+                particle_lab = true;
+                continue;
+            }
+            if arg == "--no-audio" {
+                options.audio_root = None;
+                continue;
+            }
+            let value = args
+                .next()
+                .ok_or_else(|| format!("Missing value for {arg}"))?;
+            match arg.as_str() {
+                "--oit-fragments-per-pixel" => {
+                    let reserve: f32 = value.parse().map_err(|_| "Invalid OIT reservation")?;
+                    if !reserve.is_finite() || reserve <= 0.0 {
+                        return Err("OIT fragments per pixel must be finite and positive".into());
+                    }
+                    options.oit_fragments_per_pixel = reserve;
+                    explicit_oit_reserve = true;
+                }
+                "--max-owners" => {
+                    let limit = value
+                        .parse::<usize>()
+                        .map_err(|_| "--max-owners must be an integer of at least 2")?;
+                    if limit < 2 {
+                        return Err("--max-owners must be at least 2; omit it for unrestricted host admission".into());
+                    }
+                    options.max_owners = Some(limit);
+                }
+                "--launch-pattern" if matches!(value.as_str(), "spaced" | "overlap") => {
+                    options.launch_pattern = value
+                }
+                "--tier" if LightingQualityPolicy::preset(&value).is_some() => options.tier = value,
+                "--history" => {
+                    options.history = match value.as_str() {
+                        "playback-only" => PlaybackHistoryPolicy::PlaybackOnly,
+                        "replay-enabled" => PlaybackHistoryPolicy::ReplayEnabled,
+                        _ => return Err("History must be playback-only or replay-enabled".into()),
+                    }
+                }
+                "--project" => options.project_root = value.into(),
+                "--effect" => {
+                    options.effect_path = value.into();
+                    explicit_effect = true;
+                }
+                "--audio-root" if cfg!(feature = "fireworks-audio") => {
+                    options.audio_root = Some(value.into())
+                }
+                "--audio-root" => {
+                    return Err("Rebuild with --features fireworks-audio for WAV playback".into());
+                }
+                _ => return Err(format!("Unknown option or invalid value: {arg} {value}")),
+            }
+        }
+        if options.smoke_art_show && !explicit_effect {
+            options.effect_path = "effects/fireworks_show_wispy_smoke.aestra.ron".into();
+        } else if options.persistent_smoke_show && !explicit_effect {
+            options.effect_path = "effects/fireworks_show_persistent_smoke.aestra.ron".into();
+        } else if options.smoke_lighting && !explicit_effect {
+            options.effect_path = if options.smoke_cohorts {
+                "effects/fireworks_smoke_cohorts.aestra.ron"
+            } else if options.smoke_persistence {
+                "effects/fireworks_smoke_persistence.aestra.ron"
+            } else if options.particle_smoke_lighting {
+                "effects/fireworks_particle_smoke_lighting.aestra.ron"
+            } else {
+                "effects/fireworks_smoke_lighting.aestra.ron"
+            }
+            .into();
+        }
+        if (fluid_lab && options.particle_smoke_lighting)
+            || (particle_lab && (options.smoke_persistence || options.smoke_cohorts))
+            || (options.smoke_persistence && options.smoke_cohorts)
+        {
+            return Err(
+                "Choose one smoke lab: fluid lighting, particle lighting, persistence or cohorts"
+                    .into(),
+            );
+        }
+        if (options.persistent_smoke_show && options.smoke_art_show)
+            || ((options.persistent_smoke_show || options.smoke_art_show) && options.smoke_lighting)
+        {
+            return Err("Choose one show candidate or smoke lab".into());
+        }
+        // Choosing an authored show, effect or lab is an explicit cinematic mode.
+        if explicit_oit_reserve && !options.experimental_oit {
+            return Err("--oit-fragments-per-pixel requires --experimental-oit".into());
+        }
+        if explicit_effect
+            || options.smoke_art_show
+            || options.persistent_smoke_show
+            || options.smoke_lighting
+        {
+            options.host_driven = false;
+        }
+        if options.experimental_oit
+            && !(options.host_driven || options.smoke_art_show || options.persistent_smoke_show)
+        {
+            return Err("--experimental-oit requires host rockets, --smoke-art-show or --persistent-smoke-show; labs/default cinematic show are not qualified".into());
+        }
+        if !options.host_driven
+            && (options.tuned_smoke
+                || options.launch_pattern != "spaced"
+                || options.max_owners.is_some())
+        {
+            return Err("--tuned-smoke, --launch-pattern and --max-owners are host options; cinematic reviews select their explicit effect asset".into());
+        }
+        options.project_root = options
+            .project_root
+            .canonicalize()
+            .map_err(|e| format!("Project root {}: {e}", options.project_root.display()))?;
+        if !options.project_root.is_dir() {
+            return Err("Project root must be a directory".into());
+        }
+        if !options.effect_path.is_absolute() {
+            options.effect_path = options.project_root.join(&options.effect_path);
+        }
+        // File discovery and Bevy's asset source must use the same absolute folder.
+        // An absent optional WAV pack remains allowed and is reported by the audio host.
+        options.audio_root = options
+            .audio_root
+            .map(|root| root.canonicalize().unwrap_or(root));
+        Ok(options)
+    }
+
+    pub fn compile(&self) -> Result<Arc<CompiledEffectProject>, String> {
+        if self.host_driven {
+            return super::host::compile(self);
+        }
+        let source = std::fs::read_to_string(&self.effect_path)
+            .map_err(|e| format!("{}: {e}", self.effect_path.display()))?;
+        let effect = EffectAsset::from_ron(&source).map_err(|e| e.to_string())?;
+        let resolved = ProjectAssetIndex::scan(&self.project_root)
+            .resolve_effect_project(&effect)
+            .map_err(|e| e.to_string())?;
+        let mut registry = if self.smoke_lighting {
+            ExtensionRegistry::builtin()
+        } else {
+            ExtensionRegistry::linked()
+        };
+        if self.smoke_lighting && !self.particle_smoke_lighting {
+            registry
+                .install(&aestra_fluid::FluidExtension)
+                .map_err(|e| e.to_string())?;
+        }
+        let project = EffectCompiler::with_extensions(registry)
+            .with_tier(QualityTier::preset(&self.tier).expect("validated tier"))
+            .compile_resolved_project(&resolved)
+            .map_err(|e| e.to_string())?;
+        if self.star_lights
+            && !std::iter::once(&project.root)
+                .chain(project.dependencies.values())
+                .any(|effect| effect.emitters.iter().any(|e| !e.scene_outputs.is_empty()))
+        {
+            return Err("--star-lights needs authored particle-light outputs; use the default host rockets or effects/fireworks_shell_star_lights.aestra.ron".into());
+        }
+        Ok(Arc::new(project))
+    }
+}
+
+#[cfg(test)]
+#[path = "smoke_cohorts_tests.rs"]
+mod smoke_cohorts_tests;
+
+#[cfg(test)]
+#[path = "persistent_smoke_show_tests.rs"]
+mod persistent_smoke_show_tests;
+
+#[cfg(test)]
+#[path = "star_smoke_tests.rs"]
+mod star_smoke_tests;
+
+#[cfg(test)]
+#[path = "wind_smoke_tests.rs"]
+mod wind_smoke_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aestra_bevy::{EffectPlaybackMode, EffectPlayer};
+    #[test]
+    fn host_look_and_overlap_are_explicit_and_cannot_silently_change_cinematic_playback() {
+        assert_eq!(Options::parse([]).unwrap().max_owners, None);
+        let options = Options::parse([
+            "--tuned-smoke".into(),
+            "--launch-pattern".into(),
+            "overlap".into(),
+            "--star-lights".into(),
+        ])
+        .unwrap();
+        assert!(options.host_driven && options.tuned_smoke);
+        assert_eq!(options.launch_pattern, "overlap");
+        for args in [
+            vec!["--max-owners", "0"],
+            vec!["--max-owners", "invalid"],
+            vec!["--cinematic", "--max-owners", "24"],
+            vec!["--launch-pattern", "unknown"],
+            vec!["--cinematic", "--launch-pattern", "overlap"],
+            vec!["--cinematic", "--tuned-smoke"],
+        ] {
+            assert!(Options::parse(args.into_iter().map(String::from)).is_err());
+        }
+    }
+
+    #[test]
+    fn star_lighting_is_explicit_and_independent_of_flashes_or_smoke_labs() {
+        let default = Options::parse([]).unwrap();
+        assert!(!default.lighting_policy().particle.enabled);
+        assert!(default.lighting_policy().representative.enabled);
+        let selected =
+            Options::parse(["--star-lights".into(), "--no-flash-lights".into()]).unwrap();
+        assert!(selected.host_driven && !selected.smoke_lighting);
+        assert!(selected.lighting_policy().particle.enabled);
+        assert!(!selected.lighting_policy().representative.enabled);
+        assert!(
+            Options::parse(["--star-lights".into(), "--cinematic".into()])
+                .unwrap()
+                .compile()
+                .unwrap_err()
+                .contains("authored particle-light outputs")
+        );
+    }
+
+    #[test]
+    fn missing_package_project_does_not_fall_back_to_source_checkout() {
+        let missing = std::env::current_exe()
+            .unwrap()
+            .join("missing-package/assets/test");
+        let error = Options::parse_with_paths([], missing.clone(), missing.join("audio"))
+            .err()
+            .expect("missing packaged data must fail");
+        assert!(error.contains(&missing.display().to_string()));
+    }
+
+    #[test]
+    fn explicit_paths_and_silence_override_missing_package_defaults() {
+        let source = Options::parse([]).unwrap().project_root;
+        let missing = std::env::current_exe().unwrap().join("missing-package");
+        let mut args = vec![
+            "--project".into(),
+            source.display().to_string(),
+            "--effect".into(),
+            "effects/custom.aestra.ron".into(),
+        ];
+        if cfg!(feature = "fireworks-audio") {
+            args.extend(["--audio-root".into(), source.display().to_string()]);
+            let options =
+                Options::parse_with_paths(args.clone(), missing.clone(), missing.clone()).unwrap();
+            assert_eq!(options.audio_root, Some(source.clone()));
+        }
+        args.push("--no-audio".into());
+        let options = Options::parse_with_paths(args, missing.clone(), missing).unwrap();
+        assert_eq!(options.project_root, source);
+        assert_eq!(
+            options.effect_path,
+            source.join("effects/custom.aestra.ron")
+        );
+        assert!(options.audio_root.is_none());
+    }
+
+    #[test]
+    fn smoke_persistence_keeps_births_bounded_and_tails_move_then_drain() {
+        for tier in ["high", "medium", "low"] {
+            let options =
+                Options::parse(["--smoke-persistence".into(), "--tier".into(), tier.into()])
+                    .unwrap();
+            let project = options.compile().unwrap();
+            let root = &project.root;
+            assert!(root.extension_stages.is_empty());
+            assert_eq!(root.duration, 18.0);
+            assert_eq!(root.emitters.len(), 3);
+            assert_eq!(root.emitters[0].max_particles, 96);
+            let presented = aestra_bevy::PresentedEffect::new(root.clone());
+            let binding = presented
+                .material_binding_for_emitter(
+                    root.emitters[0].renderers[0].material,
+                    root.emitters[0].source,
+                )
+                .unwrap();
+            assert!(binding.program().requires_scene_lighting());
+            let sample = |t| {
+                let mut particles = Vec::new();
+                aestra_runtime::evaluate(root, t, SHOW_SEED, &mut particles);
+                particles
+                    .into_iter()
+                    .filter(|p| p.emitter_index == 0)
+                    .collect::<Vec<_>>()
+            };
+            let early = sample(2.0);
+            let stopped = sample(4.1);
+            let tail = sample(7.0);
+            assert!(early.len() < stopped.len());
+            assert_eq!(stopped.len(), 88, "authored demand fits the 96-slot pool");
+            assert_eq!(
+                stopped.len(),
+                tail.len(),
+                "no births after emission end, no early death"
+            );
+            assert!(
+                tail.iter()
+                    .zip(&stopped)
+                    .all(|(a, b)| a.particle_index == b.particle_index)
+            );
+            for axis in [0, 1] {
+                let displacement = tail
+                    .iter()
+                    .zip(&stopped)
+                    .map(|(a, b)| a.position[axis] - b.position[axis])
+                    .sum::<f32>()
+                    / tail.len() as f32;
+                assert!(
+                    displacement > 0.25,
+                    "cloud drifts/rises despite individual turbulent oscillation: {axis} {displacement}"
+                );
+            }
+            assert!(sample(15.0).len() < tail.len());
+            assert!(sample(18.0).is_empty());
+            assert_eq!(sample(7.0), tail, "seeded analytic sample repeats");
+            assert_ne!(
+                sample(7.0),
+                {
+                    let mut particles = Vec::new();
+                    aestra_runtime::evaluate(root, 7.0, SHOW_SEED ^ 1, &mut particles);
+                    particles
+                        .into_iter()
+                        .filter(|p| p.emitter_index == 0)
+                        .collect::<Vec<_>>()
+                },
+                "another seed produces different particle origins/rotation"
+            );
+        }
+    }
+
+    #[test]
+    fn defaults_use_public_playback_only_and_host_owned_rockets() {
+        let options = Options::parse([]).unwrap();
+        assert!(options.host_driven);
+        assert!(!Options::parse(["--cinematic".into()]).unwrap().host_driven);
+        assert_eq!(options.history, PlaybackHistoryPolicy::PlaybackOnly);
+        assert!(
+            options
+                .effect_path
+                .ends_with("effects/fireworks_show.aestra.ron")
+        );
+        let replay = Options::parse(["--history".into(), "replay-enabled".into()]).unwrap();
+        assert_eq!(replay.history, PlaybackHistoryPolicy::ReplayEnabled);
+        for args in [
+            vec!["--tier", "ultra"],
+            vec!["--history", "yes"],
+            vec!["--effect"],
+            vec!["--smoke-lighting", "--smoke-persistence"],
+            vec!["--smoke-persistence", "--smoke-lighting"],
+            vec!["--particle-smoke-lighting", "--smoke-persistence"],
+            vec!["--smoke-persistence", "--particle-smoke-lighting"],
+        ] {
+            assert!(Options::parse(args.into_iter().map(String::from)).is_err());
+        }
+    }
+
+    #[test]
+    fn saved_smoke_fixture_compiles_real_outputs_at_each_tier() {
+        for (tier, cap) in [("high", 4), ("medium", 2), ("low", 1)] {
+            let options =
+                Options::parse(["--smoke-lighting".into(), "--tier".into(), tier.into()]).unwrap();
+            let project = options.compile().unwrap();
+            let root = &project.root;
+            assert_eq!(options.lighting_policy().particle.max_lights, cap * 2);
+            assert_eq!(root.point_lights.len(), 2);
+            assert_eq!(root.particle_outputs().count(), 2);
+            assert_eq!(root.emitters.len(), 2);
+            for emitter in &root.emitters {
+                assert!(
+                    emitter.renderers.is_empty(),
+                    "only smoke may contribute pixels"
+                );
+                let aestra_runtime::SceneOutputPlanKind::ParticlePointLight(light) =
+                    &emitter.scene_outputs[0].kind;
+                assert_eq!(light.max_lights, cap);
+            }
+        }
+    }
+
+    #[test]
+    fn lit_particle_smoke_resolves_opt_in_material_and_real_outputs() {
+        for tier in ["high", "medium", "low"] {
+            let options = Options::parse([
+                "--particle-smoke-lighting".into(),
+                "--tier".into(),
+                tier.into(),
+            ])
+            .unwrap();
+            let project = options.compile().unwrap();
+            let root = &project.root;
+            assert!(
+                root.extension_stages.is_empty(),
+                "no fluid can counterfeit sprite response"
+            );
+            assert_eq!(root.emitters.len(), 3);
+            assert_eq!(root.emitters[0].renderers.len(), 1);
+            assert!(root.emitters[1..].iter().all(|e| e.renderers.is_empty()));
+            assert_eq!(root.point_lights.len(), 2);
+            assert_eq!(root.particle_outputs().count(), 2);
+            let presented = aestra_bevy::PresentedEffect::new(root.clone());
+            let binding = presented
+                .material_binding_for_emitter(
+                    root.emitters[0].renderers[0].material,
+                    root.emitters[0].source,
+                )
+                .unwrap();
+            assert!(binding.program().requires_scene_lighting());
+            assert!(!binding.program().requires_scene_depth());
+        }
+        assert!(
+            Options::parse([
+                "--smoke-lighting".into(),
+                "--particle-smoke-lighting".into()
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn all_tiers_resolve_shared_shells_materials_cues_and_lights_without_viewer() {
+        let mut previous = u64::MAX;
+        for tier in ["high", "medium", "low"] {
+            let options =
+                Options::parse(["--cinematic".into(), "--tier".into(), tier.into()]).unwrap();
+            let project = options.compile().unwrap();
+            assert_eq!(project.root.duration, 26.0);
+            assert_eq!(project.root.playback_mode, EffectPlaybackMode::Once);
+            assert_eq!(project.root.effect_clips.len(), 13);
+            assert_eq!(project.dependencies.len(), 4);
+            for shell in project.dependencies.values() {
+                assert!(!shell.material_programs.is_empty());
+                assert!(!shell.material_instances.is_empty());
+                let presented = aestra_bevy::PresentedEffect::new(shell.clone());
+                for emitter in &shell.emitters {
+                    for renderer in &emitter.renderers {
+                        assert!(
+                            presented
+                                .material_binding_for_emitter(renderer.material, emitter.source)
+                                .is_some()
+                        );
+                    }
+                }
+                assert_eq!(shell.point_lights.len(), 1);
+                let routes: Vec<_> = shell
+                    .particle_outputs()
+                    .map(|(_, route)| route.output.as_str())
+                    .collect();
+                assert!(routes.contains(&"launch") && routes.contains(&"main_break"));
+            }
+            let capacity = project
+                .dependencies
+                .values()
+                .map(|s| s.max_particles as u64)
+                .sum();
+            assert!(capacity < previous);
+            previous = capacity;
+            let player = EffectPlayer::from_project(project).with_history_policy(options.history);
+            assert_eq!(player.history_policy(), PlaybackHistoryPolicy::PlaybackOnly);
+        }
+    }
+}

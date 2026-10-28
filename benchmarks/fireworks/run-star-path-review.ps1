@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
-    [string]$Binary = 'target/debug/examples/fireworks.exe',
+    [string]$Binary = 'target/debug/fireworks.exe',
     [string]$Effect = 'effects/fireworks_show_star_path_smoke.aestra.ron',
     [switch]$HideStarSmoke,
     [ValidateSet('high', 'medium', 'low')][string[]]$Tiers = @('high', 'medium', 'low'),
@@ -11,7 +11,7 @@ $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $output = [IO.Path]::GetFullPath($OutputDirectory, $repo)
 $exe = [IO.Path]::GetFullPath($Binary, $repo)
 if (Test-Path -LiteralPath $output) { throw 'Use a fresh output directory.' }
-if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Build the fireworks example first.' }
+if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Build the fireworks demo first.' }
 New-Item -ItemType Directory -Path $output | Out-Null
 $variables = @('AESTRA_EXAMPLE_REPORT', 'AESTRA_EXAMPLE_REPORT_IMAGES',
     'AESTRA_EXAMPLE_REPORT_CAMERA', 'AESTRA_EXAMPLE_REPORT_SAMPLE_TIMES',

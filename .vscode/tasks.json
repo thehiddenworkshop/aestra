@@ -21,50 +21,21 @@
       }
     },
     {
-      "label": "Aestra: Visual Regression",
+      "label": "Aestra: Run Fireworks Demo",
       "type": "shell",
       "command": "cargo",
       "args": [
         "run",
+        "--release",
+        "--locked",
         "-p",
-        "aestra-viewer",
-        "--",
-        "--visual-test",
-        "apps/aestra-viewer/tests/references/prism_bloom",
-        "target/visual-regression/prism-bloom",
-        "--frames",
-        "8"
+        "aestra-demo-fireworks"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": ["$rustc"],
-      "group": "test",
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "clear": true
-      }
-    },
-    {
-      "label": "Aestra: Editor Viewport GPU Smoke",
-      "type": "shell",
-      "command": "cargo",
-      "args": [
-        "run",
-        "-p",
-        "aestra-viewer",
-        "--",
-        "--editor-viewport-smoke",
-        "target/visual-regression/editor-viewport-smoke",
-        "--frames",
-        "3"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": ["$rustc"],
-      "group": "test",
+      "group": "build",
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",

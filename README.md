@@ -77,13 +77,17 @@ The workspace groups executable products under `apps/` and the isolated Bevy gam
 
 ## Bevy fireworks showcase
 
-The public integration example loads the editor-authored reusable fireworks show:
+The demonstration uses host-owned rockets with editor-authored Aestra VFX:
 
 ```powershell
-cargo run --release --locked -p aestra-bevy --example fireworks
+cargo run --release --locked -p aestra-demo-fireworks
 ```
 
-It demonstrates project resolution, shared shell/material assets, playback-only history,
+`Enter` launches a rocket; the host owns its trajectory and detonation. Aestra owns
+the attached wake and detached spark/smoke tails. Use `-- --cinematic` for the
+authored 26-second show. Small teaching examples remain under
+`bevy/aestra-bevy/examples`, including `host_projectile` and `fireworks_event_chain`.
+The demo also demonstrates project resolution, shared shell/material assets, playback-only history,
 quality presets, HDR/bloom and authored burst lighting. Optional host-side spatial WAV
 bindings use `--features fireworks-audio`; recordings remain separately licensed assets.
 See [the showcase guide](docs/examples/fireworks.md) for controls, editor-to-host workflow,

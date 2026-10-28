@@ -1,0 +1,2284 @@
+{
+  "date": "2026-10-28",
+  "scope": "Opt-in bounded Main-star lighting on the calibrated two-shell smoke pair; not finale or final art acceptance.",
+  "binary_sha256": "0DEEB67544C6CCBE5ADC9315EACD8291378003BBEDCA1C2B53DA7A091E9270DD",
+  "source_hashes": [
+    {
+      "sha256": "43544D7731A377E9A642DAE69636AACE9322D2B91E4FAA5B17EF5A7563AB8221",
+      "path": "assets/test/effects/fireworks_shell_star_lights.aestra.ron"
+    },
+    {
+      "sha256": "4690423C6031E86A0D7235C92FD98867F0065D96B447AA4966EFDAB89DEFBA47",
+      "path": "assets/test/effects/fireworks_point_star_lit_smoke.aestra.ron"
+    },
+    {
+      "sha256": "1CDE0F644233130CE84B7749E15092223C550E2CFFD0026687B7DD9749377B71",
+      "path": "assets/test/effects/fireworks_gold_tail_lit_smoke.aestra.ron"
+    },
+    {
+      "sha256": "54918DB3E6F62D5659A4DF101F40B58A8E5C4A679C8466A8B584ACB1C20DCB76",
+      "path": "demos\\fireworks\\src\\audio.rs"
+    },
+    {
+      "sha256": "8ABC38642F7E72670FDF40E21F93EC410214B784F376DC65B7D11C13FB705A24",
+      "path": "demos\\fireworks\\src\\host.rs"
+    },
+    {
+      "sha256": "F14BE19FCD5805F6915475616E2DA183D9C203D6384C60CD4D94E405A76C0725",
+      "path": "demos\\fireworks\\src\\lighting.rs"
+    },
+    {
+      "sha256": "90169572D6D5C19EA8E73F7A5385E84EAA7B75C50E5BB02ECEE300FF4E4C6506",
+      "path": "demos\\fireworks\\src\\main.rs"
+    },
+    {
+      "sha256": "B7E31D03E1D8848931DEF06437345CEED4EDDD53E53E4F115AF02D34D9B1B375",
+      "path": "demos\\fireworks\\src\\oit_tests.rs"
+    },
+    {
+      "sha256": "F838F0B9AE01E92DD8C68B5C40692F6E547F5AFB6DDAE76CE1A8A911529141EE",
+      "path": "demos\\fireworks\\src\\oit.rs"
+    },
+    {
+      "sha256": "86ABACA11B11E07EF01022D703A4B296399AFBED5AE989C1C80D28927422526D",
+      "path": "demos\\fireworks\\src\\paths.rs"
+    },
+    {
+      "sha256": "21646096BB93ABA28D4BAB80E524B1DAFC8756DBEF9A366318D0C2C17883B239",
+      "path": "demos\\fireworks\\src\\persistent_smoke_show_tests.rs"
+    },
+    {
+      "sha256": "07E90DB235AF5DB1821497FE40F6A530D46DB56C2972DEE3CD7146C10DE2E745",
+      "path": "demos\\fireworks\\src\\project.rs"
+    },
+    {
+      "sha256": "EA53B31FF266C5E28ADCC2D44A0512CDB53A5CAA0F152A5F22D4EAB34C122BB4",
+      "path": "demos\\fireworks\\src\\readiness.rs"
+    },
+    {
+      "sha256": "BD94A51BEA1F1CF314DC4E5C89E00FCD3CE0C48589462A44694830FE1F6ED60A",
+      "path": "demos\\fireworks\\src\\report_control_tests.rs"
+    },
+    {
+      "sha256": "8BA72D31191B3F7EE9DBF0125401CA0A305A7AC20DC14A3834E6093A8C68E1A1",
+      "path": "demos\\fireworks\\src\\report_outputs.rs"
+    },
+    {
+      "sha256": "9A3FADA1B6544ABC03BD4320B69DC7F2672F065BD334ADD368A78DEBFCCC1AF3",
+      "path": "demos\\fireworks\\src\\report_profile.rs"
+    },
+    {
+      "sha256": "F60A49D21BDFF20F26C19AAB2436930E6F1D33DF1BE0415C7804DE6517436C21",
+      "path": "demos\\fireworks\\src\\report.rs"
+    },
+    {
+      "sha256": "237AB4FEA184D2D28D63384DDCA8730918F06938FAB132B5382F3FA58B6D3C5D",
+      "path": "demos\\fireworks\\src\\smoke_cohorts_tests.rs"
+    },
+    {
+      "sha256": "2D92681547C8FCF2C6069626A0154245533BA0E72D8B5FFBE2EFDC3C18D9E978",
+      "path": "demos\\fireworks\\src\\star_smoke_authoring.rs"
+    },
+    {
+      "sha256": "1531A0D4487D0BED2A9427543021CA3CEEFC4D16E413807A33C6EFE2D9D1B140",
+      "path": "demos\\fireworks\\src\\star_smoke_tests.rs"
+    },
+    {
+      "sha256": "ECEB2A01EB5866D2BD710E86178376EF3A3C8A070CC1989E07DE5239DEB6EED9",
+      "path": "demos\\fireworks\\src\\wind_smoke_authoring.rs"
+    },
+    {
+      "sha256": "4BBCDC57AF9D9106874D6DA462D04DFBDF0FC6321FC5A6556EAB6A4D9DF8CA95",
+      "path": "demos\\fireworks\\src\\wind_smoke_tests.rs"
+    },
+    {
+      "sha256": "FBB4657ED64683F45311A5F96BBC223D963ADE6F5FF2A32F99A33BB3B2343F3D",
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_gold_tails.rs"
+    },
+    {
+      "sha256": "70014D1342D68B6A613FE90D88BFD2AF89E4A3C85B4E1636EFAB5151C968559F",
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_point_stars.rs"
+    },
+    {
+      "sha256": "A4F8D6952594A8BD6EEE50D7B2DF6E3F4E58F6CB29CDBD5BAC0F12E4CF6E22DF",
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_shell_smoke.rs"
+    },
+    {
+      "sha256": "075ABDA286511B25D045DF47EA7C25C0EA39144ECFEFF2E14279B6555CB11E4C",
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_star_lights.rs"
+    },
+    {
+      "sha256": "62877C341E3EB39AE04EE21670E2E416AF41B40D004746EE5972850DEBCBB0C0",
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_star_smoke.rs"
+    },
+    {
+      "sha256": "ED12FEC573E3D4D412D2FF53E8FA0680D5DCFD1BBC5CAA9A074482B86BDE2F00",
+      "path": "demos\\fireworks\\src\\bin\\author_fireworks_wind_smoke.rs"
+    },
+    {
+      "sha256": "5350E4C64BB017B8D14B947969E1E34EBF0DE2AD504FE80314589C1AC79EA932",
+      "path": "assets\\test\\materials\\fireworks_hero_star.aestra.material.ron"
+    },
+    {
+      "sha256": "9BEECD239E416DC39F25F6E659EDB9C311B55B45AA0D329EBDEF9175D5C26D24",
+      "path": "assets\\test\\materials\\fireworks_hero_trail.aestra.material.ron"
+    },
+    {
+      "sha256": "ED47199076350898859F2B046B339CD2EADDE1BD48B9625EB7AFCA169E100E2C",
+      "path": "assets\\test\\materials\\fireworks_lit_smoke.aestra.material.ron"
+    },
+    {
+      "sha256": "C1E37B06BB5E9DE3109FC87784122A23604A902884037DF5F9E752C432661CC4",
+      "path": "assets\\test\\materials\\fireworks_persistent_smoke.aestra.material.ron"
+    },
+    {
+      "sha256": "E1A26E654787835D33AFEFFEC767FB0829F8ACB15A9268B081E341231B424140",
+      "path": "assets\\test\\materials\\fireworks_smoke.aestra.material.ron"
+    },
+    {
+      "sha256": "06C2AE7E4CE0113227B5E7127C30C67A05F1A374A7772FA0ED400B4739DBAE13",
+      "path": "assets\\test\\materials\\fireworks_star_path_smoke.aestra.material.ron"
+    },
+    {
+      "sha256": "950D8B2257BA202B3A5B495C4776B6A608AFF0C85581E34E4B93A699DB504BF9",
+      "path": "assets\\test\\materials\\fireworks_star.aestra.material.ron"
+    },
+    {
+      "sha256": "BE51C63C89FE9079B07B94787DBC746665B097EFE0E314DEAFF4EFA3E7A81608",
+      "path": "assets\\test\\materials\\fireworks_strobe_star.aestra.material.ron"
+    },
+    {
+      "sha256": "01BA1D32EFE6B032A6949661F9422FFAFA2B40FC06AEC6E1E209BA6B434B3492",
+      "path": "assets\\test\\materials\\fireworks_trail.aestra.material.ron"
+    },
+    {
+      "sha256": "6EE4EBF040E37D9363EF46BA260434560C15978DA685A5F12853CBE8635F5B9D",
+      "path": "assets\\test\\materials\\fireworks_wind_haze_smoke.aestra.material.ron"
+    },
+    {
+      "sha256": "642E3704EBC4F37110E00A1146A1641B6CB53C3E37EB451C4CBB0C4EF99E1395",
+      "path": "assets\\test\\materials\\fireworks_wispy_smoke.aestra.material.ron"
+    }
+  ],
+  "preserved_previous_assets": [
+    {
+      "path": "assets/test/effects/fireworks_gold_tail_smoke.aestra.ron",
+      "sha256": "6EB204503F68815D50B800828BAAE39C23ACB6C458726BB5DC503D720E86CA9A"
+    },
+    {
+      "path": "assets/test/effects/fireworks_point_star_smoke.aestra.ron",
+      "sha256": "23B6C12926AF048202F7A89B40FE864234050EACD6421D24750E6F7B999050D5"
+    }
+  ],
+  "native_runs": [
+    {
+      "group": "controls",
+      "name": "neither-high-close",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close.json",
+        "sha256": "D86E2AA12C3B848F0FC2C55546F69CCD1CB28DEEC6892943301581E1DE4B6822"
+      },
+      "selected": {
+        "final": null,
+        "last_rejection": null,
+        "peak_capacity_bound": 0,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 0,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      ],
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 5104,
+        "observations": 1449
+      },
+      "last_alive": 0,
+      "pending_pipeline_updates": 1,
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "controls",
+      "name": "flashes-high-close",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close.json",
+        "sha256": "A07F90170AB03DB5C5F12788313AF44CA996CD52B61BC8FD95DE7D959018C341"
+      },
+      "selected": {
+        "final": null,
+        "last_rejection": null,
+        "peak_capacity_bound": 0,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 2,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      ],
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 5104,
+        "observations": 1449
+      },
+      "last_alive": 0,
+      "pending_pipeline_updates": 1,
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "controls",
+      "name": "stars-high-close",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close.json",
+        "sha256": "B512559979912B125A0453DF7BF40B264877724FAC8AE14DB52884C54EF3E11D"
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1425,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1425
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 64,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 0,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1101,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1101,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      ],
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 5104,
+        "observations": 1449
+      },
+      "last_alive": 0,
+      "pending_pipeline_updates": 1,
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "controls",
+      "name": "combined-high-close",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close.json",
+        "sha256": "7A5D174B0242CB789E985E9ACB3EDD93C991961A6D6FE98449FFC8980268622B"
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1420,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1420
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 64,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 2,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1102,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1102,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1102,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1102,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1102,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1102,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      ],
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 5104,
+        "observations": 1449
+      },
+      "last_alive": 0,
+      "pending_pipeline_updates": 1,
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "lower",
+      "name": "combined-medium-close",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close.json",
+        "sha256": "0F87AB627879013EB8C8E32C4424D6F7000A72CB22E6EAC3098C8F5D90487E97"
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 3840,
+          "capacity_bound": 0,
+          "dispatches": 1416,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 48,
+          "sequence": 1416
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 32,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 2,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1096,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 32,
+            "captured_demand": 32,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1096,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1096,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 24,
+            "captured_demand": 24,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1096,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 33324,
+            "captured_demand": 33324,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1096,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        {
+          "counts": {
+            "accepted": 5554,
+            "captured_demand": 5554,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1096,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 24,
+            "captured_demand": 24,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 4585,
+            "captured_demand": 4585,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      ],
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 741,
+        "observations": 1449
+      },
+      "last_alive": 0,
+      "pending_pipeline_updates": 1,
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "lower",
+      "name": "combined-low-close",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close.json",
+        "sha256": "DAC9FFD313DE8382E97A853D05007B2E131EFCAC1BFC6191FFD406EF7A509BD3"
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 1920,
+          "capacity_bound": 0,
+          "dispatches": 1427,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 24,
+          "sequence": 1427
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 24,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 2,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 16,
+            "captured_demand": 16,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 12,
+            "captured_demand": 12,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 15354,
+            "captured_demand": 15354,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        {
+          "counts": {
+            "accepted": 2559,
+            "captured_demand": 2559,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1099,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 32,
+            "captured_demand": 32,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 12,
+            "captured_demand": 12,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 2280,
+            "captured_demand": 2280,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      ],
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 25,
+        "observations": 1449
+      },
+      "last_alive": 0,
+      "pending_pipeline_updates": 1,
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "hidden",
+      "name": "neither-high-close",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/neither-high-close.json",
+        "sha256": "C73B54E5DBF916331C0462D1E835A2EA4E8B25B757FFEFF49C22821366DF6681"
+      },
+      "selected": {
+        "final": null,
+        "last_rejection": null,
+        "peak_capacity_bound": 0,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 0,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1100,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1100,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1100,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1100,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1100,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1100,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      ],
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 94,
+        "observations": 1449
+      },
+      "last_alive": 0,
+      "pending_pipeline_updates": 1,
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "hidden",
+      "name": "stars-high-close",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/stars-high-close.json",
+        "sha256": "354AE35B33C67F64527F6B8C529997DB2483BB78429DD34E0A1DF1FEE2D8FDAB"
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1423,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1423
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 64,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 0,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Dense Gold Tails with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1097,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        },
+        {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        {
+          "counts": {
+            "accepted": 128,
+            "captured_demand": 128,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        {
+          "counts": {
+            "accepted": 9130,
+            "captured_demand": 9130,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting",
+          "readback_samples": 1078,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      ],
+      "capacity": {
+        "loss_free": true,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 94,
+        "observations": 1449
+      },
+      "last_alive": 0,
+      "pending_pipeline_updates": 1,
+      "ordinary_pacing": null,
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "cost",
+      "name": "flashes-high-audience",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-cost-2026-10-28/flashes-high-audience.json",
+        "sha256": "08BB2B8C2395017597C8B0A71D8D70699D7F2F84EA2FB7FBAE46A835E92507CB"
+      },
+      "selected": {
+        "final": null,
+        "last_rejection": null,
+        "peak_capacity_bound": 0,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 2,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [],
+      "capacity": null,
+      "last_alive": 0,
+      "pending_pipeline_updates": 0,
+      "ordinary_pacing": {
+        "max_ms": 30.9555,
+        "median_ms": 16.6677,
+        "over_16_67ms": 720,
+        "over_20ms": 14,
+        "over_33_33ms": 0,
+        "p95_ms": 18.216,
+        "p99_ms": 19.7945,
+        "samples": 1438
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    },
+    {
+      "group": "cost",
+      "name": "combined-high-audience",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/star-lights-final-cost-2026-10-28/combined-high-audience.json",
+        "sha256": "06FAED6C57174C3C9554836EF8D96423956F75AEE7456C293D320CD23B30DBCD"
+      },
+      "selected": {
+        "final": {
+          "buffer_bytes": 7680,
+          "capacity_bound": 0,
+          "dispatches": 1418,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1418
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 64,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      },
+      "flashes": 2,
+      "route_totals": {
+        "launch": 2,
+        "main_break": 2
+      },
+      "event_links": [],
+      "capacity": null,
+      "last_alive": 0,
+      "pending_pipeline_updates": 0,
+      "ordinary_pacing": {
+        "max_ms": 31.1707,
+        "median_ms": 16.6604,
+        "over_16_67ms": 711,
+        "over_20ms": 7,
+        "over_33_33ms": 0,
+        "p95_ms": 18.374499999999998,
+        "p99_ms": 19.630399999999998,
+        "samples": 1438
+      },
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      }
+    }
+  ],
+  "delivered_image_captures": 84,
+  "host_capture": {
+    "image": {
+      "path": "benchmarks/fireworks/reviews/star-lights-2026-10-28/host-medium.png",
+      "sha256": "66DCB2FB5EBE72563A0D59949C4E9271B2FF1D1A638DB95E6C241BFD69E8620D"
+    },
+    "source": {
+      "path": "target/fireworks-f8/star-lights-host-medium-2026-10-28.png",
+      "sha256": "66DCB2FB5EBE72563A0D59949C4E9271B2FF1D1A638DB95E6C241BFD69E8620D"
+    },
+    "arguments": [
+      "--star-lights",
+      "--no-flash-lights",
+      "--tier",
+      "medium",
+      "--no-audio"
+    ],
+    "nominal_seconds": 5.5,
+    "observed_hud": {
+      "backend": "Gpu",
+      "capacity_bound": 32,
+      "flashes": false
+    },
+    "scope": "Separate ordinary-transparency live host screenshot; not a full host lifecycle or timing qualification."
+  },
+  "smoke_response": {
+    "roi": [
+      440,
+      120,
+      800,
+      360
+    ],
+    "samples": {
+      "2.8": {
+        "mean_rgb_srgb8": [
+          0.0078125,
+          0.005509259259259259,
+          0.007962962962962963
+        ],
+        "mean_absolute_rgb_srgb8": [
+          0.008043981481481482,
+          0.007962962962962963,
+          0.008055555555555555
+        ]
+      },
+      "7.4": {
+        "mean_rgb_srgb8": [
+          0.16283564814814816,
+          0.3017592592592593,
+          0.41792824074074075
+        ],
+        "mean_absolute_rgb_srgb8": [
+          0.18670138888888888,
+          0.3266203703703704,
+          0.43894675925925924
+        ]
+      },
+      "8": {
+        "mean_rgb_srgb8": [
+          0.0584375,
+          0.11027777777777778,
+          0.16650462962962964
+        ],
+        "mean_absolute_rgb_srgb8": [
+          0.06524305555555555,
+          0.12699074074074074,
+          0.17180555555555554
+        ]
+      },
+      "9": {
+        "mean_rgb_srgb8": [
+          0.009236111111111112,
+          0.029872685185185186,
+          0.0625462962962963
+        ],
+        "mean_absolute_rgb_srgb8": [
+          0.010439814814814815,
+          0.034386574074074076,
+          0.06280092592592593
+        ]
+      },
+      "16": {
+        "mean_rgb_srgb8": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean_absolute_rgb_srgb8": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "23": {
+        "mean_rgb_srgb8": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean_absolute_rgb_srgb8": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "scope": "(visible stars-on minus off) minus (path-hidden stars-on minus off). Asynchronous HDR/bloom/tone-mapped sRGB captures, includes occlusion and temporal differences; not physical irradiance."
+  },
+  "evidence": [
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/manifest.json",
+      "sha256": "60D0B99D477357B510DB8F747A66DC845E2D29CF0F6B930A487219F0B5A70F05"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-1.8s.png",
+      "sha256": "08EF662936F3E09DB77A5A24ADEED465FAEDD295AD5D62C7C93EE3A5D767DD6F"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-2.8s.png",
+      "sha256": "9CF8544B6A3692D222E628FAFF55C04D32E5D7B7ACAD79A90E7172EB56A1A478"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-4s.png",
+      "sha256": "C6CF33885F4C777C8FFF21A99177BBE0CABF1704E1E706661E65897C6D9192A6"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-5s.png",
+      "sha256": "09010814DD96088A628E41BE1CBFDAC76313B371F859908317F93096C6B8AFF4"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-6.7s.png",
+      "sha256": "F1076F65B9D5A6293A9E01F4ADEEBAF877B8685C3096610E8F1B8509047722A6"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-6.9s.png",
+      "sha256": "9EF681021AB02833043100AA1E5CA378D4A667D245E02245ED3F39FE879BC55F"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-7.4s.png",
+      "sha256": "1C0C6FDA469791331FF6FF5C2BEF0210E83555125AA566AE7C17F5B8D7B78F59"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-8s.png",
+      "sha256": "69A920D8951F7B2A2B20BBD0D845031D02FD6D925F82748A7D2E9329B81B03E3"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-9s.png",
+      "sha256": "3FD474F186A26AA7E6492EFC5552869CF097EAC9C61522CC63B6BC91D082F5F5"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-12s.png",
+      "sha256": "CE7559CFEB53A3C46E57AA0170E787153800661E88BB045DD478CF4AA9C17BEF"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-16s.png",
+      "sha256": "D2C628F86C649632E30E1AF8DC064C1035C4F4A68DC8E421EABF66FD99D353A6"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close-23s.png",
+      "sha256": "E9556701AAA9350A59343CBE719532D32EC360600CF618AED1AF5856E19FC3D2"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/neither-high-close.json",
+      "sha256": "D86E2AA12C3B848F0FC2C55546F69CCD1CB28DEEC6892943301581E1DE4B6822"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-1.8s.png",
+      "sha256": "8602BE1C85CEC02B9B0FFA231B08B73AD707BF0342D16FB5F5BDAEAB8F4B6AEC"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-2.8s.png",
+      "sha256": "A2D29FA12E097776D923FAC7DD17FC594EFEF05F179B6878000DA2B8B708A5C1"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-4s.png",
+      "sha256": "F3F800E8F22D017C8B2CF6DA8F17A0A297A87D6F81AA76B5EEDBF7F62F6FD06C"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-5s.png",
+      "sha256": "08EE1D973393457FFC35807DD198BA9CF95EDC257761A9309EE1E4B36203C7DC"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-6.7s.png",
+      "sha256": "9BCC22849CE9670CC13D4B1E5DB31065E4CD73EB4590C806DF74FFAF6D94F59F"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-6.9s.png",
+      "sha256": "48956B1686A797BCC3E9E234EED7650FEAED16DC159131C526C2031BCCF42A1C"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-7.4s.png",
+      "sha256": "845A29B86EEE717659D31BDB6070726C4A7F7A0D863E4B8AC6E2EEB582122AF1"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-8s.png",
+      "sha256": "17A3D3FF352A8BAAA9DC30D9B7503D9556826126655424B7EED7F95A32D81A5F"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-9s.png",
+      "sha256": "D934CCD9CC40029C65152E3668F3B1215057DAA99228FE19E009BDD271E31FAB"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-12s.png",
+      "sha256": "7CA2AFECAF008C5B90C03D68E198072EBFB93A5E75D3816372F44F672BB26C76"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-16s.png",
+      "sha256": "CDF5489D7648661D9CBEFA8943B5133A43C0DCB91C53FC356B05C19C4D5CFFBE"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close-23s.png",
+      "sha256": "7C14A6C85101BC45CF5AD1A4CA823324E6168B97F017970024BFF9634F666C20"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/flashes-high-close.json",
+      "sha256": "A07F90170AB03DB5C5F12788313AF44CA996CD52B61BC8FD95DE7D959018C341"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-1.8s.png",
+      "sha256": "BDAE6D1D9B89428C503BBD7C9D3A40462936E72DC161843A4BF9CB771DAA512F"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-2.8s.png",
+      "sha256": "4601ED856BE2B020B16137C3230E67B66BD1F0632430D6F731984338787ACDC9"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-4s.png",
+      "sha256": "054332C15918E7A4B2C371B4359CF9C8062AD12E2D30243CCF68C691167DB1F0"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-5s.png",
+      "sha256": "F24E44CFFDDCB1C13D486A1251598A25ADF7FEF7177AE37823B91301DD309CBF"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-6.7s.png",
+      "sha256": "C58A178FA53DDD409C5960A5192D70D9979C537C6BDBE84A9EFEA28263E9C5E5"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-6.9s.png",
+      "sha256": "2069197EA8B798066D6E0AF8F1141B0057DBB929A358EAAD0C099E70A125BC23"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-7.4s.png",
+      "sha256": "549A86B061CE12B472D1589A5DA16FCAB37758E72307152F97E7C4D7EA1CB8E9"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-8s.png",
+      "sha256": "BE5814936506532B13C9E6E4EB0A3DE2C81EB0BE3CBA37E6900A22F59CDA86D2"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-9s.png",
+      "sha256": "81827DAD9800CDF46821B9D7A5B43BBD2ACBA39260748559E5AAD3926C6DE4F3"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-12s.png",
+      "sha256": "D31BD946AB614457D85E4827C1AAA4A6922035667F44C69721104F47F6ADB48D"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-16s.png",
+      "sha256": "AC3F88956457BF1BB4D3F94ED80A67FF9E578EDF4B57BF72F6D8290D9FD37062"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close-23s.png",
+      "sha256": "958A07558822A6A50D1675D28F0EED2EB5F893E98BBA37871E6B5AB1BC799CE0"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/stars-high-close.json",
+      "sha256": "B512559979912B125A0453DF7BF40B264877724FAC8AE14DB52884C54EF3E11D"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-1.8s.png",
+      "sha256": "F882B29B7A60166AB19AD0A63777871E6B0CFF50ED70D6C6ABABBA8D58B6D362"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-2.8s.png",
+      "sha256": "38876F773F09C7E6472E8B8ED575007E41739B92A46EA08D3F9CBBA798379C20"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-4s.png",
+      "sha256": "872624811163F77CC30439E505559A652F7D8969D262E77B38EFB94646EED16B"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-5s.png",
+      "sha256": "D2478408B67A4FDDB4EC3FF072B5ACA2E828EF40CE5C1050830F150923F2C850"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-6.7s.png",
+      "sha256": "E378730AF8EFE62197D0A48CCF3A97C7BD5CA93FE5F334F5413BF04A96E68147"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-6.9s.png",
+      "sha256": "50B848A143E81880E455F60756A757B5F44D3C7AF63E651AD0246355A88B6584"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-7.4s.png",
+      "sha256": "3F6E327E11CC5AAC495D7C90B3FFFF6AACDF26C9B18354B19D57579624A19320"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-8s.png",
+      "sha256": "ED0420B54656BAD4896B7CF2D4B1A32FAF87C8F7A55DA71F0B3355D4791637A4"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-9s.png",
+      "sha256": "3F523712FEB06819EA456D02784B5FA83F81CBEC5B6128B06B662841CA19AACC"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-12s.png",
+      "sha256": "B2B9569B0C6FDE8A41713D1A514FDF24BF494296305237031AECD7D56176D6D9"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-16s.png",
+      "sha256": "A594AD737216F05D692CBB91E42E0EE18A9087C5AD6280FF7E24FB932A8AB535"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close-23s.png",
+      "sha256": "AA8FA60C86A68F3312AB0C3A7ED0B19C62284E394AC1778ABE7A602FAFD0F2D7"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-controls-2026-10-28/combined-high-close.json",
+      "sha256": "7A5D174B0242CB789E985E9ACB3EDD93C991961A6D6FE98449FFC8980268622B"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/manifest.json",
+      "sha256": "3B056978C0F8D9D85AEBCB7513508BE5EC74D9E8031523144DE7A7F4B985BE3B"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-1.8s.png",
+      "sha256": "B389A83AE8856C83F58297DDB6E40C98932168CEF147FE749455DD9045124DE1"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-2.8s.png",
+      "sha256": "36607DD2DF40CD6931D33AF3A71369DE1C32A073AAF84537CE4805DABA4436DA"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-4s.png",
+      "sha256": "792D0A7706C902BFC27F7F8AF7E4B55AB92AFAF89843FF1F86AF3AF1D88A890E"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-5s.png",
+      "sha256": "99CDA8083BBE4ADC163C70502B995B4787D83C9F98C055DFBB3516E1807CB3E9"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-6.7s.png",
+      "sha256": "166E9872EDAE65DF9A21AA603C1AE62B009589B8EE67BCBCF1E08EEC88778740"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-6.9s.png",
+      "sha256": "6874995E0B44FD89980F780917780B2EC77ACBE00A6D19359FCAD7D0375D3347"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-7.4s.png",
+      "sha256": "EA301FE485399439428A7ED5E2B3269F0A516B15563E802E72663F1C1EE527C3"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-8s.png",
+      "sha256": "70BDFB8A39A5710BF1E98A141BA23EEA7290A820882B33E7BE624382A6A046CF"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-9s.png",
+      "sha256": "55E6BD85CCB57D59F4E3538BA3260693FD70737FD0B90977BB0BD47DC82C94AE"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-12s.png",
+      "sha256": "A9641B9072A542893008A0EBFAAFF5969E26F38597205F1A6E9DC7575AE2DE86"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-16s.png",
+      "sha256": "77FC5EB0C8B018C6417A6689060DBE0207465FD014350BB9F5AE44BACCACF830"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close-23s.png",
+      "sha256": "64D9C67612278B1BA3374D09B4ED1ED50CCD27F943B2507FB0A3BD276C060822"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-medium-close.json",
+      "sha256": "0F87AB627879013EB8C8E32C4424D6F7000A72CB22E6EAC3098C8F5D90487E97"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-1.8s.png",
+      "sha256": "F2C67263165660853AD748A67B97FF1DF10551C501FE60EB917ECA5D75514C7D"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-2.8s.png",
+      "sha256": "9869199FF9ADBB6A627430D4FA37FA2755BA5C63AC41312875C0408347357B13"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-4s.png",
+      "sha256": "5E244E1DC56540DE581E02EE4BA1B4F019A617C822A5208524B779354B011CAB"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-5s.png",
+      "sha256": "620DE67496C50280AEFC515FEE1FC66C9DA5BC4E9BBC5224A8FF3A3C05C85E4C"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-6.7s.png",
+      "sha256": "7E7EDDA959A57E7777E062754599A95FB03C9775F5CE17B82D4255306A788BA0"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-6.9s.png",
+      "sha256": "BA130BC94BE2DEB53977DBB92B909B3F5FD51D3E266907EE9B5C179E1533DDEC"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-7.4s.png",
+      "sha256": "15B1680DD1D73E7C61160F6A92E03FEC1E80E2A2A0C5541F091998F24DCF6085"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-8s.png",
+      "sha256": "54DF288155488F6151B3D8302440BD5F6353FF5AE6418937231257BBDD80A138"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-9s.png",
+      "sha256": "4D712156F008A57D7CB58CBE066FC9DDE76B440F3AD2C831DDD95C0FD9E42D3B"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-12s.png",
+      "sha256": "687B311258069A8BE8D3A4EAA4356A211A3F7FF15A71E9D0FE6CFDA072C0182C"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-16s.png",
+      "sha256": "F42AE31313D6F51A94A6DF4A5D3EC812F64774308A4F945AE8CE521A96FB761F"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close-23s.png",
+      "sha256": "710E7BC2BEB1366893926F4F4CC556312221A8D54CCDBCE44026F35C293A5CB5"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-lower-2026-10-28/combined-low-close.json",
+      "sha256": "DAC9FFD313DE8382E97A853D05007B2E131EFCAC1BFC6191FFD406EF7A509BD3"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/manifest.json",
+      "sha256": "10CB3F7F289BEF9808B98CC7FB1D42F404020568E10E1CC23D5540CCC710C3CA"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/neither-high-close-2.8s.png",
+      "sha256": "E111640EC444CD0237D9E321F2C59C7A43F9B4074E6C4C151E9146F3C37E90E3"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/neither-high-close-7.4s.png",
+      "sha256": "5636A829C2F36839ECD299D79B587110AE3D0396A68C34BD481F64E57C3B3E8D"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/neither-high-close-8s.png",
+      "sha256": "75544E796A5E7E5B5C8F136BE8C353B4C405A965E3D1AAA2C9CEE082FEABD5DA"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/neither-high-close-9s.png",
+      "sha256": "B0817A01049879A8B38AC8F7F828B5D06C4C0E0D397127F0A0E1FECD921D15D9"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/neither-high-close-16s.png",
+      "sha256": "A5CA9097889D4D4E4948CDA4946D83BF8EDE1C03C5C0F2714340F2677FD9441C"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/neither-high-close-23s.png",
+      "sha256": "E9556701AAA9350A59343CBE719532D32EC360600CF618AED1AF5856E19FC3D2"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/neither-high-close.json",
+      "sha256": "C73B54E5DBF916331C0462D1E835A2EA4E8B25B757FFEFF49C22821366DF6681"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/stars-high-close-2.8s.png",
+      "sha256": "E44841B865F6F995D65F7EE55BF2E1A06447E718D429B7B4C0C5588F025E11A9"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/stars-high-close-7.4s.png",
+      "sha256": "290E05CED83F3AA0597B711ED626086A96A25AB98AA1E942D7F10030FDE207AC"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/stars-high-close-8s.png",
+      "sha256": "2BAA904109563E3C3CAC3480DDE71FC1471982C74F25AFFC0E1C30EB6E62A925"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/stars-high-close-9s.png",
+      "sha256": "65AE1430BFF1AB922FBBFE408E286316FB3B12D6049E9C79AD7ADF079AA06E3B"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/stars-high-close-16s.png",
+      "sha256": "914B7DD40A333E4B9CB5208901EA0EBE2929FD581ACC311A4AFFDCE8A954288D"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/stars-high-close-23s.png",
+      "sha256": "958A07558822A6A50D1675D28F0EED2EB5F893E98BBA37871E6B5AB1BC799CE0"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-hidden-2026-10-28/stars-high-close.json",
+      "sha256": "354AE35B33C67F64527F6B8C529997DB2483BB78429DD34E0A1DF1FEE2D8FDAB"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-cost-2026-10-28/manifest.json",
+      "sha256": "D0A06225B4C04436CC0F11CF58ED006A6409520AC6CEC99B1661BE9A2698CCA5"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-cost-2026-10-28/flashes-high-audience.json",
+      "sha256": "08BB2B8C2395017597C8B0A71D8D70699D7F2F84EA2FB7FBAE46A835E92507CB"
+    },
+    {
+      "path": "target/fireworks-f8/star-lights-final-cost-2026-10-28/combined-high-audience.json",
+      "sha256": "06FAED6C57174C3C9554836EF8D96423956F75AEE7456C293D320CD23B30DBCD"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/star-lights-2026-10-28/unlit.png",
+      "sha256": "1C0C6FDA469791331FF6FF5C2BEF0210E83555125AA566AE7C17F5B8D7B78F59"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/star-lights-2026-10-28/selected-only.png",
+      "sha256": "549A86B061CE12B472D1589A5DA16FCAB37758E72307152F97E7C4D7EA1CB8E9"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/star-lights-2026-10-28/flash-only.png",
+      "sha256": "48956B1686A797BCC3E9E234EED7650FEAED16DC159131C526C2031BCCF42A1C"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/star-lights-2026-10-28/combined.png",
+      "sha256": "50B848A143E81880E455F60756A757B5F44D3C7AF63E651AD0246355A88B6584"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/star-lights-2026-10-28/quiet.png",
+      "sha256": "A594AD737216F05D692CBB91E42E0EE18A9087C5AD6280FF7E24FB932A8AB535"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/star-lights-2026-10-28/host-medium.png",
+      "sha256": "66DCB2FB5EBE72563A0D59949C4E9271B2FF1D1A638DB95E6C241BFD69E8620D"
+    }
+  ],
+  "validation": "46 audio-enabled package/authoring tests; strict Clippy both feature configurations; formatting/diff; native cinematic controls plus host integration screenshot recorded separately.",
+  "remaining": [
+    "Final smoke texture/volume/art",
+    "Expanded host/show performance",
+    "All-tier four-family perceptual matching",
+    "Per-view/layer and production-finale qualification"
+  ]
+}

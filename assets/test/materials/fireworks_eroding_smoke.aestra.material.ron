@@ -1,0 +1,119 @@
+(
+    id: "a3574a00-0000-4000-8000-000000f8b700",
+    schema_version: 1,
+    name: "Fireworks Eroding Lit Smoke",
+    domain: Sprite,
+    render_state_policy: (
+        default: (
+            blend: Alpha,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Alpha,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b701",
+            name: "Scene light gain",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(0.035)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b702",
+            name: "Density",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(1.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b703",
+            name: "Ambient",
+            value_type: Vec3,
+            evaluation_domain: Instance,
+            default: Some(Vec3((0.055, 0.06, 0.07))),
+        ),
+    ],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b710",
+            kind: Input(Uv0),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b711",
+            kind: Input(ParticleRandom),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b712",
+            kind: Input(ParticleNormalizedAge),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b713",
+            kind: FunctionCall(
+                function: Project("a3574a00-0000-4000-8000-000000f8b600"),
+                arguments: {
+                    "a3574a00-0000-4000-8000-000000f8b601": "a3574a00-0000-4000-8000-000000f8b710",
+                    "a3574a00-0000-4000-8000-000000f8b602": "a3574a00-0000-4000-8000-000000f8b711",
+                    "a3574a00-0000-4000-8000-000000f8b603": "a3574a00-0000-4000-8000-000000f8b712",
+                },
+                output: "a3574a00-0000-4000-8000-000000f8b604",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b714",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b715",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f8b713", "a3574a00-0000-4000-8000-000000f8b714"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b716",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8b702"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b717",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f8b715", "a3574a00-0000-4000-8000-000000f8b716"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b720",
+            kind: Input(ScenePointIrradiance),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b721",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8b701"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b722",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f8b720", "a3574a00-0000-4000-8000-000000f8b721"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b723",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8b703"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b724",
+            kind: Add("a3574a00-0000-4000-8000-000000f8b722", "a3574a00-0000-4000-8000-000000f8b723"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b725",
+            kind: Constant(Vec3((0.72, 0.74, 0.78))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8b726",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f8b724", "a3574a00-0000-4000-8000-000000f8b725"),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-000000f8b726",
+        alpha: "a3574a00-0000-4000-8000-000000f8b717",
+    ),
+)

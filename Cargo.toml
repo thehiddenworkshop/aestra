@@ -23,6 +23,7 @@ members = [
     "crates/aestra-runtime",
     "extensions/aestra-example-extension",
     "extensions/aestra-fluid",
+    "demos/fireworks",
 ]
 
 [workspace.package]

@@ -6,6 +6,31 @@
 
 ---
 
+## Host/demo organization — 2026-10-28
+
+The flagship now lives in the workspace package `demos/fireworks`
+(`cargo run --release --locked -p aestra-demo-fireworks`). Small learning examples
+stay in `bevy/aestra-bevy/examples`; `host_projectile` demonstrates gameplay-owned
+motion, attached emitters, host detonation and detached tail cleanup.
+
+Default demo choreography belongs to the host: launch origin/velocity, ballistic
+motion and fuse are gameplay state; Aestra manages wake, burst, embers and smoke.
+The host publishes current root-level world poses before binding resolution,
+stops wake emission at detonation and retains finite VFX owners after removing
+the rocket. Host audio binds to that detonation, never to GPU gameplay authority.
+`--cinematic` preserves the authored reference show; explicit art/lab/effect flags
+also select it. Existing image/cost regression tools keep that authored path.
+Assets remain shared under `assets/test`, and historical evidence paths/hashes
+remain records of their original runs. This reorganization is not new smoke art
+approval, OIT adoption or host gameplay replay certification. Bounded selected-star
+integration is recorded below; final smoke/reference art remains open.
+
+Validation: 42 demo/authoring tests and the focused projectile example test pass;
+strict Clippy covers audio-enabled/disabled builds, formatting and diff checks
+pass, and a high-tier native GPU window capture shows the detached rocket smoke
+and host-started gold burst. This is an integration check, not a performance or
+final-art acceptance gate.
+
 ## 1. Executive summary
 
 Aestra is now far enough along that realistic fireworks should move from a future architecture benchmark to an **active reference showcase**.
@@ -5279,13 +5304,180 @@ all-target Clippy/format/diff checks. Sampled art improvement is not physical
 calibration, ordinary performance, production-show approval or default adoption.
 See [`point-star-calibration-2026-10-27.md`](../../benchmarks/fireworks/point-star-calibration-2026-10-27.md).
 
-**Next:** calibrate a separate gold-tail family against the video, then integrate
-deposited smoke with the luminous-shell candidates. Review audience/close
-expansion, cooling and extinction before tuning that smoke.
-Follow with bounded selected-star light authoring and independent host enablement;
-compare older haze with representative/selected contributions controlled separately
-under existing budgets. Keep volumetric depth/generic fluid coupling, final
-art/default adoption and whole-host/production-finale performance as separate gates.
+**Dense gold-tail reference calibration (2026-10-27):** a separate saved warm
+control/candidate now uses existing distance events to shed sprite embers behind
+64/32/16 ballistic Main stars. After the user's density correction, six children
+every 0.4 units replace the sparse two-per-0.8 recipe, with explicit
+32,768/16,384/8,192 ember pools. Six selected native camera/tier cases deliver
+84 images; all 67,254/33,324/15,354 ember births and Main-star demand are accepted,
+with no source/expansion/destination loss, one launch/break/flash and full drain.
+An image-only, bounded per-link report now exposes this admission; renderer and
+runtime APIs/defaults remain unchanged. Earlier sparse sources/reports remain.
+One ordinary vsync-inclusive control/candidate pair measures p95 17.24/17.11 ms;
+this is not GPU equivalence or 60 FPS/finale approval. Each image case retains one
+pending global-pipeline update. All-tier authoring and 32 public example tests,
+strict host all-target Clippy/format/diff and prior-source hashes pass.
+See [`gold-tail-calibration-2026-10-27.md`](../../benchmarks/fireworks/gold-tail-calibration-2026-10-27.md).
+
+**Calibrated-shell smoke integration (2026-10-28):** separate saved point/gold
+source variants now deposit zero-inheritance smoke behind the calibrated stars,
+with no independent emission. Gold uses its existing 0.4/max2 shared sampler;
+point smoke uses 0.8/max2. Explicit source-tier pools account for longer parent
+lives and denser crossings. A 24-second gold/blue pair preserves luminous emitters,
+ember births, cues, fixed seeds and transforms. Eight native art/admission controls
+deliver 128 images with all 11,209/9,130 high-tier gold/point smoke births accepted,
+zero source/expansion/destination loss, two launches/breaks/flashes and cleanup;
+medium/low and independent light/density controls pass. New smoke instances use
+scene-light gain 0.08 with ambient/density unchanged from the first draft; the
+initial 0.02 response remains recorded as subtle. A fixed older-haze ROI supports
+a small blue contribution under the later flash, not physical radiometry.
+
+A nine-capture high-tier witness now records per-owner/per-emitter populations
+and observation times: 11,209 gold smoke particles outlive the sparks, gold empties
+while its clip is still active, and point path smoke then the longer original
+burst haze empty before point-clip retirement. One ordinary control/candidate pair
+records host p95 18.12/17.82 ms and max 30.62/46.30 ms; the outlier and vsync-inclusive
+scope preclude performance acceptance. Image cases retain one global-cache pending
+update and bounded-sort approximations. Thirty-two host tests plus the new all-tier
+authoring test, strict host all-target Clippy/format/diff and 211 prior-source hashes
+pass. Renderer/runtime libraries and original saved shows remain unchanged.
+See [`shell-smoke-integration-2026-10-28.md`](../../benchmarks/fireworks/shell-smoke-integration-2026-10-28.md).
+
+**Bounded calibrated star/smoke lighting (2026-10-28):** separate saved outputs
+now attach only to Main stars, preserving original modules/materials, smoke and
+ember births, event/sound routes and representative flashes. Authored output
+ceilings are 32/16/24, host ceilings 96/48/24, with a blue-gradient-aware 6000 →
+3000 → 0 lumen curve and 12-unit range. `--star-lights` enables the public native
+adapter independently of smoke labs; flashes and selected stars have independent
+CLI/keyboard controls. A host tier propagation regression is fixed and tested.
+
+Ten final native controls include all four high-tier light combinations, medium/
+low combined, hidden-path negative controls and a separate ordinary pacing pair.
+84 delivered image captures preserve all link demand, two launches/breaks, no
+global loss and final zero particles/selected capacity. Peak capacity bounds
+64/32/24 are not live-light counts; reservations outlive star death while smoke
+owners drain. A controlled ROI supports a subtle local blue smoke response at
+7.4s that falls to zero in quiet samples. Gold is weaker and perceptual matching
+remains open. A separate medium host-owned rocket screenshot exercises the same
+outputs under ordinary transparency. Host p95 18.216/18.3745ms (representative/
+combined) is one vsync-inclusive pair, not GPU or 60 FPS approval. Existing
+pipeline-pending/bounded-sort limitations remain recorded. 46 package/authoring
+tests, strict Clippy for both audio configurations and formatting/diff checks pass.
+See [`star-light-smoke-integration-2026-10-28.md`](../../benchmarks/fireworks/star-light-smoke-integration-2026-10-28.md).
+
+**Eroding smoke / host overlap (2026-10-28):** a separate material/function removes
+the dense round erosion floor, increases internal breakup, softens tile edges and
+delays shell-smoke expansion. Thin deposited smoke expands with age; the gold
+selected-light intensity/range is tuned with all count budgets retained. Original
+calibrated sources, luminous art, event demand, lifetimes and motion are preserved.
+The host now has an explicit twelve-rocket overlap pattern and blue parameter
+overrides. Normal host admission has no owner-count ceiling; benchmark runs choose
+`--max-owners 24` explicitly. A regression removes the policy and admits beyond 24.
+
+Eight native runs deliver 58 images, covering high pair/host comparisons, medium/
+low host overlap and a separate ordinary timing pair. All twelve launches and
+detonations finish, link demand is loss-free, and gameplay/VFX owners, particles
+and selected capacity drain to zero. High control/candidate cumulative births
+match. Native host reports now account for independent clocks and owner identity.
+The ordinary 40-second p95 pair is 17.5368/17.4664ms, but both runs contain 23
+intervals above 33.33ms and maxima 66.7551/51.0624ms. The long drain/quiet period
+and single-run scope prevent performance acceptance. 49 package/authoring tests,
+both Clippy feature configurations and formatting/diff checks pass.
+See [`smoke-look-host-overlap-2026-10-28.md`](../../benchmarks/fireworks/smoke-look-host-overlap-2026-10-28.md).
+
+**Independent host activation (2026-10-28):** profiling isolates 30–32 ms of
+semantic material recompilation per standalone wake/burst. The public
+`EffectPresentationCache` now shares immutable programs by artifact identity,
+prewarms alongside the demo's camera pipelines, invalidates same-ID replacements
+and retires unused artifacts. Mutable presentation/simulation state stays separate;
+there is no new owner-count limit. Native presentation construction averages
+0.01054 ms after preparation. Ordinary launch-phase p95 falls from 46.9901 ms
+to 17.6719/17.6121 ms in repeated runs; 23 intervals above 33.33 ms become zero.
+Separate active-spark/drain/idle distributions preserve their pacing visibility.
+All six runs retain twelve launches/detonations/flashes, identical star-path demand
+and zero admission losses/final owners/particles. Five delivered images preserve
+the candidate's appearance; no photographic or arbitrary-load approval is implied.
+69 SDK and 49 demo/authoring tests pass with strict Clippy and formatting checks.
+See [`host-activation-2026-10-28.md`](../../benchmarks/fireworks/host-activation-2026-10-28.md).
+
+**Audience-camera smoke revision (2026-10-28):** the opt-in tuned candidate now
+fades its deposited wake in within roughly 100 ms rather than peaking after the
+rocket fuse, makes star filaments more legible and dilutes older smoke. Local
+scene-light gains are tuned without changing ambient, births, motion, lifetimes,
+event/sampler budgets, luminous art or light-count limits. Sixteen native runs
+deliver 102 captures, including before/interim/final audience sequences, matched
+light/hidden-smoke controls, all-tier twelve-rocket overlap and clean retirement.
+The older-haze ROI gains a blue response at the next break and returns to zero
+extra response in quiet controls. 50 demo/authoring tests and strict checks pass.
+The separate profile retains microsecond presentation construction; an unexplained
+noisy ordinary pacing run is preserved, so stable frame-time acceptance is open.
+See [`audience-smoke-2026-10-28.md`](../../benchmarks/fireworks/audience-smoke-2026-10-28.md).
+
+**Side/near/motion review (2026-10-28):** deterministic report-only views publish
+the current camera pose without advancing or seeking the effect. Six image runs
+deliver 209 captures with unchanged route demand and final cleanup, plus sampled
+orbit previews. Haze remains spatially placed in the reviewed samples; near-view
+mottled puff detail still needs art acceptance. The pair's 7,379 near-view pixels
+above the local fast-sort threshold are work for the already implemented overflow
+merge sort, not a new failure or reason to raise a limit. A separate near profile
+observes that pass in 1,447 GPU windows (p95 0.283648 ms). 53 demo/authoring tests
+and strict checks pass. Sampled images do not prove absence of sub-frame popping,
+general transparent participation or photographic close-up quality.
+See [`smoke-views-2026-10-28.md`](../../benchmarks/fireworks/smoke-views-2026-10-28.md).
+
+**Independent-host shared transparency (2026-10-28): partial qualification.**
+The opt-in now admits separately spawned wake/burst owners with the existing
+compiled-renderer audit. Eight native runs/97 captures use matched ordinary/shared
+Msaa::Off controls, unchanged content and clean all-owner retirement. The default
+four-fragment reservation fails high near (19,144,079 observed drops), high orbit
+(4,321,332) and low near (2,578,830). Accepted long lists still use the existing
+merge sort; it cannot recover fragments rejected by the global capture pool.
+An explicit `--oit-fragments-per-pixel 8` passes observed low-tier near/orbit
+capacity at 87.89 MiB node/head storage, within the unchanged 128 MiB ceiling;
+this is not unrestricted density/resolution acceptance. Interactive experimental
+mode enables bounded asynchronous diagnostics and exits after observed loss or
+invalid links without falling back. A native no-report/no-owner-cap probe proves
+the error exit; diagnostic completion is never acceptance. Cost/profile reports
+omit health scans and cannot certify the full guarded-demo cost. 57 demo/authoring
+tests, strict audio/no-audio Clippy and formatting pass. See
+[`host-shared-transparency-2026-10-28.md`](../../benchmarks/fireworks/host-shared-transparency-2026-10-28.md).
+
+**Exact packed-zero pruning (2026-10-28):** Aestra's experimental capture wrapper
+now omits only stored RGB9E5/alpha8 source-over identities before allocation.
+Twenty frozen native opposite-view cases cover both packing half-steps, black
+absorption and faint zero-extinction emission. Neutral images match their controls
+exactly; non-neutral nodes remain. Five host runs/45 captures preserve route demand,
+lighting and final cleanup. Repeated high near demand falls from 22.83M to 20.11M
+attempts (11.93%), with unchanged allocated buffers; it still loses 16.42M fragments
+and would need 233.63 MiB for observed nodes/heads. Low reserve-eight near/orbit
+passes observed capacity; animated host captures are explicitly not exact frozen
+references. 184 renderer tests, 57 demo/authoring tests, final shader-composition
+checks and strict scoped Clippy pass. See
+[`packed-identity-2026-10-28.md`](../../benchmarks/fireworks/packed-identity-2026-10-28.md).
+
+**Isolated partition feasibility (2026-10-28):** a `cfg(test)` raster/scissor
+transport reuses the node pool between disjoint regions, with the production
+sort/resolve bodies and fixture bindings. Three native runs at odd 257x193 HDR
+match the full-list reference exactly, preserve all 1,228,172 attempts and pass
+opaque depth, reversed submission, forced overflow/recovery, empty-frame reset
+and fresh-pool checks. Sixteen regions use 2,579,252 node/head bytes versus a
+tightly sized full-screen control's 14,936,468 (82.73% less), but aggregate GPU
+p95 rises from 0.271–0.307 to 1.535–1.696 ms in this fixture. Four regions halve
+storage at roughly twice the time. A constant two-query lane omits per-region
+counter copies; detailed six-query/region profiling remains separate. The same
+small pool without partitions loses 1,029,768 fragments and is explicitly rejected.
+185 renderer tests and strict scoped checks pass. This adds no runtime/public
+mode and does not certify real host geometry/material costs. See
+[`partition-probe-2026-10-28.md`](../../benchmarks/fireworks/partition-probe-2026-10-28.md).
+
+**Next:** integrate guarded opt-in transport for one approved full-target host
+view, with actual phase scheduling/readiness, per-region loss reporting and
+unsupported-view/foreign-draw rejection. Compare fewer/more partitions on real
+high-tier near/orbit workloads under the unchanged memory ceiling and measure
+repeated material/trail/draw work before adoption. Preserve mixed-scene
+restrictions and default ordinary rendering; no new owner-count caps.
+Final photographic smoke/depth, broader host overload policies and
+production-finale acceptance remain separate gates.
 Arbitrary no-prepass/custom-depth,
 equal-depth ties, viewport subrectangles/resolution overrides, window/minimize lifecycle
 and multi-camera overflow diagnostics remain outside the qualified set. More storage
@@ -5968,10 +6160,46 @@ C4U now fixes two coupled cue-suppression mechanisms and passes final bounded
 source/binding accounting, retaining an interim missing-launch failure as well.
 C4V now adds a separate wind-haze art candidate with bounded native controls,
 retaining two rejected capacity attempts. The 2026-10-27 video-reference review
-now has a saved point-star calibration pair and six bounded native lifecycle
-reviews. Next is a gold-tail family and smoke integration before selected-star
-lighting authoring/independent host enablement; final art and host tail latency remain open. These
-candidates do not replace the default show; see the detailed C4S gate above.
+now has separate point-star and dense gold-tail calibration pairs with bounded
+native lifecycle/admission reviews. The 2026-10-28 two-shell integration now adds
+compatible deposited smoke, controlled older-haze flash response and natural
+lifetime witnesses. The separate selected-star variant now passes bounded
+four lighting combinations, lower-tier combined and local smoke-response review, with
+independent host policy. The separate eroding-smoke candidate now has all-tier
+twelve-rocket host overlap/cleanup review, with an optional benchmark-only owner
+budget and no default admission ceiling. Independent host activation profiling
+now isolates and removes per-owner material recompilation, with repeated native
+launch-phase pacing and unchanged demand/cleanup. The audience-camera revision
+now adds prompt wake visibility, readable filaments, older-haze relighting and
+all-tier cleanup; a noisy ordinary pacing run remains recorded. Side/near/sampled
+motion review now preserves demand and retirement, with the existing overflow
+sort verified separately. Independent-host shared transparency now has matched
+Msaa::Off controls, eight native image runs/97 captures and explicit failure
+retention. Four fragments/pixel fails high near (19,144,079 dropped), high orbit
+and low near. An explicit low-tier eight-fragment reservation passes observed
+near/orbit capacity, unchanged admission and cleanup at 87.89 MiB node/head storage
+within the unchanged 128 MiB ceiling. Normal experimental mode now stops after
+asynchronously observed loss/invalid links; reports retain failed runs and cost
+lanes omit health scans. No new default owner cap or default OIT adoption is added.
+High near requires at least 264.79 MiB for the observed node/head demand, so simply
+filling the remaining budget is insufficient. See
+[`host-shared-transparency-2026-10-28.md`](../../benchmarks/fireworks/host-shared-transparency-2026-10-28.md).
+Exact packed-zero pruning now removes neutral RGB9E5/alpha8 nodes with a 20-case
+frozen native proof. Five host runs/45 captures retain route demand and cleanup;
+high near node demand falls 11.93% but still exceeds the ceiling at 233.63 MiB,
+while low reserve-eight near/orbit passes observed capacity. No buffer allocation,
+owner limit or default mode changes. See
+[`packed-identity-2026-10-28.md`](../../benchmarks/fireworks/packed-identity-2026-10-28.md).
+The isolated partition oracle now passes exact HDR/coverage/reset controls in
+three native runs. Sixteen regions reduce node/head bytes by 82.73% versus a
+tightly fitted full-list control at roughly 5.5–5.7x GPU cost in the small fixture;
+four regions halve storage at roughly twice the time. Detailed/aggregate timing
+lanes are separate; the lossy unpartitioned small-pool control remains rejected.
+See [`partition-probe-2026-10-28.md`](../../benchmarks/fireworks/partition-probe-2026-10-28.md).
+Next is guarded opt-in host phase transport, actual near/orbit loss and repeated
+geometry/material costs before adoption; final art, broader overload and
+production-finale latency remain open. These
+candidates do not replace the cinematic reference art; see the detailed C4S gate above.
 Large-pool/production-finale costs and generic injection remain open.
 Natural-star
 art approval, general per-view layers/hardware and production-finale certification remain open.

@@ -1,6 +1,9 @@
 //! Bounded, opt-in fragment-list experiment. Not production transparency acceptance.
 #[path = "experimental_oit/diagnostics.rs"]
 mod diagnostics;
+#[cfg(test)]
+#[path = "experimental_oit/partition_probe.rs"]
+mod partition_probe;
 #[path = "experimental_oit/resolve.rs"]
 mod resolve;
 #[path = "experimental_oit/sort.rs"]

@@ -49,11 +49,13 @@ mod particle_light_gpu;
 mod particle_lights;
 use particle_lights as particle_light_realization;
 mod playback;
+mod presentation_cache;
 #[cfg(test)]
 use playback::dispatch_choreography_events;
 #[cfg(test)]
 use playback::sync_player_presentations;
-pub use playback::{AestraChoreographyEvent, AestraSet, EffectPlayer};
+pub use playback::{AestraChoreographyEvent, AestraSet, EffectPlayer, PlayerPresentationTiming};
+pub use presentation_cache::EffectPresentationCache;
 mod project;
 mod project_profile;
 mod world;

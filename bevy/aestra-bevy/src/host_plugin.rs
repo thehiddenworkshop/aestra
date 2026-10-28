@@ -19,6 +19,7 @@ impl Plugin for AestraPlugin {
         app.add_plugins(AestraRenderPlugin)
             .add_message::<AestraEventInput>()
             .init_resource::<TextureAssetCache>()
+            .init_resource::<crate::EffectPresentationCache>()
             .configure_sets(Update, AestraRenderSet::Prepare.after(AestraSet::Playback))
             .configure_sets(
                 Update,

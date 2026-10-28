@@ -36,13 +36,32 @@ pub struct AestraChoreographyEvent {
 pub(crate) fn prepare_player_presentations(
     mut commands: Commands,
     players: Query<(Entity, &EffectPlayer), Without<PresentedEffect>>,
+    diagnostics: Option<Res<crate::gpu::GpuPlaybackDiagnostics>>,
+    mut templates: ResMut<crate::EffectPresentationCache>,
 ) {
+    templates.prune_unused();
     for (entity, player) in &players {
-        let mut presented = PresentedEffect::new(player.effect().clone());
+        let start = diagnostics
+            .as_ref()
+            .is_some_and(|d| d.profiling_enabled())
+            .then(std::time::Instant::now);
+        let mut presented = templates.instantiate(player.effect().clone());
         presented.instance = player.instance().clone();
         presented.set_render_mode(player.render_mode());
         commands.entity(entity).insert(presented);
+        if let Some(start) = start {
+            commands.entity(entity).insert(PlayerPresentationTiming {
+                cpu_time: start.elapsed(),
+            });
+        }
     }
+}
+
+/// Optional main-world presentation construction timing, recorded only when GPU
+/// playback profiling is enabled. Excludes GPU preparation and submission.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct PlayerPresentationTiming {
+    pub cpu_time: std::time::Duration,
 }
 
 pub(crate) fn sync_player_presentations(mut players: Query<(&EffectPlayer, &mut PresentedEffect)>) {
