@@ -1,0 +1,188 @@
+(
+    format_version: 4,
+    id: "a3574a00-0000-4000-8000-000000ab3003",
+    name: "Particle Sampling Lab",
+    duration: 6.0,
+    playback_mode: LoopRestart,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    emitters: [
+        (
+            id: "a3574a00-0000-4000-8000-000000ab3004",
+            name: "Stratified sphere",
+            enabled: true,
+            transform: (
+                translation: (0.0, 32.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 6.0,
+            max_particles: 64,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-000000ab3010",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 0.0,
+                                burst_count: 64,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-000000ab3011",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Point,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-000000ab3012",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 3.5,
+                                    max: 4.0,
+                                ),
+                                speed: (
+                                    min: 18.0,
+                                    max: 20.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 0.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                velocity_distribution: Sphere,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-000000ab3015",
+                            module_type: "aestra.spawn.particle_sampling",
+                            enabled: true,
+                            parameters: Custom({
+                                "direction_sampling": Text("stratified"),
+                                "jitter": Scalar(0.12),
+                                "position_sampling": Text("legacy"),
+                                "seed": U32(17),
+                                "sequence_count": U32(64),
+                            }),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-000000ab3013",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.0, -0.5, 0.0),
+                                drag: 0.12,
+                                turbulence: 0.0,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-000000ab3014",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "a3574a00-0000-4000-8000-000000ab3040",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.3,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.1,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "a3574a00-0000-4000-8000-000000ab3041",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 1.0,
+                                        ),
+                                        (
+                                            time: 0.8,
+                                            value: 0.8,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "a3574a00-0000-4000-8000-000000ab3042",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (8.0, 6.8, 3.2, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (2.0, 0.4, 0.05, 0.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-000000ab3030",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000000001",
+                    properties: Sprite,
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-000000ab3031",
+                    renderer_type: "aestra.renderer.trail",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000000001",
+                    properties: Trail(
+                        width: 0.7,
+                        sample_interval: 0.041666668,
+                        lifetime: 1.5,
+                        max_points: 64,
+                        max_trails: 64,
+                        sampling: Time,
+                        sample_distance: 0.25,
+                        curve_tolerance: 0.01,
+                        uv_mode: Stretch,
+                        tile_length: 1.0,
+                        end_cap: Flat,
+                    ),
+                    label: Some("Cooling spark history"),
+                ),
+            ],
+        ),
+    ],
+)

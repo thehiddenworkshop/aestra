@@ -1486,3 +1486,69 @@ where
         .map_err(|error| error.to_string())?;
     Ok(bytes)
 }
+
+#[test]
+#[ignore = "native analytic particle layout/loop contract; run alone on a GPU"]
+fn particle_sampling_analytic_shapes_match_cpu_across_loops_and_seeks() {
+    use aestra_core::particle_sampling::{ParticleSampling, SamplingMode};
+    let shader =
+        aestra_gpu::shader::compile(aestra_gpu::shader::GpuShaderKind::Simulation).unwrap();
+    let harness = GpuHarness::new(&shader.wgsl)
+        .unwrap()
+        .expect("native GPU required");
+    let shapes = [
+        EmitterShape::Point,
+        EmitterShape::Circle { radius: 2.0 },
+        EmitterShape::Ring { radius: 2.0 },
+        EmitterShape::Sphere { radius: 2.0 },
+        EmitterShape::Hemisphere { radius: 2.0 },
+        EmitterShape::Box {
+            half_extents: [1.0, 2.0, 3.0],
+        },
+        EmitterShape::Cylinder {
+            radius: 2.0,
+            depth: 3.0,
+        },
+        EmitterShape::Cone {
+            radius: 2.0,
+            depth: 3.0,
+        },
+    ];
+    for playback in [
+        EffectPlaybackMode::Once,
+        EffectPlaybackMode::LoopRestart,
+        EffectPlaybackMode::LoopContinuous,
+    ] {
+        for mode in [SamplingMode::Uniform, SamplingMode::Stratified] {
+            for shape in shapes {
+                let mut effect = EffectAsset::new("Sampling conformance", 2.0);
+                effect.playback_mode = playback;
+                let mut emitter = Emitter::basic_sprite("Shell", 2.0);
+                emitter.max_particles = 512;
+                emitter.modules[0] = ModuleInstance::emission(12.0, 64);
+                emitter.modules[1] = ModuleInstance::shape(shape);
+                emitter.modules[2] = ModuleInstance::initialize_with_distribution(
+                    ScalarRange::new(0.8, 1.6),
+                    ScalarRange::new(18.0, 22.0),
+                    aestra_core::VelocityDistribution::Sphere,
+                    [0.25, 1.0, -0.2],
+                    60.0,
+                    ScalarRange::new(-1.0, 1.0),
+                );
+                emitter
+                    .modules
+                    .push(ModuleInstance::particle_sampling(ParticleSampling {
+                        positions: mode,
+                        directions: mode,
+                        sequence_count: 64,
+                        jitter: 0.12,
+                        seed: u32::MAX,
+                    }));
+                effect.emitters.push(emitter);
+                let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+                assert_effect_matches_at_times(&harness, compiled, &[0.05, 0.55, 1.1, 2.55, 4.1]);
+            }
+        }
+    }
+    println!("48 analytic shape/mode/playback cases, five observations each, CPU matched");
+}

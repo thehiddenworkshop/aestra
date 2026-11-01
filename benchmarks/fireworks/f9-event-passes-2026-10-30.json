@@ -1,0 +1,1010 @@
+{
+  "status": "Shared bounded phase diagnostics and one-pass event spawn; no demonstrated GPU timing win; F9 remains open",
+  "runs": [
+    {
+      "kind": "control-profile",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-event-pass-control-low-2026-10-30/tuned-low.json",
+        "sha256": "49d95702a42c1d1748dda6c251d3823ce39fb016a083b2b13e6f174210424502"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-event-pass-control-low-2026-10-30/manifest.json",
+        "sha256": "244b524f2d1dff2221d47159760856cde85426ddfbd51e0062131d8108593f4d"
+      },
+      "binary_sha256": "49D6F57305E33678B0A974856624D9AEEC237194E523FD2DFADE88CF2755A1D4",
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {},
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2861916,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14027,
+        "observations": 1933,
+        "observed_partition_loss": false
+      },
+      "phase_timing": {
+        "active-fireworks": {
+          "graph_gpu_p95_ms": 18.614272,
+          "simulation_gpu_p95_ms": 12.370944,
+          "cpu_encoding_p95_ms": 3.6341
+        },
+        "idle": {
+          "graph_gpu_p95_ms": 2.221056,
+          "simulation_gpu_p95_ms": 0.004096,
+          "cpu_encoding_p95_ms": 0.0061
+        },
+        "launch-and-overlap": {
+          "graph_gpu_p95_ms": 13.922304,
+          "simulation_gpu_p95_ms": 8.49408,
+          "cpu_encoding_p95_ms": 2.0661
+        },
+        "smoke-drain": {
+          "graph_gpu_p95_ms": 13.213696,
+          "simulation_gpu_p95_ms": 11.355136,
+          "cpu_encoding_p95_ms": 3.3633
+        }
+      },
+      "simulation_phase_sampling": {
+        "categories": {},
+        "scope": "Opt-in diagnostic lane with extra GPU marker passes. One category per frame, at most 1024 pairs and three in-flight slots. Complete totals sum disjoint segments within that category/frame; overflow or invalid timestamps are unknown. Categories sample different frames: never add their percentiles. Missing windows may include unsupported timestamps, busy slots or missed latest results. Excludes domain advance, analytic/trail preparation, checkpoints outside trail recording, and other graph work. Do not compare this lane's aggregate costs to runs without phase sampling."
+      },
+      "event_spawn_accounting": {
+        "bind_groups": 103150,
+        "buffers": 0,
+        "calls": 51575,
+        "copy_bytes": 0,
+        "dispatches": 103150,
+        "initialized_bytes": 0,
+        "observed_frame_cpu_ms": {
+          "max_ms": 0.8005,
+          "median_ms": 0.3391,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 0.5755,
+          "p99_ms": 0.6514,
+          "samples": 895
+        },
+        "queue_write_bytes": 0,
+        "requested_buffer_bytes": 0
+      },
+      "flashes_accepted": 16,
+      "flash_rejections": {
+        "budget_dropped": 16,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "captures": []
+    },
+    {
+      "kind": "candidate-profile-exploratory",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-event-pass-candidate-low-2026-10-30/tuned-low.json",
+        "sha256": "268567c070a27e8eac7d0cbf1881cc9925afa4200d01285415e16179fd142aac"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-event-pass-candidate-low-2026-10-30/manifest.json",
+        "sha256": "838fc2520d42fa7d1c8e7bd9e4479642a4c69355a6b958051cc083fad67c5bf9"
+      },
+      "binary_sha256": "ADDB2659D202E22C46EC37E83850468369A42FA1ABA4CA2A45D6A7EC67FBA8A5",
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {},
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2868292,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14142,
+        "observations": 1973,
+        "observed_partition_loss": false
+      },
+      "phase_timing": {
+        "active-fireworks": {
+          "graph_gpu_p95_ms": 17.835008,
+          "simulation_gpu_p95_ms": 12.859392,
+          "cpu_encoding_p95_ms": 3.5946
+        },
+        "idle": {
+          "graph_gpu_p95_ms": 2.244608,
+          "simulation_gpu_p95_ms": 0.003072,
+          "cpu_encoding_p95_ms": 0.006
+        },
+        "launch-and-overlap": {
+          "graph_gpu_p95_ms": 14.841856,
+          "simulation_gpu_p95_ms": 9.327616,
+          "cpu_encoding_p95_ms": 2.625
+        },
+        "smoke-drain": {
+          "graph_gpu_p95_ms": 14.774272,
+          "simulation_gpu_p95_ms": 11.014144,
+          "cpu_encoding_p95_ms": 3.3842
+        }
+      },
+      "simulation_phase_sampling": {
+        "categories": {},
+        "scope": "Opt-in diagnostic lane with extra GPU marker passes. One category per frame, at most 1024 pairs and three in-flight slots. Complete totals sum disjoint segments within that category/frame; overflow or invalid timestamps are unknown. Categories sample different frames: never add their percentiles. Missing windows may include unsupported timestamps, busy slots or missed latest results. Excludes domain advance, analytic/trail preparation, checkpoints outside trail recording, and other graph work. Do not compare this lane's aggregate costs to runs without phase sampling."
+      },
+      "event_spawn_accounting": {
+        "bind_groups": 103680,
+        "buffers": 0,
+        "calls": 51840,
+        "copy_bytes": 0,
+        "dispatches": 103680,
+        "initialized_bytes": 0,
+        "observed_frame_cpu_ms": {
+          "max_ms": 0.7516,
+          "median_ms": 0.2505,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 0.5179,
+          "p99_ms": 0.6272,
+          "samples": 934
+        },
+        "queue_write_bytes": 0,
+        "requested_buffer_bytes": 0
+      },
+      "flashes_accepted": 15,
+      "flash_rejections": {
+        "budget_dropped": 17,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "captures": []
+    },
+    {
+      "kind": "control-profile-repeat",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-event-pass-control-repeat-low-2026-10-30/tuned-low.json",
+        "sha256": "9243bc128fc6263940b0ae2fa1643fd03ee0afa461cfac222ca71dbf60ea01c9"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-event-pass-control-repeat-low-2026-10-30/manifest.json",
+        "sha256": "45b0c691b99c90e673fa5f19bbf65ab077701579539bbb9b09101b351a7ab8b4"
+      },
+      "binary_sha256": "49D6F57305E33678B0A974856624D9AEEC237194E523FD2DFADE88CF2755A1D4",
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {},
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2866064,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14162,
+        "observations": 1928,
+        "observed_partition_loss": false
+      },
+      "phase_timing": {
+        "active-fireworks": {
+          "graph_gpu_p95_ms": 17.636352,
+          "simulation_gpu_p95_ms": 14.913536,
+          "cpu_encoding_p95_ms": 3.9195
+        },
+        "idle": {
+          "graph_gpu_p95_ms": 2.233344,
+          "simulation_gpu_p95_ms": 0.004096,
+          "cpu_encoding_p95_ms": 0.0058
+        },
+        "launch-and-overlap": {
+          "graph_gpu_p95_ms": 16.0256,
+          "simulation_gpu_p95_ms": 10.140672,
+          "cpu_encoding_p95_ms": 2.5755
+        },
+        "smoke-drain": {
+          "graph_gpu_p95_ms": 13.019136,
+          "simulation_gpu_p95_ms": 12.311552,
+          "cpu_encoding_p95_ms": 3.5892
+        }
+      },
+      "simulation_phase_sampling": {
+        "categories": {},
+        "scope": "Opt-in diagnostic lane with extra GPU marker passes. One category per frame, at most 1024 pairs and three in-flight slots. Complete totals sum disjoint segments within that category/frame; overflow or invalid timestamps are unknown. Categories sample different frames: never add their percentiles. Missing windows may include unsupported timestamps, busy slots or missed latest results. Excludes domain advance, analytic/trail preparation, checkpoints outside trail recording, and other graph work. Do not compare this lane's aggregate costs to runs without phase sampling."
+      },
+      "event_spawn_accounting": {
+        "bind_groups": 103680,
+        "buffers": 0,
+        "calls": 51840,
+        "copy_bytes": 0,
+        "dispatches": 103680,
+        "initialized_bytes": 0,
+        "observed_frame_cpu_ms": {
+          "max_ms": 0.7352,
+          "median_ms": 0.2419,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 0.5892,
+          "p99_ms": 0.6474,
+          "samples": 892
+        },
+        "queue_write_bytes": 0,
+        "requested_buffer_bytes": 0
+      },
+      "flashes_accepted": 16,
+      "flash_rejections": {
+        "budget_dropped": 16,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "captures": []
+    },
+    {
+      "kind": "candidate-profile-repeat",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-event-pass-candidate-repeat-low-2026-10-30/tuned-low.json",
+        "sha256": "39caa90620197a47e8889c1b6a97ebd2188a575b2c83b5cc503cc4222d67da62"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-event-pass-candidate-repeat-low-2026-10-30/manifest.json",
+        "sha256": "3f2bb9d31d3c46871e0f4dd5515ffc3629e00f5dea0227244c530ebf50c7f466"
+      },
+      "binary_sha256": "514B5303524C771FFC9D075FB55D3FBB79A8FFE063FB17378A182468469D9FE3",
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {},
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2867017,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14134,
+        "observations": 2009,
+        "observed_partition_loss": false
+      },
+      "phase_timing": {
+        "active-fireworks": {
+          "graph_gpu_p95_ms": 18.056192,
+          "simulation_gpu_p95_ms": 13.799424,
+          "cpu_encoding_p95_ms": 3.5708
+        },
+        "idle": {
+          "graph_gpu_p95_ms": 2.229248,
+          "simulation_gpu_p95_ms": 0.004096,
+          "cpu_encoding_p95_ms": 0.0062
+        },
+        "launch-and-overlap": {
+          "graph_gpu_p95_ms": 14.865408,
+          "simulation_gpu_p95_ms": 8.384512,
+          "cpu_encoding_p95_ms": 2.0278
+        },
+        "smoke-drain": {
+          "graph_gpu_p95_ms": 14.99136,
+          "simulation_gpu_p95_ms": 10.303488,
+          "cpu_encoding_p95_ms": 3.146
+        }
+      },
+      "simulation_phase_sampling": {
+        "categories": {},
+        "scope": "Opt-in diagnostic lane with extra GPU marker passes. One category per frame, at most 1024 pairs and three in-flight slots. Complete totals sum disjoint segments within that category/frame; overflow or invalid timestamps are unknown. Categories sample different frames: never add their percentiles. Missing windows may include unsupported timestamps, busy slots or missed latest results. Excludes domain advance, analytic/trail preparation, checkpoints outside trail recording, and other graph work. Do not compare this lane's aggregate costs to runs without phase sampling."
+      },
+      "event_spawn_accounting": {
+        "bind_groups": 103680,
+        "buffers": 0,
+        "calls": 51840,
+        "copy_bytes": 0,
+        "dispatches": 103680,
+        "initialized_bytes": 0,
+        "observed_frame_cpu_ms": {
+          "max_ms": 0.6333,
+          "median_ms": 0.2527,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 0.4684,
+          "p99_ms": 0.5642,
+          "samples": 972
+        },
+        "queue_write_bytes": 0,
+        "requested_buffer_bytes": 0
+      },
+      "flashes_accepted": 16,
+      "flash_rejections": {
+        "budget_dropped": 16,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "captures": []
+    },
+    {
+      "kind": "phase-diagnostic-control",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-phase-sample-low-2026-10-30/tuned-low.json",
+        "sha256": "d8533a7e444f786d4dc47530fe7be85b916102dbc71a00d060e91d29cb7b68f0"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-phase-sample-low-2026-10-30/manifest.json",
+        "sha256": "a07d1bc48373528fa781835650d32d9b65412b00d91f6418a5b09b966e8ab1db"
+      },
+      "binary_sha256": "49D6F57305E33678B0A974856624D9AEEC237194E523FD2DFADE88CF2755A1D4",
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {},
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2853426,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 13889,
+        "observations": 1875,
+        "observed_partition_loss": false
+      },
+      "phase_timing": {
+        "active-fireworks": {
+          "graph_gpu_p95_ms": 18.824192,
+          "simulation_gpu_p95_ms": 13.23008,
+          "cpu_encoding_p95_ms": 3.58
+        },
+        "idle": {
+          "graph_gpu_p95_ms": 2.236416,
+          "simulation_gpu_p95_ms": 0.004096,
+          "cpu_encoding_p95_ms": 0.006
+        },
+        "launch-and-overlap": {
+          "graph_gpu_p95_ms": 16.89088,
+          "simulation_gpu_p95_ms": 11.782144,
+          "cpu_encoding_p95_ms": 2.8642
+        },
+        "smoke-drain": {
+          "graph_gpu_p95_ms": 13.604864,
+          "simulation_gpu_p95_ms": 12.42112,
+          "cpu_encoding_p95_ms": 3.6508
+        }
+      },
+      "simulation_phase_sampling": {
+        "categories": {
+          "event_routes": {
+            "complete_frame_total_ms": {
+              "max_ms": 4.327424,
+              "median_ms": 0.0,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 3.87072,
+              "p99_ms": 3.975168,
+              "samples": 469
+            },
+            "max_requested_segments": 67,
+            "measured_segments": 8230,
+            "partial_windows": 0
+          },
+          "particle_ticks": {
+            "complete_frame_total_ms": {
+              "max_ms": 3.175424,
+              "median_ms": 0.0,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.550784,
+              "p99_ms": 2.607104,
+              "samples": 469
+            },
+            "max_requested_segments": 145,
+            "measured_segments": 18303,
+            "partial_windows": 0
+          },
+          "presentation": {
+            "complete_frame_total_ms": {
+              "max_ms": 4.591616,
+              "median_ms": 0.0,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 3.642368,
+              "p99_ms": 3.713024,
+              "samples": 470
+            },
+            "max_requested_segments": 365,
+            "measured_segments": 39218,
+            "partial_windows": 0
+          },
+          "trail_history": {
+            "complete_frame_total_ms": {
+              "max_ms": 2.120704,
+              "median_ms": 0.0,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 1.537024,
+              "p99_ms": 2.052096,
+              "samples": 470
+            },
+            "max_requested_segments": 64,
+            "measured_segments": 8298,
+            "partial_windows": 0
+          }
+        },
+        "scope": "Opt-in diagnostic lane with extra GPU marker passes. One category per frame, at most 1024 pairs and three in-flight slots. Complete totals sum disjoint segments within that category/frame; overflow or invalid timestamps are unknown. Categories sample different frames: never add their percentiles. Missing windows may include unsupported timestamps, busy slots or missed latest results. Excludes domain advance, analytic/trail preparation, checkpoints outside trail recording, and other graph work. Do not compare this lane's aggregate costs to runs without phase sampling."
+      },
+      "event_spawn_accounting": {
+        "bind_groups": 100552,
+        "buffers": 0,
+        "calls": 50276,
+        "copy_bytes": 0,
+        "dispatches": 100552,
+        "initialized_bytes": 0,
+        "observed_frame_cpu_ms": {
+          "max_ms": 0.871,
+          "median_ms": 0.3932,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 0.5235,
+          "p99_ms": 0.6329,
+          "samples": 838
+        },
+        "queue_write_bytes": 0,
+        "requested_buffer_bytes": 0
+      },
+      "flashes_accepted": 16,
+      "flash_rejections": {
+        "budget_dropped": 16,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "captures": []
+    },
+    {
+      "kind": "candidate-images",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low.json",
+        "sha256": "c5d0ac4ec660a09c677c983e54be00ad3ca2c2bf47a6963239f2dbd92a28d605"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/manifest.json",
+        "sha256": "5ac453a0c0a28d4c2b2bd7d60562926eeffcf75890919fbfae173945ada640c0"
+      },
+      "binary_sha256": "514B5303524C771FFC9D075FB55D3FBB79A8FFE063FB17378A182468469D9FE3",
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {
+        "Star path smoke": 78354,
+        "Gold tail embers": 259644
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2867036,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14198,
+        "observations": 2018,
+        "observed_partition_loss": false
+      },
+      "phase_timing": {},
+      "simulation_phase_sampling": {},
+      "event_spawn_accounting": null,
+      "flashes_accepted": 15,
+      "flash_rejections": {
+        "budget_dropped": 17,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-1.4s.png",
+          "sha256": "ee6dbd6b6eee91cef5d804fa1a0b9117bc5e9322d4393d18022db46f1e060eaf"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-10s.png",
+          "sha256": "ea1b75ee23017c2682fe62ce5ac742f77fa786ca91f51b238cedbc546bf78f2b"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-12s.png",
+          "sha256": "29ae7a729a6fe7eaf5b2f87af23984dda4128a6b504e0079fa62da022b537414"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-16s.png",
+          "sha256": "140f8460776634b2bf2b64e3244717d595bef2c053340f1673036e5a95f8ded5"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-2.8s.png",
+          "sha256": "2fd41dc90f6be346b409cb82c7faf00d69f1eefc2fb63d7bdcc96d8fae8abf8c"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-23s.png",
+          "sha256": "b5998fa32bbbd1bcc0ccf3028fa594c2c71f9c2067141eba1e729b7ad13275de"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-36s.png",
+          "sha256": "02ec40ad5f878c6601971603a4ed94cf1248b0487594f84d8201719efd2ff500"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-4s.png",
+          "sha256": "caf2542f71540de69efd081e81c715a0ab9c6c7c90e45aa4c8c3d09f1abbeac2"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-5s.png",
+          "sha256": "725798fa9e343496be6c5b358c818127c6883f64a77ac3a2cca4f697cceda47c"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-6.9s.png",
+          "sha256": "ca27740e7df0c58e79974e4af3beeea1b7f2bed73d985aac49bc13f4f738c39a"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-low-8s.png",
+          "sha256": "179ff45f6e0e13717165633ab6f162daca73865af29a9d7bd048e57cbbdb08b8"
+        }
+      ]
+    },
+    {
+      "kind": "candidate-images",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium.json",
+        "sha256": "fe3342d7e3ca5c21d764957313149e07d0886ed7e4e6c3d05d7cf22634356467"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/manifest.json",
+        "sha256": "5ac453a0c0a28d4c2b2bd7d60562926eeffcf75890919fbfae173945ada640c0"
+      },
+      "binary_sha256": "514B5303524C771FFC9D075FB55D3FBB79A8FFE063FB17378A182468469D9FE3",
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {
+        "Gold tail embers": 505062,
+        "Star path smoke": 154151
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5471745,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 55312,
+        "observations": 2019,
+        "observed_partition_loss": false
+      },
+      "phase_timing": {},
+      "simulation_phase_sampling": {},
+      "event_spawn_accounting": null,
+      "flashes_accepted": 28,
+      "flash_rejections": {
+        "budget_dropped": 4,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-1.4s.png",
+          "sha256": "5f7927857e33b2bbed2168393a5c2dce5a4efbae15721fde47c308efad9309c7"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-10s.png",
+          "sha256": "c49c796fff0f0fd1fe4e19de14fca362d5ac793ffa9d0403b6ea38413ad1b264"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-12s.png",
+          "sha256": "3a888d473ed03634d158b48aacad755460fe7ab38fdb35b476becd9dccc14bc6"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-16s.png",
+          "sha256": "43f114e861d353a71c64ced6ae5fa96eb740a694809f8e1df8024372dd36cb6d"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-2.8s.png",
+          "sha256": "fbe57760d5583f92a9155055819f70936775016388cb86839a57bdcaf5dfe47f"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-23s.png",
+          "sha256": "a675e532dbb9bcaea6e17bc722c566c41d2da37f8692b9816c70d67c5d10e371"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-36s.png",
+          "sha256": "dd41924fd0ae320a8248529759c8daf5b51214f436c77f24ee284efaf98b7ee4"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-4s.png",
+          "sha256": "df55322ff33cd4447c965d6541d74c5256de112a9bd3f59dc443c8af487004fa"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-5s.png",
+          "sha256": "38b775626d450756f2bbdc5761f3ec3114ccef37a650da34d3e419173ac62d70"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-6.9s.png",
+          "sha256": "ba4e956025dc6f233302b1f53f0354c33d7f46871445d188ea206464086a99cf"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-medium-8s.png",
+          "sha256": "8f033ee8e6edecc11242a9a7bce7cbb01c0bbc54b4d0421be507287a8ce87bde"
+        }
+      ]
+    },
+    {
+      "kind": "candidate-images",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high.json",
+        "sha256": "e52b8cc565dfd1223252fa4c9575d3c3eadabd879a2401f56dedec3cde6a4845"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/manifest.json",
+        "sha256": "5ac453a0c0a28d4c2b2bd7d60562926eeffcf75890919fbfae173945ada640c0"
+      },
+      "binary_sha256": "514B5303524C771FFC9D075FB55D3FBB79A8FFE063FB17378A182468469D9FE3",
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {
+        "Gold tail embers": 1015758,
+        "Star path smoke": 309714
+      },
+      "capacity": {
+        "loss_free": false,
+        "max_attempted_fragments": 10755266,
+        "max_dropped": 584990,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 116089,
+        "observations": 1953,
+        "observed_partition_loss": true
+      },
+      "phase_timing": {},
+      "simulation_phase_sampling": {},
+      "event_spawn_accounting": null,
+      "flashes_accepted": 32,
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-1.4s.png",
+          "sha256": "4e2ec5293f98c67e0f8db8bbe5b85115c21f832ccfe925b6c4028a4ada642b47"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-10s.png",
+          "sha256": "b97eb97fb7bdb0bd403d96f8ee12db429bfba3b7de656e01fdf6f51e119550b5"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-12s.png",
+          "sha256": "31f72e131bd9716392744c19cb13dc4948fe9cafd5aaf5e269d5824df312f2de"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-16s.png",
+          "sha256": "24c7a2f1968f34d7971ee96f4d3474801ef26d278a3482914c4193f3701ce33e"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-2.8s.png",
+          "sha256": "65e73e6457828ca8568fd111d77c92318b8e46ab9cffed72c6c5695030dd094b"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-23s.png",
+          "sha256": "1291b01144c4322a9752449528c72276411fb7cb1af275262776992973cfb961"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-36s.png",
+          "sha256": "4dbe3c2d241753003af8d57d0ebdfaffe834dfe6343c1c59777196b3277f0b1b"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-4s.png",
+          "sha256": "103d412bc360bb986e13ac8bec4a425c975c5aa9aa1c42705503d581d459effa"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-5s.png",
+          "sha256": "104e5ee29988d6db6a8fa315af08c4f2922fea0a56a114d3cd17063617a2733e"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-6.9s.png",
+          "sha256": "8da9e5c406d7a23743ee57f3a63a789e9cc0e00ccf9c4f52d93f17f8b543b2be"
+        },
+        {
+          "path": "target/fireworks-f8/f9-event-pass-images-2026-10-30/tuned-high-8s.png",
+          "sha256": "fbf67afdf65e9474580b47635733921ccce18012949430c19d8a94be541dc948"
+        }
+      ]
+    }
+  ],
+  "editor": [
+    {
+      "case": "wake",
+      "report": {
+        "path": "target/fireworks-f8/editor-wake-event-pass-2026-10-30/preview-report.json",
+        "sha256": "686f29a36bdb36b0d582b8322838ee29dbbf80369c7b4dd601d846c3c6ff44e4"
+      },
+      "matches": [
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-event-pass-2026-10-30/frame-000.png",
+            "sha256": "a8bb91b2a64a216ce2746964c7d48bfc0d8c9ba6d0a535664580b010cec058d8"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-000.png",
+            "sha256": "a8bb91b2a64a216ce2746964c7d48bfc0d8c9ba6d0a535664580b010cec058d8"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-event-pass-2026-10-30/frame-001.png",
+            "sha256": "25f0dae918574a8d5bbaaaddd136e424966c0f9f62f482da57183ef9407b851e"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-001.png",
+            "sha256": "25f0dae918574a8d5bbaaaddd136e424966c0f9f62f482da57183ef9407b851e"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-event-pass-2026-10-30/frame-002.png",
+            "sha256": "ad197a650952b98fe8910b0636d3340e3d4f20be1538b019befa2f08f08ebce1"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-002.png",
+            "sha256": "ad197a650952b98fe8910b0636d3340e3d4f20be1538b019befa2f08f08ebce1"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-event-pass-2026-10-30/frame-003.png",
+            "sha256": "03e9bacb427c1094af9f29e9343b26ad69a6e667012dab197c87988e7f72062e"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-003.png",
+            "sha256": "03e9bacb427c1094af9f29e9343b26ad69a6e667012dab197c87988e7f72062e"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-event-pass-2026-10-30/frame-004.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-004.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-event-pass-2026-10-30/frame-005.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-005.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "rgb_equal": true
+        }
+      ]
+    },
+    {
+      "case": "plume",
+      "report": {
+        "path": "target/fireworks-f8/editor-plume-event-pass-2026-10-30/preview-report.json",
+        "sha256": "09fe061fa459e28d4fdc4e0ce31c36eddab7aa3839944fe7b400b073fa42a0e4"
+      },
+      "matches": [
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-plume-event-pass-2026-10-30/frame-000.png",
+            "sha256": "11ccea4f27e791c18ac3b132635a14c259be18c38fe04e4b968cbede94870948"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/frame-000.png",
+            "sha256": "11ccea4f27e791c18ac3b132635a14c259be18c38fe04e4b968cbede94870948"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-plume-event-pass-2026-10-30/frame-001.png",
+            "sha256": "bf85ace78b0ca9c0e22a072dab66d7c05cd1047595bb05e27a87ae26e7f675dd"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/frame-001.png",
+            "sha256": "bf85ace78b0ca9c0e22a072dab66d7c05cd1047595bb05e27a87ae26e7f675dd"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-plume-event-pass-2026-10-30/frame-002.png",
+            "sha256": "455d0c4e2da58530d7470bc1b92a1c17961b7123d182d8ed6b485315ede2fb85"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/frame-002.png",
+            "sha256": "455d0c4e2da58530d7470bc1b92a1c17961b7123d182d8ed6b485315ede2fb85"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-plume-event-pass-2026-10-30/frame-003.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "control": {
+            "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/frame-003.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "rgb_equal": true
+        }
+      ]
+    }
+  ],
+  "source_inputs": [
+    {
+      "path": "bevy/aestra-bevy-render/src/execution.rs",
+      "sha256": "60ac55613c38efa49f6c5f5786c9d9c1d41f1bcd1e3989654bdc4ae71833d1ab"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/phase_timing.rs",
+      "sha256": "40d95107a1f806ba8bf22fba174665499a72a63f1e2f7bfdb46fe9e5bf757249"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/timestamp_transport.rs",
+      "sha256": "fb7e320b6b9dabcffa9441a01f83a794943ff02d67b388139ec2c44dfd651a5f"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/simulation_graph.rs",
+      "sha256": "e6347fbbe26a7c6a4ce5ccf2f0cba283cf2fe931ce7cd4bd7b4875fa8be91a09"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs",
+      "sha256": "cd4447237fb3321ae12f165fd4f5955da2cf2c458caec8c5530cbd79a629b5b5"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs",
+      "sha256": "ed0f9a0a67aa101d3311609c54ce53150b5fcdbdb2d83ba6b2376d84e767caf9"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/bootstrap.rs",
+      "sha256": "66093516af7c15b75a9561e22eab78db9960c2eed318e340452f581da4d39129"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu.rs",
+      "sha256": "c7ddf8939da8bc2125412fd6b32935026658372ec9ab85e4ebd93224c032f6a2"
+    },
+    {
+      "path": "demos/fireworks/src/report_profile.rs",
+      "sha256": "9912deab0cb5bd344076ba70e4644e771257122967afe67082104097f50bd4ad"
+    },
+    {
+      "path": "benchmarks/fireworks/run-smoke-look-review.ps1",
+      "sha256": "91a55dc508a9802f7bdfc7506d368317adae95a7a73b613b8c580cbe1ee5ed54"
+    }
+  ],
+  "control_binary": {
+    "path": "target/fireworks-f8/phase-sampler-control-2026-10-30.exe",
+    "sha256": "49d6f57305e33678b0a974856624d9aeec237194e523fd2dfade88cf2755a1d4"
+  },
+  "candidate_binary": {
+    "path": "target/fireworks-f8/event-pass-release-2026-10-30.exe",
+    "sha256": "514b5303524c771ffc9d075fb55d3fbb79a8ffe063fb17378a182468469d9fe3"
+  },
+  "viewer_binary": {
+    "path": "target/release/aestra-viewer.exe",
+    "sha256": "4eb2fe041b30079d19256c5ce8ce2dfd3c321c5c1799e808b1d3db671f00b32a"
+  },
+  "frozen_shared_smoke_inputs": [
+    {
+      "path": "crates/aestra-gpu/src/shaders/advected_smoke.wesl",
+      "sha256": "c38f4b4e35ee3c05fe8517026c20747fd07ea50c072d5eeab854e30e6bfad848"
+    },
+    {
+      "path": "sample-project/effects/smoke_material_lab.aestra.ron",
+      "sha256": "d8d5800001a0609b484a85b68af392598517fa699157bff3257f97deb4af0452"
+    },
+    {
+      "path": "sample-project/effects/smoke_wake_lab.aestra.ron",
+      "sha256": "d2d39fa5452785be200a92e14db8db186069f92f7b5cd68f292d0b8ed7ddc68e"
+    },
+    {
+      "path": "sample-project/materials/advected_smoke.aestra.material.ron",
+      "sha256": "ee9ecbd0cf6d636fae90e05c3e756adb37019911fd796c9c324f648e57a7e882"
+    },
+    {
+      "path": "sample-project/materials/advected_smoke_density.aestra.material-function.ron",
+      "sha256": "15f78870990360eea54876e28c26157964e641f0b8620d3f14e0f92699852d5c"
+    }
+  ],
+  "original_showcase_hashes_verified": 97,
+  "retained_images": [
+    {
+      "path": "benchmarks/fireworks/reviews/f9-event-passes-2026-10-30/editor-wake-7s.png",
+      "sha256": "03e9bacb427c1094af9f29e9343b26ad69a6e667012dab197c87988e7f72062e"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f9-event-passes-2026-10-30/finale-low-8s.png",
+      "sha256": "179ff45f6e0e13717165633ab6f162daca73865af29a9d7bd048e57cbbdb08b8"
+    }
+  ],
+  "limits": [
+    "Two sequential low control/candidate observations overlap; not a causal GPU speedup or stable FPS guarantee",
+    "First candidate predates a collector parameter-tuple refactor; its binary hash is retained in the manifest, not a preserved executable",
+    "Phase diagnostic markers add overhead; only marker-free runs are compared for cost",
+    "Phase categories rotate across frames; do not add percentiles; idle windows are included",
+    "Event spawn CPU accounting is call-site data, not a driver pass trace; both dispatches are preserved",
+    "High-tier capacity still fails; medium/high costs, full-game budgets and other GPUs are not qualified"
+  ]
+}

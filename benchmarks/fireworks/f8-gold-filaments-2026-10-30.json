@@ -1,0 +1,279 @@
+{
+  "status": "Isolated thin-filament art study; continuity improved, visual realism/overlap cost not approved",
+  "runs": [
+    {
+      "name": "control",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control.json",
+        "sha256": "0a0ccaa2fe64977a305676ceb9990556bc08f64d0e96af88d0e7af7fdaaea2f8"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 261804,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 53,
+        "observations": 1088,
+        "observed_partition_loss": false
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 32,
+        "Burst flash": 1,
+        "Burst smoke": 24,
+        "Gold tail embers": 33324,
+        "Star path smoke": 5554
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-1.5s.png",
+          "sha256": "5e9eb274ae3022a5ce1c911ee1295ef6b9bb36b076034c17b1ae4c0c695fde7a"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-16.5s.png",
+          "sha256": "0c834157fa49817b69b8ae89a5236b585944e7ac5289889c4a717c2e4af56fbb"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-2.5s.png",
+          "sha256": "3c380506f1a355cbf70bf6aa516f795b9acf90742465a7463117e9b65fa74499"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-2s.png",
+          "sha256": "a7f346c17ca73911a7e838ead53a42e51464e1cde6e2c9eaaa2b050a2d17d6e2"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-3.8s.png",
+          "sha256": "9efa5f6357e91b4acfed6dfbf184bdee98b381471527e04bb4412696f9ac027f"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-3s.png",
+          "sha256": "49be87808af1c8fc2144187782705cfa30cd8ada5485a659dc49a54b949435bd"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-4.8s.png",
+          "sha256": "9caffb27d3fd1e520e9997e9268c26c74106050efdd9afccc6e618e678cb6c50"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-6s.png",
+          "sha256": "7198cdc289a162890fd3161e1e5a1278db74ca3cc5692831f759bf7884556d6d"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-study-2026-10-30/control-9s.png",
+          "sha256": "b90c941e859b13baf1e208eb89a0936468670b8dc44d54a2429141ce2c9ee358"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate.json",
+        "sha256": "83cfdbe10cd57f1f9c0e8a71722155d6fc1b16b20842329e4d3e74976efa4bcd"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 261804,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 58,
+        "observations": 1086,
+        "observed_partition_loss": false
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 32,
+        "Burst flash": 1,
+        "Burst smoke": 24,
+        "Gold tail embers": 33324,
+        "Star path smoke": 5554
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-1.5s.png",
+          "sha256": "eabec61436527c32d12374255a137a28bb07bc4ff4a4d7b2f3717a774edf3300"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-16.5s.png",
+          "sha256": "0c834157fa49817b69b8ae89a5236b585944e7ac5289889c4a717c2e4af56fbb"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-2.5s.png",
+          "sha256": "f72cfdd7baaf88dc3859f762476263d660883a1c22e4c37362a363914e902996"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-2s.png",
+          "sha256": "db8570e8b18e6deaadc3cc2f176290b027d0f138ffed078189923b448c8a98fd"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-3.8s.png",
+          "sha256": "8cbe04b56be712b4fd6fd637f251684773f16ca79b855fc76e9c82debd84c9c7"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-3s.png",
+          "sha256": "4aa5825588c85e9403ae254bc24c21b2c776ff04f077ce2a11c11ad4943c0858"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-4.8s.png",
+          "sha256": "adfed15f562d7d0fee0201ac7c20fc2cc0954be8d22677519e35e3ac15686c20"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-6s.png",
+          "sha256": "cc002377e2c2b3d52fd83df3b6e16e70bc1676f9c290d7b1755bd55a8c531a14"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-final-2026-10-30/candidate-9s.png",
+          "sha256": "3153f85cfb392fc79b96093048ed1a756f082f3792346334af987b0f9b6222b7"
+        }
+      ]
+    },
+    {
+      "name": "control",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/gold-filament-high-2026-10-30/control.json",
+        "sha256": "449f7ce9de49388826e6d84d6c94b40e185d4b605b68599a3d09d350355e6239"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 503925,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 552,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 64,
+        "Burst flash": 1,
+        "Burst smoke": 48,
+        "Gold tail embers": 67254,
+        "Star path smoke": 11209
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/control-16.5s.png",
+          "sha256": "e4ff37a16ba1e94f4b5a799c32560e032456e1c483bf2db290e4363c90f0e9a3"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/control-2s.png",
+          "sha256": "3ff0089e3f96028e052141db011323fcbf22071bd765e2e8a58a6a26202d93ff"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/control-3s.png",
+          "sha256": "bb501fca7a935bf65d24b41cff7b9ba04bd8b8d1c3a4268cb4cd5814c8426a17"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/control-4.8s.png",
+          "sha256": "d55098dc20e9de21b0cd42bb0a496e1288ed58730c24b044b0a5c9091fe22aad"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/control-7s.png",
+          "sha256": "5db3c035f0b0fba4d1be91c25e7ddd63d4df9d4121789617c0b17eb6ced7f9bb"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/gold-filament-high-2026-10-30/candidate.json",
+        "sha256": "beab0a81d0d527b4105eeba497f324a2e4882f9584fcff34827d8c1117a94272"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 503925,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 588,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 64,
+        "Burst flash": 1,
+        "Burst smoke": 48,
+        "Gold tail embers": 67254,
+        "Star path smoke": 11209
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/candidate-16.5s.png",
+          "sha256": "eb6c8912e818475745dff4166b9e75bbe9c23221985766424e07309284fd1742"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/candidate-2s.png",
+          "sha256": "92ea441911328c15876417852fb1c4e669799e8aeb7e82ce1c28c3f29557a661"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/candidate-3s.png",
+          "sha256": "3abf458045a3876e81d47eeac3b882227845002a65db52d4537a0dff0b9d0f3e"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/candidate-4.8s.png",
+          "sha256": "8d82cd60220c106e32dd189ef4cb27bf64dd1fe026ec6156f8cacfe0e38f702e"
+        },
+        {
+          "path": "target/fireworks-f8/gold-filament-high-2026-10-30/candidate-7s.png",
+          "sha256": "41bea0d43ff2cbaaf6de271f93d26e477fdd45b7f19e8e59ba5532534ad11623"
+        }
+      ]
+    }
+  ],
+  "source_inputs": [
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_filament_study.rs",
+      "sha256": "5b021a96971f4e3521c59622b176fd84cbbb73592530cc0834e620d2d60e26fd"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_filament_control.aestra.ron",
+      "sha256": "860ab203b4ab154c4e6a14804892c53474057e52e9dbabbe72215bc0abfa4468"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_filament_candidate.aestra.ron",
+      "sha256": "bb8f2b545144b1ace0214fd5a7cc1c1c50e3f4cc51e478a4bcd5d24c02312647"
+    }
+  ],
+  "comparison": {
+    "path": "benchmarks/fireworks/reviews/f8-gold-filaments-2026-10-30/comparison.png",
+    "sha256": "82bb4725880d54ef4607193527c616e6a7429bca885af0242742a688fdcb1868"
+  },
+  "editor_report": {
+    "path": "target/fireworks-f8/editor-gold-filament-2026-10-30/preview-report.json",
+    "sha256": "18852c5c67e36a4fadec9731d2afdcf3c04ed2dc782593f66d045136886fc10d"
+  },
+  "editor_captures": [
+    {
+      "path": "target/fireworks-f8/editor-gold-filament-2026-10-30/frame-000.png",
+      "sha256": "10083b8852ce2e09f23e6b8317a2c0340be081d0fac9978c22e1a727e2981243"
+    },
+    {
+      "path": "target/fireworks-f8/editor-gold-filament-2026-10-30/frame-001.png",
+      "sha256": "0f5f6fb01531415f713e2ad00a481fc0ab0c0151f02389aa547ee8e24f8c950a"
+    },
+    {
+      "path": "target/fireworks-f8/editor-gold-filament-2026-10-30/frame-002.png",
+      "sha256": "879243bb11fd10a06ac9dee052fe1d35e6ba292cffe23959d957d9999aa11c17"
+    },
+    {
+      "path": "target/fireworks-f8/editor-gold-filament-2026-10-30/frame-003.png",
+      "sha256": "86226f361655c689d3a20d91f0d0d04601b1d302d66c818a0879fe5ea45b84ba"
+    }
+  ],
+  "rejected_first_draft": {
+    "source": {
+      "path": "target/fireworks-f8/gold-filament-study-2026-10-30/candidate-draft1.aestra.ron",
+      "sha256": "517b7dbe87d8cfb80ac85369041c92d7e87f17215e45a9f2a166ae42f830d39d"
+    },
+    "reason": "Connected but too dim/clean; refined before retaining the final study"
+  },
+  "limits": [
+    "Independent forward screenshots are not photometric or motion-matched reference footage",
+    "High/medium single-shell native audience only; all-tier compile and native editor proof do not qualify low, dense overlap or cost",
+    "More coherent trails still look too regular; burn breakup, grain, cooling and temporal camera response remain visual-review priorities",
+    "64-point existing trail limit retained with a 1/24s authored sampling interval and 2.4s history; parent simulation remains unchanged",
+    "Candidate is separate saved editor content, not default adoption or a fix for F9 performance/capacity failures"
+  ]
+}

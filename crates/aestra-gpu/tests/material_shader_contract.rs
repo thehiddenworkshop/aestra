@@ -75,6 +75,104 @@ fn assert_portable_shader_targets(wgsl: &str) {
 }
 
 #[test]
+fn builtin_noise_fields_compile_as_portable_materials_in_all_dimensions() {
+    use aestra_compiler::MaterialGraphCreateKind;
+    use aestra_core::{
+        material::MaterialProgram,
+        noise::{self, NoiseFunction},
+    };
+    let functions = MaterialFunctionLibrary::default();
+    for kind in NoiseFunction::ALL {
+        let base = MaterialProgram::additive_sprite(kind.name());
+        let mut program = MaterialCompiler
+            .plan_graph_node_creation_with_functions(
+                &base,
+                MaterialGraphCreateKind::FunctionCall {
+                    function: MaterialFunctionRef::BuiltIn(kind.id()),
+                    output: noise::OUTPUT,
+                },
+                None,
+                &functions,
+            )
+            .unwrap()
+            .replacement;
+        program.outputs.alpha = program.expressions.last().unwrap().id;
+        let ir = MaterialCompiler
+            .compile_with_functions(&program, &functions)
+            .unwrap();
+        let compiled = MaterialShaderCompiler
+            .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+            .unwrap();
+        assert_portable_shader_targets(&compiled.shader.wgsl);
+    }
+}
+
+#[test]
+fn world_position_is_shared_by_particle_materials_without_requiring_lighting() {
+    use aestra_core::material::{MaterialDomain, MaterialProgram};
+    for domain in [
+        MaterialDomain::Sprite,
+        MaterialDomain::Ribbon,
+        MaterialDomain::Mesh,
+    ] {
+        let mut program = MaterialProgram::additive_sprite("Coherent world density");
+        program.domain = domain;
+        program
+            .expressions
+            .iter_mut()
+            .find(|e| e.id == program.outputs.color)
+            .unwrap()
+            .kind = MaterialExpressionKind::Input(MaterialInput::WorldPosition);
+        let unlit = compile(&program);
+        assert!(!unlit.requires_scene_lighting());
+        assert!(!unlit.requires_scene_depth());
+        assert_eq!(
+            unlit
+                .varying_layout
+                .slots
+                .iter()
+                .filter(|s| s.varying == MaterialVarying::WorldPosition)
+                .count(),
+            1
+        );
+        assert!(
+            unlit
+                .shader
+                .wesl
+                .contains(if domain == MaterialDomain::Mesh {
+                    "output.world_position = mesh.world_position"
+                } else {
+                    "output.world_position = sprite.world_position"
+                })
+        );
+        assert_portable_shader_targets(&unlit.shader.wgsl);
+        let position = program.outputs.color;
+        let irradiance = MaterialExpressionId::new();
+        let color = MaterialExpressionId::new();
+        program.expressions.push(MaterialExpression {
+            id: irradiance,
+            kind: MaterialExpressionKind::Input(MaterialInput::ScenePointIrradiance),
+        });
+        program.expressions.push(MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Add(position, irradiance),
+        });
+        program.outputs.color = color;
+        let lit = compile(&program);
+        assert!(lit.requires_scene_lighting());
+        assert_eq!(
+            lit.varying_layout
+                .slots
+                .iter()
+                .filter(|s| s.varying == MaterialVarying::WorldPosition)
+                .count(),
+            1
+        );
+        assert_portable_shader_targets(&lit.shader.wgsl);
+    }
+}
+
+#[test]
 fn scene_point_irradiance_is_opt_in_portable_and_reflected() {
     use aestra_core::material::{MaterialDomain, MaterialProgram};
     let legacy = MaterialProgram::additive_sprite("Unlit");

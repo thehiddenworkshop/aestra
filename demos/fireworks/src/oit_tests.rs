@@ -2,6 +2,33 @@ use super::*;
 use aestra_bevy::{AestraRuntimeStatus, PresentationMode, RendererPlanKind};
 
 #[test]
+fn partition_transport_is_explicit_host_only_and_keeps_the_memory_ceiling() {
+    for args in [
+        vec!["--oit-partitions", "4"],
+        vec!["--experimental-oit", "--oit-partitions", "3"],
+        vec![
+            "--experimental-oit",
+            "--oit-partitions",
+            "4",
+            "--smoke-art-show",
+        ],
+    ] {
+        assert!(Options::parse(args.into_iter().map(String::from)).is_err());
+    }
+    for side in [1, 2, 4, 8] {
+        let options = Options::parse([
+            "--experimental-oit".into(),
+            "--oit-partitions".into(),
+            side.to_string(),
+        ])
+        .unwrap();
+        assert_eq!(options.oit_partitions, Some(side));
+        assert_eq!(options.max_owners, None);
+        assert_eq!(settings(&options).max_storage_bytes, 128 * 1024 * 1024);
+    }
+}
+
+#[test]
 fn reservation_is_explicit_and_does_not_raise_the_camera_memory_ceiling() {
     for value in ["NaN", "inf", "0", "-1"] {
         assert!(
@@ -60,6 +87,7 @@ fn guarded_camera_keeps_the_public_hdr_profile_and_explicit_budget() {
         .insert_resource(crate::project::ShowProject(project))
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>()
+        .init_resource::<Assets<Image>>()
         .init_resource::<aestra_bevy::EffectPresentationCache>()
         .add_systems(Startup, crate::setup);
     app.update();
@@ -199,4 +227,126 @@ fn runtime_admission_waits_for_native_camera_and_exposes_budget_rejection() {
     app.update();
     assert!(!app.world().resource::<Admission>().ready);
     assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
+}
+
+fn preparation_app(partitioned: bool) -> (App, Entity, Entity) {
+    let mut args = vec!["--experimental-oit".into()];
+    if partitioned {
+        args.extend(["--oit-partitions".into(), "4".into()]);
+    }
+    let mut app = App::new();
+    app.insert_resource(Options::parse(args).unwrap())
+        .init_resource::<Admission>()
+        .init_resource::<crate::readiness::Readiness>()
+        .init_resource::<Time>()
+        .insert_resource(AestraRuntimeStatus {
+            requested: PresentationMode::Gpu,
+            active: ActiveBackend::Gpu,
+            reason: String::new(),
+        })
+        .add_message::<AppExit>()
+        .add_systems(Update, (guard, crate::readiness::start).chain());
+    if partitioned {
+        app.init_resource::<aestra_bevy::ExperimentalOitPartitionStatus>();
+    }
+    let camera = app
+        .world_mut()
+        .spawn((
+            AudienceCamera,
+            ExperimentalOitStatus {
+                estimated_storage_bytes: 0,
+                rejection: Some("camera target is not ready"),
+            },
+        ))
+        .id();
+    let mut player =
+        aestra_bevy::EffectPlayer::new(&aestra_bevy::EffectAsset::new("Waiting", 40.0));
+    player.playing = false;
+    let player = app.world_mut().spawn(player).id();
+    (app, camera, player)
+}
+
+#[test]
+fn target_preparation_never_exits_or_starts_playback_and_still_times_out() {
+    for partitioned in [false, true] {
+        let (mut app, _, player) = preparation_app(partitioned);
+        for _ in 0..10 {
+            app.update();
+            assert!(!app.world().resource::<Admission>().ready);
+            assert!(
+                !app.world()
+                    .get::<aestra_bevy::EffectPlayer>(player)
+                    .unwrap()
+                    .playing
+            );
+            assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+        }
+        assert_eq!(
+            app.world()
+                .resource::<Admission>()
+                .target_preparation_updates,
+            10
+        );
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_secs(61));
+        app.update();
+        assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
+        assert!(
+            !app.world()
+                .get::<aestra_bevy::EffectPlayer>(player)
+                .unwrap()
+                .playing
+        );
+    }
+}
+
+#[test]
+fn zero_estimated_bytes_do_not_turn_real_failures_into_preparation() {
+    for partitioned in [false, true] {
+        for reason in [
+            "invalid shared OIT target capacity",
+            "invalid experimental OIT settings",
+            "shared OIT storage exceeds camera/device budget",
+            "experimental OIT requires explicit Msaa::Off",
+        ] {
+            let (mut app, camera, player) = preparation_app(partitioned);
+            app.world_mut()
+                .get_mut::<ExperimentalOitStatus>(camera)
+                .unwrap()
+                .rejection = Some(reason);
+            app.world_mut()
+                .get_mut::<aestra_bevy::EffectPlayer>(player)
+                .unwrap()
+                .playing = true;
+            app.update();
+            assert!(!app.world().resource::<Admission>().ready);
+            assert!(
+                !app.world().resource::<Messages<AppExit>>().is_empty(),
+                "{reason}"
+            );
+            assert!(
+                !app.world()
+                    .get::<aestra_bevy::EffectPlayer>(player)
+                    .unwrap()
+                    .playing
+            );
+        }
+    }
+}
+
+#[test]
+fn resolved_target_resumes_admission_instead_of_accepting_zero_capacity() {
+    let (mut app, camera, _) = preparation_app(false);
+    app.update();
+    assert!(!app.world().resource::<Admission>().ready);
+    app.world_mut()
+        .entity_mut(camera)
+        .insert(ExperimentalOitStatus {
+            estimated_storage_bytes: 47_923_200,
+            rejection: None,
+        });
+    app.update();
+    assert!(app.world().resource::<Admission>().ready);
+    assert!(app.world().resource::<Messages<AppExit>>().is_empty());
 }

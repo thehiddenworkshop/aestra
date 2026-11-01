@@ -140,6 +140,8 @@ pub(super) struct StatefulDispatch {
     /// from the effect's bindings each frame, into effect space, the tracker remembering the last one
     /// seen for [`aestra_runtime::HomingLostPolicy::KeepLastPosition`].
     pub(super) homing: Option<aestra_runtime::CompiledHoming>,
+    pub(super) particle_sampling: Option<aestra_core::particle_sampling::ParticleSampling>,
+    pub(super) spatial_flow: Option<aestra_core::spatial_flow::SpatialFlow>,
     pub(super) homing_target: Option<aestra_runtime::HomingTarget>,
     pub(super) homing_tracker: aestra_runtime::HomingTracker,
     /// The host binding the emitter follows (host bindings HB7b): `placement` is then resolved from
@@ -249,6 +251,35 @@ impl StatefulDispatch {
     /// simulation, so the persistent state and its checkpoints are invalidated (hybrid roadmap M7).
     pub(super) fn fingerprint(&self) -> u64 {
         let mut hash = self.seed;
+        if let Some(s) = self.particle_sampling {
+            for word in [
+                s.positions as u32,
+                s.directions as u32,
+                s.sequence_count,
+                s.jitter.to_bits(),
+                s.seed,
+            ] {
+                hash = (hash ^ u64::from(word)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        if let Some(f) = self.spatial_flow {
+            for bits in [
+                f.mode as u32 + 1,
+                f.space as u32,
+                f.scale.to_bits(),
+                f.strength.to_bits(),
+                f.seed,
+                f.octaves,
+                f.evolution[0].to_bits(),
+                f.evolution[1].to_bits(),
+                f.evolution[2].to_bits(),
+                f.offset[0].to_bits(),
+                f.offset[1].to_bits(),
+                f.offset[2].to_bits(),
+            ] {
+                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
         for bits in [
             self.capacity,
             self.slot_offset,

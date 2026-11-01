@@ -88,6 +88,7 @@ pub(super) struct GizmoModeLabel;
 
 pub(super) fn sync_preview_grid(
     menu: Res<MenuState>,
+    settings: Option<Res<crate::settings::EditorSettings>>,
     controller: Res<PreviewCameraController>,
     camera: Single<&GlobalTransform, With<PreviewRenderCamera>>,
     grid: Single<
@@ -101,7 +102,7 @@ pub(super) fn sync_preview_grid(
     mut materials: ResMut<Assets<PreviewGridMaterial>>,
 ) {
     let (mut transform, mut visibility, material_handle) = grid.into_inner();
-    *visibility = if menu.show_grid {
+    *visibility = if menu.show_grid && !settings.is_some_and(|s| s.preview.water_enabled) {
         Visibility::Inherited
     } else {
         Visibility::Hidden

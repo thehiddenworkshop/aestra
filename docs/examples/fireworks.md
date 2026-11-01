@@ -4,6 +4,81 @@
 same saved effects and materials as the editor, not an implementation imported from
 `aestra-viewer`. The viewer remains the capture, regression and benchmark harness.
 
+The offshore venue's host rockets carry ascent lights that illuminate the deck
+and water; `--scene sea --no-launch-lights` provides the visual control. The shared
+[water receiver](water_preview.md) now adds directional wave bands, water/air
+Fresnel and filtered roughness, with `--water calm|rough` controls and an editor
+Preview option. Displaced waves and coherent aerial spark reflections remain
+follow-up work. The separate [Emission Grain](emission_grain.md) study
+adds reusable editor material controls for uneven burning and color cooling;
+the variety show's shell art is unchanged until reference review approves it.
+
+The VS Code demo task now selects the separate **eight-family variety** draft:
+
+```powershell
+cargo run --release --locked -p aestra-demo-fireworks -- --launch-pattern variety --scene sea --tier medium --star-lights --experimental-oit --oit-partitions 4
+```
+
+It has 22 uncapped host launches: low palm fans, paired cyan rings, blue point
+stars, ruby crossettes, violet strobe, silver crackle, longer-falling golden willows
+and a mixed-height closing phrase with dense gold tails. The sea venue launches
+them from a small barge, viewed from shore. Water/scenery and deck-to-break flight
+inputs are host code in `src/venue.rs`; the same saved VFX work in the editor.
+The water uses Bevy lighting and clock-driven normal drift, with no additional
+effect playback. Mirrored particle reflections remain a separate graphics task.
+`--scene calibration` retains the earlier stage; see the
+[offshore review](../../benchmarks/fireworks/f8-offshore-2026-10-31.md).
+`src/repertoire.rs`
+chooses flight inputs and launch times. Six saved `fireworks_variety_*` assets in
+`assets/test/effects` hold their generic velocity distributions, cooling, secondary
+event links and shared advected smoke. Open that project in the editor to author
+or render each complete shell independently. The detached host adapter preserves
+secondary output sources/triggers; only the removed launch's death cue moves to
+the initial burst flash. Existing host detonation audio remains available; a new
+secondary-sound mix is outside this art pass. See the
+[variety review](../../benchmarks/fireworks/f8-variety-2026-10-30.md).
+
+The explicit `--showcase` preset selects `fireworks-showcase-v1`: high-tier tuned
+host overlap, selected-star plus representative lighting, PlaybackOnly, and 4×4
+experimental OIT at four reserved fragments/pixel. It preserves the 128 MiB ceiling
+and uncapped owner admission. The initial audience view/window is 1280×720. The
+ordinary CLI defaults remain unchanged.
+This is a frozen visual/workload candidate, not final art or performance acceptance.
+
+```powershell
+cargo run --release --locked -p aestra-demo-fireworks -- --showcase
+```
+
+`--showcase` rejects conflicting tier, history, lighting, reserve, partition,
+launch-pattern and owner-policy overrides, independent of argument order. Project
+relocation and optional audio remain available; baseline reports fingerprint the
+actual assets and explicitly disable audio. For custom experiments omit the preset.
+The [release v1 baseline](../../benchmarks/fireworks/showcase-v1-release-2026-10-29.md)
+separates active launches/sparks from drain/idle on the audience view. Its three
+profiles record active render-graph GPU p95 10.381–10.480 ms and ordinary host p95
+17.739–17.848 ms including vsync on RTX 4070 SUPER/Vulkan at 1280×720. No stable
+60 FPS, other-view/hardware or final-art acceptance is inferred. F8 visual
+reference work now has a separate gold-shell filament-mask draft; geometry
+optimization remains a measured budget decision.
+
+The [F8 gold-smoke reference review](../../benchmarks/fireworks/f8-gold-smoke-reference-2026-10-29.md)
+keeps the v1 assets frozen. It includes a complete shell, a later blue burst
+illuminating older gold smoke, and gameplay-owned audience/near overlap checks.
+See the [demo instructions](../../demos/fireworks/README.md#f8-gold-smoke-reference-draft)
+for isolated preview and a fresh `--project` overlay. Appearance changes remain
+opt-in. The [motion follow-up](../../benchmarks/fireworks/f8-coherent-smoke-motion-2026-10-29.md)
+adds shared world-space density, a softer fresh wake and a forward comparison.
+The [mixed-family follow-up](../../benchmarks/fireworks/f8-blue-gold-smoke-2026-10-29.md)
+adds the point-star candidate and a saved gold/blue pair, preserving the existing
+host palette and choreography. Both families are available in a fresh project
+overlay. The [advection follow-up](../../benchmarks/fireworks/f8-smoke-advection-2026-10-29.md)
+uses the existing effect clock and an exposed pattern-velocity parameter. It pans
+the shared procedural density without changing particle motion or lighting.
+Billboard texture, physically coupled flow and final art acceptance remain open.
+The [editor smoke material](advected_smoke.md) exposes the same kernel, density,
+edge feather and drift in the sample project. The demo uses that implementation,
+not a separate smoke renderer.
+
 ```powershell
 cargo run --release --locked -p aestra-demo-fireworks
 cargo run --release --locked -p aestra-demo-fireworks -- --tier medium
@@ -220,9 +295,63 @@ recover after forced overflow. Sixteen regions use 82.73% fewer node/head bytes
 than a tightly sized full-screen control, but cost roughly 5.5–5.7 times its GPU
 span in the small 48-layer fixture. Four regions halve storage at about twice
 the time. Aggregate timing uses two timestamp writes per frame, with detailed
-profiling separate. This is test-only evidence; no runtime mode is exposed yet.
-Next is guarded opt-in host transport and actual near/orbit memory/cost review,
-including real material and repeated trail-geometry work. Ordinary remains default.
+profiling separate. That prototype is test-only; the subsequent native transport
+below uses real Bevy phase scheduling and bindings.
+
+### Opt-in native partition transport
+
+```powershell
+cargo run --release --locked -p aestra-demo-fireworks -- --experimental-oit --oit-partitions 4 --launch-pattern overlap --tuned-smoke --star-lights
+```
+
+The [native transport review](../../benchmarks/fireworks/native-partition-2026-10-29.md)
+qualifies one full-target host view through actual Aestra draw commands. It waits
+for capture/sort/adapter-resolve readiness, rejects foreign transparent commands
+and unsupported views, and restores retained items before cleanup. No owner cap
+is added. Explicit benchmark `--max-owners 24` remains a separate review policy.
+The original node/head allocation and 128 MiB ceiling are unchanged; each region
+reuses the node pool. Normal playback still uses ordinary transparency.
+
+Use `ExperimentalOitPartitions { grid: UVec2::splat(4) }` alongside the camera's
+`ExperimentalOitSettings`. Consume `ExperimentalOitPartitionStatus` readiness,
+rejection and asynchronous per-region samples. The demo stops on rejection or
+sticky observed loss; report runs deliberately retain failures. Missing samples
+are not success. At most 64 regions bounds the diagnostic transport, not effects.
+
+High 4×4 near/orbit passes observed capacity at 45.70 MiB of node/head storage;
+2×2 near still drops 6.84 million fragments at peak. Three native repetitions
+pass 36 exact display-image comparisons plus overflow/recovery, foreign/invalid
+view rejection, visibility, resize and ordinary-mode restoration controls.
+These are SDR captures of HDR rendering; the isolated raw-HDR oracle is separate.
+
+Active sort/health scans now use the current rectangle's origin/extent, sharing
+the full-target algorithms and cached aligned bounds. Three profile pairs lower
+active aggregate GPU p95 about 7% to 12.702–12.769 ms. Exact native image and
+diagnostic controls, raw HDR and live route/capacity checks pass; repeated capture/
+geometry work remains. See the [regional scan review](../../benchmarks/fireworks/partition-regional-scans-2026-10-29.md).
+Approved eligible partition capture also skips redundant sprite/flipbook particle
+depth permutations: per-pixel list sorting already supplies the order. Ordinary
+views and unpartitioned OIT retain their sorting. Native particle-random HDR
+images, simultaneous ordinary-view sorting and buffer retirement/restoration pass;
+live partition reports record zero particle-sort buffer ownership. See the
+[particle-sort review](../../benchmarks/fireworks/partition-alpha-sort-2026-10-29.md).
+This does not remove repeated per-region geometry work. Startup admission now
+waits for nonzero target dimensions and compiled pipeline descriptors; genuine
+rejections and the 60-second timeout remain enforced. Forced native target
+preparation/recovery matches pixels exactly, six fresh window launches pass and
+full near/orbit route/capacity/cleanup controls remain intact. These do not certify
+all window/minimize lifecycles. See the [startup admission review](../../benchmarks/fireworks/startup-admission-2026-10-29.md).
+Empty queued phases clear heads/counter once and perform
+one GPU reset audit, skipping regional capture/sort/resolve. Such samples have
+`empty_phase: true` and one full-target audit row in `regions`; no CPU-clean
+sample is invented and previous observed loss remains sticky. Three profile
+pairs reduce idle aggregate GPU p95 from 4.737–5.622 to 0.157–0.163 ms; active
+cost remains similar. See the [empty-phase review](../../benchmarks/fireworks/partition-empty-phase-2026-10-29.md).
+Unlike unpartitioned cost lanes, every partition lane includes health scans.
+Host frame p95 still exceeds a 60 FPS budget, so adoption remains open. Foreign
+transparent/transmissive commands, scene-depth materials, multiple OIT cameras,
+subviewports, jitter and resolution overrides remain unsupported. Arbitrary
+custom passes and general hardware/window lifecycles are not certified.
 
 ## Opt-in persistent lit-smoke show candidate (F8.1C3)
 

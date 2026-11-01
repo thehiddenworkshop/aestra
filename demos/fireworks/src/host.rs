@@ -20,6 +20,17 @@ pub struct HostBreak {
 const SHOW_SECONDS: f32 = 40.0;
 const GRAVITY: Vec3 = Vec3::new(0.0, -9.81, 0.0);
 
+/// Named demo workloads, not runtime admission limits. Interactive launches and
+/// VFX ownership remain unrestricted unless the host explicitly sets max_owners.
+fn launch_schedule(pattern: &str) -> (usize, f32) {
+    match pattern {
+        "variety" => (super::repertoire::CUES.len(), 0.0),
+        "finale" => (32, 0.15),
+        "overlap" => (12, 0.35),
+        _ => (5, 3.0),
+    }
+}
+
 #[derive(Component)]
 struct Rocket {
     origin: Vec3,
@@ -34,6 +45,7 @@ struct Rocket {
 struct Tail;
 #[derive(Resource, Default)]
 pub struct HostShow {
+    families_launched: BTreeMap<&'static str, u64>,
     next: usize,
     serial: u64,
     detonated: u64,
@@ -47,12 +59,7 @@ pub struct HostShow {
 
 impl HostShow {
     pub(super) fn measuring_launches(&self, options: &Options) -> bool {
-        self.next
-            < if options.launch_pattern == "overlap" {
-                12
-            } else {
-                5
-            }
+        self.next < launch_schedule(&options.launch_pattern).0
             || self.detonated < self.serial
             || self.current_rockets > 0
     }
@@ -63,6 +70,7 @@ impl HostShow {
 
     pub fn summary(&self) -> serde_json::Value {
         serde_json::json!({"launches":self.serial,"detonations":self.detonated,
+            "families_launched":self.families_launched,
             "scheduled_launches":self.next,"peak_gameplay_and_vfx_owners":self.peak_owners,
             "peak_gameplay_rockets":self.peak_rockets,"owner_limit":self.owner_limit,
             "capacity_wait_updates":self.capacity_wait_updates,
@@ -79,17 +87,30 @@ pub fn compile(options: &Options) -> Result<Arc<CompiledEffectProject>, String> 
         .map_err(|e| e.to_string())?;
     let mut dependencies = BTreeMap::new();
     let index = ProjectAssetIndex::scan(&options.project_root);
-    for (family, name) in ["point_star", "gold_tail"].into_iter().enumerate() {
-        let variant = if options.tuned_smoke {
+    let family_count = if options.launch_pattern == "variety" {
+        super::repertoire::FAMILIES.len()
+    } else {
+        2
+    };
+    for (family, name) in super::repertoire::FAMILIES[..family_count]
+        .iter()
+        .enumerate()
+    {
+        let variant = if options.launch_pattern == "variety" {
+            "reference_smoke"
+        } else if options.tuned_smoke {
             "tuned_smoke"
         } else if options.star_lights {
             "lit_smoke"
         } else {
             "smoke"
         };
-        let path = options
-            .project_root
-            .join(format!("effects/fireworks_{name}_{variant}.aestra.ron"));
+        let file = if family >= 2 {
+            format!("effects/fireworks_variety_{name}.aestra.ron")
+        } else {
+            format!("effects/fireworks_{name}_{variant}.aestra.ron")
+        };
+        let path = options.project_root.join(file);
         let source =
             EffectAsset::from_ron(&std::fs::read_to_string(path).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
@@ -160,10 +181,12 @@ fn split(source: &EffectAsset, tier: &str, family: usize) -> Result<[EffectAsset
         .id;
     burst
         .particle_outputs
-        .retain(|route| route.trigger == EventTrigger::OnDeath);
+        .retain(|route| route.source != launch || route.trigger == EventTrigger::OnDeath);
     for route in &mut burst.particle_outputs {
-        route.source = flash;
-        route.trigger = EventTrigger::OnSpawn;
+        if route.source == launch {
+            route.source = flash;
+            route.trigger = EventTrigger::OnSpawn;
+        }
     }
 
     let mut wake = source;
@@ -304,7 +327,7 @@ fn update(
             )
             .with_history_policy(options.history);
             burst.set_seed(rocket.seed);
-            if options.launch_pattern == "overlap" && rocket.family == 0 {
+            if options.launch_pattern != "spaced" && rocket.family == 0 {
                 let parameter = burst
                     .effect()
                     .parameters
@@ -332,27 +355,60 @@ fn update(
             commands.entity(entity).despawn();
         }
     }
-    let overlap = options.launch_pattern == "overlap";
-    let scheduled = state.next < if overlap { 12 } else { 5 }
-        && clock.elapsed() >= state.next as f32 * if overlap { 0.35 } else { 3.0 };
+    let overlap = options.launch_pattern != "spaced";
+    let variety = options.launch_pattern == "variety";
+    let (launches, interval) = launch_schedule(&options.launch_pattern);
+    let next_time = if variety && state.next < launches {
+        super::repertoire::CUES[state.next].at
+    } else {
+        state.next as f32 * interval
+    };
+    let scheduled = state.next < launches && clock.elapsed() >= next_time;
     let requested = scheduled || (interactive && keys.just_pressed(KeyCode::Enter));
     let admitted = options.max_owners.is_none_or(|limit| owners + 2 <= limit);
     if clock.playing && requested && !admitted {
         state.capacity_wait_updates += 1;
     }
     if clock.playing && requested && admitted {
-        let family = state.serial as usize % 2;
-        let lane = (state.serial % 3) as f32 - 1.0;
-        let origin = Vec3::new(
-            lane * 24.0,
-            0.0,
-            if overlap {
-                (state.serial % 2) as f32 * -8.0
+        let cue = variety.then(|| {
+            super::repertoire::launch(if scheduled {
+                state.next as u64
             } else {
-                0.0
+                state.serial
+            })
+        });
+        let family = cue.map_or(state.serial as usize % 2, |c| c.family);
+        let lane = (state.serial % 3) as f32 - 1.0;
+        let origin = cue.map_or_else(
+            || {
+                Vec3::new(
+                    lane * 24.0,
+                    0.0,
+                    if overlap {
+                        (state.serial % 2) as f32 * -8.0
+                    } else {
+                        0.0
+                    },
+                )
             },
+            |c| c.origin,
         );
-        let velocity = Vec3::new(lane * 5.0, 42.0, 0.0);
+        let velocity = cue.map_or(Vec3::new(lane * 5.0, 42.0, 0.0), |c| c.velocity);
+        let fuse = cue.map_or_else(
+            || {
+                if overlap {
+                    [1.25, 1.45, 1.7][state.serial as usize % 3]
+                } else {
+                    1.3
+                }
+            },
+            |c| c.fuse,
+        );
+        let (origin, velocity) = if options.sea {
+            super::venue::flight(origin, velocity, fuse)
+        } else {
+            (origin, velocity)
+        };
         let seed = SHOW_SEED.wrapping_add(state.serial);
         let entity = commands
             .spawn((
@@ -361,6 +417,9 @@ fn update(
                 AestraLinearVelocity(velocity),
             ))
             .id();
+        if options.sea && !options.no_launch_lights {
+            commands.entity(entity).insert(super::venue::rocket_light());
+        }
         let mut player =
             EffectPlayer::from_compiled(project.0.effect(id(family, false)).unwrap().clone())
                 .with_history_policy(options.history);
@@ -377,16 +436,16 @@ fn update(
             origin,
             velocity,
             age: 0.0,
-            fuse: if overlap {
-                [1.25, 1.45, 1.7][state.serial as usize % 3]
-            } else {
-                1.3
-            },
+            fuse,
             wake,
             family,
             seed,
         });
         state.serial += 1;
+        *state
+            .families_launched
+            .entry(super::repertoire::FAMILIES[family])
+            .or_default() += 1;
         state.peak_owners = state.peak_owners.max(owners + 2);
         if scheduled {
             state.next += 1;
@@ -401,6 +460,141 @@ fn position(origin: Vec3, velocity: Vec3, age: f32) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn variety_launches_every_family_and_preserves_detached_secondary_output_routes() {
+        let options = Options::parse([
+            "--launch-pattern".into(),
+            "variety".into(),
+            "--scene".into(),
+            "sea".into(),
+            "--tier".into(),
+            "low".into(),
+        ])
+        .unwrap();
+        let source = EffectAsset::from_ron(
+            &std::fs::read_to_string(
+                options
+                    .project_root
+                    .join("effects/fireworks_variety_crossette.aestra.ron"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let launch = source
+            .emitters
+            .iter()
+            .find(|e| e.name == "Launch shell")
+            .unwrap()
+            .id;
+        let [_, burst] = split(&source, "low", 5).unwrap();
+        for route in source
+            .particle_outputs
+            .iter()
+            .filter(|r| r.source != launch)
+        {
+            assert!(
+                burst.particle_outputs.contains(route),
+                "secondary output must keep its source and trigger"
+            );
+        }
+        let catalog = compile(&options).unwrap();
+        assert_eq!(catalog.dependencies.len(), 16);
+        let mut app = App::new();
+        app.insert_resource(options)
+            .insert_resource(super::super::project::ShowProject(catalog.clone()))
+            .init_resource::<Time>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<HostShow>()
+            .init_resource::<Readiness>()
+            .add_message::<HostBreak>()
+            .add_systems(Update, update);
+        app.world_mut().resource_mut::<Readiness>().started = true;
+        let clock = app
+            .world_mut()
+            .spawn((ShowRoot, EffectPlayer::from_compiled(catalog.root.clone())))
+            .id();
+        for frame in 0..220 {
+            app.world_mut()
+                .get_mut::<EffectPlayer>(clock)
+                .unwrap()
+                .seek(frame as f32 * 0.1);
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(std::time::Duration::from_secs_f32(0.1));
+            app.update();
+            let world = app.world_mut();
+            for rocket in world.query::<&Rocket>().iter(world) {
+                assert_eq!(rocket.origin.y, super::super::venue::DECK_LAUNCH_Y);
+                assert!(rocket.origin.x.abs() <= 4.8 && rocket.origin.z.abs() <= 1.0);
+            }
+            assert_eq!(
+                world.query::<&PointLight>().iter(world).count(),
+                world.query::<&Rocket>().iter(world).count(),
+                "launch lights share the rocket lifecycle"
+            );
+        }
+        let state = app.world().resource::<HostShow>();
+        assert_eq!((state.serial, state.detonated, state.next), (22, 22, 22));
+        assert_eq!(state.families_launched.len(), 8);
+        assert_eq!(state.capacity_wait_updates, 0);
+        assert_eq!(state.owner_limit, None);
+        assert!(!state.measuring_launches(app.world().resource::<Options>()));
+    }
+    #[test]
+    fn finale_launches_all_32_and_does_not_limit_interactive_owners() {
+        let options = Options::parse([
+            "--launch-pattern".into(),
+            "finale".into(),
+            "--tier".into(),
+            "low".into(),
+            "--tuned-smoke".into(),
+            "--star-lights".into(),
+        ])
+        .unwrap();
+        assert_eq!(options.max_owners, None);
+        assert_eq!(launch_schedule("finale"), (32, 0.15));
+        let catalog = compile(&options).unwrap();
+        let mut app = App::new();
+        app.insert_resource(options)
+            .insert_resource(super::super::project::ShowProject(catalog.clone()))
+            .init_resource::<Time>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<HostShow>()
+            .init_resource::<Readiness>()
+            .add_message::<HostBreak>()
+            .add_systems(Update, update);
+        app.world_mut().resource_mut::<Readiness>().started = true;
+        let clock = app
+            .world_mut()
+            .spawn((ShowRoot, EffectPlayer::from_compiled(catalog.root.clone())))
+            .id();
+        for frame in 0..160 {
+            app.world_mut()
+                .get_mut::<EffectPlayer>(clock)
+                .unwrap()
+                .seek(frame as f32 * 0.05);
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(std::time::Duration::from_secs_f32(0.05));
+            app.update();
+        }
+        let state = app.world().resource::<HostShow>();
+        assert_eq!((state.serial, state.detonated, state.next), (32, 32, 32));
+        assert_eq!(state.peak_owners, 64);
+        assert_eq!(state.capacity_wait_updates, 0);
+        assert!(!state.measuring_launches(app.world().resource::<Options>()));
+        // Test tails are deliberately unadvanced and retained. A subsequent
+        // interactive launch still admits new owners beyond the named workload.
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Enter);
+        app.update();
+        let state = app.world().resource::<HostShow>();
+        assert_eq!(state.serial, 33);
+        assert_eq!(state.peak_owners, 66);
+        assert_eq!(state.owner_limit, None);
+    }
+
     #[test]
     fn overlap_admission_is_only_bounded_when_the_host_explicitly_requests_it() {
         let options = Options::parse([
@@ -501,7 +695,17 @@ mod tests {
     }
     #[test]
     fn gameplay_detonates_once_pauses_restarts_and_leaves_finite_tails() {
-        let options = Options::parse([]).unwrap();
+        for args in [
+            vec![],
+            vec!["--scene", "sea"],
+            vec!["--scene", "sea", "--no-launch-lights"],
+        ] {
+            gameplay_lifecycle(args);
+        }
+    }
+    fn gameplay_lifecycle(args: Vec<&str>) {
+        let options = Options::parse(args.into_iter().map(String::from)).unwrap();
+        let launch_lit = options.sea && !options.no_launch_lights;
         let catalog = compile(&options).unwrap();
         let mut app = App::new();
         app.insert_resource(options)
@@ -523,6 +727,7 @@ mod tests {
             let (entity, rocket) = world.query::<(Entity, &Rocket)>().single(world).unwrap();
             (entity, rocket.wake)
         };
+        assert_eq!(app.world().get::<PointLight>(rocket).is_some(), launch_lit);
         app.world_mut()
             .resource_mut::<Time>()
             .advance_by(std::time::Duration::from_secs_f32(0.5));
@@ -546,6 +751,7 @@ mod tests {
             .playing = false;
         app.update();
         assert_eq!(*app.world().get::<Transform>(rocket).unwrap(), pose);
+        assert_eq!(app.world().get::<PointLight>(rocket).is_some(), launch_lit);
         app.world_mut()
             .get_mut::<EffectPlayer>(clock)
             .unwrap()
@@ -555,6 +761,13 @@ mod tests {
             .advance_by(std::time::Duration::from_secs(2));
         app.update();
         assert!(app.world().get_entity(rocket).is_err());
+        assert_eq!(
+            app.world_mut()
+                .query::<&PointLight>()
+                .iter(app.world())
+                .count(),
+            0
+        );
         assert!(
             app.world()
                 .get::<EffectPlayer>(wake)
@@ -598,6 +811,30 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<HostShow>().serial, 0);
         assert!(app.world().get_entity(clock).is_ok());
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+        app.update();
+        assert_eq!(app.world().resource::<HostShow>().serial, 1);
+        assert_eq!(
+            app.world_mut()
+                .query::<&PointLight>()
+                .iter(app.world())
+                .count(),
+            usize::from(launch_lit)
+        );
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyR);
+        app.update();
+        assert_eq!(
+            app.world_mut()
+                .query::<&PointLight>()
+                .iter(app.world())
+                .count(),
+            0,
+            "restart removes a still-burning rocket light"
+        );
     }
     #[test]
     fn host_catalog_has_no_choreography_and_each_tier_compiles_with_detached_wakes() {

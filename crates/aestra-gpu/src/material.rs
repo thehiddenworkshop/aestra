@@ -563,6 +563,7 @@ fn build_reflection(
         if !matches!(
             input,
             MaterialInput::Uv0
+                | MaterialInput::WorldPosition
                 | MaterialInput::RibbonUv
                 | MaterialInput::RibbonDirection
                 | MaterialInput::Normal
@@ -1303,9 +1304,7 @@ fn input_expression(
         MaterialInput::ViewDirection if varyings.domain == MaterialDomain::Mesh => {
             Some("normalize(input.view_direction)")
         }
-        MaterialInput::WorldPosition if varyings.domain == MaterialDomain::Mesh => {
-            Some("input.world_position")
-        }
+        MaterialInput::WorldPosition => Some("input.world_position"),
         MaterialInput::LocalPosition if varyings.domain == MaterialDomain::Mesh => {
             Some("input.local_position")
         }

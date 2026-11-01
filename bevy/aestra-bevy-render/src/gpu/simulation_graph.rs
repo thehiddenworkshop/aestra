@@ -80,6 +80,8 @@ pub(super) fn run_simulation(
     mut light_readiness: ResMut<PresentedOwners>,
     playback_diagnostics: Res<super::playback_diagnostics::GpuPlaybackDiagnostics>,
     prepared_owners: Query<(&bevy::render::sync_world::MainEntity, &GpuEffectBuffers)>,
+    phase_timings: Res<super::phase_timing::GpuSimulationPhaseTimings>,
+    mut phase_state: Local<super::phase_timing::PhaseState>,
 ) {
     let mut playback_recording = playback_diagnostics.begin();
     if let Some(recording) = &mut playback_recording {
@@ -155,6 +157,12 @@ pub(super) fn run_simulation(
     let diagnostics = diagnostics.as_deref();
     let gpu_span = diagnostics.time_span(render_context.command_encoder(), "aestra::gpu::simulate");
     let mut timing_batch = timer.begin(&render_device, queue.get_timestamp_period());
+    super::phase_timing::begin_frame(
+        &mut phase_state,
+        &phase_timings,
+        &render_device,
+        queue.get_timestamp_period(),
+    );
     histories.retain(|entity, _| {
         effects
             .get(*entity)
@@ -174,6 +182,11 @@ pub(super) fn run_simulation(
             .map(|h| h.1.checkpoints.bytes())
             .sum::<u64>();
     for (entity, main_entity, effect, bind_group, extracted_stages) in &effects {
+        super::phase_timing::owner(
+            main_entity.id(),
+            effect.statistics_token,
+            effect.simulation_time,
+        );
         let mut owner_recording = playback_recording
             .as_mut()
             .and_then(|r| r.owner(main_entity.id()));
@@ -768,6 +781,7 @@ pub(super) fn run_simulation(
     // Queue writes target COPY_SRC pages only. Ordered encoder copies, not repeated
     // queue writes to a shared live destination, install every tick's parameters.
     gpu_span.end(render_context.command_encoder());
+    super::phase_timing::finish(&mut render_context);
     if let Some(batch) = timing_batch {
         batch.finish(&mut render_context, timing_mailbox.clone());
     }

@@ -516,6 +516,8 @@ pub(crate) fn prepare_gpu_effects(
                                 field_follow: compiled.field_follow.clone(),
                                 domain_spawn: compiled.domain_spawn.clone(),
                                 homing: compiled.homing.clone(),
+                                spatial_flow: compiled.spatial_flow,
+                                particle_sampling: compiled.particle_sampling,
                                 homing_target: None,
                                 homing_tracker: aestra_runtime::HomingTracker::default(),
                                 attachment: compiled.attachment.clone(),
@@ -829,6 +831,12 @@ pub(crate) fn prepare_gpu_effects(
                             Transform::default(),
                             Visibility::Inherited,
                         ));
+                        if player.effect().emitters[emitter_index as usize]
+                            .spatial_flow
+                            .is_some_and(|f| f.space == aestra_core::spatial_flow::FlowSpace::World)
+                        {
+                            draw.insert((visibility::NoFrustumCulling, bounds::WorldSpatialFlow));
+                        }
                         // Geometry may still be loading; enable culling only once its bounds
                         // and the current particle motion have both been resolved.
                         if let Some(mesh_bounds) = mesh_bounds {
@@ -1036,6 +1044,12 @@ fn update_gpu_inputs(
                                     world_from_effect: Default::default(),
                                     minimum_pixels,
                                 });
+                        }
+                        if player.effect().emitters[draw.emitter_index as usize]
+                            .spatial_flow
+                            .is_some_and(|f| f.space == aestra_core::spatial_flow::FlowSpace::World)
+                        {
+                            draw.sampled_sprite_cull = None;
                         }
                         if let Some(mut source) = ribbon_bounds {
                             source.0 = dynamics

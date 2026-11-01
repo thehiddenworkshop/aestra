@@ -1,0 +1,1105 @@
+{
+  "date": "2026-10-29",
+  "scope": "Retry unresolved zero-size camera targets; wait safely for newly queued pipeline descriptors. No geometry optimization, cost comparison, generic minimize/window lifecycle or finale acceptance.",
+  "sources": [
+    {
+      "path": "bevy/aestra-bevy-render/src/experimental_oit.rs",
+      "sha256": "7b56ea3be7d235583a547d6781476ccb28ad5b980fbec762abd116cfcfcffffa"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "0f72ffc697449b40b7916cb68bad1519aabfeee3a08b257926eaa83a7c7517e8"
+    },
+    {
+      "path": "demos/fireworks/src/oit.rs",
+      "sha256": "a2aa566a851ac52fe5c7bc356f570e2998d4a078665f7e944ae0efa963c631c8"
+    },
+    {
+      "path": "demos/fireworks/src/oit_tests.rs",
+      "sha256": "197a53f38402b7c875b28393926826d68b45c94999a62b72becef185fd4a9231"
+    },
+    {
+      "path": "demos/fireworks/src/readiness.rs",
+      "sha256": "ea53b31ff266c5e28adcc2d44a0512cdb53a5caa0f152a5f22d4eab34c122bb4"
+    },
+    {
+      "path": "demos/fireworks/src/report.rs",
+      "sha256": "92a3ca1c460365f930c295cc9bafe9bf1725c85c42ca6e2f820e46df59f4dc65"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_partition.rs",
+      "sha256": "b855861eb62e1e3399bc593a4c48de8b78340244875d82e2e121ea00e5332e72"
+    }
+  ],
+  "binary": {
+    "path": "target/fireworks-f8/startup-admission-qualified-2026-10-29.exe",
+    "sha256": "5aa2b48d9831ac87558a2347b7a62afd4c5f0c73ae2449f78874326f51db1b78"
+  },
+  "native_binary": {
+    "path": "target/debug/deps/aestra_viewer-f2eb4eb68da3b52b.exe",
+    "sha256": "3ff076bdfe92a6f57ddcab71101be5d75b3a2c7b5d1fb493843b7662d4e4c3fd"
+  },
+  "native": {
+    "report": {
+      "path": "target/fireworks-f8/startup-admission-native-final-2026-10-29/target-admission/report.json",
+      "sha256": "209122c7834fae7b7d63a381383aa19e6646d482c0217534eea65040f050fecb"
+    },
+    "result": {
+      "cases": [
+        {
+          "max_byte_error": 0,
+          "partitioned": false,
+          "restored_estimated_bytes": 8985600,
+          "seeded_zero_extent": true,
+          "unavailable_target_updates": 8
+        },
+        {
+          "max_byte_error": 0,
+          "partitioned": true,
+          "restored_estimated_bytes": 8985600,
+          "seeded_zero_extent": true,
+          "unavailable_target_updates": 8
+        }
+      ],
+      "passed": true,
+      "scope": "native unavailable image with explicitly seeded zero-size camera cache and recovery; no zero-size GPU texture; CPU tests also cover missing/one-zero-axis targets"
+    },
+    "captures": [
+      {
+        "path": "target/fireworks-f8/startup-admission-native-final-2026-10-29/target-admission/restored-false.png",
+        "sha256": "d965da2ce2b94ac73569dac18c22507ce97c5a74792454a9366c3334fd170cd9"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-native-final-2026-10-29/target-admission/restored-true.png",
+        "sha256": "d965da2ce2b94ac73569dac18c22507ce97c5a74792454a9366c3334fd170cd9"
+      }
+    ]
+  },
+  "phase_regression": {
+    "report": {
+      "path": "target/fireworks-f8/startup-admission-phase-2026-10-29/native-partition-phase/report.json",
+      "sha256": "edbdc4712d58f89829a6e848022ea5feb9c3558895c49600ff7c577f5857a383"
+    },
+    "result": {
+      "cases": [
+        {
+          "attempted": 1313980,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": false,
+          "regions": [
+            [
+              1313980,
+              51984,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1313980,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": false,
+          "regions": [
+            [
+              157573,
+              12996,
+              0,
+              9
+            ],
+            [
+              499417,
+              12996,
+              0,
+              9
+            ],
+            [
+              157573,
+              12996,
+              0,
+              9
+            ],
+            [
+              499417,
+              12996,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1313980,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": false,
+          "regions": [
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              33823,
+              2736,
+              0,
+              9
+            ],
+            [
+              92347,
+              2736,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              123750,
+              10260,
+              0,
+              9
+            ],
+            [
+              407070,
+              10260,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              123750,
+              10260,
+              0,
+              9
+            ],
+            [
+              407070,
+              10260,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              33823,
+              2736,
+              0,
+              9
+            ],
+            [
+              92347,
+              2736,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 378501,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": false,
+          "regions": [
+            [
+              378501,
+              14641,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 378501,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": false,
+          "regions": [
+            [
+              44414,
+              3600,
+              0,
+              9
+            ],
+            [
+              143250,
+              3660,
+              0,
+              9
+            ],
+            [
+              45144,
+              3660,
+              0,
+              9
+            ],
+            [
+              145693,
+              3721,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 378501,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": false,
+          "regions": [
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              9374,
+              720,
+              0,
+              9
+            ],
+            [
+              25986,
+              732,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              35040,
+              2880,
+              0,
+              9
+            ],
+            [
+              117264,
+              2928,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              35040,
+              2880,
+              0,
+              9
+            ],
+            [
+              117264,
+              2928,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              10104,
+              780,
+              0,
+              9
+            ],
+            [
+              28429,
+              793,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1610028,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": true,
+          "regions": [
+            [
+              1610028,
+              47524,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1610028,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": true,
+          "regions": [
+            [
+              471993,
+              11881,
+              0,
+              9
+            ],
+            [
+              333021,
+              11881,
+              0,
+              9
+            ],
+            [
+              471993,
+              11881,
+              0,
+              9
+            ],
+            [
+              333021,
+              11881,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1610028,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": true,
+          "regions": [
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              76263,
+              2071,
+              0,
+              9
+            ],
+            [
+              58251,
+              2071,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              395730,
+              9810,
+              0,
+              9
+            ],
+            [
+              274770,
+              9810,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              395730,
+              9810,
+              0,
+              9
+            ],
+            [
+              274770,
+              9810,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              76263,
+              2071,
+              0,
+              9
+            ],
+            [
+              58251,
+              2071,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 462390,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": true,
+          "regions": [
+            [
+              462390,
+              13689,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 462390,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": true,
+          "regions": [
+            [
+              133496,
+              3364,
+              0,
+              9
+            ],
+            [
+              95734,
+              3422,
+              0,
+              9
+            ],
+            [
+              135833,
+              3422,
+              0,
+              9
+            ],
+            [
+              97327,
+              3481,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 462390,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": true,
+          "regions": [
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              21224,
+              580,
+              0,
+              9
+            ],
+            [
+              16486,
+              590,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              112272,
+              2784,
+              0,
+              9
+            ],
+            [
+              79248,
+              2832,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              112272,
+              2784,
+              0,
+              9
+            ],
+            [
+              79248,
+              2832,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              23561,
+              638,
+              0,
+              9
+            ],
+            [
+              18079,
+              649,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        }
+      ],
+      "empty_matches_ordinary_background_and_opaque": true,
+      "empty_reset_audit": true,
+      "passed": true,
+      "regional_diagnostics_match_full_target": true,
+      "repeated_empty_frames": 6,
+      "scope": "native phase SDR captures of HDR/Reinhard target, exact byte comparison; isolated raw HDR oracle remains separate",
+      "sticky_loss_survives_empty_audit": true
+    },
+    "matches_regional_binary_pixels": true
+  },
+  "startups": {
+    "report": {
+      "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/report.json",
+      "sha256": "155ca88399030d34ca0dd9a58fbf78a5eb33364d9203199d2a3bb28dfbdafba4"
+    },
+    "result": {
+      "runs": [
+        {
+          "partitioned": false,
+          "index": 1,
+          "exit_code": 0,
+          "log": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-1.log",
+          "capture": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-1.png"
+        },
+        {
+          "partitioned": true,
+          "index": 2,
+          "exit_code": 0,
+          "log": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-2.log",
+          "capture": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-2.png"
+        },
+        {
+          "partitioned": false,
+          "index": 3,
+          "exit_code": 0,
+          "log": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-3.log",
+          "capture": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-3.png"
+        },
+        {
+          "partitioned": true,
+          "index": 4,
+          "exit_code": 0,
+          "log": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-4.log",
+          "capture": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-4.png"
+        },
+        {
+          "partitioned": false,
+          "index": 5,
+          "exit_code": 0,
+          "log": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-5.log",
+          "capture": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-5.png"
+        },
+        {
+          "partitioned": true,
+          "index": 6,
+          "exit_code": 0,
+          "log": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-6.log",
+          "capture": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-launches-retry-2026-10-29\\launch-6.png"
+        }
+      ],
+      "binary_sha256": "5AA2B48D9831AC87558A2347B7A62AFD4C5F0C73AE2449F78874326F51DB1B78",
+      "binary": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\fireworks-f8\\startup-admission-qualified-2026-10-29.exe"
+    },
+    "captures": [
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-1.png",
+        "sha256": "10910cb56f12d94cf7d22d5ea0c84de8f4f61d1f7e85dfcc75e544f6a3d0e1e8"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-2.png",
+        "sha256": "3394c8f1e604c2f4ba7bc377bd05f73a887e69c0aba48d8d362bef380dda80f6"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-3.png",
+        "sha256": "eb52d340162cc0380e2b690b53c2151eca3994580235942ee6c740e17ab459e0"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-4.png",
+        "sha256": "b3829de1e1af6d3d07cd27d51447161492e9a87e552e628cb5fec84d82cb944d"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-5.png",
+        "sha256": "fa559992df2e536e46b7a6d530ab4baf270ec089263649565ef48f76a79995fd"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-6.png",
+        "sha256": "edd4d8082435c5771ab9d6945e9872a09eca5d3ae73aeecfffaa8d6ea2f83c3a"
+      }
+    ],
+    "logs": [
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-1.log",
+        "sha256": "2fb16c285bc7c9650b03c6a6efc96f918b58e61f2c01618cdb371092b33c341e"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-2.log",
+        "sha256": "c96ea76f7d25d97f3133c876f6584ae0b9d4361d46d080eb67f59674da845df8"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-3.log",
+        "sha256": "7a4f30b67bb4d68345d07f7b937c0caec81bef67b07582f5de223ea07f02a906"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-4.log",
+        "sha256": "6fe70dd8971a1f81807597c7f5bd8dc5466d8ca65eea42773f742d14af54b138"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-5.log",
+        "sha256": "9a657531b39cbad107918e478ab27103fe45fc71209af992b3b0deb46a99fe5a"
+      },
+      {
+        "path": "target/fireworks-f8/startup-admission-launches-retry-2026-10-29/launch-6.log",
+        "sha256": "a714c9bca9451eb9aa760af8802873b295bc448bc76d0e8adbda01537ffca824"
+      }
+    ]
+  },
+  "live": [
+    {
+      "view": "near",
+      "report": {
+        "path": "target/fireworks-f8/startup-admission-near-2026-10-29/tuned-high.json",
+        "sha256": "24fa2eee8f7ad1fbd8d7694c507b6ba108b344f10be33e7baee3273f59061fd3"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/startup-admission-near-2026-10-29/manifest.json",
+        "sha256": "430b4a214170c6045f5c9820fd56f81a3d6cdc625f89293fc52e6c8ba2dd5124"
+      },
+      "preparation_updates": 0,
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 20084850,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 220546,
+        "observations": 2321,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "alpha_sort": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/startup-admission-near-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "39f50923fc73a4edb359753e3045fd1cd69dc5f676824e8765973b35e5340cb9"
+        },
+        {
+          "path": "target/fireworks-f8/startup-admission-near-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "325f97393a40cb1c274a59c79bf3b42b6cbc570e118762c1c9b5aaf1feab278c"
+        },
+        {
+          "path": "target/fireworks-f8/startup-admission-near-2026-10-29/tuned-high-12s.png",
+          "sha256": "37ce50468482111b616410a41af6a6422beee8381de2a4269fee10817a6d0a2d"
+        },
+        {
+          "path": "target/fireworks-f8/startup-admission-near-2026-10-29/tuned-high-23s.png",
+          "sha256": "90f80e6bccba555cbf1b02eb9b72c3b72a89593be2cf4c7f99f7300565cf0077"
+        },
+        {
+          "path": "target/fireworks-f8/startup-admission-near-2026-10-29/tuned-high-36s.png",
+          "sha256": "6aac7f44574a71305804521dfb14fb3a0f590964fbaf68cb99da7eea81c09b1b"
+        }
+      ]
+    },
+    {
+      "view": "orbit",
+      "report": {
+        "path": "target/fireworks-f8/startup-admission-orbit-2026-10-29/tuned-high.json",
+        "sha256": "06f01ebba0c9187254129d012281ff4f1e10eac81964cbf43379dbfbb264d764"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/startup-admission-orbit-2026-10-29/manifest.json",
+        "sha256": "5bbdbd876b916da123385dce0168f9d2faba5b55f280c57f59bad436e0af8f05"
+      },
+      "preparation_updates": 0,
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 7011280,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 74514,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "alpha_sort": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/startup-admission-orbit-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "474c1d1cb183670d94aa0ddb4cd78d766a7c3f1cea1ff01268cfe8ac25849899"
+        },
+        {
+          "path": "target/fireworks-f8/startup-admission-orbit-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "cbc32f854fa578c1810e4ce3a1a23c7e84cbc0a62fa477f8cdf3bd2bfabb4f63"
+        },
+        {
+          "path": "target/fireworks-f8/startup-admission-orbit-2026-10-29/tuned-high-12s.png",
+          "sha256": "69f50a998bc86e53943172448d590e86f1cafda7d2cb8a11f4667dc553681d2f"
+        },
+        {
+          "path": "target/fireworks-f8/startup-admission-orbit-2026-10-29/tuned-high-23s.png",
+          "sha256": "5ecaa3a388e27ad0d903481b1cad108b95ae5bed9d41dcc1b3eb10f1c4b2ca04"
+        },
+        {
+          "path": "target/fireworks-f8/startup-admission-orbit-2026-10-29/tuned-high-36s.png",
+          "sha256": "24760fa1ed27afee92639ddb18f8d721b8fef42d0ec1cc9bc7253b784943d5b5"
+        }
+      ]
+    }
+  ],
+  "retained_failures": {
+    "previous_zero_capacity_rejections": [
+      {
+        "path": "target/fireworks-f8/partition-alpha-images-near-2026-10-29/tuned-high.log",
+        "sha256": "b1b53d6d21535448318078ee84e0a8acb81201387e30d2aac2a16f6b527c4c40"
+      },
+      {
+        "path": "target/fireworks-f8/partition-alpha-images-orbit-2026-10-29/tuned-high.log",
+        "sha256": "9933bd67c91b73fa8818e6c192ed3e9364fe013ea2ec2aed89c3e88e8eca7384"
+      }
+    ],
+    "pipeline_descriptor_panic": {
+      "path": "target/fireworks-f8/startup-admission-native-arrival-2026-10-29.log",
+      "sha256": "b5f60fd8e507ffecaf5f33981680bbea4e03fca98c67639175f7baac148e156a"
+    },
+    "fixture_notes": "Early unavailable-target fixtures exposed Bevy retaining cached camera dimensions and requiring asset arrival to refresh them. Final fixture seeds zero computed extent without creating a zero-size GPU image, then loads the missing asset. A separate initial launch harness left an empty REPORT env variable; its failed report/log are retained under startup-admission-launches-2026-10-29. Only final native results and fresh launches are accepted."
+  },
+  "validation": {
+    "renderer_unit_tests": 188,
+    "renderer_unit_ignored": 4,
+    "demo_unit_tests": 55,
+    "renderer_log": {
+      "path": "target/fireworks-f8/startup-admission-renderer-tests-2026-10-29.log",
+      "sha256": "127c1d72d67600daba9d7d9a772ae9a071bac0e75ed91e50113a86006ae39f64"
+    },
+    "demo_log": {
+      "path": "target/fireworks-f8/startup-admission-demo-tests-2026-10-29.log",
+      "sha256": "a73c5afaa4cc46f1ea6d64c5fd06890210604bcb23009fa84cbff8986b83cb1a"
+    },
+    "strict_scoped_clippy_log": {
+      "path": "target/fireworks-f8/startup-admission-clippy-2026-10-29.log",
+      "sha256": "e92cc65fca8291b7d5e73a3f8e48aa311c944b68640f4970b6d7dd10973e0748"
+    },
+    "format": true
+  }
+}

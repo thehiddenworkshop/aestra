@@ -55,6 +55,13 @@ pub struct EffectPipelinePreparation {
 }
 
 impl EffectPipelinePreparation {
+    pub(crate) fn secondary_view(&self) -> Self {
+        Self {
+            effects: self.effects.clone(),
+            descriptors: self.descriptors.clone(),
+            status: default(),
+        }
+    }
     /// Includes the root and every compiled dependency, including clips that are
     /// inactive at time zero. Clip overrides only change uniforms, not shader keys.
     pub fn for_project(project: &CompiledEffectProject) -> Self {
@@ -226,13 +233,14 @@ fn queue(
         &EffectPipelinePreparation,
         &ExtractedView,
         Has<crate::experimental_oit::OitApproved>,
+        Has<crate::preview::planar::ReflectionView>,
     )>,
     pipeline: Res<GpuSpritePipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<GpuSpritePipeline>>,
     cache: Res<PipelineCache>,
     keys: Res<ViewKeyCache>,
 ) {
-    for (request, view, oit) in &views {
+    for (request, view, oit, reflection) in &views {
         let Some(descriptors) = &request.descriptors else {
             continue;
         };
@@ -242,6 +250,15 @@ fn queue(
         };
         let mut ids = std::collections::HashSet::new();
         for descriptor in descriptors.iter() {
+            if reflection
+                && !super::render::reflection_material_eligible(
+                    descriptor.kind,
+                    descriptor.blend,
+                    descriptor.material.as_ref(),
+                )
+            {
+                continue;
+            }
             ids.insert(pipelines.specialize(
                 &cache,
                 &pipeline,

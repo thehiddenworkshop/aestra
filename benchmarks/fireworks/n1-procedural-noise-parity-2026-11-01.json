@@ -1,0 +1,55 @@
+{
+  "adapter": "AdapterInfo { name: \"AMD Radeon(TM) Graphics\", vendor: 4098, device: 5710, device_type: IntegratedGpu, device_pci_bus_id: \"\", driver: \"AMD proprietary driver\", driver_info: \"2026.04.17 (AMD proprietary shader compiler)\", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 64, transient_saves_memory: Some(false), limit_bucket: None }",
+  "results": [
+    {
+      "cold_dispatch_gpu_ms": 0.0,
+      "function": "Value Noise 2D",
+      "max_abs_error": 2.384185791015625e-7,
+      "samples": 4096
+    },
+    {
+      "cold_dispatch_gpu_ms": 0.00648,
+      "function": "Value Noise 3D",
+      "max_abs_error": 1.7881393432617188e-7,
+      "samples": 4096
+    },
+    {
+      "cold_dispatch_gpu_ms": 0.05136,
+      "function": "Gradient Noise 2D",
+      "max_abs_error": 1.1920928955078125e-7,
+      "samples": 4096
+    },
+    {
+      "cold_dispatch_gpu_ms": 0.0248,
+      "function": "Gradient Noise 3D",
+      "max_abs_error": 1.1920928955078125e-7,
+      "samples": 4096
+    },
+    {
+      "cold_dispatch_gpu_ms": 0.01532,
+      "function": "fBm Value Noise 2D",
+      "max_abs_error": 2.384185791015625e-7,
+      "samples": 4096
+    },
+    {
+      "cold_dispatch_gpu_ms": 0.16516,
+      "function": "fBm Value Noise 3D",
+      "max_abs_error": 2.384185791015625e-7,
+      "samples": 4096
+    },
+    {
+      "cold_dispatch_gpu_ms": 0.36028,
+      "function": "fBm Gradient Noise 2D",
+      "max_abs_error": 2.384185791015625e-7,
+      "samples": 4096
+    },
+    {
+      "cold_dispatch_gpu_ms": 0.04744,
+      "function": "fBm Gradient Noise 3D",
+      "max_abs_error": 2.384185791015625e-7,
+      "samples": 4096
+    }
+  ],
+  "timing_note": "One cold 4096-sample compute dispatch per function; not a steady-state material/frame benchmark.",
+  "tolerance": 0.0002
+}

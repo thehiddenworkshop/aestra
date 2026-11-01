@@ -12,6 +12,7 @@ pub struct Admission {
     pub renderers: usize,
     pub sprites: usize,
     pub trails: usize,
+    pub target_preparation_updates: u64,
 }
 
 pub fn settings(options: &Options) -> ExperimentalOitSettings {
@@ -81,12 +82,53 @@ pub fn guard(
     mut players: Query<&mut aestra_bevy::EffectPlayer>,
     diagnostics: Option<Res<aestra_bevy::ExperimentalOitDiagnostics>>,
     reporting: Option<Res<super::report::Report>>,
+    partitions: Option<Res<aestra_bevy::ExperimentalOitPartitionStatus>>,
 ) {
     if !options.experimental_oit {
         admission.ready = true;
         return;
     }
     admission.ready = false;
+    // The render-thread partition mailbox can lag main-world camera changes.
+    // Wait for the current target before interpreting old partition admission;
+    // only the renderer's explicit preparation state is retryable.
+    let camera_status = cameras.single().ok().flatten();
+    let target_preparing = camera_status.is_none_or(ExperimentalOitStatus::is_preparing);
+    if camera_status.is_some_and(ExperimentalOitStatus::is_preparing) {
+        admission.target_preparation_updates += 1;
+    }
+    if let Some(status) = camera_status
+        && !status.is_preparing()
+        && let Some(reason) = status.rejection
+    {
+        for mut player in &mut players {
+            player.playing = false;
+        }
+        error!(
+            "Experimental fireworks OIT rejected: {reason} (estimated {} bytes); no silent fallback",
+            status.estimated_storage_bytes
+        );
+        exit.write(AppExit::error());
+        return;
+    }
+    if options.oit_partitions.is_some() {
+        let Some(status) = partitions.and_then(|p| p.snapshot()) else {
+            return;
+        };
+        if (!target_preparing && status.rejection.is_some())
+            || (reporting.is_none() && status.observed_loss)
+        {
+            for mut player in &mut players {
+                player.playing = false;
+            }
+            error!("Experimental partitioned transparency rejected or lost fragments: {status:?}");
+            exit.write(AppExit::error());
+            return;
+        }
+        if !status.ready && !target_preparing {
+            return;
+        }
+    }
     if reporting.is_none()
         && let Some(sample) = diagnostics.and_then(|d| d.snapshot())
         && let Some(reason) = capacity_failure(&sample)
@@ -115,17 +157,11 @@ pub fn guard(
         exit.write(AppExit::error());
         return;
     }
-    if let Ok(Some(status)) = cameras.single() {
-        if let Some(reason) = status.rejection {
-            for mut player in &mut players {
-                player.playing = false;
-            }
-            error!(
-                "Experimental fireworks OIT rejected: {reason} (estimated {} bytes); no silent fallback",
-                status.estimated_storage_bytes
-            );
-            exit.write(AppExit::error());
-        } else if runtime.active == ActiveBackend::Gpu {
+    if let Some(status) = camera_status {
+        if status.is_preparing() {
+            return;
+        }
+        if runtime.active == ActiveBackend::Gpu {
             admission.ready = true;
         } else if runtime.active != ActiveBackend::Pending {
             for mut player in &mut players {

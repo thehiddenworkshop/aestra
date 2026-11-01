@@ -1,0 +1,900 @@
+{
+  "date": "2026-11-01",
+  "scope": "N2 shared spatial flow; opt-in study, not repertoire adoption",
+  "binary_sha256": "E66E83D478DD20C609F75F0762E88055FE6D4919D71E608C13C5A4E9589291BB",
+  "validation": {
+    "native_tick_log": [
+      "Noise/Effect octaves=1: 120 births, max trajectory error=0.00000071525574, no replay checkpoints",
+      "Curl/Effect octaves=1: 120 births, max trajectory error=0.0000021457672, no replay checkpoints",
+      "Curl/World octaves=3: 120 births, max trajectory error=0.0000073798, no replay checkpoints",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 202 filtered out; finished in 7.13s"
+    ],
+    "renderer_ignored": 6,
+    "strict_clippy": "passed",
+    "editor_tests": 2889,
+    "editor_ignored": 11,
+    "core_compiler_gpu_artifact_runtime_tests": 529,
+    "renderer_tests": 197
+  },
+  "native_cases": [
+    {
+      "variant": "control",
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "completed": true,
+      "captures": [
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Fireworks — Spatial Flow Control",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab2001",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 13926,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 2417,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 1.9500000476837158,
+              "owner": "502v0",
+              "source_seconds": 2.0
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 2.0,
+          "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n2/final-review\\control-report-2s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 2.0,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 148,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 148
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Fireworks — Spatial Flow Control",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab2001",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 13136,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 8414,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 3.950000047683716,
+              "owner": "502v0",
+              "source_seconds": 4.0
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 4.0,
+          "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n2/final-review\\control-report-4s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 4.0,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 268,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 268
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Fireworks — Spatial Flow Control",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab2001",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 0,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 6,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 11209,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 6.300000190734863,
+              "owner": "502v0",
+              "source_seconds": 6.349999904632568
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 6.349999904632568,
+          "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n2/final-review\\control-report-6.35s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 6.349999904632568,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 409,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 409
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Fireworks — Spatial Flow Control",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab2001",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 0,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 20,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 0,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 8853,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 9.949999809265137,
+              "owner": "502v0",
+              "source_seconds": 10.0
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 10.0,
+          "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n2/final-review\\control-report-10s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 10.0,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 628,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 628
+          }
+        }
+      ],
+      "event_link_admission": {
+        "502v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Control",
+          "readback_samples": 1123,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "502v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Control",
+          "readback_samples": 1123,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "502v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Control",
+          "readback_samples": 1123,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "502v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Control",
+          "readback_samples": 1123,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "502v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Control",
+          "readback_samples": 1123,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "502v0/5": {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Control",
+          "readback_samples": 1123,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "outputs": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "502v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000ab2001"
+          },
+          "502v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000ab2001"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "last_alive": 0,
+      "peak_alive": 23301,
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 9264,
+          "capacity_bound": 32,
+          "dispatches": 1117,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1117
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 32,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      }
+    },
+    {
+      "variant": "candidate",
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "completed": true,
+      "captures": [
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Fireworks — Spatial Flow Study",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab2002",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 13926,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 2417,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 1.9500000476837158,
+              "owner": "502v0",
+              "source_seconds": 2.0
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 2.0,
+          "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n2/final-review\\candidate-report-2s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 2.0,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 124,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 124
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Fireworks — Spatial Flow Study",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab2002",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 13136,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 8414,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 3.950000047683716,
+              "owner": "502v0",
+              "source_seconds": 4.0
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 4.0,
+          "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n2/final-review\\candidate-report-4s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 4.0,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 244,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 244
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Fireworks — Spatial Flow Study",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab2002",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 0,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 6,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 11209,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 6.300000190734863,
+              "owner": "502v0",
+              "source_seconds": 6.349999904632568
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 6.349999904632568,
+          "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n2/final-review\\candidate-report-6.35s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 6.349999904632568,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 385,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 385
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Fireworks — Spatial Flow Study",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab2002",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 0,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 20,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 0,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 8853,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 9.949999809265137,
+              "owner": "502v0",
+              "source_seconds": 10.0
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 10.0,
+          "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n2/final-review\\candidate-report-10s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 10.0,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 604,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 604
+          }
+        }
+      ],
+      "event_link_admission": {
+        "502v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Study",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "502v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Study",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "502v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Study",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "502v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Study",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "502v0/4": {
+          "counts": {
+            "accepted": 67254,
+            "captured_demand": 67254,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Study",
+          "readback_samples": 1101,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "502v0/5": {
+          "counts": {
+            "accepted": 11209,
+            "captured_demand": 11209,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Fireworks — Spatial Flow Study",
+          "readback_samples": 1101,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "outputs": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "502v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000ab2002"
+          },
+          "502v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.03333330154418945,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000ab2002"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "last_alive": 0,
+      "peak_alive": 23301,
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 9264,
+          "capacity_bound": 32,
+          "dispatches": 1093,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1093
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 32,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      }
+    }
+  ],
+  "wake_capture": {
+    "exit_code": 0,
+    "path": "reviews/n2-spatial-flow-2026-11-01/wake-native-5s.png",
+    "loop_report_attempt": "LoopRestart asset did not reach the full-show terminal condition and timed out after delivering requested images. Single-image capture succeeded; failed log retained."
+  },
+  "source_hashes": [
+    {
+      "path": "crates/aestra-core/src/spatial_flow.rs",
+      "sha256": "8197BF50E78BE1084C61217539E9C406CE7B7D3ECD9782EC05888B7D9CCB281D"
+    },
+    {
+      "path": "crates/aestra-runtime/src/spatial_flow.rs",
+      "sha256": "AE6E8BC3E8A68B68CD514945997747DC6834CB0C46E3B7CA2103DFB13A90CBAE"
+    },
+    {
+      "path": "crates/aestra-runtime/src/stateful.rs",
+      "sha256": "4B1BB8ECC754B26F0A144156231A0912596B692F85D2BD42F603582365A4FB11"
+    },
+    {
+      "path": "crates/aestra-compiler/src/material_noise/field.wesl",
+      "sha256": "25B3035E287ACBDC90DA85281B5B7EB47F88D7A09D947A85B4B5220684A0C7BA"
+    },
+    {
+      "path": "crates/aestra-gpu/src/spatial_flow.rs",
+      "sha256": "BFEAC03ED837423E72C712B6E82029A948EF5106721715064C30CFBE30573AE9"
+    },
+    {
+      "path": "crates/aestra-gpu/src/shaders/aestra_spatial_flow.wgsl",
+      "sha256": "3B78AF97B4B0CD784CDD8AA50FE28F444A63708065F845101B6020D84276FDB9"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs",
+      "sha256": "64DB5FEA981F45D125B7B005AE1C186D78DA8063E873D7E430ACC4FDC0364819"
+    },
+    {
+      "path": "sample-project/effects/spatial_flow_wake_lab.aestra.ron",
+      "sha256": "5FF4C9EDA27C51E0915A9E17C0741E657BE5B5E85FCD0DEC7F3284AC1B94E0B8"
+    },
+    {
+      "path": "assets/test/effects/fireworks_spatial_flow.aestra.ron",
+      "sha256": "2EEDF6C8417ED794B0F29732BE624F5DAF9B5EF44BD5A623FA2DBC6F37FBE871"
+    },
+    {
+      "path": "assets/test/effects/fireworks_spatial_flow_control.aestra.ron",
+      "sha256": "8A07A1090CE78A43D25DE233FECA41C14A19CC1D884A898A24A938C83AB2B480"
+    }
+  ]
+}

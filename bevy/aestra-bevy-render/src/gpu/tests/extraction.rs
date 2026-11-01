@@ -20,6 +20,30 @@ fn handle<A: Asset>(id: u128) -> Handle<A> {
     Handle::Uuid(Uuid::from_u128(id), Default::default())
 }
 
+#[test]
+fn planar_capture_uses_effective_material_blend_and_omits_smoke_meshes_and_wireframe() {
+    use super::super::render::reflection_eligible;
+    let mut draw = draw(Entity::PLACEHOLDER);
+    draw.mesh = None;
+    draw.renderer_kind = 1;
+    draw.render_mode = GpuRenderMode::Rendered;
+    // Semantic binding overrides the legacy blend stored on the draw.
+    assert!(reflection_eligible(&draw));
+    draw.semantic_material.as_mut().unwrap().render_state.blend = aestra_core::BlendMode::Alpha;
+    draw.blend = aestra_gpu::GpuBlend::Additive;
+    assert!(!reflection_eligible(&draw));
+    draw.semantic_material = None;
+    assert!(reflection_eligible(&draw));
+    draw.blend = aestra_gpu::GpuBlend::Alpha;
+    assert!(!reflection_eligible(&draw));
+    draw.blend = aestra_gpu::GpuBlend::Additive;
+    draw.renderer_kind = 2;
+    assert!(!reflection_eligible(&draw));
+    draw.renderer_kind = 0;
+    draw.render_mode = GpuRenderMode::Wireframe;
+    assert!(!reflection_eligible(&draw));
+}
+
 pub(super) fn draw(owner: Entity) -> GpuDrawInstance {
     let program = aestra_core::material::MaterialProgram::additive_sprite("Extracted smoke");
     let ir = aestra_compiler::MaterialCompiler.compile(&program).unwrap();

@@ -1,0 +1,189 @@
+(
+    id: "a3574a00-0000-4000-8000-000000f8d700",
+    schema_version: 1,
+    name: "Fireworks Filament Lit Smoke",
+    domain: Sprite,
+    render_state_policy: (
+        default: (
+            blend: Alpha,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Alpha,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d701",
+            name: "Scene light gain",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(0.035)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d702",
+            name: "Density",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(1.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d703",
+            name: "Ambient",
+            value_type: Vec3,
+            evaluation_domain: Instance,
+            default: Some(Vec3((0.055, 0.06, 0.07))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d704",
+            name: "Fresh core",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(0.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d705",
+            name: "Pattern velocity",
+            value_type: Vec3,
+            evaluation_domain: Effect,
+            default: Some(Vec3((0.6, 0.12, 0.08))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d706",
+            name: "Edge feather",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(0.75)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d707",
+            name: "Billow breakup",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(0.65)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d708",
+            name: "Depth variation",
+            value_type: Bool,
+            evaluation_domain: Effect,
+            default: Some(Bool(true)),
+        ),
+    ],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d710",
+            kind: Input(Uv0),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d711",
+            kind: Input(ParticleRandom),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d712",
+            kind: Input(ParticleNormalizedAge),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d713",
+            kind: FunctionCall(
+                function: Project("a3574a00-0000-4000-8000-000000f8d600"),
+                arguments: {
+                    "a3574a00-0000-4000-8000-000000f8d601": "a3574a00-0000-4000-8000-000000f8d710",
+                    "a3574a00-0000-4000-8000-000000f8d602": "a3574a00-0000-4000-8000-000000f8d711",
+                    "a3574a00-0000-4000-8000-000000f8d603": "a3574a00-0000-4000-8000-000000f8d712",
+                    "a3574a00-0000-4000-8000-000000f8d606": "a3574a00-0000-4000-8000-000000f8d727",
+                    "a3574a00-0000-4000-8000-000000f8d607": "a3574a00-0000-4000-8000-000000f8d728",
+                    "a3574a00-0000-4000-8000-000000f8d608": "a3574a00-0000-4000-8000-000000f8d729",
+                    "a3574a00-0000-4000-8000-000000f8d609": "a3574a00-0000-4000-8000-000000f8d72a",
+                    "a3574a00-0000-4000-8000-000000f8d60a": "a3574a00-0000-4000-8000-000000f8d72b",
+                    "a3574a00-0000-4000-8000-000000f8d60b": "a3574a00-0000-4000-8000-000000f8d72c",
+                    "a3574a00-0000-4000-8000-000000f8d60c": "a3574a00-0000-4000-8000-000000f8d72d",
+                },
+                output: "a3574a00-0000-4000-8000-000000f8d604",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d714",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d715",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f8d713", "a3574a00-0000-4000-8000-000000f8d714"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d716",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8d702"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d717",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f8d715", "a3574a00-0000-4000-8000-000000f8d716"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d720",
+            kind: Input(ScenePointIrradiance),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d721",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8d701"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d722",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f8d720", "a3574a00-0000-4000-8000-000000f8d721"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d723",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8d703"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d724",
+            kind: Add("a3574a00-0000-4000-8000-000000f8d722", "a3574a00-0000-4000-8000-000000f8d723"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d725",
+            kind: Constant(Vec3((0.72, 0.74, 0.78))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d726",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f8d724", "a3574a00-0000-4000-8000-000000f8d725"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d727",
+            kind: Input(WorldPosition),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d728",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8d704"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d729",
+            kind: Input(EffectTime),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d72a",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8d705"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d72b",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8d706"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d72c",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8d707"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d72d",
+            kind: Parameter("a3574a00-0000-4000-8000-000000f8d708"),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-000000f8d726",
+        alpha: "a3574a00-0000-4000-8000-000000f8d717",
+    ),
+)

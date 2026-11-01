@@ -1,0 +1,513 @@
+{
+  "date": "2026-11-01",
+  "scope": "Native medium-tier five-spaced-rocket additive planar prototype; 24 asynchronous SDR captures with health scans, not isolated GPU cost or full water/whole-show acceptance.",
+  "binary": {
+    "path": "target/fireworks-f8/planar-gaussian-2026-11-01/fireworks.exe",
+    "sha256": "f5956d2e3f7ad2c2708a7ed44fc0912665d1bb92c3511e8618c6dc0f6221578c"
+  },
+  "arguments": [
+    "--scene",
+    "sea",
+    "--project",
+    "assets/test",
+    "--water",
+    "calm|rough",
+    "--launch-pattern",
+    "spaced",
+    "--tier",
+    "medium",
+    "--tuned-smoke",
+    "--star-lights",
+    "--experimental-oit",
+    "--oit-partitions",
+    "4",
+    "--no-audio",
+    "[--water-reflections]"
+  ],
+  "review_camera": "water",
+  "sample_seconds": [
+    0.35,
+    1.2,
+    3.35,
+    4.2,
+    6.35,
+    9.3,
+    18,
+    36
+  ],
+  "adapter": {
+    "backend": "Vulkan",
+    "driver": "NVIDIA",
+    "name": "NVIDIA GeForce RTX 4070 SUPER"
+  },
+  "equal_births_outputs_and_host_state": true,
+  "runs": {
+    "off": {
+      "report": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report.json",
+      "report_sha256": "723e4f7371b98e0c7ad83b0cb7ac6f4e3ed9f426f4a00ed3f1b74c9a86caf461",
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 5,
+        "families_launched": {
+          "gold_tail": 2,
+          "point_star": 3
+        },
+        "launches": 5,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 10,
+        "peak_gameplay_rockets": 1,
+        "scheduled_launches": 5
+      },
+      "accepted_event_link_births": 85893,
+      "output_messages": 5,
+      "planar_reflection": null,
+      "node_head_allocated_bytes": 47923200,
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 928251,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 8,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "alpha_sort": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "host_intervals_including_vsync": {
+        "max_ms": 23.1685,
+        "median_ms": 16.6877,
+        "over_16_67ms": 1271,
+        "over_20ms": 9,
+        "over_33_33ms": 0,
+        "p95_ms": 17.9356,
+        "p99_ms": 19.499699999999997,
+        "samples": 2397
+      },
+      "images": [
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report-0.35s.png",
+          "sha256": "3f298d208e0b1403da9e5598e5707391e836acc42b6a8afcaddcf59681272cb3"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report-1.2s.png",
+          "sha256": "7ef828914ec67ed369c8e14a7e273483add425da742c085c77c36083bd04415d"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report-18s.png",
+          "sha256": "dd5fd2b52e70a3fb12eea290fa9a6f48e7e413ff3c19041eb691a25fa43aa901"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report-3.35s.png",
+          "sha256": "d12cf605bc22e15e7f1a7e6774bde3fb3174627ea49b4cfd1e6b9a654c97ec65"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report-36s.png",
+          "sha256": "f854b7c2db7bd9b01d9760c4897deb7f26b2c26560a94bfd3f0e3234a201dd77"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report-4.2s.png",
+          "sha256": "ad69036a78443a3ca870893e0584bbff0f0f9d040b496cb731a0e3056708b2b8"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report-6.35s.png",
+          "sha256": "da34853d25e71a4e757638472164b3deaadf975d9a2a036c6639208eeb198282"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/off/report-9.3s.png",
+          "sha256": "bb95eb3f47542ff4070719cf37a2ef1f7ae26853c41ce23913083d24d8e17cef"
+        }
+      ]
+    },
+    "calm": {
+      "report": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report.json",
+      "report_sha256": "1d34c320b307e289389e9353d0afdf2bc1dd5e92134a4c4522acf1a03fd55623",
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 5,
+        "families_launched": {
+          "gold_tail": 2,
+          "point_star": 3
+        },
+        "launches": 5,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 10,
+        "peak_gameplay_rockets": 1,
+        "scheduled_launches": 5
+      },
+      "accepted_event_link_births": 85893,
+      "output_messages": 5,
+      "planar_reflection": {
+        "alpha_smoke": "excluded",
+        "estimated_target_bytes": 6451200,
+        "peak_omitted_transparent_draws": 15,
+        "peak_queued_additive_draws": 22,
+        "rejection": null,
+        "scope": "Queued draw counts, not GPU completion or live-particle counts; target estimate excludes view-local draw buffers",
+        "target_size": [
+          640,
+          360
+        ]
+      },
+      "node_head_allocated_bytes": 47923200,
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 929548,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 8,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "alpha_sort": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "host_intervals_including_vsync": {
+        "max_ms": 31.1562,
+        "median_ms": 16.6679,
+        "over_16_67ms": 1207,
+        "over_20ms": 17,
+        "over_33_33ms": 0,
+        "p95_ms": 17.8549,
+        "p99_ms": 19.645599999999998,
+        "samples": 2397
+      },
+      "images": [
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report-0.35s.png",
+          "sha256": "4968707cbefec59eaa8a929ba37805029d17b486b016e5e42c968c3b6a59e92c"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report-1.2s.png",
+          "sha256": "a7994f41ec7c8823119692c4cefe19ad488e54ccd96a90ec681a226f40ff3bc8"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report-18s.png",
+          "sha256": "4bba809db854c4e9e1f7eeb26f0771d9da5a1cd31b7123a7ce4700b2b7b5096d"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report-3.35s.png",
+          "sha256": "e166bcc1bb10bc0f2cac86adbb658191f4046683916da2f513c4ba622c7bc68b"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report-36s.png",
+          "sha256": "4a76bfe735dab7262a43678eb652654467a5d7600fa6119f60b4272f1071ebe8"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report-4.2s.png",
+          "sha256": "6a2380669262305c70787e930c9e54389814437404a0c767020b594998c12b20"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report-6.35s.png",
+          "sha256": "a096922b5f0b475c5d663c677d9ab0086544d8e3909602e4ea0e8bb2e41565a7"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/calm/report-9.3s.png",
+          "sha256": "d963eb60543f462cc8eff6fa5c2e651b79e2bd0b22bd910b52ee57c8a3eb90a4"
+        }
+      ]
+    },
+    "rough": {
+      "report": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report.json",
+      "report_sha256": "164ba4769551d686076c2c34b821b47f6d354588db7a9736a0529e7a8e74db6b",
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 5,
+        "families_launched": {
+          "gold_tail": 2,
+          "point_star": 3
+        },
+        "launches": 5,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 10,
+        "peak_gameplay_rockets": 1,
+        "scheduled_launches": 5
+      },
+      "accepted_event_link_births": 85893,
+      "output_messages": 5,
+      "planar_reflection": {
+        "alpha_smoke": "excluded",
+        "estimated_target_bytes": 6451200,
+        "peak_omitted_transparent_draws": 15,
+        "peak_queued_additive_draws": 22,
+        "rejection": null,
+        "scope": "Queued draw counts, not GPU completion or live-particle counts; target estimate excludes view-local draw buffers",
+        "target_size": [
+          640,
+          360
+        ]
+      },
+      "node_head_allocated_bytes": 47923200,
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 928253,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 8,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "alpha_sort": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "host_intervals_including_vsync": {
+        "max_ms": 23.2863,
+        "median_ms": 16.6907,
+        "over_16_67ms": 1273,
+        "over_20ms": 8,
+        "over_33_33ms": 0,
+        "p95_ms": 17.7694,
+        "p99_ms": 19.4461,
+        "samples": 2397
+      },
+      "images": [
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report-0.35s.png",
+          "sha256": "ddaacade323b6a9abc09616bcaa2407f39e3c05412b1b9636207cda7ba9db303"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report-1.2s.png",
+          "sha256": "2ad014b206fcb61bfd34be3e019d99c8d80ada79c6daf23fc12273d8da31f178"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report-18s.png",
+          "sha256": "acc87e4d23a11f8499eded8a7a5d2fbd53abacd7f37f364c86c610f5d1de7941"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report-3.35s.png",
+          "sha256": "e616b3c66261e712c774fc06ed22245d66ff65a86901ab338c720868826797e2"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report-36s.png",
+          "sha256": "45500a72f95b4b2233a5320f6c1308f505e3cc46d2886f265d809ab958af1f93"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report-4.2s.png",
+          "sha256": "43cb6391aa2dc7db307576cdbb740a616b26d9df478b0cf8b0f0ab935cd12337"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report-6.35s.png",
+          "sha256": "df8902be95c1bf877313f8d9779084b80153da54540bd365e98b0b8b220bc04a"
+        },
+        {
+          "path": "target/fireworks-f8/planar-gaussian-2026-11-01/rough/report-9.3s.png",
+          "sha256": "0f61ca0a6900e6beca73782c05e2305c9c6e2478f0e571e9f0212ade00154e5d"
+        }
+      ]
+    }
+  },
+  "inputs": [
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/alpha_sort.rs",
+      "sha256": "a88d84b8c4b21cabef4589208701b79fc0bcd2967e4bbc48fcb6b3234d78dd80"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline_preparation.rs",
+      "sha256": "2a992e29e65596efddb747c6c60643e4e25a0028c92ef69e78832c47cabdd3be"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "1fe8b107d30e41036e1d253a5ce76fda4c50be1204572c7a7f7dd507bc1f7cff"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/trail_culling.rs",
+      "sha256": "4b4e1cd4d11688ad414b56b457e52f48c9a0d8bbf1f79e1a81e0d651e9e6dd85"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/planar/math.rs",
+      "sha256": "06a4115578b1ae13b3910cd81696dbbf5d5d34eb56f92bc35a3c5a847b59da9d"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/planar.rs",
+      "sha256": "b48c03995e2ce6c190a053e49f261344157bdffb2e4bcdc7ffca5d41c40703e7"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/tests/planar.rs",
+      "sha256": "5ef026d28fe32ee971e90fa962f544eb52f589dbf0f8216b7af388a53078f339"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/tests/water.rs",
+      "sha256": "0e1147e477b32eb0e9e2cb249c3bbd24041623b6cd7cbd0315cbb19e222a3fee"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/water.rs",
+      "sha256": "6ce58d39cce4034a9940ac856bf773e76bef04641f8f436f58c8c6ac1d23caf9"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/water.wesl",
+      "sha256": "e3aeea02586038432a7866a903d3a46c1a3c4962bbeabfd5aefc466843eb74a3"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview.rs",
+      "sha256": "398d4ef6b36bae4adcaddaa3f9c33805b972645bd67531088f89c3cc16a0829a"
+    },
+    {
+      "path": "demos/fireworks/src/audio.rs",
+      "sha256": "54918db3e6f62d5659a4df101f40b58a8e5c4a679c8466a8b584acb1c20dcb76"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_filament_study.rs",
+      "sha256": "efcfb4bcaa7f32697001c236298fd47109af9d2d7da1856693be65e8ecd928a1"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_gold_tails.rs",
+      "sha256": "fbb4657ed64683f45311a5f96bbc223d963ade6f5ff2a32f99a33bb3b2343f3d"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_point_stars.rs",
+      "sha256": "70014d1342d68b6a613fe90d88bfd2af89e4a3c85b4e1636efab5151c968559f"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_reference_smoke.rs",
+      "sha256": "d53c0b349358acc984af54af32d0c4a19f928c7c6f16f224784f8b3b99b251cf"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_shell_smoke.rs",
+      "sha256": "a4f8d6952594a8bd6eee50d7b2df6e3f4e58f6cb29cdbd5bac0f12e4cf6e22df"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_smoke_look.rs",
+      "sha256": "7eeb117c12598ee203e2d4bc8bf29ddbc9fc77d17e6d6081df3a94311f8f132e"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_star_lights.rs",
+      "sha256": "075abda286511b25d045df47ea7c25c0ea39144ecfeff2e14279b6555cb11e4c"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_star_smoke.rs",
+      "sha256": "62877c341e3eb39ae04ee21670e2e416af41b40d004746ee5972850debcbb0c0"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_variety.rs",
+      "sha256": "bcd774882904f313e58ca9c0eb35a7ce54228d1a4871161038b805ae951cc561"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_wind_smoke.rs",
+      "sha256": "ed12fec573e3d4d412d2ff53e8fa0680d5dcfd1bbc5caa9a074482b86bde2f00"
+    },
+    {
+      "path": "demos/fireworks/src/host.rs",
+      "sha256": "0effefdbc214d57fcf9ed825869f81cf5d798ddccefd51d9aa56a2254802644e"
+    },
+    {
+      "path": "demos/fireworks/src/lighting.rs",
+      "sha256": "f14be19fcd5805f6915475616e2da183d9c203d6384c60cd4d94e405a76c0725"
+    },
+    {
+      "path": "demos/fireworks/src/main.rs",
+      "sha256": "49c824bebf8de9835bc4f422276ce18996f629fc1b70393ffbab4518b16e9622"
+    },
+    {
+      "path": "demos/fireworks/src/oit.rs",
+      "sha256": "a2aa566a851ac52fe5c7bc356f570e2998d4a078665f7e944ae0efa963c631c8"
+    },
+    {
+      "path": "demos/fireworks/src/oit_tests.rs",
+      "sha256": "d580b378d567cda518e8c62ea1e1ffe7accf4c2e05d6016cdfeb0e8ef8e30cdc"
+    },
+    {
+      "path": "demos/fireworks/src/paths.rs",
+      "sha256": "86abaca11b11e07ef01022d703a4b296399afbed5ae989c1c80d28927422526d"
+    },
+    {
+      "path": "demos/fireworks/src/persistent_smoke_show_tests.rs",
+      "sha256": "21646096bb93aba28d4bab80e524b1dafc8756dbef9a366318d0c2c17883b239"
+    },
+    {
+      "path": "demos/fireworks/src/project.rs",
+      "sha256": "959a6a08818662f3d32d272c077fcda481170fde545e06fdc08253e2a53ec205"
+    },
+    {
+      "path": "demos/fireworks/src/readiness.rs",
+      "sha256": "ea53b31ff266c5e28adcc2d44a0512cdb53a5caa0f152a5f22d4eab34c122bb4"
+    },
+    {
+      "path": "demos/fireworks/src/repertoire.rs",
+      "sha256": "417600603b0561ad8f8d418ca9fc32165b9f9447918b3ed484526a35378d4b33"
+    },
+    {
+      "path": "demos/fireworks/src/report.rs",
+      "sha256": "8243a33a2e5971f8fff653ab3143a737282ea89b2d17209abf925c25b972f9e3"
+    },
+    {
+      "path": "demos/fireworks/src/report_camera.rs",
+      "sha256": "8d8cc23d7a089e5d298f7e809e273988f3b26538244b052e8b73d02cee84de09"
+    },
+    {
+      "path": "demos/fireworks/src/report_camera_tests.rs",
+      "sha256": "7f0a0a470bd2176957f954b52af805137d9d45f13923b0a8ff768c500a78ab02"
+    },
+    {
+      "path": "demos/fireworks/src/report_control_tests.rs",
+      "sha256": "1b53ef1789c5747ad1ab470fa292980d9cab1a203cbbf727c1214c7f583cfe67"
+    },
+    {
+      "path": "demos/fireworks/src/report_frame_timing.rs",
+      "sha256": "4d0babb210763d563a3f9ca302df4d87e49244e966ecf5c028d73c1fa503d5c8"
+    },
+    {
+      "path": "demos/fireworks/src/report_outputs.rs",
+      "sha256": "8ba72d31191b3f7ee9dbf0125401ca0a305a7ac20dc14a3834e6093a8c68e1a1"
+    },
+    {
+      "path": "demos/fireworks/src/report_profile.rs",
+      "sha256": "9912deab0cb5bd344076ba70e4644e771257122967afe67082104097f50bd4ad"
+    },
+    {
+      "path": "demos/fireworks/src/smoke_cohorts_tests.rs",
+      "sha256": "237ab4fea184d2d28d63384ddca8730918f06938fab132b5382f3fa58b6d3c5d"
+    },
+    {
+      "path": "demos/fireworks/src/star_smoke_authoring.rs",
+      "sha256": "2d92681547c8fcf2c6069626a0154245533ba0e72d8b5ffbe2efdc3c18d9e978"
+    },
+    {
+      "path": "demos/fireworks/src/star_smoke_tests.rs",
+      "sha256": "1531a0d4487d0bed2a9427543021ca3ceefc4d16e413807a33c6efe2d9d1b140"
+    },
+    {
+      "path": "demos/fireworks/src/venue.rs",
+      "sha256": "0990d2838c45bca3e3b17a33fbaf80954e5fc78f22a2bb84e54633c455a051f1"
+    },
+    {
+      "path": "demos/fireworks/src/wind_smoke_authoring.rs",
+      "sha256": "eceb2a01eb5866d2bd710e86178376ef3a3c8a070cc1989e07de5239deb6eed9"
+    },
+    {
+      "path": "demos/fireworks/src/wind_smoke_tests.rs",
+      "sha256": "4bbcdc57af9d9106874d6da462d04dfbdf0fc6321fc5a6556eab6a4d9df8ca95"
+    }
+  ],
+  "earlier_drafts": [
+    "target/fireworks-f8/planar-pilot",
+    "target/fireworks-f8/planar-final-2026-10-31"
+  ],
+  "retained_launcher_error": "target/fireworks-f8/planar-final-2026-10-31/off/native.log (moved binary needed explicit --project; no GPU run took place)",
+  "open_gates": [
+    "alpha smoke attenuation",
+    "other receiver light kinds/indirect/shadows",
+    "finite receiver visibility optimization",
+    "roughness mip chain and multi-resolution emission-energy comparison",
+    "isolated capture/filter/composite GPU timing and per-view draw-buffer accounting",
+    "interactive native editor/view teardown and multi-camera/device qualification",
+    "F9 and final art approval"
+  ]
+}

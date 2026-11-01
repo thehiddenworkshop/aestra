@@ -100,7 +100,7 @@ fn emitter_regions_lower_to_source_time_preserving_runtime_ranges() {
 #[test]
 fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     let registry = ModuleRegistry::builtin();
-    assert_eq!(registry.len(), 10);
+    assert_eq!(registry.len(), 12);
 
     let collision = registry
         .iter()
@@ -213,6 +213,7 @@ fn builtin_modules_are_analytic_and_the_class_derivation_is_correct() {
                 | "aestra.update.follow_field"
                 | "aestra.spawn.from_domain"
                 | "aestra.update.homing"
+                | "aestra.update.spatial_flow"
         ) {
             assert_eq!(
                 metadata.simulation.derived_class(),
@@ -362,7 +363,7 @@ fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts()
     // The built-in unified registry is internally consistent and hosts the built-in modules.
     let builtin = ExtensionRegistry::builtin();
     assert!(builtin.validate().is_empty());
-    assert_eq!(builtin.modules.len(), 10);
+    assert_eq!(builtin.modules.len(), 12);
     assert!(
         builtin
             .capabilities

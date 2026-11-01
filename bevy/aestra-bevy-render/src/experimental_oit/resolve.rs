@@ -36,6 +36,11 @@ struct Key {
     prepass: bool,
 }
 
+/// The adapter variant, including while it is still compiling. Partitioned
+/// transport must never capture against the native approximate fallback.
+#[derive(Component, Clone, Copy)]
+pub(super) struct AdapterResolveId(pub CachedRenderPipelineId);
+
 fn queue(
     mut commands: Commands,
     cameras: Query<
@@ -93,6 +98,7 @@ fn queue(
                 ..default()
             })
         });
+        commands.entity(entity).insert(AdapterResolveId(id));
         // Until this variant is ready, retain the native pipeline queued just
         // before us. Never make an already-working resolve skip list clearing
         // merely because the adapter's specialization is still compiling.

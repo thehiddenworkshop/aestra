@@ -1,0 +1,946 @@
+{
+  "date": "2026-11-01",
+  "scope": "N3 launch layouts: opt-in gold shell study; no repertoire adoption or final realism approval",
+  "binary_sha256": "4EB2ECE53BDDD2C5C7A1397E6D12DEDEB1527820BF4462F70165D62FACB7A323",
+  "validation": {
+    "core_contracts": 535,
+    "renderer_tests": 197,
+    "renderer_ignored": 7,
+    "editor_dropdown_jitter_undo": 1,
+    "artifact_persistence_and_compatibility": 1,
+    "all_tier_saved_studies": 1,
+    "native_helper_case_count": 28,
+    "analytic_shape_mode_playback_cases": 48,
+    "analytic_observations_per_case": 5,
+    "strict_clippy": "passed",
+    "native_birth_oracle": "passed: event fan-out 1/3/7/129; host fan-out 7 then 3 with prefix admission; direct sphere 129; no replay checkpoints",
+    "formatting": "passed",
+    "whitespace": "passed"
+  },
+  "native_cases": [
+    {
+      "variant": "control",
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "completed": true,
+      "captures": [
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Gold shell — uniform sampling control",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab3000",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 5568,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 928,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 1.5499999523162842,
+              "owner": "502v0",
+              "source_seconds": 1.600000023841858
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 1.600000023841858,
+          "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\n3\\native-review\\control-report-1.6s.png",
+          "representative_accepted": 1,
+          "representative_active": 1,
+          "representative_proxy_peak_lumens": 97120.4296875,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 1.600000023841858,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 125,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 125
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Gold shell — uniform sampling control",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab3000",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 15128,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 3965,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 2.450000047683716,
+              "owner": "502v0",
+              "source_seconds": 2.5
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 2.5,
+          "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\n3\\native-review\\control-report-2.5s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 2.5,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 179,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 179
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Gold shell — uniform sampling control",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab3000",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 12250,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 6693,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 3.450000047683716,
+              "owner": "502v0",
+              "source_seconds": 3.5
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 3.5,
+          "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\n3\\native-review\\control-report-3.5s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 3.5,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 239,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 239
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Gold shell — uniform sampling control",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab3000",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 28,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 10377,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 10423,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 4.949999809265137,
+              "owner": "502v0",
+              "source_seconds": 5.0
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 5.0,
+          "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\n3\\native-review\\control-report-5s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 5.0,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 329,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 329
+          }
+        }
+      ],
+      "event_link_admission": {
+        "502v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — uniform sampling control",
+          "readback_samples": 1131,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "502v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — uniform sampling control",
+          "readback_samples": 1131,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "502v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — uniform sampling control",
+          "readback_samples": 1131,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "502v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — uniform sampling control",
+          "readback_samples": 1131,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "502v0/4": {
+          "counts": {
+            "accepted": 64218,
+            "captured_demand": 64218,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — uniform sampling control",
+          "readback_samples": 1131,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "502v0/5": {
+          "counts": {
+            "accepted": 10703,
+            "captured_demand": 10703,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — uniform sampling control",
+          "readback_samples": 1131,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "outputs": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "502v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000ab3000"
+          },
+          "502v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000ab3000"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "last_alive": 0,
+      "peak_alive": 22014,
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 9264,
+          "capacity_bound": 32,
+          "dispatches": 1118,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1118
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 32,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      }
+    },
+    {
+      "variant": "candidate",
+      "adapter": {
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "name": "NVIDIA GeForce RTX 4070 SUPER"
+      },
+      "completed": true,
+      "captures": [
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Gold shell — stratified sampling",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab3001",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 5574,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 929,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 1.5499999523162842,
+              "owner": "502v0",
+              "source_seconds": 1.600000023841858
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 1.600000023841858,
+          "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\n3\\native-review\\candidate-report-1.6s.png",
+          "representative_accepted": 1,
+          "representative_active": 1,
+          "representative_proxy_peak_lumens": 97120.4296875,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 1.600000023841858,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 98,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 98
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Gold shell — stratified sampling",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab3001",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 15214,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 3980,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 2.450000047683716,
+              "owner": "502v0",
+              "source_seconds": 2.5
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 2.5,
+          "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\n3\\native-review\\candidate-report-2.5s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 2.5,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 152,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 152
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Gold shell — stratified sampling",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab3001",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 64,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 12466,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 6759,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 3.450000047683716,
+              "owner": "502v0",
+              "source_seconds": 3.5
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 3.5,
+          "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\n3\\native-review\\candidate-report-3.5s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 3.5,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 212,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 212
+          }
+        },
+        {
+          "asynchronous_populations": [
+            {
+              "effect": "Gold shell — stratified sampling",
+              "effect_id": "a3574a00-0000-4000-8000-000000ab3001",
+              "emitters": [
+                {
+                  "alive": 0,
+                  "name": "Launch shell"
+                },
+                {
+                  "alive": 28,
+                  "name": "Main stars"
+                },
+                {
+                  "alive": 0,
+                  "name": "Burst flash"
+                },
+                {
+                  "alive": 43,
+                  "name": "Launch smoke"
+                },
+                {
+                  "alive": 48,
+                  "name": "Burst smoke"
+                },
+                {
+                  "alive": 10589,
+                  "name": "Gold tail embers"
+                },
+                {
+                  "alive": 10570,
+                  "name": "Star path smoke"
+                }
+              ],
+              "observed_source_seconds": 4.949999809265137,
+              "owner": "502v0",
+              "source_seconds": 5.0
+            }
+          ],
+          "delivered": true,
+          "host_state": null,
+          "nominal_seconds": 5.0,
+          "path": "C:\\Users\\flore\\Documents\\GitHub\\TheHiddenWorkshop\\aestra\\target\\n3\\native-review\\candidate-report-5s.png",
+          "representative_accepted": 1,
+          "representative_active": 0,
+          "representative_proxy_peak_lumens": 0.0,
+          "request_camera_pose": {
+            "rotation_xyzw": [
+              -0.06278383731842041,
+              -0.0,
+              -0.0,
+              0.9980270862579346
+            ],
+            "translation": [
+              0.0,
+              44.0,
+              95.0
+            ]
+          },
+          "request_seconds": 5.0,
+          "selected_lights": {
+            "buffer_bytes": 9264,
+            "capacity_bound": 32,
+            "dispatches": 302,
+            "invalid_sources": 0,
+            "rejection": null,
+            "reserved_slots": 96,
+            "sequence": 302
+          }
+        }
+      ],
+      "event_link_admission": {
+        "502v0/0": {
+          "counts": {
+            "accepted": 43,
+            "captured_demand": 43,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — stratified sampling",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Launch smoke"
+        },
+        "502v0/1": {
+          "counts": {
+            "accepted": 64,
+            "captured_demand": 64,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — stratified sampling",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Main stars"
+        },
+        "502v0/2": {
+          "counts": {
+            "accepted": 1,
+            "captured_demand": 1,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — stratified sampling",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst flash"
+        },
+        "502v0/3": {
+          "counts": {
+            "accepted": 48,
+            "captured_demand": 48,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — stratified sampling",
+          "readback_samples": 1101,
+          "source": "Launch shell",
+          "source_overflow": 0,
+          "target": "Burst smoke"
+        },
+        "502v0/4": {
+          "counts": {
+            "accepted": 65136,
+            "captured_demand": 65136,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — stratified sampling",
+          "readback_samples": 1101,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Gold tail embers"
+        },
+        "502v0/5": {
+          "counts": {
+            "accepted": 10856,
+            "captured_demand": 10856,
+            "destination_rejected": 0,
+            "expansion_omitted": 0
+          },
+          "effect": "Gold shell — stratified sampling",
+          "readback_samples": 1101,
+          "source": "Main stars",
+          "source_overflow": 0,
+          "target": "Star path smoke"
+        }
+      },
+      "outputs": {
+        "omitted_route_messages": 0,
+        "routes": {
+          "502v0/[]/Emitter(0)/launch": {
+            "clip_path": [],
+            "first_tick": 1,
+            "kind": "launch",
+            "last_tick": 1,
+            "max_delivery_age_seconds": 0.06666667014360428,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000ab3001"
+          },
+          "502v0/[]/Emitter(0)/main_break": {
+            "clip_path": [],
+            "first_tick": 79,
+            "kind": "main_break",
+            "last_tick": 79,
+            "max_delivery_age_seconds": 0.04999995231628418,
+            "messages": 1,
+            "source_effect": "a3574a00-0000-4000-8000-000000ab3001"
+          }
+        },
+        "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+      },
+      "last_alive": 0,
+      "peak_alive": 22464,
+      "selected_lighting": {
+        "final": {
+          "buffer_bytes": 9264,
+          "capacity_bound": 32,
+          "dispatches": 1091,
+          "invalid_sources": 0,
+          "rejection": null,
+          "reserved_slots": 96,
+          "sequence": 1091
+        },
+        "last_rejection": null,
+        "peak_capacity_bound": 32,
+        "rejected_updates": 0,
+        "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+      }
+    }
+  ],
+  "editor_lab": {
+    "path": "benchmarks/fireworks/reviews/n3-particle-sampling-2026-11-01/editor-lab-2s.png",
+    "exit_code": 0,
+    "scope": "Saved editor asset through public native host, single capture on looping asset"
+  },
+  "continuous_pressure_negative_control": {
+    "sampling_disabled": true,
+    "capacity": 128,
+    "cpu_alive": 80,
+    "gpu_alive": 70,
+    "time": 2.55,
+    "status": "existing gap, not fixed",
+    "log": "benchmarks/fireworks/reviews/n3-particle-sampling-2026-11-01/continuous-pressure-baseline.txt"
+  },
+  "source_hashes": [
+    {
+      "path": "crates/aestra-core/src/particle_sampling.rs",
+      "sha256": "A05F3C6C23C979F8DE7A7C3FAB63854E614FB6A375F5354E564A36E6B9CCA762"
+    },
+    {
+      "path": "crates/aestra-runtime/src/particle_sampling.rs",
+      "sha256": "3C998D5DAD5FB0642AF6871529FF0CE571889900EED812CEBBB81DDC51DD9193"
+    },
+    {
+      "path": "crates/aestra-runtime/src/stateful.rs",
+      "sha256": "840641801F3B6E145809BA276E10AB086377814167C147A2D8E48B84688D2E1F"
+    },
+    {
+      "path": "crates/aestra-compiler/src/lib.rs",
+      "sha256": "F1A1F195ED62C1AEEF205AB8D08F8BBA0503152DED7819E87A29C2A0E387432E"
+    },
+    {
+      "path": "crates/aestra-gpu/src/lib.rs",
+      "sha256": "CDABFC972A2918ED7A7F88BE6624DD7EBE1D8A2BB781EF3FB80B0F8C85E279A0"
+    },
+    {
+      "path": "crates/aestra-gpu/src/particle_sampling.rs",
+      "sha256": "0D43559F515AF834C798DC51F131B6B2D514F16B0495522FA184D65D57E78ABA"
+    },
+    {
+      "path": "crates/aestra-gpu/src/shaders/aestra_particle_sampling.wesl",
+      "sha256": "2B71951FC8F98709478ACA1BEB54D706F092E310BB341B736C21699A39BCB80A"
+    },
+    {
+      "path": "crates/aestra-gpu/src/shaders/aestra_simulation.wesl",
+      "sha256": "BF0091AE7AD4B5E355E989BD9FA7B6AC18DC4793ABD4D83BB44FF76AD7054FDC"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs",
+      "sha256": "563538BFC03785DF825BA702B60294882ED2FF70F05A90712B932064FB225BF9"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/execution.rs",
+      "sha256": "E0EDE96CA69C329D41F1FC79035AA607FB77E288CEC50284AB88FC13A9C6B367"
+    },
+    {
+      "path": "crates/aestra-artifact/src/lib.rs",
+      "sha256": "A512F0D749E15745C79248EF99C5E28F1A1BFEC1021AF3BB06C0DD11A3AAE9D4"
+    },
+    {
+      "path": "apps/aestra-editor/src/properties.rs",
+      "sha256": "7481FCFA66D1C226F92E93FA653BE1DC24126A47B112AFDD121818F8BE226516"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_particle_sampling_study.rs",
+      "sha256": "F71E2BCAAAF7D73085F9917AABEE7972BD38C97E8219B661302E54F536592981"
+    },
+    {
+      "path": "sample-project/effects/particle_sampling_lab.aestra.ron",
+      "sha256": "12EAE962A1DBC710674F0CC689E4B4D2B6918F4F466A5D7FD9541EC9C1C4CB83"
+    },
+    {
+      "path": "assets/test/effects/fireworks_sampling_control.aestra.ron",
+      "sha256": "1174FD4462803E7CAFC101E507D223B5EE759623FA0DEC20FFE809D1A3211E70"
+    },
+    {
+      "path": "assets/test/effects/fireworks_sampling.aestra.ron",
+      "sha256": "44F368FC76BC4399DE7C4DBD4A54B451A3F2C760B92A12D6F7A52FA515826E67"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/tests/particle_sampling.rs",
+      "sha256": "52D6FA3BAD6462CC90C7FD794D32106C829D5982F6932FEF85B4C4820752A1CE"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/tests/particle_sampling_gpu.rs",
+      "sha256": "30CDC2C273517F605A4C680AAE278335002C68897F713FE70956316CAAAE2CAC"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/tests/gpu_conformance.rs",
+      "sha256": "8B8F0E7C66538F20FAD73F1471D3EB5A0A68DE1D0685C3EB9EE3F532E01BD3E0"
+    }
+  ]
+}

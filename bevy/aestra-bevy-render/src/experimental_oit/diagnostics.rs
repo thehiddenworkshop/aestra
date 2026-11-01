@@ -163,6 +163,7 @@ fn synchronize(
             &ExperimentalOitSettings,
             Has<OitApproved>,
             Has<MainPassResolutionOverride>,
+            Has<super::ExperimentalOitPartitions>,
         ),
         With<Camera3d>,
     >,
@@ -172,8 +173,11 @@ fn synchronize(
 ) {
     let mut key = None;
     if oit_cameras.iter().count() == 1 {
-        for (entity, camera, target, settings, approved, resolution_override) in &cameras {
+        for (entity, camera, target, settings, approved, resolution_override, partitioned) in
+            &cameras
+        {
             if approved
+                && !partitioned
                 && camera.is_active
                 && camera.viewport.is_none()
                 && !resolution_override

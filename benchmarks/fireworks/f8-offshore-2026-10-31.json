@@ -1,0 +1,246 @@
+{
+  "status": "First offshore host venue; observed capacity/cleanup pass; water reflections and final visual/performance acceptance open",
+  "runs": [
+    {
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium.json",
+        "sha256": "d5da96053c551571dda9aa399b7851b79a2b50440a7ba9c701d142f2f21c4271"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/sea-venue-final-2026-10-31/manifest.json",
+        "sha256": "42dbdcb4794ddf9cc2408c2f061b682ad2437a0a110451a38081379273d17d34"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 22,
+        "families_launched": {
+          "crackle": 3,
+          "crossette": 4,
+          "gold_tail": 1,
+          "palm": 5,
+          "point_star": 1,
+          "ring": 3,
+          "strobe": 3,
+          "willow": 2
+        },
+        "launches": 22,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 44,
+        "peak_gameplay_rockets": 6,
+        "scheduled_launches": 22
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 851008,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 529,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-0.8s.png",
+          "sha256": "9c31f1a71cf6b1dbe3089470b00c574936f8bcae135d87360b51fa4595e11334"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-1.4s.png",
+          "sha256": "88f7da551525bda3100744c4f5c59bd16d0d87098461a5609ecf2dc94c6db103"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-1.8s.png",
+          "sha256": "24eda7c1e9fe52fb498641fa6be9feae6aafb4d361e984b8823cd793428ccd78"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-10.5s.png",
+          "sha256": "f21afde14e83f7176fe12f6f18b1cd96eac4b2e8a39e0bcecbd8002feebe7d68"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-14.5s.png",
+          "sha256": "b85a255166f684738460220d8bc9b6c4d86f1999416931ba0c70397b3105571c"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-18.2s.png",
+          "sha256": "88da7c144f247362179b9b97e9d02f82a608df020f55a72d1f63753a57424f72"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-21s.png",
+          "sha256": "c44f13018967d9faeb673f9277661427fcac4fea36938cf062667acc1f03bab8"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-3.9s.png",
+          "sha256": "b829a36816b8384394f548048ab865d26df3d4bfedada2dac46e9cdbefc19671"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-36s.png",
+          "sha256": "e23be3435b83799f633abbbffbb2c8aba61def7d1e345c08118c46120c0bfb12"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-5.8s.png",
+          "sha256": "a92d69aed499c2a38229bac7d292d785e612b1b7634c3ca212b3e361e2cbbcab"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-medium-7.9s.png",
+          "sha256": "626468c5e69250d39bdb1d886bb5517e31d76161a346e2dac1165ba0e1bd3f11"
+        }
+      ]
+    },
+    {
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low.json",
+        "sha256": "549c0379da9f0961f5c9c71d8534398378f19eaacfa35ad819543ab78bf3829f"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/sea-venue-final-2026-10-31/manifest.json",
+        "sha256": "42dbdcb4794ddf9cc2408c2f061b682ad2437a0a110451a38081379273d17d34"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 22,
+        "families_launched": {
+          "crackle": 3,
+          "crossette": 4,
+          "gold_tail": 1,
+          "palm": 5,
+          "point_star": 1,
+          "ring": 3,
+          "strobe": 3,
+          "willow": 2
+        },
+        "launches": 22,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 44,
+        "peak_gameplay_rockets": 6,
+        "scheduled_launches": 22
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 457257,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 66,
+        "observations": 2407,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-0.8s.png",
+          "sha256": "f80cabb6547fd27e59866309ba927c76400a84ee928a747dd22b4a09f396ad1a"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-1.4s.png",
+          "sha256": "55d09816ee735d768fcd0128c4f01799057cd758b8c95b803c313327f04350be"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-1.8s.png",
+          "sha256": "6dbd807213ab53dc37d6aafa6fa8deb10ec859e842ae18cdf322b5ebd4abd2e5"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-10.5s.png",
+          "sha256": "bdaf39d4b1ed231e05c53b464ff5bb60d88ca25ec2588969b15a633bce88306a"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-14.5s.png",
+          "sha256": "b7968c0b1595674e76dbf9e0df91dd417e73025017ea95c9d9838194dacd93d7"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-18.2s.png",
+          "sha256": "20e2353837b3b07ac902038f82ea22b8da9cfae6d41395dfa74e1095496d98a9"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-21s.png",
+          "sha256": "cc064768da058b51689af925ad0c8421b73bb006314e66bab2e21af498380705"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-3.9s.png",
+          "sha256": "46b08dae95118263b8365b4a408f8a6f4abbe02959882add20bc92d882450208"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-36s.png",
+          "sha256": "20599ba7f709f55f77c241387e7fcbf009ee82aa12bdbd2b69a54e839d3b9507"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-5.8s.png",
+          "sha256": "3291649ac107a951ef5fce3089324543b09b3a41e99494c0cf30abb1dec0b17e"
+        },
+        {
+          "path": "target/fireworks-f8/sea-venue-final-2026-10-31/tuned-low-7.9s.png",
+          "sha256": "668b627bbeaa8db195d40f51f3b9f102afa9b2a59a6e7d677870706e7a82c33d"
+        }
+      ]
+    }
+  ],
+  "source_inputs": [
+    {
+      "path": "demos/fireworks/src/venue.rs",
+      "sha256": "8c2a5c46a95164e808ac7633e1523ddb8d072c5fdcfa1798cd524f65e0748295"
+    },
+    {
+      "path": "demos/fireworks/src/main.rs",
+      "sha256": "76f5e052d4a98d431f991eb2129728f01cbf4cb834021b88efd4daa011c9f5d8"
+    },
+    {
+      "path": "demos/fireworks/src/host.rs",
+      "sha256": "e18b20328886bd83cd33831e7f2f842344f6709807a0454356fd0def8af80075"
+    },
+    {
+      "path": "demos/fireworks/src/project.rs",
+      "sha256": "7d4f3a0ca1f64aa4a4a835310fdc71318dc614a1b44fce9191ade910a3abec59"
+    },
+    {
+      "path": "demos/fireworks/src/report.rs",
+      "sha256": "a8ae08425fc44d9413c268b706d0e0b8aab8581b516b056937853e2f8ac3fda6"
+    },
+    {
+      "path": "demos/fireworks/src/report_camera.rs",
+      "sha256": "fb33039ba9f4950695edae0e00b2884fe196667fa37c056114368c529634330d"
+    },
+    {
+      "path": "demos/fireworks/src/oit_tests.rs",
+      "sha256": "d580b378d567cda518e8c62ea1e1ffe7accf4c2e05d6016cdfeb0e8ef8e30cdc"
+    },
+    {
+      "path": "benchmarks/fireworks/run-smoke-look-review.ps1",
+      "sha256": "f1f302039c248465f4f967a96dcb83435b96997c276ebcfc04f9f4dbe263b029"
+    },
+    {
+      "path": ".vscode/tasks.json",
+      "sha256": "9feb6bbc8a360973d61dc53e76e9a2db3ef86fc51fb281810e16a3743f0cc13b"
+    }
+  ],
+  "retained_images": [
+    {
+      "path": "benchmarks/fireworks/reviews/f8-offshore-2026-10-31/offshore-1.4s.png",
+      "sha256": "88f7da551525bda3100744c4f5c59bd16d0d87098461a5609ecf2dc94c6db103"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-offshore-2026-10-31/offshore-5.8s.png",
+      "sha256": "a92d69aed499c2a38229bac7d292d785e612b1b7634c3ca212b3e361e2cbbcab"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-offshore-2026-10-31/offshore-18.2s.png",
+      "sha256": "88da7c144f247362179b9b97e9d02f82a608df020f55a72d1f63753a57424f72"
+    }
+  ],
+  "binary": {
+    "path": "target/fireworks-f8/offshore-release-2026-10-31.exe",
+    "sha256": "ea98157718cf1b1161bd3c6af95215ede22ba9c68c329b5aa649c30162767887"
+  },
+  "original_showcase_hashes_verified": 97,
+  "rejected_gray_draft_report": {
+    "path": "target/fireworks-f8/sea-venue-first-2026-10-31/tuned-medium.json",
+    "sha256": "afae53750ef581f2dbc83f24406c3673ea0961d0d98277f530efec0a006b44d1"
+  },
+  "limits": [
+    "No full mirrored firework reflections; ordinary PBR scene lighting only",
+    "Normal scrolling is an inexpensive host surface treatment, not fluid water simulation",
+    "Native medium/low audience-view image lanes only; no new high/other-view or production performance qualification",
+    "The separate new venue does not repair or replace frozen finale performance/capacity failures"
+  ]
+}

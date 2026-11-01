@@ -2503,6 +2503,26 @@ impl ModuleInstance {
                 if self.module_type.0.trim().is_empty() {
                     invalid_value(report, path, "custom module type cannot be empty");
                 }
+                if self.module_type.0 == crate::spatial_flow::MODULE_SPATIAL_FLOW
+                    && (self.stage != StageKind::ParticleUpdate
+                        || self.spatial_flow_settings().is_none())
+                {
+                    invalid_value(
+                        report,
+                        path,
+                        "Spatial Flow requires valid v1 settings in Particle Update",
+                    );
+                }
+                if self.module_type.0 == crate::particle_sampling::MODULE_PARTICLE_SAMPLING
+                    && (self.stage != StageKind::ParticleSpawn
+                        || self.particle_sampling_settings().is_none())
+                {
+                    invalid_value(
+                        report,
+                        path,
+                        "Particle Sampling requires valid v1 settings in Particle Spawn",
+                    );
+                }
                 for (name, value) in values {
                     validate_value(
                         value,

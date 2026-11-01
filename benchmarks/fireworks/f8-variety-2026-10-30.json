@@ -1,0 +1,872 @@
+{
+  "status": "Eight-family editable repertoire; native correctness/observed capacity pass; realism and production performance not approved",
+  "runs": [
+    {
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium.json",
+        "sha256": "720cd56ec46a59d0c3344c7ee98e90976566f9226a98a2c09b9c977311f5d946"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/variety-final-audience-2026-10-30/manifest.json",
+        "sha256": "81ff8dfd5eacbffc54e31c66d04f87bcb5821069475ad7978731b4b813d99402"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 22,
+        "families_launched": {
+          "crackle": 3,
+          "crossette": 4,
+          "gold_tail": 1,
+          "palm": 5,
+          "point_star": 1,
+          "ring": 3,
+          "strobe": 3,
+          "willow": 2
+        },
+        "launches": 22,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 44,
+        "peak_gameplay_rockets": 6,
+        "scheduled_launches": 22
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 973741,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 604,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "secondary_output_routes": [
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 59,
+          "kind": "crackle",
+          "last_tick": 81,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 21,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 59,
+          "kind": "crackle",
+          "last_tick": 80,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 19,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 55,
+          "kind": "crackle",
+          "last_tick": 82,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 23,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 5,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        }
+      ],
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 22,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-1.8s.png",
+          "sha256": "acf6a6a7e845be225da3dfdc128111483094f842d7a094cca3823b73e7926d76"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-10.5s.png",
+          "sha256": "2b782543da14b95f44d45ead59a976cec3fbad9887868d4bd0d7028046e10566"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-12.5s.png",
+          "sha256": "396935b07b21cdb3921c370f670fb6275d875eddb881bce7f5f62df9e91cd665"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-14.5s.png",
+          "sha256": "2d5baf5705f82bfc718c16b9a34b383c323ace61015e8ba4edbffda2a8071b35"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-16.3s.png",
+          "sha256": "67422ecbc62b3d7d8dff31903198adab852d29862b93668e4011e1d1f1d95450"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-18.2s.png",
+          "sha256": "933bcdeaaffd584862562445defdeea5ddbbca96ee623cfd2fe457efe87a1b36"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-21s.png",
+          "sha256": "e5bd2c26bad7714b5a162696d1c97a3e179f60c3d309fe812569125478adae5b"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-27s.png",
+          "sha256": "5c3d25b318f15db5bee36452de377193e78a30a2438df86abec8922817512142"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-3.9s.png",
+          "sha256": "a308d6f18153893be58661083d8d9ad6c5c14242155a181d05a8ab8056f1e27f"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-36s.png",
+          "sha256": "dd41924fd0ae320a8248529759c8daf5b51214f436c77f24ee284efaf98b7ee4"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-5.8s.png",
+          "sha256": "db2cf595daea6b715b3273b5973eb3e5bd8deae5138e43d1030b278787d414b8"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-medium-7.9s.png",
+          "sha256": "9814a72eeef8e36d33e67f10ba51dd66ae715824ab737615bf47246062dc6d11"
+        }
+      ]
+    },
+    {
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low.json",
+        "sha256": "ae1bf671f3a9b92a1cb751dbfd1ea49df3deb5767187f43bcda5bc15cbd03333"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/variety-final-audience-2026-10-30/manifest.json",
+        "sha256": "81ff8dfd5eacbffc54e31c66d04f87bcb5821069475ad7978731b4b813d99402"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 22,
+        "families_launched": {
+          "crackle": 3,
+          "crossette": 4,
+          "gold_tail": 1,
+          "palm": 5,
+          "point_star": 1,
+          "ring": 3,
+          "strobe": 3,
+          "willow": 2
+        },
+        "launches": 22,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 44,
+        "peak_gameplay_rockets": 6,
+        "scheduled_launches": 22
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 519320,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 79,
+        "observations": 2403,
+        "observed_partition_loss": false
+      },
+      "secondary_output_routes": [
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 57,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 4,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 57,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 4,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 5,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 62,
+          "kind": "crackle",
+          "last_tick": 82,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 14,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 62,
+          "kind": "crackle",
+          "last_tick": 76,
+          "max_delivery_age_seconds": 0.0666666030883789,
+          "messages": 11,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 57,
+          "kind": "crackle",
+          "last_tick": 78,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 12,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 55,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 4,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        }
+      ],
+      "flash_rejections": {
+        "budget_dropped": 4,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 18,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-1.8s.png",
+          "sha256": "cdfe3383442068b29513812af5929eef3fdf918a959997d825295f22660b6bf6"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-10.5s.png",
+          "sha256": "0926cb0d73372b2d0e647000a65fd83c15a18999923f0f1050ed6ba878ab0df4"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-12.5s.png",
+          "sha256": "5e8ff9f3ebe22401e1be9449e3585f1a746feea1263f11da9f8de7b846daf74b"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-14.5s.png",
+          "sha256": "df3a816da3534ac1d3e84a77e9a0fdd9eea50133526348b96a5a2e89e0b6c016"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-16.3s.png",
+          "sha256": "5acad85732718b292c9559e490b064c0adc2bc70ffcd04aa11b8461d08d7b799"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-18.2s.png",
+          "sha256": "6a073b0323e7837c0888ea5882de2d2bdbff1517a4204d2c491cd232ed66eae8"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-21s.png",
+          "sha256": "6de434c2492e58444b2314d4feeb39fd5192f74d7c5f1e485b7d83c1adc9c303"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-27s.png",
+          "sha256": "ab3c015740bdbc08d26fc1512795b2decda669b8b7ab7e5fd6fc83a1b1e39464"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-3.9s.png",
+          "sha256": "a2a6da6f9cae87a9ff5ae22a955cd70db8829a209c268aee2e3ef6b55a7ae4f3"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-36s.png",
+          "sha256": "f56692deb3119cc5b78d2f2918c0eac158634f8b5d7c3456f3990d4eba4a3d0d"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-5.8s.png",
+          "sha256": "f148277bb276150e7b7ffc1cf22ca7cf693b199adc2161a194c9310c7087cf6b"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-low-7.9s.png",
+          "sha256": "49d7475dc0a539fbe80f46488b8a1e34f1554f751226fcd0c5db62c2eb78f2f4"
+        }
+      ]
+    },
+    {
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high.json",
+        "sha256": "45b787607533ce7e545beff4e18454f9b7d04586a131d74f00a983a7e7c16848"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/variety-final-audience-2026-10-30/manifest.json",
+        "sha256": "81ff8dfd5eacbffc54e31c66d04f87bcb5821069475ad7978731b4b813d99402"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 22,
+        "families_launched": {
+          "crackle": 3,
+          "crossette": 4,
+          "gold_tail": 1,
+          "palm": 5,
+          "point_star": 1,
+          "ring": 3,
+          "strobe": 3,
+          "willow": 2
+        },
+        "launches": 22,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 44,
+        "peak_gameplay_rockets": 6,
+        "scheduled_launches": 22
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 1703593,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 3233,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "secondary_output_routes": [
+        {
+          "clip_path": [],
+          "first_tick": 55,
+          "kind": "crackle",
+          "last_tick": 84,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 28,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.0666666030883789,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 58,
+          "kind": "crackle",
+          "last_tick": 84,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 26,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 57,
+          "kind": "crackle",
+          "last_tick": 85,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 25,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        }
+      ],
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 22,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-1.8s.png",
+          "sha256": "d281c5dd91f90eb538a88fd5b668f9f372977f3203b1a6d595ed7d85adbcc6c8"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-10.5s.png",
+          "sha256": "caa28b4345c6ca392ce16cd4f796254c657ba77fad17a5c842e831bb1441fcff"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-12.5s.png",
+          "sha256": "0de2d7be35494bf7593a7bb3da93a31eb8c49dcda8983f284f7353496dbaba32"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-14.5s.png",
+          "sha256": "1b22b0ce9895a885942dd754fd91a1951c6461e9c34831b6bf2722d3487fa23c"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-16.3s.png",
+          "sha256": "77a184327b4edc4a779d789192429bf4e289628ab9a0eabbb5cd217b07b91eb4"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-18.2s.png",
+          "sha256": "98206e64cbc9da01f189a706e8de1fc3e72229932b4e94e24d26b57ca6deffdf"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-21s.png",
+          "sha256": "0b3d8248d3e9fca4ab6a0d780649e1c0544ebcf2999b9376dc911fa8a08774d8"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-27s.png",
+          "sha256": "f67477c23ef7154ccc155cb8bf7953a51a8dc0cca3fb375f60b06c9cab9274af"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-3.9s.png",
+          "sha256": "029f190c5e12b729f71434018cf1bedbc89206f55f52ec0c10e58cf6f3e447c6"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-36s.png",
+          "sha256": "a7404356b65267778c38c629cc7c70870d8bc95d2df5c163adaa9554c6acd5ca"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-5.8s.png",
+          "sha256": "fe1eea11696b677d9a886f8438b5a63d309b9c32832a9bc30b624adce1c52a87"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-audience-2026-10-30/tuned-high-7.9s.png",
+          "sha256": "296c3b3b6d867fbde6c018b9668b6d712cb008ad6a1a589e0e644819b5193b95"
+        }
+      ]
+    },
+    {
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium.json",
+        "sha256": "6b5859bf6ff4a86220526a4bdbd925a1d00d7d1ae67e0de1c350cbd52d963137"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/variety-final-near-2026-10-30/manifest.json",
+        "sha256": "39ea37d75b252ded8bd701084ba842ecc45c4e24a5300207c91a9f855823c95f"
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 22,
+        "families_launched": {
+          "crackle": 3,
+          "crossette": 4,
+          "gold_tail": 1,
+          "palm": 5,
+          "point_star": 1,
+          "ring": 3,
+          "strobe": 3,
+          "willow": 2
+        },
+        "launches": 22,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 44,
+        "peak_gameplay_rockets": 6,
+        "scheduled_launches": 22
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 3153239,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 2009,
+        "observations": 2403,
+        "observed_partition_loss": false
+      },
+      "secondary_output_routes": [
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 6,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 59,
+          "kind": "crackle",
+          "last_tick": 81,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 21,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 59,
+          "kind": "crackle",
+          "last_tick": 80,
+          "max_delivery_age_seconds": 0.04999995231628418,
+          "messages": 19,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 55,
+          "kind": "crackle",
+          "last_tick": 82,
+          "max_delivery_age_seconds": 0.06666672229766846,
+          "messages": 23,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900d"
+        },
+        {
+          "clip_path": [],
+          "first_tick": 53,
+          "kind": "crossette_split",
+          "last_tick": 58,
+          "max_delivery_age_seconds": 0.06666666269302368,
+          "messages": 5,
+          "source_effect": "a3574a00-0000-4000-8000-000000f8900b"
+        }
+      ],
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 22,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium-10.5s.png",
+          "sha256": "3fc19c6ff4821a0f256f8866b1b0cee9f8a58bfa28fbcebb0517fbb91aee3891"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium-14.5s.png",
+          "sha256": "11ca11b1cc8234eacd1c3e5ca714d2dd76a1949e28fcbdc776fc84e541c7c560"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium-18.2s.png",
+          "sha256": "4fcdbc9ed5f6b1a5d2dcd66af200fdba06d72fd4915de4974464d1f779fd490c"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium-21s.png",
+          "sha256": "b403ea1976e78d5484ac026a2387d7026737d6210dc753166b7db2dd073838db"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium-3.9s.png",
+          "sha256": "01ee92c5aee871ba2f344608340424aa0fb66fcce7b7db7c24b6f638bffd2833"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium-36s.png",
+          "sha256": "8c099363dd0736257221732d8ff6e1a90c20a4bffb5e4c0931c8c30f56848711"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium-5.8s.png",
+          "sha256": "98a86ab20f87ffe46366cbd89f2617989454ef3122d7d1c732384adfe8f0d2cd"
+        },
+        {
+          "path": "target/fireworks-f8/variety-final-near-2026-10-30/tuned-medium-7.9s.png",
+          "sha256": "749d9bec3b0114ea2cddeab69f6af55dfcd21cf956322877a3b605da847d4485"
+        }
+      ]
+    }
+  ],
+  "editor": [
+    {
+      "kind": "ring",
+      "report": {
+        "path": "target/fireworks-f8/editor-variety-ring-2026-10-30/preview-report.json",
+        "sha256": "d200ab04f61d2e8cef9b13045e057543917bd7423a52d1fe1af99ef783a3e038"
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/editor-variety-ring-2026-10-30/frame-000.png",
+          "sha256": "63f1fb0f63d3df73c5345393f2c69ae37426e06f137a295d8efdfdc303c5e1c5"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-ring-2026-10-30/frame-001.png",
+          "sha256": "8d88c86894317a157ea6482c8d0e7e5ac511f5b5d753da8f80ff23988ea68902"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-ring-2026-10-30/frame-002.png",
+          "sha256": "7431c71fd19876fcc87dd1f862cdc783a68bcbf32ae3cd9ee7870c194c52bd4f"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-ring-2026-10-30/frame-003.png",
+          "sha256": "534b89eb93b096d16c9b3594176042dcdfb95807ecf3f6738207bd7839473a12"
+        }
+      ]
+    },
+    {
+      "kind": "palm",
+      "report": {
+        "path": "target/fireworks-f8/editor-variety-palm-2026-10-30/preview-report.json",
+        "sha256": "226952e4eefd38132ad9f25f92f7aa5ec6901793dd407357bcfa01efb00a48ce"
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/editor-variety-palm-2026-10-30/frame-000.png",
+          "sha256": "5ec74e32fd887f322204cfd1217a04090b2500fd12c68817963e07006ed09ad9"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-palm-2026-10-30/frame-001.png",
+          "sha256": "89a5cc23fb625426a1335502f2bb92022facd513181970671cd6885c87374d97"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-palm-2026-10-30/frame-002.png",
+          "sha256": "24aec3a8359bd2ca4028f3161f0ce2e180ce1f21b8d917ecbf33f2e6a180378d"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-palm-2026-10-30/frame-003.png",
+          "sha256": "69a6990c89a97a0ae6e807ed7ba32100a16384428b82c4bef56e74df18ad5da9"
+        }
+      ]
+    },
+    {
+      "kind": "willow",
+      "report": {
+        "path": "target/fireworks-f8/editor-variety-willow-2026-10-30/preview-report.json",
+        "sha256": "6c950b500503d34e3aa36e347fd9ae7c5693095bcfe622cd35106592cc0e1faf"
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/editor-variety-willow-2026-10-30/frame-000.png",
+          "sha256": "75ddbb24c6f211fadef6c389ce6b5621f7bd3edf8408c070e3aace437a639575"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-willow-2026-10-30/frame-001.png",
+          "sha256": "909f4229784752406a5da50c78d78e2c31123b3d0a4feecbb10309c6a338a38c"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-willow-2026-10-30/frame-002.png",
+          "sha256": "ce278e31b9ab97fd1ed17058aec0a4c954d7440ab0604424d4675ff39c1ff519"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-willow-2026-10-30/frame-003.png",
+          "sha256": "354274053f3259c9661f7d790dd1c09fc9113417fa80891282ae6755f5d3f0a1"
+        }
+      ]
+    },
+    {
+      "kind": "crossette",
+      "report": {
+        "path": "target/fireworks-f8/editor-variety-crossette-2026-10-30/preview-report.json",
+        "sha256": "afd00e032af94e8a89c8cac768e04c6ccdee7517a813010731fae7861b6a8437"
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/editor-variety-crossette-2026-10-30/frame-000.png",
+          "sha256": "f703310ed5a0cf1dc2a1b7432e03deee705134fc6e702738786ea95929c2bdc4"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-crossette-2026-10-30/frame-001.png",
+          "sha256": "3de24e698dc5c6b74d92230df35119b2bb10bc3251d9784fe3c4fa86403527d5"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-crossette-2026-10-30/frame-002.png",
+          "sha256": "b8caf873412202c8cb25a86db58b8b0796e637e454dc2e9a6d2ae2294197f9c1"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-crossette-2026-10-30/frame-003.png",
+          "sha256": "2f33e2831d63564b887532bf108b8ae453f75484fb810fc4abc3f8be2798c264"
+        }
+      ]
+    },
+    {
+      "kind": "crackle",
+      "report": {
+        "path": "target/fireworks-f8/editor-variety-crackle-2026-10-30/preview-report.json",
+        "sha256": "8a928239870213049a2728fa39b74b814a63ec64fd8bc8d6ac6f7121f3d93eb2"
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/editor-variety-crackle-2026-10-30/frame-000.png",
+          "sha256": "8ee30f566d94b0611ecc768e1a608e742b6082485115acb585e02d7227cab636"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-crackle-2026-10-30/frame-001.png",
+          "sha256": "8c7c8003e9aafa0a0c878cb62a4a27c63c659e70c7d63fa71e1df0c4eb675f3f"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-crackle-2026-10-30/frame-002.png",
+          "sha256": "e211df9becb76874d97cb71ade01112aebc7444e1bdf466054483468d2d06a98"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-crackle-2026-10-30/frame-003.png",
+          "sha256": "ebcef4b5025f692e17e82188d8a1f403b8324be70d9f0e3fee88cb1200a9e7ff"
+        }
+      ]
+    },
+    {
+      "kind": "strobe",
+      "report": {
+        "path": "target/fireworks-f8/editor-variety-strobe-2026-10-30/preview-report.json",
+        "sha256": "c88b999b94b53ec61fa29707da166710a639445e744a8b008c3cc750ae1cacd2"
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/editor-variety-strobe-2026-10-30/frame-000.png",
+          "sha256": "6521eb85ae65e2af9e1327ef8bc8335606778e246d917f780450976be82c2dbf"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-strobe-2026-10-30/frame-001.png",
+          "sha256": "0bba21da5e908efe7f8ff225f87f25f475feabbe26a192fe73f93fdfac7146ca"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-strobe-2026-10-30/frame-002.png",
+          "sha256": "a8f74618ce63b8767a65f8873ee075254804d1e19cccd423f0e92424d47a4058"
+        },
+        {
+          "path": "target/fireworks-f8/editor-variety-strobe-2026-10-30/frame-003.png",
+          "sha256": "7b1a76661328412b8c195f03032e0f24a16cc855f2d7f2b119059340e6fcf450"
+        }
+      ]
+    }
+  ],
+  "source_inputs": [
+    {
+      "path": "demos/fireworks/src/repertoire.rs",
+      "sha256": "417600603b0561ad8f8d418ca9fc32165b9f9447918b3ed484526a35378d4b33"
+    },
+    {
+      "path": "demos/fireworks/src/host.rs",
+      "sha256": "752dbf2909e13f42a5d433e1da3ab4801bcd08138a1f449bd1bd67f500af5b20"
+    },
+    {
+      "path": "demos/fireworks/src/main.rs",
+      "sha256": "475127fa9e07167c5a17070c76931863e134f1e7b8f17e0e1e7d824ab2d21adc"
+    },
+    {
+      "path": "demos/fireworks/src/project.rs",
+      "sha256": "d899d489c4b4e4a5ccbf68080da0d1d0442e2451b84a3f45b18c4ecbd19474d1"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_variety.rs",
+      "sha256": "bcd774882904f313e58ca9c0eb35a7ce54228d1a4871161038b805ae951cc561"
+    },
+    {
+      "path": "benchmarks/fireworks/run-smoke-look-review.ps1",
+      "sha256": "cbd9af6230f983547013dae25e4ba18d5a48de7fa4204ade74a1c851e942a526"
+    },
+    {
+      "path": ".vscode/tasks.json",
+      "sha256": "690ec0ffd33f8a19bbc8473e52f2bbd23061d6e344b831cee28ded1b0085c2ed"
+    },
+    {
+      "path": "assets/test/effects/fireworks_variety_ring.aestra.ron",
+      "sha256": "82a30d529191074e65562e0b98271452da9eecc8f12baa4c02cb936b1cf4e07d"
+    },
+    {
+      "path": "assets/test/effects/fireworks_variety_palm.aestra.ron",
+      "sha256": "378061463429b8c1fe9baa475d5f5e899fe6fbed73b8de1066e16a9a9cb775b5"
+    },
+    {
+      "path": "assets/test/effects/fireworks_variety_willow.aestra.ron",
+      "sha256": "b8b0836e6693a9050d201d8deb4d670cf046b2d3579fe40428e0d35a0cd51659"
+    },
+    {
+      "path": "assets/test/effects/fireworks_variety_crossette.aestra.ron",
+      "sha256": "9c8f61113fbf4529766773ed0b86b6bc062bfb2e33fa6919ad906ef4b14c4cc2"
+    },
+    {
+      "path": "assets/test/effects/fireworks_variety_crackle.aestra.ron",
+      "sha256": "73cdf1ff3c54115a20bf23a58e577c6c5ba8fd1f37ea8aa922f903b4ef6c071c"
+    },
+    {
+      "path": "assets/test/effects/fireworks_variety_strobe.aestra.ron",
+      "sha256": "0b95f8a0345f294e42b2b0ac3d5c68565904b0517bdc3680fd21d5c5bb1ebada"
+    }
+  ],
+  "original_showcase_hashes_verified": 97,
+  "retained_images": [
+    {
+      "path": "benchmarks/fireworks/reviews/f8-variety-2026-10-30/variety-medium-5.8s.png",
+      "sha256": "db2cf595daea6b715b3273b5973eb3e5bd8deae5138e43d1030b278787d414b8"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-variety-2026-10-30/variety-medium-14.5s.png",
+      "sha256": "2d5baf5705f82bfc718c16b9a34b383c323ace61015e8ba4edbffda2a8071b35"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-variety-2026-10-30/variety-medium-18.2s.png",
+      "sha256": "933bcdeaaffd584862562445defdeea5ddbbca96ee623cfd2fe457efe87a1b36"
+    }
+  ],
+  "binary": {
+    "path": "target/release/fireworks.exe",
+    "sha256": "32396cc1b2aa851cfa7562db72044643b02d20fd07aadc7a3651b9ae48390098"
+  },
+  "limits": [
+    "22 launches spread across 16 seconds is a new art workload, not the frozen 32-launch finale or a fix for its capacity failure",
+    "Image lanes include screenshots and health scans; no performance qualification",
+    "Secondary output timing is preserved, but host audio still binds main detonations only",
+    "More families do not resolve the thin-filament versus loose-particle realism gap identified by the user"
+  ]
+}

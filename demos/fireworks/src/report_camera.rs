@@ -5,10 +5,12 @@ use super::*;
 pub(super) enum ReviewCamera {
     HostDefault,
     Audience,
+    Sea,
     Close,
     Wide,
     Side,
     Near,
+    Water,
     Orbit,
 }
 
@@ -17,10 +19,12 @@ impl ReviewCamera {
         let camera = match name {
             "host-default" => Self::HostDefault,
             "audience" => Self::Audience,
+            "sea" => Self::Sea,
             "close" => Self::Close,
             "wide" => Self::Wide,
             "side" => Self::Side,
             "near" => Self::Near,
+            "water" => Self::Water,
             "orbit" if images => Self::Orbit,
             "orbit" => {
                 return Err(
@@ -28,7 +32,7 @@ impl ReviewCamera {
                 );
             }
             _ => return Err(
-                "Report camera must be audience, close, wide, side, near, orbit or host-default"
+                "Report camera must be audience, sea, close, wide, side, near, orbit or host-default"
                     .into(),
             ),
         };
@@ -38,11 +42,13 @@ impl ReviewCamera {
     pub(super) fn pose(self, seconds: f32) -> Option<Transform> {
         let (eye, target) = match self {
             Self::HostDefault => return None,
+            Self::Sea => return Some(super::super::venue::camera(0)),
             Self::Audience => (Vec3::new(0.0, 48.0, 180.0), Vec3::new(0.0, 28.0, 0.0)),
             Self::Close => (Vec3::new(0.0, 42.0, 145.0), Vec3::new(0.0, 24.0, 0.0)),
             Self::Wide => (Vec3::new(0.0, 60.0, 235.0), Vec3::new(0.0, 26.0, 0.0)),
             Self::Side => (Vec3::new(180.0, 48.0, 0.0), Vec3::new(0.0, 28.0, 0.0)),
             Self::Near => (Vec3::new(0.0, 44.0, 95.0), Vec3::new(0.0, 32.0, 0.0)),
+            Self::Water => (Vec3::new(0.0, 18.0, 120.0), Vec3::ZERO),
             Self::Orbit => {
                 // Smooth 16-second sweep from -45 to +105 degrees and back.
                 // Constant radius/height isolate viewing direction from zoom.

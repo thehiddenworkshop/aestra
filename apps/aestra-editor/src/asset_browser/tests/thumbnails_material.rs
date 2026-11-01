@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 use aestra_core::material::{
     MaterialEvaluationDomain, MaterialExpression, MaterialParameter, MaterialTextureDescriptor,
 };
@@ -6,6 +6,44 @@ use aestra_core::{MaterialExpressionId, MaterialParameterId};
 
 fn sprite(name: &str) -> MaterialProgram {
     crate::material_graph::material_preset_base(name, MaterialDomain::Sprite)
+}
+
+#[test]
+fn shared_smoke_material_routes_to_native_preview_but_modified_wesl_does_not() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    let program =
+        MaterialProgram::load_ron(root.join("materials/advected_smoke.aestra.material.ron"))
+            .unwrap();
+    let function = aestra_core::material::MaterialFunction::load_ron(
+        root.join("materials/advected_smoke_density.aestra.material-function.ron"),
+    )
+    .unwrap();
+    let mut functions = BTreeMap::from([(function.id, function.clone())]);
+    assert!(!wants_gpu(&program));
+    assert!(super::material::wants_shared_smoke_gpu(
+        &program, &functions
+    ));
+    let prepared = prepare(program.clone(), &functions, &root, &AtomicBool::new(false));
+    assert!(
+        prepared.is_ok(),
+        "shared editor material must prepare its real GPU scene: {:?}",
+        prepared.err()
+    );
+    functions
+        .get_mut(&function.id)
+        .unwrap()
+        .custom_wesl
+        .as_mut()
+        .unwrap()
+        .source
+        .push_str("\n// edited source");
+    assert!(!super::material::wants_shared_smoke_gpu(
+        &program, &functions
+    ));
+    assert!(!super::material::wants_shared_smoke_gpu(
+        &program,
+        &BTreeMap::new()
+    ));
 }
 
 fn sampling(mut program: MaterialProgram) -> MaterialProgram {

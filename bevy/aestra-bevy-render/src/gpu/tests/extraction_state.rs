@@ -60,6 +60,8 @@ fn dispatch() -> StatefulDispatch {
         field_follow: None,
         domain_spawn: None,
         homing: None,
+        spatial_flow: None,
+        particle_sampling: None,
         homing_target: None,
         homing_tracker: aestra_runtime::HomingTracker::default(),
         attachment: None,

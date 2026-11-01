@@ -10,10 +10,12 @@ pub mod material;
 pub mod mesh_bounds;
 pub mod particle_attributes;
 pub mod particle_lights;
+pub mod particle_sampling;
 pub mod reduce;
 pub mod ribbon_bounds;
 pub mod scan;
 pub mod shader;
+pub mod spatial_flow;
 mod trail_plan;
 pub use trail_plan::{PAGED_TRAIL_ENTRY_POINTS, TrailPass, TrailScratchPlan};
 pub mod volume;
@@ -38,7 +40,7 @@ use aestra_runtime::{
     MaterialColorPlan, RendererPlanKind, RuntimeValue, ScalarSource, SimulationClass, VectorSource,
 };
 use encase::ShaderType;
-use glam::{Mat4, Quat, UVec2, UVec3, Vec2, Vec3, Vec4};
+use glam::{Mat4, Quat, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
 use thiserror::Error;
 
 pub const MAX_CURVE_KEYS: usize = 8;
@@ -192,6 +194,8 @@ pub struct GpuEmitter {
     pub trail_sampling: u32,
     pub trail_distance: f32,
     pub trail_tolerance: f32,
+    pub sampling: UVec4,
+    pub sampling_seed: u32,
 }
 
 /// One authored presentation path for an emitter.
@@ -355,6 +359,7 @@ pub struct GpuSimulationState {
 /// `spawn_launch_direction(seed, ordinal)`.
 pub const STATEFUL_SPAWN_RNG_WGSL: &str = concat!(
     include_str!("shaders/aestra_velocity.wesl"),
+    include_str!("shaders/aestra_particle_sampling.wesl"),
     r#"
 // u64 emulated as vec2<u32> = (lo, hi).
 fn aestra_mul_u32_full(a: u32, b: u32) -> vec2<u32> {
@@ -845,7 +850,8 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 pub const STATEFUL_VELOCITY_MODE_INDEX: usize = STATEFUL_WORLD_BASE + STATEFUL_WORLD_WORDS;
 /// Distance emission spacing (f32 bits) and per-particle work limit. Zero disables it.
 pub const STATEFUL_DISTANCE_BASE: usize = STATEFUL_VELOCITY_MODE_INDEX + 1;
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_DISTANCE_BASE + 2;
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize =
+    particle_sampling::SAMPLING_BASE + particle_sampling::SAMPLING_WORDS;
 const _: () = assert!(STATEFUL_VELOCITY_MODE_INDEX == 188);
 
 /// Packs an emitter's colliders into the stateful params' collider block (hybrid roadmap M10): the
@@ -1294,6 +1300,7 @@ fn order_events(@builtin(local_invocation_index) thread: u32) {
     let capacity = gather_params[2];
     let kept = min(requested, capacity);
     atomicStore(&emission[0], kept);
+    atomicStore(&emission[3],0xa3570003u);
     order[0] = (kept + 63u) / 64u;
     order[1] = 1u;
     order[2] = 1u;
@@ -1316,6 +1323,8 @@ fn expand_events(@builtin(global_invocation_id) gid: vec3<u32>) {
     let source = order[6u + child / gather_params[1]];
     let r = 4u + source * 8u;
     let o = 4u + child * 8u;
+    atomicStore(&emission[o+3u],child % gather_params[1]);
+    atomicStore(&emission[o+7u],gather_params[1]);
     for (var axis = 0u; axis < 3u; axis = axis + 1u) {
         atomicStore(&emission[o + axis], events[r + 2u + axis]);
         atomicStore(&emission[o + 4u + axis], events[r + 5u + axis]);
@@ -1730,9 +1739,13 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
         // Acceleration = gravity + value-noise turbulence at the current age.
         let turbulence = spawn_turbulence(seed, ordinal, age, bitcast<f32>(params[19]));
-        let ax = bitcast<f32>(params[9]) + turbulence.x;
-        let ay = bitcast<f32>(params[10]) + turbulence.y;
-        let az = bitcast<f32>(params[11]) + turbulence.z;
+        var ax = bitcast<f32>(params[9]) + turbulence.x;
+        var ay = bitcast<f32>(params[10]) + turbulence.y;
+        var az = bitcast<f32>(params[11]) + turbulence.z;
+        if (params[AESTRA_FLOW_BASE] != 0u) {
+            let spatial_flow = aestra_spatial_acceleration(previous);
+            ax += spatial_flow.x; ay += spatial_flow.y; az += spatial_flow.z;
+        }
         // Semi-implicit Euler with linear drag: accelerate, then damp, then position.
         let vgx = homing.velocity.x + ax * dt;
         let vgy = homing.velocity.y + ay * dt;
@@ -1786,13 +1799,24 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ordinal = atomicAdd(&spawn_counter, 1u);
     let seed = vec2<u32>(params[2], params[3]);
     let direction = vec3<f32>(bitcast<f32>(params[12]), bitcast<f32>(params[13]), bitcast<f32>(params[14]));
-    let velocity = spawn_distributed_velocity(
+    var velocity = spawn_distributed_velocity(
         seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction,
         bitcast<f32>(params[15]), params[188]);
+    let sampling=vec4<u32>(params[204],params[205],params[206],params[207]);
+    let cohort=aestra_sampling_sequence(ordinal,max(sampling.z,1u));
+    if sampling.y != 0u {
+        let d=aestra_sampled_direction(sampling,params[208],seed.x ^ seed.y,cohort,params[188],direction,bitcast<f32>(params[15]));
+        velocity=d*mix(bitcast<f32>(params[4]),bitcast<f32>(params[5]),aestra_spawn_uniform(seed,vec2<u32>(ordinal,0u),0u));
+    }
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let half_extents = vec3<f32>(bitcast<f32>(params[22]), bitcast<f32>(params[23]), bitcast<f32>(params[24]));
     var position = spawn_launch_position(seed, ordinal, params[20], bitcast<f32>(params[21]), half_extents);
+    if sampling.x != 0u {
+        var kind=0u; if params[20]==1u {kind=3u;} else if params[20]==2u {kind=5u;}
+        let radius=select(bitcast<f32>(params[21]),half_extents.x,kind==5u);
+        position=aestra_sampled_position(sampling,params[208],seed.x ^ seed.y,cohort,kind,radius,half_extents.y,half_extents.z);
+    }
     var launch = velocity;
     if (params[AESTRA_PLACEMENT_INDEX] != 0u) {
         position = aestra_place_point(position);
@@ -1954,11 +1978,12 @@ fn order_present(@builtin(local_invocation_index) thread: u32) {
 /// its `death_integrate` / `spawn` / `present` / `order_present` compute pipelines from. Every fragment here is
 /// conformance-checked on real GPU compute in `aestra-bevy-render`.
 pub fn stateful_simulation_wgsl() -> String {
+    let spatial_flow = spatial_flow::wgsl();
     format!(
         "{STATEFUL_SIMULATION_BINDINGS}{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}\
          {STATEFUL_PRESENT_WGSL}{STATEFUL_WORLD_WGSL}{STATEFUL_PHYSICS_WGSL}{STATEFUL_COLLISION_WGSL}\
          {STATEFUL_PLACEMENT_WGSL}\
-         {STATEFUL_HOMING_WGSL}{STATEFUL_SIMULATION_ENTRIES}"
+         {STATEFUL_HOMING_WGSL}{spatial_flow}{STATEFUL_SIMULATION_ENTRIES}"
     )
 }
 
@@ -2210,12 +2235,22 @@ fn domain_spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ordinal = plan[5] + i;
     let seed = vec2<u32>(params[2], params[3]);
     let direction = vec3<f32>(bitcast<f32>(params[12]), bitcast<f32>(params[13]), bitcast<f32>(params[14]));
-    let launch = spawn_distributed_velocity(
+    var launch = spawn_distributed_velocity(
         seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction,
         bitcast<f32>(params[15]), params[188]);
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let r = 4u + i * 8u;
+    let sampling=vec4<u32>(params[204],params[205],params[206],params[207]);
+    var cohort=aestra_sampling_sequence(ordinal,max(sampling.z,1u));
+    // Only event/input lists opt into padding metadata. Ordinary extension lists retain their ABI.
+    if emission[3]==0xa3570003u && emission[r+7u]>0u {
+        let index=emission[r+3u];cohort=vec3<u32>(index,emission[r+7u],ordinal-index);
+    }
+    if sampling.y != 0u {
+        let d=aestra_sampled_direction(sampling,params[208],seed.x ^ seed.y,cohort,params[188],direction,bitcast<f32>(params[15]));
+        launch=d*mix(bitcast<f32>(params[4]),bitcast<f32>(params[5]),aestra_spawn_uniform(seed,vec2<u32>(ordinal,0u),0u));
+    }
     let inherit = bitcast<f32>(spawn_params[1]);
     let base = slot * 10u;
     for (var axis = 0u; axis < 3u; axis = axis + 1u) {
@@ -2581,12 +2616,18 @@ impl GpuEffectArtifact {
                         })
                         .fold(1.0_f32, f32::max),
             );
-            bounds_half_extents = bounds_half_extents.max(transformed_emitter_bounds(
-                local_bounds,
-                emitter.transform.translation,
-                emitter.transform.rotation,
-                emitter.transform.scale,
-            ));
+            let flow_padding = emitter.spatial_flow.map_or(Vec3::ZERO, |f| {
+                let life = init.lifetime.min.abs().max(init.lifetime.max.abs()) + 2.0 / 60.0;
+                Vec3::splat(0.5 * f.strength * life * life)
+            });
+            bounds_half_extents = bounds_half_extents.max(
+                transformed_emitter_bounds(
+                    local_bounds,
+                    emitter.transform.translation,
+                    emitter.transform.rotation,
+                    emitter.transform.scale,
+                ) + flow_padding,
+            );
             let rotation = Quat::from_array(emitter.transform.rotation).normalize();
             let scale = Vec3::from_array(emitter.transform.scale);
             let particle_bounds = mesh_bounds::MeshParticleBounds {
@@ -2602,7 +2643,7 @@ impl GpuEffectArtifact {
                     emitter.transform.translation,
                     emitter.transform.rotation,
                     emitter.transform.scale,
-                ),
+                ) + flow_padding,
                 linear_from_local: glam::Mat3::from_quat(rotation)
                     * glam::Mat3::from_diagonal(scale),
                 maximum_size: maximum_absolute_curve(appearance.size),
@@ -2719,6 +2760,8 @@ impl GpuEffectArtifact {
                 },
                 trail_distance,
                 trail_tolerance,
+                sampling: particle_sampling::configuration(emitter.particle_sampling).0,
+                sampling_seed: particle_sampling::configuration(emitter.particle_sampling).1,
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }

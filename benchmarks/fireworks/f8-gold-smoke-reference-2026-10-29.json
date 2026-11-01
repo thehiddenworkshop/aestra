@@ -1,0 +1,885 @@
+{
+  "status": "Opt-in art draft; not final acceptance",
+  "binary": {
+    "path": "target/fireworks-f8/showcase-v1-release-2026-10-29.exe",
+    "sha256": "28ca1234e8c9f80fd14118c588b008dfd75a896e4a95b31686e4291b32180849"
+  },
+  "qualitative_video_sha256": "03c61d7af8d5a6a9ada06457184c8095cafa0dde306ddf01e8eeefdbfd5db3dd",
+  "reference_seconds": [
+    132,
+    135
+  ],
+  "source_inputs": [
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_reference_smoke.rs",
+      "sha256": "612ee90731c1bc4be38b1358a7afaeb7cbcbe69e8c2d7c54e3a223d2e60b2849"
+    },
+    {
+      "path": "demos/fireworks/src/bin/reference_smoke.wesl",
+      "sha256": "ff8ead3c4605f27d20bf9da258d94d28d6146b0e612f5af692f163bc70e740ad"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_tail_reference_smoke.aestra.ron",
+      "sha256": "23624b040e243d76ff95f3d198e7528aa067dc3f0cf0de603c71542e9ee91ac6"
+    },
+    {
+      "path": "assets/test/materials/fireworks_filament_smoke.aestra.material.ron",
+      "sha256": "50d322ec6bcb73ed27c2a502279793cab58587dd50862629d5ea07696761a090"
+    },
+    {
+      "path": "assets/test/materials/filament_smoke_wisp.aestra.material-function.ron",
+      "sha256": "0033ca56f2a4a30612a6cb4836756f2c11273a2e3924920b13e85f5d6be7bc0e"
+    },
+    {
+      "path": "benchmarks/fireworks/run-smoke-look-review.ps1",
+      "sha256": "f8c1c4966f8724532f787d2c9220778700ce5924dfdbbf4e54d91453f0a06538"
+    }
+  ],
+  "frozen_original_asset_hashes_verified": 97,
+  "runs": [
+    {
+      "group": "f8-single-final-2026-10-29",
+      "variant": "control",
+      "report": {
+        "path": "target/fireworks-f8/f8-single-final-2026-10-29/control.json",
+        "sha256": "47c092210d27c592b3139344bdf013401d0ecbb45f2e8478917114b047b5ff34"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 1002665,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 962,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Launch smoke": 43,
+        "Main stars": 64,
+        "Burst flash": 1,
+        "Burst smoke": 48,
+        "Gold tail embers": 67254,
+        "Star path smoke": 11209
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/control-0.8s.png",
+          "sha256": "d3d14743f39931f7917aaf2be81018cda63ff375d6b4433679ebcd3f84198d5f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/control-1.4s.png",
+          "sha256": "9f1e169fff045a14a8f7256417da28e1f5454c6107443252a5aeef9a2ac15432"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/control-2.8s.png",
+          "sha256": "ef241cf656e6eb6e39e762220c92c75e65bd1c915716dee67961df3d47141654"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/control-4.5s.png",
+          "sha256": "93d9091fcbb1b2478be7bf77379cd5e0acefd49ff2a6e4f6d1a21669dbe8b042"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/control-7s.png",
+          "sha256": "7b96d4a764b062548d39b3d269b126d9f812ec68f64d6ff27031acd2d35e152f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/control-10s.png",
+          "sha256": "01f3be22b6f3c826bf7d4c972bc450ec221fdb307f19bfd45aba8bd9c015c565"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/control-14s.png",
+          "sha256": "cf3e5f4822990ded8c8901da16b4194446006db2d95055cc64d7dbfa2b3d6dc5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/control-17.5s.png",
+          "sha256": "7a8e734be8d8e032e877a230ab926695667d193f4b395129686b8d5fae71b46b"
+        }
+      ],
+      "host_state": null,
+      "flashes_accepted": 1
+    },
+    {
+      "group": "f8-single-final-2026-10-29",
+      "variant": "candidate",
+      "report": {
+        "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate.json",
+        "sha256": "e87f5a4ad7f31a7287653b290a2f8e5a8f9be2bd3cd57b2d9cf4e69f01071ae3"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 1071944,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 987,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Launch smoke": 43,
+        "Main stars": 64,
+        "Burst flash": 1,
+        "Burst smoke": 48,
+        "Gold tail embers": 67254,
+        "Star path smoke": 11209
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate-0.8s.png",
+          "sha256": "81ff187ef21bdbe5c25efeb0bc3ddd60afd6fe43cb8fb36365d1630cd7792947"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate-1.4s.png",
+          "sha256": "0ca1273cd09cd87df0a5b46c02087d242aaac8eaad7ec152a92547849385b858"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate-2.8s.png",
+          "sha256": "18921c85028e681bc0faba352e0b04faf2d065a2b46c78b6eb6aa75f3b9b22d8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate-4.5s.png",
+          "sha256": "2f363a751794a93d5c4ec5fc63acf65c6a79df6c477cca206f0783023050af1a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate-7s.png",
+          "sha256": "a99ad4153fa515d9082f885683fb4e8ada4df0e9e9007974fd778909d289bb1e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate-10s.png",
+          "sha256": "a24ae4b59f8ca12ded5d325db4203ed719bf999a6f9629385d6791e7408a868a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate-14s.png",
+          "sha256": "9f059db1aa1d875226a3712007fde68afe9a3f6af86030bdd11101e739788ce8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-single-final-2026-10-29/candidate-17.5s.png",
+          "sha256": "5b996f87fe38055d2c449a56a6ac1a613a74443d7f646aaac82cf58aeb752f27"
+        }
+      ],
+      "host_state": null,
+      "flashes_accepted": 1
+    },
+    {
+      "group": "f8-reference-pair-final-2026-10-29",
+      "variant": "control",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/control.json",
+        "sha256": "81fa47648c6150bc9ecdd4820a0a6e372e4e535bf669648b03284c394e571311"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 749798,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 1162,
+        "observations": 1449,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/control-6.7s.png",
+          "sha256": "129d57c93da581cdd733185ca60bf6b505d2ed18d5ee0f083e226e1db6b4f66d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/control-6.9s.png",
+          "sha256": "02e31746625e734db1c6d6eceb0a10bb6eb411f0b78fbffd95b3e2e1e7b86967"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/control-7.4s.png",
+          "sha256": "212f1edeef5d9aa6d17d13c6f7d8f8ce00d9aaa10f8e20ec777507dbfe55a564"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/control-8s.png",
+          "sha256": "ad502416fc78899a90cad4562c302275d9f6ec77cff160a14ddf1a5dae2c808e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/control-12s.png",
+          "sha256": "cb2d1e90d00e13f7d173c94ab9af268e9df63fa17138a239fea1a09b3332e67b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/control-16s.png",
+          "sha256": "ad6cc45b6a6ca9ad3f1df555aa7ebb4fbaf618c3283592e1a2a75c1b5e764300"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/control-23.5s.png",
+          "sha256": "8a3618e2d81bdeeb9fe958f7638f8e8f2a950b477e816e3c1fec48c39307b39e"
+        }
+      ],
+      "host_state": null,
+      "flashes_accepted": 2
+    },
+    {
+      "group": "f8-reference-pair-final-2026-10-29",
+      "variant": "candidate",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate.json",
+        "sha256": "eb5843c3e0da8ea06a3f58cb9bd0971ad4bddf1a98843072182eeed5defdd866"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 800987,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 1521,
+        "observations": 1449,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-6.7s.png",
+          "sha256": "d9cef95aa6bb8fd33e4502557dc4701979f67fa828a46277c58fde8aebb7ab4b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-6.9s.png",
+          "sha256": "2f8edb992ff3cbf937b1ab15f9bc33f0c9f20503f7327b16e63c043334e005f9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-7.4s.png",
+          "sha256": "21c6803b8eedf3289979cb7e385f45e46dd3d508b0bbf37b0e6575cb79bfc1c6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-8s.png",
+          "sha256": "c4a13272951503c6c008786f75b52306789e380d2e15a97df53a11c7cea9962c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-12s.png",
+          "sha256": "b932b94a8a4a6d220b2cf5a672d87550baee58a94db7fccaff955c3ab7c5c4ba"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-16s.png",
+          "sha256": "ad6cc45b6a6ca9ad3f1df555aa7ebb4fbaf618c3283592e1a2a75c1b5e764300"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-23.5s.png",
+          "sha256": "8a3618e2d81bdeeb9fe958f7638f8e8f2a950b477e816e3c1fec48c39307b39e"
+        }
+      ],
+      "host_state": null,
+      "flashes_accepted": 2
+    },
+    {
+      "group": "f8-reference-pair-final-2026-10-29",
+      "variant": "candidate-hidden",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-hidden.json",
+        "sha256": "a1c177485bc3639654aa8892603b94f1c5143aa6db90131cfd883077637af058"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 47073,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 88,
+        "observations": 1449,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-hidden-6.7s.png",
+          "sha256": "bde796ce8b1f6731f640ab6637e2ac1c1f2700521d7c1a73c80d52f0420ce149"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-hidden-6.9s.png",
+          "sha256": "7d4501b107fe691702e60f5cd59c775f080cd65008e815f7e7fb122f61931bed"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-hidden-7.4s.png",
+          "sha256": "c1f4755968a701f8b36795b0b92e966d79f56c683770ffaa50efccb8b716d0c9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-hidden-8s.png",
+          "sha256": "e6e6116a578c3871f283241158569921f0d9bbd5698eb4a172ee1af09727eee6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-hidden-12s.png",
+          "sha256": "2a649e764d87f9031f835fd813f2f68dd23662d47268fbc60c5809982b72e28c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-hidden-16s.png",
+          "sha256": "e586f50dc581319c695fcd2335f643f5b28ddd6719d86286f94c6e94f65b608d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-hidden-23.5s.png",
+          "sha256": "8a3618e2d81bdeeb9fe958f7638f8e8f2a950b477e816e3c1fec48c39307b39e"
+        }
+      ],
+      "host_state": null,
+      "flashes_accepted": 2
+    },
+    {
+      "group": "f8-reference-pair-final-2026-10-29",
+      "variant": "candidate-unlit",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit.json",
+        "sha256": "eb393d6d90198870cbd8afbc51490617b8fd1cb1ec9d68c12d3554817c9c5eeb"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 799419,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 1521,
+        "observations": 1449,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-6.7s.png",
+          "sha256": "98dd48f8fc637184a093beeb675891d5ef39a98a3af91797976c10ac75d7b257"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-6.9s.png",
+          "sha256": "cdc38ba28ae069b727d6681d867d8f797f7523909cc547fd43f55cfde34560d7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-7.4s.png",
+          "sha256": "84b8ec5b5b2dbdccb9ed172a63376cccecb98f5bfbe2e96386b4d4a709300428"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-8s.png",
+          "sha256": "b1d963bfa71446e13e1c8c7e81b6fafe902fb9feaa98d5054cd886f73d329a74"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-12s.png",
+          "sha256": "f514414794f18b780901132e68c1e0e30292d813e4f4905626d9617170c201af"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-16s.png",
+          "sha256": "300d8bf819ca78ee4b62680614a04ad439b29f70d2612db776152e86ce1a9f94"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-23.5s.png",
+          "sha256": "953f47fd3b0580fc646398b7630253491a677eb38f80bbbf461b0779776a67f9"
+        }
+      ],
+      "host_state": null,
+      "flashes_accepted": 2
+    },
+    {
+      "group": "f8-reference-pair-final-2026-10-29",
+      "variant": "candidate-unlit-hidden",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-hidden.json",
+        "sha256": "9d29f7edd13b4ea1649256d7ec224da09d5430363aa65d071b7379fe61db57e8"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 47067,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 87,
+        "observations": 1449,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-hidden-6.7s.png",
+          "sha256": "d0abbb3ad3fb805f925897d4c69f9348c3537c726ac5496baadd83845a5b727b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-hidden-6.9s.png",
+          "sha256": "90bb8526bfcd5e283f573d7add483990255f8cfee3bf013b3711a6dd76ac7d53"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-hidden-7.4s.png",
+          "sha256": "9b254d3d1d0db90e4d2729a8cf3450c40bf3757f89e1c12a2460d04c8b183963"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-hidden-8s.png",
+          "sha256": "34a0b1aad76917ba8168b41fd4d5df632bcbde4523a768d9d488093fb5cd1dd2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-hidden-12s.png",
+          "sha256": "31b65dbc41f074b021a261263fce917bdb36548b7fbe56d2b512e3a6ffecf8f0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-hidden-16s.png",
+          "sha256": "b94875a3d823f7a0eb7411a849319d5552608600751620870976b6126a052e7b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-pair-final-2026-10-29/candidate-unlit-hidden-23.5s.png",
+          "sha256": "953f47fd3b0580fc646398b7630253491a677eb38f80bbbf461b0779776a67f9"
+        }
+      ],
+      "host_state": null,
+      "flashes_accepted": 2
+    },
+    {
+      "group": "f8-reference-host-audience-final-2026-10-29",
+      "variant": "tuned-high",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-host-audience-final-2026-10-29/tuned-high.json",
+        "sha256": "fbbd8b993a46b886de571c7a7ae4a91852d7e645b82bd05fbae28934cec716d3"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5993096,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 64538,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-reference-host-audience-final-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "042bc1d20900e11d3820c872685de33329a3f4d39f4baed2fdf31eaae2bc0459"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-host-audience-final-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "95ff996a051481ddab15578c2eec02faefcb54ebd65c1464b2c7d2fdd1a8c8cb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-host-audience-final-2026-10-29/tuned-high-12s.png",
+          "sha256": "19eed9a9bb6c3a45a48ab992e4ee495e735821659119b72f22faabf9996321e3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-host-audience-final-2026-10-29/tuned-high-23s.png",
+          "sha256": "de4e1152cf5eae2d1f6d78c83b1753725b967261c7cfba9614bdf6036cb87ccf"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-host-audience-final-2026-10-29/tuned-high-36s.png",
+          "sha256": "29727c4589476a41faf26b1a11279c992229c60e1e89bdaefac9e58320f68b71"
+        }
+      ],
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "flashes_accepted": 12
+    },
+    {
+      "group": "f8-reference-host-near-final-2026-10-29",
+      "variant": "tuned-high",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-host-near-final-2026-10-29/tuned-high.json",
+        "sha256": "5af50b07967a847ebd18045ebd24b80850671b12f0326c95255d9432de0d61ed"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 20579093,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 230230,
+        "observations": 2350,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-reference-host-near-final-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "8174f9ece4800f17ce8893f5d4eb3d89db2ba3fed1dc64ce1daa3f3e47bb1ea0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-host-near-final-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "0295b083e4475166a0f1f56e7554b102a2c4f9ecaf60cae03e6c09a182a145f5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-host-near-final-2026-10-29/tuned-high-12s.png",
+          "sha256": "dff2b3d349e65b532f7f63c09c915941744c1b3929f1b8dfadf23099aa64dbbf"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-host-near-final-2026-10-29/tuned-high-23s.png",
+          "sha256": "3b9f7c29c5c4b56ecbf32164f2005c82c65141eda788ee1c796ddc7b7f06909f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-reference-host-near-final-2026-10-29/tuned-high-36s.png",
+          "sha256": "f259e036510620ef9185395bc9d75ac45fe7e295576b11710385512bdddc8b1e"
+        }
+      ],
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "flashes_accepted": 12
+    },
+    {
+      "group": "f8-reference-cost-control-2026-10-29",
+      "variant": "tuned-high",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-cost-control-2026-10-29/tuned-high.json",
+        "sha256": "0e3786ff775c29db816a6330f53c920fc1a4b4538f91ba6939fd53f9f9d7f790"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847414,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61865,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {},
+      "captures": [],
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "flashes_accepted": 12,
+      "render_graph_gpu_ms": {
+        "active-fireworks": {
+          "max_ms": 10.535936,
+          "median_ms": 10.032128,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 10.28096,
+          "p99_ms": 10.430464,
+          "samples": 253
+        },
+        "idle": {
+          "max_ms": 3.141632,
+          "median_ms": 2.20672,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 2.224128,
+          "p99_ms": 2.23232,
+          "samples": 989
+        },
+        "launch-and-overlap": {
+          "max_ms": 9.422848,
+          "median_ms": 5.420032,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 9.133056,
+          "p99_ms": 9.307136,
+          "samples": 268
+        },
+        "smoke-drain": {
+          "max_ms": 10.187776,
+          "median_ms": 5.193728,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 9.435136,
+          "p99_ms": 9.766912,
+          "samples": 635
+        }
+      },
+      "render_graph_scope": "Paired timestamps around RenderGraph Begin through Render and selected-light copy, before diagnostic resolve/submission. GPU includes intervening graph work and gaps, not presentation latency or every upload. CPU is command-encoding wall time, not whole-game CPU or active CPU cycles. Nested scopes overlap; never add their quantiles."
+    },
+    {
+      "group": "f8-reference-cost-candidate-2026-10-29",
+      "variant": "tuned-high",
+      "report": {
+        "path": "target/fireworks-f8/f8-reference-cost-candidate-2026-10-29/tuned-high.json",
+        "sha256": "3f6c6a0814debceca87de362d979d1b147c25d5088c74a28ef0e5a9c5249b2f1"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5993179,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 64501,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "node_head_bytes": 47923200,
+      "routes": {},
+      "captures": [],
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "flashes_accepted": 12,
+      "render_graph_gpu_ms": {
+        "active-fireworks": {
+          "max_ms": 10.635264,
+          "median_ms": 10.074112,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 10.363904,
+          "p99_ms": 10.587136,
+          "samples": 238
+        },
+        "idle": {
+          "max_ms": 3.165184,
+          "median_ms": 2.210816,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 2.231296,
+          "p99_ms": 2.239488,
+          "samples": 990
+        },
+        "launch-and-overlap": {
+          "max_ms": 9.209856,
+          "median_ms": 5.15072,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 8.853504,
+          "p99_ms": 9.07776,
+          "samples": 261
+        },
+        "smoke-drain": {
+          "max_ms": 10.06592,
+          "median_ms": 5.1968,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 9.437184,
+          "p99_ms": 9.89184,
+          "samples": 629
+        }
+      },
+      "render_graph_scope": "Paired timestamps around RenderGraph Begin through Render and selected-light copy, before diagnostic resolve/submission. GPU includes intervening graph work and gaps, not presentation latency or every upload. CPU is command-encoding wall time, not whole-game CPU or active CPU cycles. Nested scopes overlap; never add their quantiles."
+    }
+  ],
+  "image_count": 61,
+  "retained_images": [
+    {
+      "path": "benchmarks/fireworks/reviews/f8-gold-smoke-reference-2026-10-29/launch-1.4s.png",
+      "sha256": "0ca1273cd09cd87df0a5b46c02087d242aaac8eaad7ec152a92547849385b858"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-gold-smoke-reference-2026-10-29/later-blue-burst-6.9s.png",
+      "sha256": "2f8edb992ff3cbf937b1ab15f9bc33f0c9f20503f7327b16e63c043334e005f9"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-gold-smoke-reference-2026-10-29/control-later-blue-burst-6.9s.png",
+      "sha256": "02e31746625e734db1c6d6eceb0a10bb6eb411f0b78fbffd95b3e2e1e7b86967"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-gold-smoke-reference-2026-10-29/host-audience-2.8s.png",
+      "sha256": "042bc1d20900e11d3820c872685de33329a3f4d39f4baed2fdf31eaae2bc0459"
+    }
+  ],
+  "roi_xyxy": [
+    500,
+    200,
+    620,
+    360
+  ],
+  "roi_formula": "(lit-visible - lit-hidden) - (unlit-visible - unlit-hidden), mean signed 8-bit RGB; not frame paired or photometric",
+  "roi_deltas": {
+    "6.7": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "6.9": [
+      1.19099,
+      3.064531,
+      5.830938
+    ],
+    "7.4": [
+      0.144062,
+      0.294219,
+      0.384427
+    ],
+    "8": [
+      0.112031,
+      0.236615,
+      0.392604
+    ],
+    "12": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "16": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "23.5": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "population_witness_6_9s": [
+    {
+      "effect": "Gold Tail \u2014 Filament Smoke Reference Candidate",
+      "effect_id": "a3574a00-0000-4000-8000-000000f8b200",
+      "emitters": [
+        {
+          "alive": 0,
+          "name": "Launch shell"
+        },
+        {
+          "alive": 0,
+          "name": "Main stars"
+        },
+        {
+          "alive": 0,
+          "name": "Burst flash"
+        },
+        {
+          "alive": 43,
+          "name": "Launch smoke"
+        },
+        {
+          "alive": 48,
+          "name": "Burst smoke"
+        },
+        {
+          "alive": 0,
+          "name": "Gold tail embers"
+        },
+        {
+          "alive": 11209,
+          "name": "Star path smoke"
+        }
+      ],
+      "observed_source_seconds": 6.849999904632568,
+      "owner": "505v0",
+      "source_seconds": 6.900000095367432
+    },
+    {
+      "effect": "Fireworks Point Stars with Deposited Smoke \u2014 Selected Star Lighting \u2014 Eroding Smoke Look",
+      "effect_id": "a3574a00-0000-4000-8000-000000f8b100",
+      "emitters": [
+        {
+          "alive": 0,
+          "name": "Launch shell"
+        },
+        {
+          "alive": 128,
+          "name": "Main stars"
+        },
+        {
+          "alive": 1,
+          "name": "Burst flash"
+        },
+        {
+          "alive": 43,
+          "name": "Launch smoke"
+        },
+        {
+          "alive": 48,
+          "name": "Burst smoke"
+        },
+        {
+          "alive": 0,
+          "name": "Star path smoke"
+        }
+      ],
+      "observed_source_seconds": 1.3333333730697632,
+      "owner": "628v0",
+      "source_seconds": 1.4000000953674316
+    }
+  ],
+  "rejected_draft": {
+    "report": {
+      "path": "target/fireworks-f8/f8-reference-host-audience-2026-10-29/tuned-high.json",
+      "sha256": "783af83f3b7bf5d5039715606886b891b5fd01a10be2eab284ff59b34ee154d5"
+    },
+    "capacity": {
+      "loss_free": false,
+      "max_attempted_fragments": 9358862,
+      "max_dropped": 64219,
+      "max_invalid_links": 0,
+      "max_over_sort_pixels": 109899,
+      "observations": 2408,
+      "observed_partition_loss": true
+    },
+    "source": {
+      "path": "target/fireworks-f8/f8-reference-rejected-author-2026-10-29.rs",
+      "sha256": "0090a663116f8098f0b39c65793de30949097e06ab078e7f4932e33dea8ddce3"
+    },
+    "mask": {
+      "path": "target/fireworks-f8/f8-reference-rejected-mask-2026-10-29.wesl",
+      "sha256": "b6704e1bcd5ff8bbb1a3f69f7cb5e38adf603d82c3c403ad68422009d24ee6ab"
+    },
+    "project": "target/fireworks-f8/f8-reference-project-2026-10-29"
+  },
+  "final_overlay": "target/fireworks-f8/f8-reference-project-final-2026-10-29",
+  "limits": [
+    "61 sampled forward captures, not a continuous motion comparison",
+    "Qualitative photographic/video reference; no calibrated exposure/scale/luminance match",
+    "One sequential release profile pair; not causal performance or 60 FPS certification",
+    "Existing benchmark owner budget 24, no admission waits; normal showcase remains uncapped",
+    "Gold family only, high tier native images; other tiers compile but are not visually qualified",
+    "No audio, final environment or production-finale acceptance"
+  ]
+}

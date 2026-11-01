@@ -1,0 +1,617 @@
+{
+  "status": "Shared water wave-normal and real-light receiver foundation; full particle reflections and final realism remain open",
+  "binary": {
+    "path": "target/fireworks-f8/water-waves-final-release-2026-10-31.exe",
+    "sha256": "e324c8a5486ddafb588b7277485d74f75ce6cdbe0657c695ac67be0a88928aa5"
+  },
+  "source_inputs": [
+    {
+      "path": "bevy/aestra-bevy-render/src/preview.rs",
+      "sha256": "c5c25e483670d1b8c9ed0d22bd511fcd5b267482dd77648edb9129bc5aad6641"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/water.rs",
+      "sha256": "3b62b2b393a589cec1704311729d7bbfe7a517ee2e0e76787b6897beb8b7b100"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/water.wesl",
+      "sha256": "18c8d1635d14f5e9f1e44db82ff26bd63ad91c45b2b3b528cd9ad5248cfb2dcc"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/preview/tests/water.rs",
+      "sha256": "0e1147e477b32eb0e9e2cb249c3bbd24041623b6cd7cbd0315cbb19e222a3fee"
+    },
+    {
+      "path": "demos/fireworks/src/venue.rs",
+      "sha256": "0c51ed888a3ea9fb502bc22b5787eee578e7c832769a601cbc90877783f6fad7"
+    },
+    {
+      "path": "demos/fireworks/src/main.rs",
+      "sha256": "7de6635007cc3d7b02011c7628f73a02fda476518d7a38d0da1e310179dad4d7"
+    },
+    {
+      "path": "demos/fireworks/src/project.rs",
+      "sha256": "4a4ffa84ba05046f04379d5ec4c6462f6f703a420d3fd3993f8ec6f91e263e70"
+    },
+    {
+      "path": "demos/fireworks/src/report.rs",
+      "sha256": "4dc9565df154e9b4b753996fc5e4a017f6964cece5f308a3db070f8cb1396ff3"
+    },
+    {
+      "path": "apps/aestra-editor/src/viewport/water.rs",
+      "sha256": "d18966c47c967d63a5e44e9070b045d310cce8a7cc511443146c94bd1216f786"
+    },
+    {
+      "path": "apps/aestra-editor/src/viewport/tests/water.rs",
+      "sha256": "34040fee5df2a84bddef807511ccc1b9846f2d661ad071faa077f8c3991538f9"
+    },
+    {
+      "path": "apps/aestra-editor/src/viewport/presentation.rs",
+      "sha256": "872476363ea4be43efd60babaf9c034f58c8aa89638a357d3619536e3fc74bba"
+    },
+    {
+      "path": "apps/aestra-editor/src/viewport/plugin.rs",
+      "sha256": "c4120b13ae6835ad623618e5a62e8cb4f8b87565d6527b815f267b2e4e43b45a"
+    },
+    {
+      "path": "apps/aestra-editor/src/settings.rs",
+      "sha256": "a77dd72e811f13bfda025ce09f45d0962dd003ae748726a28cd362e629b27342"
+    },
+    {
+      "path": "apps/aestra-editor/src/settings_ui.rs",
+      "sha256": "02cf067bfc44c12217bd0fac7531e0baa27c19f2fe18f02bd8dcc1f33fd5c34a"
+    },
+    {
+      "path": "apps/aestra-editor/locales/en-US/editor.ftl",
+      "sha256": "60433ab417807a5254e95f5ada63f052aae32bbb8ecd05ade0386a798338f923"
+    },
+    {
+      "path": "apps/aestra-editor/locales/fr-FR/editor.ftl",
+      "sha256": "bffab3795507073241b4ee2d76c8f155a2a502994627a45e8dff97b3009d5abc"
+    },
+    {
+      "path": "benchmarks/fireworks/run-smoke-look-review.ps1",
+      "sha256": "71f592e074cbd946f3625811d7d346f9d5b7a1c4b368a4f3dd2a4220513005e4"
+    }
+  ],
+  "runs": [
+    {
+      "case": "calm-lit",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium.json",
+        "sha256": "294d25497054040f8600bb0c551fbe89a01860d98bdbccec059869054e27d122"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/manifest.json",
+        "sha256": "15e9364af700708c1424e59d8c36a3925d90cc56fe9c3da82e93233dace3515e"
+      },
+      "births": {
+        "Star path smoke": 23643,
+        "Gold tail embers": 62250
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 5,
+        "families_launched": {
+          "gold_tail": 2,
+          "point_star": 3
+        },
+        "launches": 5,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 10,
+        "peak_gameplay_rockets": 1,
+        "scheduled_launches": 5
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 539623,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 55,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium-0.15s.png",
+          "sha256": "6fabcd0c916a24f41e52c958f7d86e403557b0571fee50f4500d86796e71a095"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium-0.35s.png",
+          "sha256": "b78b9c148aea5b11ff01ba89951f34892ff7c1f4a455d4ce9bcd0eed65f26371"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium-0.6s.png",
+          "sha256": "f61e97f2dc09e868d4c80ae8c791c345a46fc5aceb3139f3732d0b35c5bc12ae"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium-1.2s.png",
+          "sha256": "543bb2c7a64c7206e71bd58f97086d384782d1902caec5726b42aa73677f980e"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium-18.2s.png",
+          "sha256": "8818cbf60d14ecab72da55fbfdc8eefdf4cc8f2ba7d9f779e9bc74a26519ac8d"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium-3.35s.png",
+          "sha256": "8fa46139e23b1e04a34d8428b9ae918b77c83b4b6bf1c811f18c679ad6cadabd"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium-36s.png",
+          "sha256": "6cddf07de675b7e849fdb73b5e4a16085770f1c788d8574ad10dc495f86d5ceb"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/calm-lit/tuned-medium-6.35s.png",
+          "sha256": "18afb893087ca9cf9e83da5494184679431e41a29bd606471a1bfe63eda60a4a"
+        }
+      ]
+    },
+    {
+      "case": "rough-lit",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium.json",
+        "sha256": "171b726da2b9ccef7ce5c0acc9603b3ef1dacd08fc4441fe9ad3d1e1928c751a"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/manifest.json",
+        "sha256": "96a7e3c5607b84e3a35ab082768ddf2915568ad4691f41cb23a5521545f534bc"
+      },
+      "births": {
+        "Star path smoke": 23643,
+        "Gold tail embers": 62250
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 5,
+        "families_launched": {
+          "gold_tail": 2,
+          "point_star": 3
+        },
+        "launches": 5,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 10,
+        "peak_gameplay_rockets": 1,
+        "scheduled_launches": 5
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 539211,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 56,
+        "observations": 2407,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium-0.15s.png",
+          "sha256": "03e4e8e10773f1b27e064449b1767c8d70b2527e8c9f7e0be3d1a440ab35dad7"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium-0.35s.png",
+          "sha256": "2126e652e75c7a3a42f78c4a51de259c75702501b06301b821e0f83b303230f2"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium-0.6s.png",
+          "sha256": "af4a6f053d56bf8af1816f8a1c24020281b4b8146d2d1e34b3ec9a370e22d933"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium-1.2s.png",
+          "sha256": "03d865ea56b8211d1dc674101d8ab8f74d731fa68311cd74fe5e6436a9e7aee1"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium-18.2s.png",
+          "sha256": "c9a8196815a4c94ccfc7f7297e085d5f75352066d7ad9d43f9d249348f93f7df"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium-3.35s.png",
+          "sha256": "6f47a64889961fa7889b8a403174b644f5cce2db52c4be784d0d75a66fc57cda"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium-36s.png",
+          "sha256": "b846cef64ae7790b011d599ccc4ae786a78d7285e1a9bb3e54b2aa590a20ddfd"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-lit/tuned-medium-6.35s.png",
+          "sha256": "43a082f0fad4a4d0f3bcb16501ece217f1a6d6c0b8a313ad453a13cd86156d3b"
+        }
+      ]
+    },
+    {
+      "case": "rough-unlit",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium.json",
+        "sha256": "36f15353f450e975dc7e7db804b67c0f075283ea647113c7c309cd5907d0842e"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/manifest.json",
+        "sha256": "cceee4b48475e18554a63c12cbb9ba9672d73bf05bf41ba59215ccde2a59b538"
+      },
+      "births": {
+        "Star path smoke": 23643,
+        "Gold tail embers": 62250
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 5,
+        "families_launched": {
+          "gold_tail": 2,
+          "point_star": 3
+        },
+        "launches": 5,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 10,
+        "peak_gameplay_rockets": 1,
+        "scheduled_launches": 5
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 530271,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 54,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium-0.15s.png",
+          "sha256": "1e2c504da55bd409a71b0227439cd9b5669443bece36ed75283a2497c6687c88"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium-0.35s.png",
+          "sha256": "d66c8a4b29420b8e09d8c4b0263f55d81b2a78c4648bfe7a0c6bf4d5dc782f19"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium-0.6s.png",
+          "sha256": "eef1c680806a677aa7aaa77e9ca4c553c1d1908ef8853ab0e71f10cd7fd1f7be"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium-1.2s.png",
+          "sha256": "1c139335c13592396d5e1c5be268365f86354c9dd59967cfa9d49205c6e53b46"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium-18.2s.png",
+          "sha256": "bc8281b8d8cd54153c1d9e242d38c4690410489460ca349986ab6e9c8dbdded3"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium-3.35s.png",
+          "sha256": "0497880728f71ffb2ae8fa8d6260c70d3a93fdf01bf1d7ea2baaa4411e608d4b"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium-36s.png",
+          "sha256": "b846cef64ae7790b011d599ccc4ae786a78d7285e1a9bb3e54b2aa590a20ddfd"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-unlit/tuned-medium-6.35s.png",
+          "sha256": "b1487bcc56f7daf54cbeda97084dfb16f3894e8b959e912c0eadac517b6a8df3"
+        }
+      ]
+    },
+    {
+      "case": "rough-near",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium.json",
+        "sha256": "9a617e57beb5baa8e17229e9a4f58cf63afdd4009dfeb29eb658776d35d35488"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/manifest.json",
+        "sha256": "e1af9689c29a34b18f2d43e9a7a06cbb5c170efda1ea69b21ab42e2cac44d37b"
+      },
+      "births": {
+        "Star path smoke": 23643,
+        "Gold tail embers": 62250
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 5,
+        "families_launched": {
+          "gold_tail": 2,
+          "point_star": 3
+        },
+        "launches": 5,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 10,
+        "peak_gameplay_rockets": 1,
+        "scheduled_launches": 5
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2314747,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 71,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium-0.15s.png",
+          "sha256": "c9aa921d9809d82390b42e4f9a2f94cfb37c6974d8388e8702311c206b821c19"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium-0.35s.png",
+          "sha256": "7b633132995ec8515d56663ac620d23458d4179d7282fbde2b03dff94015e7b1"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium-0.6s.png",
+          "sha256": "b8a594fc35ddd01c997155bafcb9adcc041d2304b4fbe0bd667c50c86d0b77c8"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium-1.2s.png",
+          "sha256": "0255b68e13f4641d85e36a177ca83b1905fe380b75cc6a6c70bd10cd3a31f430"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium-18.2s.png",
+          "sha256": "efbe7f4b012d8ca7bcdefbcc6f25aa209c1835ac0dd9c418c4ade85e78f51963"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium-3.35s.png",
+          "sha256": "ded103b2f20624a035c8e300c334deea0e59b5a2c7c4ae9a1cbe6c348a5f7c17"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium-36s.png",
+          "sha256": "c6d3c07191981d1f3985cea9163a1ae6c75944045f9955c32725d2d5cc61a205"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-near/tuned-medium-6.35s.png",
+          "sha256": "47f42a32a68128d7813beae56f7dfb33217cd00f17058320f5db2192bb85cdcd"
+        }
+      ]
+    },
+    {
+      "case": "rough-variety",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low.json",
+        "sha256": "3ce7da820d157e39dfe0e7d88a03b06780a03a0c585c82602c35badb50501b2c"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/manifest.json",
+        "sha256": "eaf70d824b508f5d566b8082be2a3ba5ae09048c6d7f523b23063bab4cdfe622"
+      },
+      "births": {
+        "Gold tail embers": 116100,
+        "Star path smoke": 36718,
+        "Burning carriers": 72,
+        "Crackle sparks": 288,
+        "Crossette NE": 32,
+        "Crossette NW": 32,
+        "Crossette SW": 32,
+        "Crossette SE": 32
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 22,
+        "families_launched": {
+          "crackle": 3,
+          "crossette": 4,
+          "gold_tail": 1,
+          "palm": 5,
+          "point_star": 1,
+          "ring": 3,
+          "strobe": 3,
+          "willow": 2
+        },
+        "launches": 22,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 44,
+        "peak_gameplay_rockets": 6,
+        "scheduled_launches": 22
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 457256,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 65,
+        "observations": 2375,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low-0.15s.png",
+          "sha256": "cb8a8339a4ef719053d45ffcbb1a46dfcea2ca8fd92b8a0ccff247fd05f6adcc"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low-0.35s.png",
+          "sha256": "64858ff53e8c26d43aae2052a9cdf20158be1402a2edb5d8da8622d00b3503ca"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low-0.6s.png",
+          "sha256": "7320b9d894fc1b01047e3a33408948db4729e9ba1a8968646d1b5736557425f7"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low-1.2s.png",
+          "sha256": "4ea6bb6efe7bf44446b551ba37567d077bb04bcd4c867a4a0d680b08fd13727e"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low-18.2s.png",
+          "sha256": "528385e154658858ef1295dba824d30a7f134bb12bb24188d711d94ced5f32da"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low-3.35s.png",
+          "sha256": "de8873e37f8d2eaf12d0964c3f54ea4e2212a1f12bd83fc8b89c79cea71fa6d1"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low-36s.png",
+          "sha256": "83c549e049e28c0b814148e7308a80682c2d0fea7cfe4970046e370df9837473"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-low-6.35s.png",
+          "sha256": "ed30b3e25d7b9e0e991fe576f6206cc36594f95f64c5a3346f35b1cb33758cf5"
+        }
+      ]
+    },
+    {
+      "case": "rough-variety",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium.json",
+        "sha256": "e2c86ff8baa697ebff0a554cab7c0f3d13c869a1990d59e7a32e865d7a220d61"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/manifest.json",
+        "sha256": "eaf70d824b508f5d566b8082be2a3ba5ae09048c6d7f523b23063bab4cdfe622"
+      },
+      "births": {
+        "Gold tail embers": 209742,
+        "Star path smoke": 69766,
+        "Burning carriers": 144,
+        "Crackle sparks": 1152,
+        "Crossette NE": 64,
+        "Crossette NW": 64,
+        "Crossette SW": 64,
+        "Crossette SE": 64
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 22,
+        "families_launched": {
+          "crackle": 3,
+          "crossette": 4,
+          "gold_tail": 1,
+          "palm": 5,
+          "point_star": 1,
+          "ring": 3,
+          "strobe": 3,
+          "willow": 2
+        },
+        "launches": 22,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 44,
+        "peak_gameplay_rockets": 6,
+        "scheduled_launches": 22
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 851381,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 531,
+        "observations": 2399,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium-0.15s.png",
+          "sha256": "5a2d2c66df52e8bccc7c78eecb38e721a114cefdc395d1614db0b0bb8c6fa1dc"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium-0.35s.png",
+          "sha256": "368c962fca2cb1098067a43751332c4948bfaa73562fd04abc56ab0ce2953922"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium-0.6s.png",
+          "sha256": "646bd14d39af7bfecd87a9133ac197185a2b49e7a3740d376eef53791ce5e5ae"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium-1.2s.png",
+          "sha256": "4b1ee9e8dd10f2dc9d305fadff6eeee7c1961d52430caa1330312babfec12e4c"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium-18.2s.png",
+          "sha256": "65895a2ea3920ec425deb0ab8f50aa029e559ace8bed21ed681a48dadddfd741"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium-3.35s.png",
+          "sha256": "dfe5f1ec22d489fad2553811470eca045ee35663aba38811601b211ac55e8e74"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium-36s.png",
+          "sha256": "6b10b80b8325d82056eaf36a903e36ce68fad0d047de170b032beaf93af19f4c"
+        },
+        {
+          "path": "target/fireworks-f8/water-waves-final-2026-10-31/rough-variety/tuned-medium-6.35s.png",
+          "sha256": "da3bf4f79f7947f8e7ef095e999be13d6faddc37ae0c14658043eb24b0db86e4"
+        }
+      ]
+    }
+  ],
+  "water_roi_xyxy": [
+    480,
+    590,
+    720,
+    668
+  ],
+  "water_roi_mean_ldr": [
+    {
+      "seconds": 0.15,
+      "rough-unlit": 3.78365094017094,
+      "rough-lit": 4.725986773504274,
+      "calm-lit": 4.9723323397435895
+    },
+    {
+      "seconds": 0.35,
+      "rough-unlit": 3.7610539102564102,
+      "rough-lit": 4.341369326923076,
+      "calm-lit": 4.410946666666667
+    },
+    {
+      "seconds": 0.6,
+      "rough-unlit": 3.7536937713675216,
+      "rough-lit": 3.9854237606837604,
+      "calm-lit": 4.2937634508547005
+    },
+    {
+      "seconds": 1.2,
+      "rough-unlit": 3.7711284829059832,
+      "rough-lit": 3.782953632478632,
+      "calm-lit": 4.255772051282051
+    }
+  ],
+  "retained_images": [
+    {
+      "path": "benchmarks/fireworks/reviews/f8-water-waves-2026-10-31/near.png",
+      "sha256": "7b633132995ec8515d56663ac620d23458d4179d7282fbde2b03dff94015e7b1"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-water-waves-2026-10-31/variety.png",
+      "sha256": "65895a2ea3920ec425deb0ab8f50aa029e559ace8bed21ed681a48dadddfd741"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-water-waves-2026-10-31/water-controls.png",
+      "sha256": "645c5b3f1152d6a51e9cef4a4094670b205ace11cddb99c669bfa1ca2e54e0e5"
+    }
+  ],
+  "first_draft": {
+    "binary": {
+      "path": "target/fireworks-f8/water-waves-release-2026-10-31.exe",
+      "sha256": "841df62b185cfcb6ca007291f5b9830ac13dc256adc91e66ec3ee4ebe047d945"
+    },
+    "reports": [
+      {
+        "path": "target/fireworks-f8/water-waves-first-2026-10-31/calm-medium.json",
+        "sha256": "4738b7d26ee69400dac2924c02706adc5919fabfa4112fc41158c69dc1366ecd"
+      },
+      {
+        "path": "target/fireworks-f8/water-waves-first-2026-10-31/rough-medium.json",
+        "sha256": "88001f46b3f2300c52caf6302f1dac4d4ee663eedd9be2942adde3a0998ae514"
+      }
+    ],
+    "reason": "Sky fill too blue and wave slopes too subdued; reduced sky radiance and increased calm/rough slopes before the final controls"
+  },
+  "limits": [
+    "No displaced wave geometry, particle-image reflections, foam, refraction, SSR or planar capture",
+    "Wave timing follows the host/editor effect clock; no duplicate simulation or VFX ownership",
+    "Near control is the existing report near camera; medium/low variety are image/functional checks only",
+    "Image runs include GPU health scans/readback and overlap a compiler workload; no ordinary frame-time, GPU cost or total VRAM certification",
+    "Planar reflection proposal retains the single-view partition guard and requires separate view-specific presentation qualification"
+  ]
+}

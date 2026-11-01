@@ -8,7 +8,9 @@ mod capabilities;
 mod experimental_oit;
 pub use experimental_oit::{
     ExperimentalOitAllocation, ExperimentalOitDiagnosticSample, ExperimentalOitDiagnostics,
-    ExperimentalOitSettings, ExperimentalOitStatistics, ExperimentalOitStatus,
+    ExperimentalOitPartitionSample, ExperimentalOitPartitionSnapshot,
+    ExperimentalOitPartitionStatus, ExperimentalOitPartitions, ExperimentalOitSettings,
+    ExperimentalOitStatistics, ExperimentalOitStatus,
 };
 mod cpu;
 pub mod execution;

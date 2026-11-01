@@ -7,7 +7,7 @@ use super::draw_preparation::{
 use super::draw_resources::{PrepareAlphaSort, TrailCompactionSystems};
 use super::pipeline::{
     GpuSpritePipeline, GpuSpritePipelineKey, GpuSpriteViewKey, draw_pipeline_key,
-    fragment_list_eligible, material_for_draw,
+    fragment_list_eligible, fragment_list_for_view, material_for_draw,
 };
 pub(super) use super::view_phases::visible_gpu_draws;
 use super::view_phases::{PhaseDraw, reject_sampled_sprite, retire_invisible_draws};
@@ -31,6 +31,49 @@ pub const WESL_RENDER_SHADER_PATH: &str =
     "embedded://aestra_bevy_render/shaders/aestra_sprite_render.wesl";
 pub const WESL_MESH_WIREFRAME_SHADER_PATH: &str =
     "embedded://aestra_bevy_render/shaders/aestra_mesh_wireframe.wesl";
+
+/// Audit actual queued command identities and dynamic render state. A foreign
+/// transparent draw cannot be repeated or silently omitted by partitioning.
+pub(crate) fn partition_draw_check(
+    world: &World,
+    item: &Transparent3d,
+) -> Result<bool, &'static str> {
+    use bevy::render::render_phase::{CachedRenderPipelinePhaseItem, PhaseItem};
+    let functions = world.resource::<DrawFunctions<Transparent3d>>().read();
+    let legacy = functions.id::<DrawGpuSprites3d>();
+    let semantic = functions.id::<DrawSemanticGpuSprites3d>();
+    // Scene-depth participants need an additional per-view binding/prepass;
+    // deliberately reject them in this first full-target transport.
+    if ![legacy, semantic].contains(&item.draw_function()) {
+        return Err("partitioned OIT requires only approved Aestra transparent commands");
+    }
+    let Some(draw) = world.get::<GpuDrawInstance>(item.entity()) else {
+        return Err("partitioned OIT draw has no native Aestra instance");
+    };
+    if !fragment_list_eligible(
+        draw.renderer_kind,
+        draw.blend,
+        draw.render_mode,
+        material_for_draw(draw).map(|m| m.render_state),
+    ) {
+        return Err("partitioned OIT draw is not a fragment-list participant");
+    }
+    let cache = world.resource::<PipelineCache>();
+    // Queue can hand out an ID before process_queue adds its descriptor to the
+    // cache. The descriptor accessor panics in that state. Compilation queries
+    // are safe for newly queued IDs; keep the phase pending until it is ready.
+    if cache.get_render_pipeline(item.cached_pipeline()).is_none() {
+        return Ok(false);
+    }
+    let descriptor = cache.get_render_pipeline_descriptor(item.cached_pipeline());
+    let captured = descriptor.fragment.as_ref().is_some_and(|f| f.shader_defs.iter().any(|d|
+        matches!(d, bevy::shader::ShaderDefVal::Bool(name, true) if name == "AESTRA_FRAGMENT_LIST_OIT")));
+    Ok(captured
+        && world.get::<GpuRenderBindGroup>(item.entity()).is_some()
+        && (item.draw_function() != semantic
+            || world.get::<GpuMaterialBindGroup>(item.entity()).is_some())
+        && (draw.mesh.is_none() || world.get::<PreparedMeshDraw>(item.entity()).is_some()))
+}
 
 pub(super) fn install(render_app: &mut SubApp) {
     render_app
@@ -62,6 +105,9 @@ pub(super) fn install(render_app: &mut SubApp) {
                 prepare_scene_depth_bind_groups.in_set(RenderSystems::PrepareBindGroups),
                 queue_gpu_sprites.in_set(RenderSystems::QueueMeshes),
                 queue_gpu_sprites_3d.in_set(RenderSystems::QueueMeshes),
+                filter_reflection_phases
+                    .after(RenderSystems::QueueMeshes)
+                    .before(RenderSystems::PhaseSort),
             ),
         );
 }
@@ -193,6 +239,7 @@ fn queue_gpu_sprites_3d(
         Option<&TemporalJitter>,
         Option<&MainPassResolutionOverride>,
         Has<crate::experimental_oit::OitApproved>,
+        Has<crate::preview::planar::ReflectionView>,
     )>,
 ) {
     let (pipeline, mut pipelines, pipeline_cache, view_key_cache) = pipeline_resources;
@@ -200,7 +247,7 @@ fn queue_gpu_sprites_3d(
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites3d>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites3d>();
     let semantic_depth_draw_function = draw_functions.id::<DrawSemanticDepthGpuSprites3d>();
-    for (visible_entities, view, jitter, resolution, oit) in &views {
+    for (visible_entities, view, jitter, resolution, oit, reflection) in &views {
         let sampled_culling = super::sprite_culling::prepare(view, resolution, jitter.is_some());
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
@@ -222,6 +269,10 @@ fn queue_gpu_sprites_3d(
                 phase.remove(render_entity, main_entity);
                 continue;
             };
+            if reflection && !reflection_eligible(effect) {
+                phase.remove(render_entity, main_entity);
+                continue;
+            }
             if reject_sampled_sprite(
                 phase,
                 effect.sampled_sprite_cull.as_ref(),
@@ -248,14 +299,7 @@ fn queue_gpu_sprites_3d(
                 &pipeline_cache,
                 &pipeline,
                 GpuSpritePipelineKey {
-                    fragment_list_oit: oit
-                        && mesh_key.contains(bevy::pbr::MeshPipelineKey::OIT_ENABLED)
-                        && fragment_list_eligible(
-                            effect.renderer_kind,
-                            effect.blend,
-                            effect.render_mode,
-                            material_for_draw(effect).map(|material| material.render_state),
-                        ),
+                    fragment_list_oit: fragment_list_for_view(effect, oit, mesh_key),
                     mesh_wireframe: effect.mesh.is_some()
                         && effect.render_mode == GpuRenderMode::Wireframe,
                     mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),
@@ -282,6 +326,53 @@ fn queue_gpu_sprites_3d(
                 }
                 .three_d(effect.mesh_center, effect.renderer_order),
             );
+        }
+    }
+}
+
+pub(super) fn reflection_eligible(draw: &GpuDrawInstance) -> bool {
+    draw.render_mode == GpuRenderMode::Rendered
+        && draw.mesh.is_none()
+        && reflection_material_eligible(
+            draw.renderer_kind,
+            draw.blend,
+            draw.semantic_material.as_ref(),
+        )
+}
+
+pub(super) fn reflection_material_eligible(
+    kind: u32,
+    blend: aestra_gpu::GpuBlend,
+    material: Option<&super::draw_instance::GpuSemanticMaterialBinding>,
+) -> bool {
+    matches!(kind, 0 | 1 | 4)
+        && material.map_or(blend == aestra_gpu::GpuBlend::Additive, |m| {
+            m.render_state.blend == aestra_core::BlendMode::Additive
+                && !m.program.requires_scene_depth()
+                && !m.program.requires_scene_lighting()
+        })
+}
+
+fn filter_reflection_phases(
+    views: Query<(
+        &ExtractedView,
+        &crate::preview::planar::ReflectionView,
+        &RenderVisibleEntities,
+    )>,
+    draws: Query<&GpuDrawInstance>,
+    mut phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
+) {
+    use bevy::render::render_phase::PhaseItem;
+    for (view, reflection, visible) in &views {
+        if let Some(phase) = phases.get_mut(&view.retained_view_entity) {
+            let before = phase.items.len();
+            phase
+                .items
+                .retain(|_, item| draws.get(item.entity()).is_ok_and(reflection_eligible));
+            let omitted = visible_gpu_draws(visible)
+                .filter(|(e, _)| draws.get(*e).is_ok_and(|d| !reflection_eligible(d)))
+                .count();
+            reflection.publish_draws(phase.items.len(), omitted + before - phase.items.len());
         }
     }
 }

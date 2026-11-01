@@ -1,0 +1,594 @@
+{
+  "status": "Reusable grain material and native launch-water lighting control; final realism and realistic water remain open",
+  "rejected_first_draft": {
+    "ledger": {
+      "path": "target/fireworks-f8/grain-first-draft-2026-10-31/ledger.json",
+      "sha256": "83399a2159e24b12b21cb42bb77e9dacb8ddefc31d58a6ba43446377b8a60952"
+    },
+    "asset": {
+      "path": "target/fireworks-f8/grain-first-draft-2026-10-31/candidate.aestra.ron",
+      "sha256": "023a635735540300b602f56c45ed34d2beb58100b689dce6f4a1912dc340bb05"
+    },
+    "author": {
+      "path": "target/fireworks-f8/grain-first-draft-2026-10-31/author.rs",
+      "sha256": "6fcb92b8efe3c3ca84e762e41dabfb8fe4e8944ae59dc73c229eb85abdea75bd"
+    },
+    "comparison": {
+      "path": "target/fireworks-f8/grain-first-draft-2026-10-31/grain-comparison.png",
+      "sha256": "0bf89c75efd13f629406208cf441ab44a34878aca15665ed5b3f48f82e1c10e5"
+    },
+    "reason": "Emission grain was barely visible at the audience distance; effective ribbon width/energy remained too small relative to residual embers"
+  },
+  "binary": {
+    "path": "target/fireworks-f8/grain-launch-release-2026-10-31.exe",
+    "sha256": "067aad3688513c58e78debf246b6af738f69d3740f6c1aeaa5e917a420920309"
+  },
+  "source_inputs": [
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_filament_study.rs",
+      "sha256": "efcfb4bcaa7f32697001c236298fd47109af9d2d7da1856693be65e8ecd928a1"
+    },
+    {
+      "path": "crates/aestra-gpu/src/shaders/emission_grain.wesl",
+      "sha256": "480b3c3bb3d246541785f1106a10fad617902f3277fdaa93b779802d289b3079"
+    },
+    {
+      "path": "assets/test/materials/emission_grain.aestra.material-function.ron",
+      "sha256": "630f8ad262869b83ecb2d8c02e16c82cf118c8872b943058fafff0624ede6c24"
+    },
+    {
+      "path": "assets/test/materials/grained_filament.aestra.material.ron",
+      "sha256": "12047cfd32ef25045f37431cdacf0f13052a1e804cbab21aa29e4252a224763e"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_filament_candidate.aestra.ron",
+      "sha256": "297a509aa5a2c5283b7d201d923be6548d5d5e9b0a31bc118fbcfcd9132267a0"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_filament_uniform.aestra.ron",
+      "sha256": "2c4aa34c0d472cb770aa384fad847c56e9a7b97a3c095288135f55565e362718"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_filament_control.aestra.ron",
+      "sha256": "860ab203b4ab154c4e6a14804892c53474057e52e9dbabbe72215bc0abfa4468"
+    },
+    {
+      "path": "demos/fireworks/src/venue.rs",
+      "sha256": "389936be52180e6090bdf03aaf978272257407c1fbcdfa436c42422b9fe8c60b"
+    },
+    {
+      "path": "demos/fireworks/src/host.rs",
+      "sha256": "0effefdbc214d57fcf9ed825869f81cf5d798ddccefd51d9aa56a2254802644e"
+    },
+    {
+      "path": "demos/fireworks/src/project.rs",
+      "sha256": "d7ec0bcbb1ac3652fbd2011dc1c1f93298e3c38f22b11290b3fbbc495ca26054"
+    },
+    {
+      "path": "demos/fireworks/src/report.rs",
+      "sha256": "320415a6aaf5815a19076e6a6e66fc053cc2a86113b09f8d9e16ac35d461cd7e"
+    },
+    {
+      "path": "benchmarks/fireworks/run-smoke-look-review.ps1",
+      "sha256": "a7abbed9eedfad229426b2800644b9bc8a22258d96441370da1b6b9e6b9ff32e"
+    }
+  ],
+  "grain_runs": [
+    {
+      "tier": "high",
+      "look": "uniform",
+      "report": {
+        "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-high.json",
+        "sha256": "8bb87d5f9162d912057a467177166563b242ca5e80c0c8c5fb683affc84d2619"
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 64,
+        "Burst flash": 1,
+        "Burst smoke": 48,
+        "Gold tail embers": 67254,
+        "Star path smoke": 11209
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 503925,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 588,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-high-12s.png",
+          "sha256": "2a7c6e8b5fbcca839559a3ccda3cc7168020e56d9ded20c9f11ae974a02411a2"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-high-2.5s.png",
+          "sha256": "7b7dd50b70f89bc2147191996e2e38385593fbd8e20d2d01a8344bcba0f14d47"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-high-3.8s.png",
+          "sha256": "4233de952659743ad453229d0a023115b178698beb6eec111010d60c25a18da5"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-high-3s.png",
+          "sha256": "ce260ca0a2971782c4478f7f4203895df6613c043189bb7d080617f95d89ff0e"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-high-4.8s.png",
+          "sha256": "d37f6e8339d21e1ac5285a149a61206a10d553a22e76bda835706c06f331a1cf"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-high-6s.png",
+          "sha256": "7993b6208fe66279a2e72beac02d14a48802e6fb5ece09d3649d9035cedb38d5"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-high-8s.png",
+          "sha256": "9f92f4fd4de3b98bca2e7054ae5c0f3fad418eda556205ce42c0a7b23d7cdcad"
+        }
+      ]
+    },
+    {
+      "tier": "high",
+      "look": "candidate",
+      "report": {
+        "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-high.json",
+        "sha256": "b610421cd53ffe7c1ae0ab0e511219d8fac921ef0bac85df47df78ae0052d0ea"
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 64,
+        "Burst flash": 1,
+        "Burst smoke": 48,
+        "Gold tail embers": 67254,
+        "Star path smoke": 11209
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 503925,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 588,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-high-12s.png",
+          "sha256": "2a7c6e8b5fbcca839559a3ccda3cc7168020e56d9ded20c9f11ae974a02411a2"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-high-2.5s.png",
+          "sha256": "06bfa61c74ae4283c2f7e343ae161c0ee2f358d77d0e7d33b25d92f6379c77db"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-high-3.8s.png",
+          "sha256": "04bf308de98b2b573cd616fb72edf0ed9defb9f0d8f8884bd653a75964a71c21"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-high-3s.png",
+          "sha256": "95bb1ab920aeab276594e45799921352505d9bb89c706ed6516f433f85092366"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-high-4.8s.png",
+          "sha256": "3558632ea0f3a3d1115ce47124a842bdf1e43d6fe73a840bdb327cb2c877bad2"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-high-6s.png",
+          "sha256": "1cf8b813688e9c8a576affbf53c1a84e5630af3210eec65d8af28fcbfd9fd582"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-high-8s.png",
+          "sha256": "9f92f4fd4de3b98bca2e7054ae5c0f3fad418eda556205ce42c0a7b23d7cdcad"
+        }
+      ]
+    },
+    {
+      "tier": "medium",
+      "look": "uniform",
+      "report": {
+        "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-medium.json",
+        "sha256": "0c2951a13359af5e1e9d374203efb0768b0a27d7510e8595141b9867d7959045"
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 32,
+        "Burst flash": 1,
+        "Burst smoke": 24,
+        "Gold tail embers": 33324,
+        "Star path smoke": 5554
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 261804,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 58,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-medium-12s.png",
+          "sha256": "ec9fd259994678fe67c82df804fc30b00a2774b2c0400a5136b76cfa14d5e968"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-medium-2.5s.png",
+          "sha256": "187f34c6cc469b816ce1840624dc308f638f4f38a834105ba01169d5b9679ea7"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-medium-3.8s.png",
+          "sha256": "7e6ed94293ff4d0a7d22c09f427b3ae2fa5aee724a3fb9faa7c500ebefc9e4a9"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-medium-3s.png",
+          "sha256": "e154e36c7d1a4a0b787fd880cef25104bff2b4be9185ea0ea64a57ebc44d7025"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-medium-4.8s.png",
+          "sha256": "8dc71dffc8efe45df4ff21b0612d032dd52ed407422c903cb17b72cdb0da553b"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-medium-6s.png",
+          "sha256": "2324ccec2016dd13ecfc0569c224f6e624dde0b699cd72698b2d18de8f562a11"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-medium-8s.png",
+          "sha256": "912fa05940195ee21c63e1e778d53331c2ff8a45d5f2014bf63af74eb59b8e6a"
+        }
+      ]
+    },
+    {
+      "tier": "medium",
+      "look": "candidate",
+      "report": {
+        "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-medium.json",
+        "sha256": "8adc05c18a89f7cc7ef2c5a4b63728101cb6850e4a341c5daa1fc142e71d405b"
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 32,
+        "Burst flash": 1,
+        "Burst smoke": 24,
+        "Gold tail embers": 33324,
+        "Star path smoke": 5554
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 261804,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 58,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-medium-12s.png",
+          "sha256": "ec9fd259994678fe67c82df804fc30b00a2774b2c0400a5136b76cfa14d5e968"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-medium-2.5s.png",
+          "sha256": "e4f2dd1025bc808c84cc99beeaeec0c8257405f7ae52e962b8664ec24e9a1bfe"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-medium-3.8s.png",
+          "sha256": "f548205838de0d592d0cf5c25ddd4b5c8fb139849ad4aa3704208b75ca578f87"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-medium-3s.png",
+          "sha256": "0da396034964edf870fdeca1eee6fda09f83758101e6ddffcb05a25ca259432c"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-medium-4.8s.png",
+          "sha256": "06c55959b3771f14a37c06a3231569fdeae25e4da37f8a8e1adec535e657404a"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-medium-6s.png",
+          "sha256": "4b39b10113df6e4ae8e90a24f937ebf25633a30b3f16f22de3ee1efd1504584c"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-medium-8s.png",
+          "sha256": "912fa05940195ee21c63e1e778d53331c2ff8a45d5f2014bf63af74eb59b8e6a"
+        }
+      ]
+    },
+    {
+      "tier": "low",
+      "look": "uniform",
+      "report": {
+        "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-low.json",
+        "sha256": "d71c98c257938f6496493dbd014ee55885c59ab718f5358429bd2d89dfb4a391"
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 16,
+        "Burst flash": 1,
+        "Burst smoke": 12,
+        "Gold tail embers": 15354,
+        "Star path smoke": 2559
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 126638,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 8,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-low-12s.png",
+          "sha256": "5142aeb953e8c4016232aac2e44ffdc47277d17ef782bc3a7c3275791a0a2cf4"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-low-2.5s.png",
+          "sha256": "0123b30bb5df852dd7dff6f09ccf3784095bd24f0a3d26425f19a04179eb183c"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-low-3.8s.png",
+          "sha256": "c5bd2089b322365ec5b2cf1fdfb39882fd89bcc45250f82398bcba00e297998e"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-low-3s.png",
+          "sha256": "772fb2dbfb92876b17bb4d62ab6955393de0f033bb0b408b3dc4374c7a3a2b6c"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-low-4.8s.png",
+          "sha256": "cdafdc4c641201b4751879c0c1b431953aea001ac940716b55d52350181e358d"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-low-6s.png",
+          "sha256": "2586e42703b8fb0787a117f442cf196457903ff8e58e72a8817cf877ecb040ef"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/uniform-low-8s.png",
+          "sha256": "cdd3faf0309327116365bdfe8d5e59c31b358891c8591a41ac4b0735171e3a1c"
+        }
+      ]
+    },
+    {
+      "tier": "low",
+      "look": "candidate",
+      "report": {
+        "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-low.json",
+        "sha256": "d70d7fb95ab7d5aa134fc64d5923ebfa120f50d2829daefa3e71bc822a20cd33"
+      },
+      "births": {
+        "Launch smoke": 43,
+        "Main stars": 16,
+        "Burst flash": 1,
+        "Burst smoke": 12,
+        "Gold tail embers": 15354,
+        "Star path smoke": 2559
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 126638,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 8,
+        "observations": 1089,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-low-12s.png",
+          "sha256": "5142aeb953e8c4016232aac2e44ffdc47277d17ef782bc3a7c3275791a0a2cf4"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-low-2.5s.png",
+          "sha256": "86eca730f702d107f05b02e2763f85c2e0eb8cdcec3d645de75b9403849f09be"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-low-3.8s.png",
+          "sha256": "97682279b03f7fcbff6b7034a5299eb83dff896b307747ca8f71d3e872a4df40"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-low-3s.png",
+          "sha256": "26b9535477f3dcc1cad5ca99fa10130a65e64293c44d152abcd4e3e79d6ed547"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-low-4.8s.png",
+          "sha256": "0f9a6dbaf2d9e278a7ecda868914588ba6e6419c17f0fa20ac6f874e065a25c5"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-low-6s.png",
+          "sha256": "db24aba701cd5471fd1d3dd687d9e77443914d658552dc0d44581fb2d2e3460d"
+        },
+        {
+          "path": "target/fireworks-f8/grain-refined-2026-10-31/candidate-low-8s.png",
+          "sha256": "cdd3faf0309327116365bdfe8d5e59c31b358891c8591a41ac4b0735171e3a1c"
+        }
+      ]
+    }
+  ],
+  "water_runs": [
+    {
+      "launch_lights": false,
+      "report": {
+        "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/tuned-medium.json",
+        "sha256": "44de184a69e78f4a2c9cea10fadc3f788c9ea0b77c89f8d71c0e246eec0d8609"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/manifest.json",
+        "sha256": "3e7fc39eb4f20d0b1e49bf37c71c2ecd2b5e77b32471e8b0c2282ac2be4d5608"
+      },
+      "births": {
+        "Star path smoke": 23643,
+        "Gold tail embers": 62250
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 531857,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 55,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/tuned-medium-0.15s.png",
+          "sha256": "c793be429c4545eeb00e064251e140935fbad853ca4c624330444e117cf7b47c"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/tuned-medium-0.35s.png",
+          "sha256": "bfaa319456c359f6f7174310001db9768bcf66814e348d5092885b9ce4ba4a31"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/tuned-medium-0.6s.png",
+          "sha256": "b8f574e434acb8c1e32d24ba06e19b4fb241b23c8d2fc0171687da9faf542c8c"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/tuned-medium-1.2s.png",
+          "sha256": "87210e6a1f75f706bf26a371760217001035148b2e91917adfd4686fc56944a7"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/tuned-medium-3.35s.png",
+          "sha256": "4d0a10b668bcc147fd740c9e92553585e88733344b977929a87dbbc5cf73b861"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/tuned-medium-36s.png",
+          "sha256": "f231be27fa3a57e9fdb48b05d4fb070aaf59ca0b72bd423d79473cb1fef0c9f9"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-unlit-2026-10-31/tuned-medium-6.35s.png",
+          "sha256": "8c6c8cad55a83054e1411b4560e13abb1f8ad15fa572d49474de26e401670e5b"
+        }
+      ]
+    },
+    {
+      "launch_lights": true,
+      "report": {
+        "path": "target/fireworks-f8/launch-water-lit-2026-10-31/tuned-medium.json",
+        "sha256": "576c51129d91ef710362445e07db2aa2e833466855d5568a481d5fee00b90ace"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/launch-water-lit-2026-10-31/manifest.json",
+        "sha256": "8204c6f6d001deb623e92f44cb0fdcc878d847606ead23f95a8a8932c77fd673"
+      },
+      "births": {
+        "Star path smoke": 23643,
+        "Gold tail embers": 62250
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 539708,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 55,
+        "observations": 2407,
+        "observed_partition_loss": false
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/launch-water-lit-2026-10-31/tuned-medium-0.15s.png",
+          "sha256": "3b1323300c4df6cd266ed9ef58a1633144bbf2cc27f726460feaf0dd1bfcfa01"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-lit-2026-10-31/tuned-medium-0.35s.png",
+          "sha256": "dea3f0567fbd3046fbece01e6214342c28b2737a0430aaf10ad8d0f963bc9540"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-lit-2026-10-31/tuned-medium-0.6s.png",
+          "sha256": "5e6152f2612887e43638a1e884ec902c36038f81a6bc00100dab9db50f8ce608"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-lit-2026-10-31/tuned-medium-1.2s.png",
+          "sha256": "74df551e42f48bb2749392c2f5c6432e7aa9fdec4023fd0047c2a2c0755322e0"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-lit-2026-10-31/tuned-medium-3.35s.png",
+          "sha256": "f1fc7f661c6bb07594ed88371a6ab3280aa97a0f5799942ab4e9b92006d430c4"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-lit-2026-10-31/tuned-medium-36s.png",
+          "sha256": "f231be27fa3a57e9fdb48b05d4fb070aaf59ca0b72bd423d79473cb1fef0c9f9"
+        },
+        {
+          "path": "target/fireworks-f8/launch-water-lit-2026-10-31/tuned-medium-6.35s.png",
+          "sha256": "a106d6a9992434a75e2039e044f845af235b90b449c9db5dd3ff44348a5be2cb"
+        }
+      ]
+    }
+  ],
+  "water_roi_xyxy": [
+    480,
+    590,
+    720,
+    668
+  ],
+  "water_roi_results": [
+    {
+      "seconds": 0.15,
+      "unlit_mean_ldr": 1.673112361111111,
+      "lit_mean_ldr": 2.738044348290598
+    },
+    {
+      "seconds": 0.35,
+      "unlit_mean_ldr": 1.656478579059829,
+      "lit_mean_ldr": 2.219661474358974
+    },
+    {
+      "seconds": 0.6,
+      "unlit_mean_ldr": 1.6388404380341879,
+      "lit_mean_ldr": 1.791958739316239
+    },
+    {
+      "seconds": 1.2,
+      "unlit_mean_ldr": 1.631172938034188,
+      "lit_mean_ldr": 1.6484869123931623
+    }
+  ],
+  "editor_report": {
+    "path": "target/fireworks-f8/editor-grain-refined-2026-10-31/preview-report.json",
+    "sha256": "009d6c4edc111d0feccff6b24673fe2c96d14020ad6cee37163b21a08b7a66c9"
+  },
+  "editor_binary": {
+    "path": "target/release/aestra-viewer.exe",
+    "sha256": "4eb2fe041b30079d19256c5ce8ce2dfd3c321c5c1799e808b1d3db671f00b32a"
+  },
+  "editor_captures": [
+    {
+      "path": "target/fireworks-f8/editor-grain-refined-2026-10-31/frame-000.png",
+      "sha256": "07e1715b16270687c10bafad5e52cf19baf3feeb50767f7d1971a4b017afb461"
+    },
+    {
+      "path": "target/fireworks-f8/editor-grain-refined-2026-10-31/frame-001.png",
+      "sha256": "e9a442c6b280caa8565b331218b4dc92f5e04a4091533e90868b809cc05e51eb"
+    },
+    {
+      "path": "target/fireworks-f8/editor-grain-refined-2026-10-31/frame-002.png",
+      "sha256": "ffabb70d56304357830b4fe5edd57d020653a008e82a8679853df12f8b5947c2"
+    },
+    {
+      "path": "target/fireworks-f8/editor-grain-refined-2026-10-31/frame-003.png",
+      "sha256": "e565dff71f61581a6db1a9b8ee3647d182173d4426da9c412b9f52ef45ecab12"
+    }
+  ],
+  "retained_images": [
+    {
+      "path": "benchmarks/fireworks/reviews/f8-burn-grain-launch-light-2026-10-31/grain-comparison.png",
+      "sha256": "e0398a51fb191a6b715b7a4864dfebee5685ae80479aea6ac991b6ab3bc629a6"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-burn-grain-launch-light-2026-10-31/launch-lit.png",
+      "sha256": "dea3f0567fbd3046fbece01e6214342c28b2737a0430aaf10ad8d0f963bc9540"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f8-burn-grain-launch-light-2026-10-31/water-comparison.png",
+      "sha256": "293bdda1303dea84c54fe8b12439ee1200f6f5c22cd1af459c32c90d88fea4e4"
+    }
+  ],
+  "limits": [
+    "Forward captures are not frame-exact photometric or motion matching to the reference footage",
+    "Grain modulates emission only; normalized trail age is recorded sample age, not a thermal state",
+    "Isolated shell study is not adopted across the eight-family variety show",
+    "Launch light is host-owned direct PBR illumination, not mirrored particles or a realistic water solution",
+    "Water image controls are medium audience spaced launches only; no production GPU cost or VRAM qualification",
+    "128 MiB OIT guard and existing star/flash policies remain unchanged; earlier F9 failures stay open"
+  ]
+}

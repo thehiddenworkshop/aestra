@@ -1,0 +1,712 @@
+{
+  "status": "Shared runtime spawn-dispatch reduction; finale timing and high capacity gates remain open",
+  "runs": [
+    {
+      "kind": "control-profile",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-spawn-control-low-profile-2026-10-30/tuned-low.json",
+        "sha256": "daaac5adce23ee93332144cfce02e8fe8edbf61004808c3c09e317c4141b4b5c"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-spawn-control-low-profile-2026-10-30/manifest.json",
+        "sha256": "9c59113f64b251521beb35813a6b5dbd0783f22336ff045217e05c2792ca4055"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2854813,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 13885,
+        "observations": 1905,
+        "observed_partition_loss": false
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {},
+      "baseline_routes": {},
+      "phase_timing": {
+        "active-fireworks": {
+          "graph_gpu_p95_ms": 18.910208,
+          "simulation_gpu_p95_ms": 14.393344
+        },
+        "idle": {
+          "graph_gpu_p95_ms": 2.234368,
+          "simulation_gpu_p95_ms": 0.004096
+        },
+        "launch-and-overlap": {
+          "graph_gpu_p95_ms": 18.029568,
+          "simulation_gpu_p95_ms": 11.469824
+        },
+        "smoke-drain": {
+          "graph_gpu_p95_ms": 13.462528,
+          "simulation_gpu_p95_ms": 11.629568
+        }
+      },
+      "spawn_schedule": null,
+      "flash_rejections": {
+        "budget_dropped": 17,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 15,
+      "captures": []
+    },
+    {
+      "kind": "candidate-profile",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-tiers-profile-2026-10-30/tuned-low.json",
+        "sha256": "adc8aa9a6a89d11ef8086ffd40d25742549b0793eab3b33f4b88a9f3c0dbd3f1"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-tiers-profile-2026-10-30/manifest.json",
+        "sha256": "a7217b48f0e991ef761f8c7b3b7a44d38d2787e3a3f0cfe7e6acca0e79acbc80"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2861618,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14015,
+        "observations": 1943,
+        "observed_partition_loss": false
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {},
+      "baseline_routes": {},
+      "phase_timing": {
+        "active-fireworks": {
+          "graph_gpu_p95_ms": 18.031616,
+          "simulation_gpu_p95_ms": 12.44672
+        },
+        "idle": {
+          "graph_gpu_p95_ms": 2.230272,
+          "simulation_gpu_p95_ms": 0.004096
+        },
+        "launch-and-overlap": {
+          "graph_gpu_p95_ms": 15.872,
+          "simulation_gpu_p95_ms": 9.371648
+        },
+        "smoke-drain": {
+          "graph_gpu_p95_ms": 13.012992,
+          "simulation_gpu_p95_ms": 11.2128
+        }
+      },
+      "spawn_schedule": {
+        "bind_groups": 0,
+        "buffers": 0,
+        "calls": 189806,
+        "copy_bytes": 0,
+        "dispatches": 5015,
+        "initialized_bytes": 0,
+        "observed_frame_cpu_ms": {
+          "max_ms": 0.0165,
+          "median_ms": 0.0054,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 0.0107,
+          "p99_ms": 0.012,
+          "samples": 981
+        },
+        "queue_write_bytes": 0,
+        "requested_buffer_bytes": 0
+      },
+      "flash_rejections": {
+        "budget_dropped": 16,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 16,
+      "captures": []
+    },
+    {
+      "kind": "candidate-profile",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-tiers-profile-2026-10-30/tuned-medium.json",
+        "sha256": "251649ff6e4b4256ed37a4b0faa060c7f54d91d6132404bfcf7ed6388ee7475e"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-tiers-profile-2026-10-30/manifest.json",
+        "sha256": "a7217b48f0e991ef761f8c7b3b7a44d38d2787e3a3f0cfe7e6acca0e79acbc80"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5472391,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 55340,
+        "observations": 1932,
+        "observed_partition_loss": false
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {},
+      "baseline_routes": {},
+      "phase_timing": {
+        "active-fireworks": {
+          "graph_gpu_p95_ms": 21.563392,
+          "simulation_gpu_p95_ms": 15.986688
+        },
+        "idle": {
+          "graph_gpu_p95_ms": 2.228224,
+          "simulation_gpu_p95_ms": 0.004096
+        },
+        "launch-and-overlap": {
+          "graph_gpu_p95_ms": 17.933312,
+          "simulation_gpu_p95_ms": 10.554368
+        },
+        "smoke-drain": {
+          "graph_gpu_p95_ms": 13.560832,
+          "simulation_gpu_p95_ms": 13.068288
+        }
+      },
+      "spawn_schedule": {
+        "bind_groups": 0,
+        "buffers": 0,
+        "calls": 190080,
+        "copy_bytes": 0,
+        "dispatches": 5011,
+        "initialized_bytes": 0,
+        "observed_frame_cpu_ms": {
+          "max_ms": 0.02,
+          "median_ms": 0.0049,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 0.0113,
+          "p99_ms": 0.0127,
+          "samples": 969
+        },
+        "queue_write_bytes": 0,
+        "requested_buffer_bytes": 0
+      },
+      "flash_rejections": {
+        "budget_dropped": 4,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 28,
+      "captures": []
+    },
+    {
+      "kind": "candidate-images",
+      "tier": "low",
+      "report": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low.json",
+        "sha256": "d649e3596f77e5c5744a38d89503942cb7da2657901ac17b1bf37c2a04cde1d1"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/manifest.json",
+        "sha256": "3031efae51bade8a9dc27c6a4d4a53c0010d43cbbbd0063fa2cfb1d8d209fb3b"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 2864259,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 14122,
+        "observations": 1969,
+        "observed_partition_loss": false
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {
+        "Star path smoke": 78354,
+        "Gold tail embers": 259644
+      },
+      "baseline_routes": {
+        "Star path smoke": 78354,
+        "Gold tail embers": 259644
+      },
+      "phase_timing": {},
+      "spawn_schedule": null,
+      "flash_rejections": {
+        "budget_dropped": 17,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 15,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-1.4s.png",
+          "sha256": "0f2e07fd00c9f467981a13072919b4c7738324f2c1c330360ea0cf1b98985910"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-10s.png",
+          "sha256": "5bc862d23f08812b792753f124e421d4b114cd695d2d5af4648f06623ef0d47e"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-12s.png",
+          "sha256": "28288f4ba8853363ee8e29f3b77c28fd08cc4b31edf65c3a2a63af3ce81121e0"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-16s.png",
+          "sha256": "12ab6c6afe8908d33863652a457f9920ba796631eb6ae85528eb4932b1950f20"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-2.8s.png",
+          "sha256": "d89bc35b1de5cfd51b317faa38f1dcf596df076af3092688067304e996436902"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-23s.png",
+          "sha256": "b5998fa32bbbd1bcc0ccf3028fa594c2c71f9c2067141eba1e729b7ad13275de"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-36s.png",
+          "sha256": "02ec40ad5f878c6601971603a4ed94cf1248b0487594f84d8201719efd2ff500"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-4s.png",
+          "sha256": "383a8e821ccb3266841a209d516d64d17e35f9783e4428eaa86dd2c100e19f70"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-5s.png",
+          "sha256": "c06baa7090f6fcee0319fc8fb3f6a21abb2cf99c1941422b5202d295a937703f"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-6.9s.png",
+          "sha256": "929310db65f736404fb04475ab9fc792a3fc76f30bee93106853c0f5467b74e5"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-low-8s.png",
+          "sha256": "d00d2b395ca7059e912e1714274dc180ccee10cca7c5bf310b4ed10ad873cbc2"
+        }
+      ]
+    },
+    {
+      "kind": "candidate-images",
+      "tier": "medium",
+      "report": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium.json",
+        "sha256": "61267250002a0da566cd2f9493818168064c9e4317bfc2dd4dda9144f7a19827"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/manifest.json",
+        "sha256": "3031efae51bade8a9dc27c6a4d4a53c0010d43cbbbd0063fa2cfb1d8d209fb3b"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5471677,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 55307,
+        "observations": 1975,
+        "observed_partition_loss": false
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {
+        "Gold tail embers": 505062,
+        "Star path smoke": 154151
+      },
+      "baseline_routes": {
+        "Gold tail embers": 505062,
+        "Star path smoke": 154151
+      },
+      "phase_timing": {},
+      "spawn_schedule": null,
+      "flash_rejections": {
+        "budget_dropped": 4,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 28,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-1.4s.png",
+          "sha256": "d8e86bf8d05c2a9287b8b69713ab3a88e036a215d384b6972c1269028288e4c5"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-10s.png",
+          "sha256": "2769f27cf265801ab8c2097a1b0439a069d8ab363d2ab638136d3bd3b938ecc5"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-12s.png",
+          "sha256": "7c74c965dc8203ed7aeaf1aa0d8cf3f64a8e96035bc1dd2d064c714f93871be6"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-16s.png",
+          "sha256": "ddd19370a53367659114e7285801f1ea0b2e4d9d7f08572ea5c56e3c4f4d7805"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-2.8s.png",
+          "sha256": "4b956b32481333f0f25925c4e59796ae303c00f230cfe3a344440342e5711e31"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-23s.png",
+          "sha256": "a675e532dbb9bcaea6e17bc722c566c41d2da37f8692b9816c70d67c5d10e371"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-36s.png",
+          "sha256": "dd41924fd0ae320a8248529759c8daf5b51214f436c77f24ee284efaf98b7ee4"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-4s.png",
+          "sha256": "8b5d399c842afb57db86c8a08033810a8786056542e06cd9c3757f06f1fd586f"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-5s.png",
+          "sha256": "56215d518031bf938f36a0aba214cd7f769eea05319a2706d7fbedea2611a822"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-6.9s.png",
+          "sha256": "f974d14b900a90fdbda552d849fc11406aee391ab9487152b6f521d7f091c277"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-tiers-images-2026-10-30/tuned-medium-8s.png",
+          "sha256": "aa20ad8a97bc9fd1ce13051568d480d71bd82500eb9508ed6b50480ca6e6a0ae"
+        }
+      ]
+    },
+    {
+      "kind": "candidate-images",
+      "tier": "high",
+      "report": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high.json",
+        "sha256": "9d8f42e2177c516ac19452be3f98026ba2768e05fba662a15ca936c83db27dfe"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/manifest.json",
+        "sha256": "3172845afb6004e5b201107678bdcfcba3edf87988520d8e0b80f23bb1c5c66f"
+      },
+      "capacity": {
+        "loss_free": false,
+        "max_attempted_fragments": 10744034,
+        "max_dropped": 580544,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 116052,
+        "observations": 1879,
+        "observed_partition_loss": true
+      },
+      "host": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 32,
+        "launches": 32,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 64,
+        "peak_gameplay_rockets": 11,
+        "scheduled_launches": 32
+      },
+      "routes": {
+        "Gold tail embers": 1015758,
+        "Star path smoke": 309714
+      },
+      "baseline_routes": {
+        "Gold tail embers": 1015758,
+        "Star path smoke": 309714
+      },
+      "phase_timing": {},
+      "spawn_schedule": null,
+      "flash_rejections": {
+        "budget_dropped": 0,
+        "disabled": 0,
+        "expired": 0,
+        "invalid": 0
+      },
+      "flashes_accepted": 32,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-1.4s.png",
+          "sha256": "b64b3e6357cf5c422ed7d8212c1e9abbd05979c80817977ff71321ca7d2658a4"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-10s.png",
+          "sha256": "3b332da62b1a87496ae089e4b9a72b1f885681c8a1c9c3cadff68887ca931833"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-12s.png",
+          "sha256": "fcc79c2d8218b202289f907d874b342f0596891f06ad81b6cc34ee2704849f01"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-16s.png",
+          "sha256": "0177a3c5bd654ae0ec9d4dae4ebdfb2eaa3103e5267e14f3fbb22c7e0cf83fe8"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-2.8s.png",
+          "sha256": "029001138c102eafbe00624de758d52029bf1930a3d2dba5e3c2e0230da6ca11"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-23s.png",
+          "sha256": "1291b01144c4322a9752449528c72276411fb7cb1af275262776992973cfb961"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-36s.png",
+          "sha256": "4dbe3c2d241753003af8d57d0ebdfaffe834dfe6343c1c59777196b3277f0b1b"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-4s.png",
+          "sha256": "fd4b50ece8184432f15bcbc16fe36591d4d46627014b80b539c6acbbb2257cdc"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-5s.png",
+          "sha256": "a148359d04e27cf81d6b09b87549932055407cb72ac3bd3a2396be240ac04d47"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-6.9s.png",
+          "sha256": "3b32cffac2d95fe6e7fc45b1063be661a83e8a480f7d4405047b2a99b4a86b64"
+        },
+        {
+          "path": "target/fireworks-f8/f9-spawn-candidate-high-images-2026-10-30/tuned-high-8s.png",
+          "sha256": "f43751541afaecdef6750a89392af6bf3232f30adda6a6b032eff516a8d67f15"
+        }
+      ]
+    }
+  ],
+  "editor": [
+    {
+      "case": "editor-wake-spawn-dispatch",
+      "report": {
+        "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/preview-report.json",
+        "sha256": "ff68d6a5785b6af4aa5f6e2d54112fa22c3e0e359d4191931a46bc270719a831"
+      },
+      "matches": [
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-000.png",
+            "sha256": "a8bb91b2a64a216ce2746964c7d48bfc0d8c9ba6d0a535664580b010cec058d8"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-wake-depth-2026-10-30/frame-000.png",
+            "sha256": "a8bb91b2a64a216ce2746964c7d48bfc0d8c9ba6d0a535664580b010cec058d8"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-001.png",
+            "sha256": "25f0dae918574a8d5bbaaaddd136e424966c0f9f62f482da57183ef9407b851e"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-wake-depth-2026-10-30/frame-001.png",
+            "sha256": "25f0dae918574a8d5bbaaaddd136e424966c0f9f62f482da57183ef9407b851e"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-002.png",
+            "sha256": "ad197a650952b98fe8910b0636d3340e3d4f20be1538b019befa2f08f08ebce1"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-wake-depth-2026-10-30/frame-002.png",
+            "sha256": "ad197a650952b98fe8910b0636d3340e3d4f20be1538b019befa2f08f08ebce1"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-003.png",
+            "sha256": "03e9bacb427c1094af9f29e9343b26ad69a6e667012dab197c87988e7f72062e"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-wake-depth-2026-10-30/frame-003.png",
+            "sha256": "03e9bacb427c1094af9f29e9343b26ad69a6e667012dab197c87988e7f72062e"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-004.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-wake-depth-2026-10-30/frame-004.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-wake-spawn-dispatch-2026-10-30/frame-005.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-wake-depth-2026-10-30/frame-005.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "rgb_equal": true
+        }
+      ]
+    },
+    {
+      "case": "editor-plume-spawn-dispatch",
+      "report": {
+        "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/preview-report.json",
+        "sha256": "5bb73bb2f13ef1136911f655de8621f9cd33b9b66632b1c2f03537476415334b"
+      },
+      "matches": [
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/frame-000.png",
+            "sha256": "11ccea4f27e791c18ac3b132635a14c259be18c38fe04e4b968cbede94870948"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-depth-2026-10-30/frame-000.png",
+            "sha256": "11ccea4f27e791c18ac3b132635a14c259be18c38fe04e4b968cbede94870948"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/frame-001.png",
+            "sha256": "bf85ace78b0ca9c0e22a072dab66d7c05cd1047595bb05e27a87ae26e7f675dd"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-depth-2026-10-30/frame-001.png",
+            "sha256": "bf85ace78b0ca9c0e22a072dab66d7c05cd1047595bb05e27a87ae26e7f675dd"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/frame-002.png",
+            "sha256": "455d0c4e2da58530d7470bc1b92a1c17961b7123d182d8ed6b485315ede2fb85"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-depth-2026-10-30/frame-002.png",
+            "sha256": "455d0c4e2da58530d7470bc1b92a1c17961b7123d182d8ed6b485315ede2fb85"
+          },
+          "rgb_equal": true
+        },
+        {
+          "candidate": {
+            "path": "target/fireworks-f8/editor-plume-spawn-dispatch-2026-10-30/frame-003.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "baseline": {
+            "path": "target/fireworks-f8/editor-smoke-depth-2026-10-30/frame-003.png",
+            "sha256": "af39eba153dfbc56a9e0d6beafee7f31df5a9c562f3e21c3c8ce55dbc32c2f46"
+          },
+          "rgb_equal": true
+        }
+      ]
+    }
+  ],
+  "source_inputs": [
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/stateful_simulation.rs",
+      "sha256": "b4c23b3540615017d54c2cb039f2aa2fb98348fafe72802f96fc2a7625d8a3cf"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/coupled_simulation.rs",
+      "sha256": "9ae08f877c164eb446aa233d9d4071b1432e7297bcf32c9ae30b72f28dad13c0"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/encoding_profile.rs",
+      "sha256": "ff60671aeb11828a09139bae19405b175d8832ef91c9db6a2924c887da855218"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/tests/stateful_spawn.rs",
+      "sha256": "57d4b3728d12b719bda8d3c0452ac7c4ca06d382fae5e8fc7266122df572a934"
+    }
+  ],
+  "control_binary": {
+    "path": "target/fireworks-f8/frozen-tier-finale-release-2026-10-30.exe",
+    "sha256": "9b2eced43e73ef08b5d2a821990aea43e8b74a32e1188c3db18b8c95cd6858c8"
+  },
+  "candidate_binary": {
+    "path": "target/fireworks-f8/spawn-dispatch-release-2026-10-30.exe",
+    "sha256": "f85eedf54d49bfbc090809c5d66de8006394f22f8cb55f044b8d423b39c890f6"
+  },
+  "viewer_binary": {
+    "path": "target/release/aestra-viewer.exe",
+    "sha256": "c8c55f3aecabfadcd22362f70fd2085710388b32d8c507563c4214fc1f93e9ce"
+  },
+  "frozen_shared_smoke_inputs": [
+    {
+      "path": "crates/aestra-gpu/src/shaders/advected_smoke.wesl",
+      "sha256": "c38f4b4e35ee3c05fe8517026c20747fd07ea50c072d5eeab854e30e6bfad848"
+    },
+    {
+      "path": "sample-project/effects/smoke_material_lab.aestra.ron",
+      "sha256": "d8d5800001a0609b484a85b68af392598517fa699157bff3257f97deb4af0452"
+    },
+    {
+      "path": "sample-project/effects/smoke_wake_lab.aestra.ron",
+      "sha256": "d2d39fa5452785be200a92e14db8db186069f92f7b5cd68f292d0b8ed7ddc68e"
+    },
+    {
+      "path": "sample-project/materials/advected_smoke.aestra.material.ron",
+      "sha256": "ee9ecbd0cf6d636fae90e05c3e756adb37019911fd796c9c324f648e57a7e882"
+    },
+    {
+      "path": "sample-project/materials/advected_smoke_density.aestra.material-function.ron",
+      "sha256": "15f78870990360eea54876e28c26157964e641f0b8620d3f14e0f92699852d5c"
+    }
+  ],
+  "original_showcase_hashes_verified": 97,
+  "retained_images": [
+    {
+      "path": "benchmarks/fireworks/reviews/f9-spawn-dispatch-2026-10-30/editor-wake-7s.png",
+      "sha256": "03e9bacb427c1094af9f29e9343b26ad69a6e667012dab197c87988e7f72062e"
+    },
+    {
+      "path": "benchmarks/fireworks/reviews/f9-spawn-dispatch-2026-10-30/finale-low-8s.png",
+      "sha256": "d00d2b395ca7059e912e1714274dc180ccee10cca7c5bf310b4ed10ad873cbc2"
+    }
+  ],
+  "demo_images": 33,
+  "editor_images": 10,
+  "limits": [
+    "One fresh low control/candidate pair; medium is an additional candidate observation",
+    "CPU encoding counters count scheduled ticks and actual spawn dispatches, not driver execution traces",
+    "Independent forward demo runs are not frame-exact image pairs",
+    "Event/input/domain births and integration are unchanged; remaining GPU scopes are not optimized by this pass"
+  ]
+}

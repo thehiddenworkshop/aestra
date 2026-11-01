@@ -1,0 +1,203 @@
+(
+    id: "a3574a00-0000-4000-8000-000000fb054c",
+    schema_version: 1,
+    name: "Grained Cooling Filament",
+    domain: Ribbon,
+    render_state_policy: (
+        default: (
+            blend: Additive,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0220",
+            name: "Grain amount",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(0.85)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0221",
+            name: "Spatial frequency",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(1.8)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0222",
+            name: "Color cooling",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(0.55)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb05a6",
+            name: "Radiance gain",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(1.0)),
+        ),
+    ],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0300",
+            kind: Input(WorldPosition),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0301",
+            kind: Input(ParticleRandom),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0302",
+            kind: Input(ParticleNormalizedAge),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0303",
+            kind: Parameter("a3574a00-0000-4000-8000-000000fb0220"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0304",
+            kind: Parameter("a3574a00-0000-4000-8000-000000fb0221"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0305",
+            kind: Parameter("a3574a00-0000-4000-8000-000000fb0222"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0306",
+            kind: FunctionCall(
+                function: Project("a3574a00-0000-4000-8000-000000fb0200"),
+                arguments: {
+                    "a3574a00-0000-4000-8000-000000fb0210": "a3574a00-0000-4000-8000-000000fb0300",
+                    "a3574a00-0000-4000-8000-000000fb0211": "a3574a00-0000-4000-8000-000000fb0301",
+                    "a3574a00-0000-4000-8000-000000fb0212": "a3574a00-0000-4000-8000-000000fb0302",
+                    "a3574a00-0000-4000-8000-000000fb0213": "a3574a00-0000-4000-8000-000000fb0303",
+                    "a3574a00-0000-4000-8000-000000fb0214": "a3574a00-0000-4000-8000-000000fb0304",
+                    "a3574a00-0000-4000-8000-000000fb0215": "a3574a00-0000-4000-8000-000000fb0305",
+                },
+                output: "a3574a00-0000-4000-8000-000000fb0201",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0307",
+            kind: Multiply("a3574a00-0000-4000-8000-000000fb055d", "a3574a00-0000-4000-8000-000000fb0306"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb054d",
+            kind: Input(ParticleColor),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb054e",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb054f",
+            kind: Input(RibbonUv),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0550",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0551",
+            kind: Constant(Float(1.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0552",
+            kind: ExtractComponent(
+                value: "a3574a00-0000-4000-8000-000000fb054f",
+                component: Y,
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0553",
+            kind: Constant(Float(0.5)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0554",
+            kind: Subtract("a3574a00-0000-4000-8000-000000fb0552", "a3574a00-0000-4000-8000-000000fb0553"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0555",
+            kind: Multiply("a3574a00-0000-4000-8000-000000fb0554", "a3574a00-0000-4000-8000-000000fb0554"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0556",
+            kind: Constant(Float(0.25)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0557",
+            kind: Smoothstep(
+                edge_min: "a3574a00-0000-4000-8000-000000fb0550",
+                edge_max: "a3574a00-0000-4000-8000-000000fb0556",
+                value: "a3574a00-0000-4000-8000-000000fb0555",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0558",
+            kind: Subtract("a3574a00-0000-4000-8000-000000fb0551", "a3574a00-0000-4000-8000-000000fb0557"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0559",
+            kind: Multiply("a3574a00-0000-4000-8000-000000fb054e", "a3574a00-0000-4000-8000-000000fb0558"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb055a",
+            kind: Parameter("a3574a00-0000-4000-8000-000000fb05a6"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb055b",
+            kind: Constant(Float(64.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb055c",
+            kind: Clamp(
+                value: "a3574a00-0000-4000-8000-000000fb055a",
+                min: "a3574a00-0000-4000-8000-000000fb0550",
+                max: "a3574a00-0000-4000-8000-000000fb055b",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb055d",
+            kind: Multiply("a3574a00-0000-4000-8000-000000fb054d", "a3574a00-0000-4000-8000-000000fb055c"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb055e",
+            kind: ExtractComponent(
+                value: "a3574a00-0000-4000-8000-000000fb054f",
+                component: X,
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb055f",
+            kind: Constant(Float(0.75)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0560",
+            kind: Smoothstep(
+                edge_min: "a3574a00-0000-4000-8000-000000fb0550",
+                edge_max: "a3574a00-0000-4000-8000-000000fb055f",
+                value: "a3574a00-0000-4000-8000-000000fb055e",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000fb0561",
+            kind: Multiply("a3574a00-0000-4000-8000-000000fb0559", "a3574a00-0000-4000-8000-000000fb0560"),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-000000fb0307",
+        alpha: "a3574a00-0000-4000-8000-000000fb0561",
+    ),
+)

@@ -1,0 +1,76 @@
+(
+    id: "a3574a00-0000-4000-8000-000000f8d600",
+    schema_version: 1,
+    name: "Fireworks Curled Filament Smoke",
+    inputs: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d601",
+            name: "UV",
+            value_type: Vec2,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d602",
+            name: "Seed",
+            value_type: Float,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d603",
+            name: "Normalized age",
+            value_type: Float,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d606",
+            name: "World position",
+            value_type: Vec3,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d607",
+            name: "Fresh core",
+            value_type: Float,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d608",
+            name: "Effect time",
+            value_type: Float,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d609",
+            name: "Pattern velocity",
+            value_type: Vec3,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d60a",
+            name: "Edge feather",
+            value_type: Float,
+            default: Some(Float(0.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d60b",
+            name: "Billow breakup",
+            value_type: Float,
+            default: Some(Float(0.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d60c",
+            name: "Depth variation",
+            value_type: Bool,
+            default: Some(Bool(false)),
+        ),
+    ],
+    outputs: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d604",
+            name: "Density",
+            value_type: Float,
+            expression: "a3574a00-0000-4000-8000-000000f8d605",
+        ),
+    ],
+    expressions: [],
+    custom_wesl: Some((
+        evaluation_domain: Fragment,
+        source: "fn billow(uv: vec2<f32>, seed: f32, age: f32, world: vec3<f32>, core: f32, time: f32, flow: vec3<f32>, feather: f32, breakup: f32, depth: bool) -> f32 {\n    let softness = clamp(feather, 0.0, 1.0);\n    let structure = clamp(breakup, 0.0, 1.0);\n    let spread = smoothstep(0.10, 0.75, age);\n    let angle = (seed - 0.5) * mix(6.2831853, 1.2, softness) * spread;\n    let centered = uv - vec2<f32>(0.5);\n    let rotated = vec2<f32>(cos(angle) * centered.x - sin(angle) * centered.y,\n        sin(angle) * centered.x + cos(angle) * centered.y);\n    // Curve the strand\'s spine; avoid a stack of identically round puffs.\n    let curled = rotated + vec2<f32>(0.09 * sin(rotated.y * 10.0 + seed * 13.0 + age * 0.8), 0.0);\n    // Every sample in this effect shares one advected field. Particle seed/age\n    // cannot shift its phase independently. Effect time freezes with playback;\n    // zero flow recovers the previous world-anchored pattern.\n    let advected = world - flow * time;\n    var p = advected.xy * vec2<f32>(0.28, 0.38) + advected.z * vec2<f32>(0.17, 0.23);\n    var spatial = advected * vec3<f32>(0.28, 0.38, 0.28);\n    let weights = array<f32, 3>(0.80, 0.16, 0.04);\n    var n = 0.0;\n    var broad = 0.0;\n    for (var octave = 0u; octave < 3u; octave += 1u) {\n        var sample = 0.0;\n        if depth {\n            // All three world axes affect density independently. The projected\n            // control repeats along one oblique axis; it remains available below.\n            let i = floor(spatial);\n            let f = fract(spatial);\n            let u = f * f * (vec3<f32>(3.0) - 2.0 * f);\n            var corners: array<f32, 8>;\n            for (var corner = 0u; corner < 8u; corner += 1u) {\n                let point = i + vec3<f32>(f32(corner % 2u), f32((corner / 2u) % 2u), f32(corner / 4u));\n                var q = fract(point * 0.1031);\n                q += vec3<f32>(dot(q, q.yzx + vec3<f32>(33.33)));\n                corners[corner] = fract((q.x + q.y) * q.z);\n            }\n            sample = mix(\n                mix(mix(corners[0], corners[1], u.x), mix(corners[2], corners[3], u.x), u.y),\n                mix(mix(corners[4], corners[5], u.x), mix(corners[6], corners[7], u.x), u.y), u.z);\n        } else {\n            let i = floor(p);\n            let f = fract(p);\n            let u = f * f * (vec2<f32>(3.0) - 2.0 * f);\n            var corners: array<f32, 4>;\n            for (var corner = 0u; corner < 4u; corner += 1u) {\n                let point = i + vec2<f32>(f32(corner % 2u), f32(corner / 2u));\n                var q = fract(vec3<f32>(point.x, point.y, point.x) * 0.1031);\n                q += vec3<f32>(dot(q, q.yzx + vec3<f32>(33.33)));\n                corners[corner] = fract((q.x + q.y) * q.z);\n            }\n            sample = mix(mix(corners[0], corners[1], u.x), mix(corners[2], corners[3], u.x), u.y);\n        }\n        if octave == 0u { broad = sample; }\n        n += sample * weights[octave];\n        // Domain distortion uses the existing octaves, rather than another noise stack.\n        p = p * 2.03 + vec2<f32>(7.1 + n * 0.35, 7.1 - n * 0.3);\n        spatial = spatial * 2.03 + vec3<f32>(7.1 + n * 0.35, 7.1 - n * 0.3, 7.1 + n * 0.2);\n    }\n    let anisotropy = mix(vec2<f32>(0.95, 0.60), vec2<f32>(0.75, 1.15), spread);\n    let warped = curled * anisotropy + vec2<f32>(n - 0.5, 0.5 - n) * 0.16;\n    // Expansion comes from the authored particle size, not a second widening\n    // envelope. Most old samples dilute into thin fragments rather than fog.\n    let cloud = smoothstep(0.60, 0.85, seed);\n    let radius = length(warped) / mix(0.42, mix(0.28, 0.40, cloud), spread);\n    // Contract the envelope unevenly using the shared coarse field. Never widen\n    // the old footprint: thin paths must not become overlapping circular sheets.\n    let normalized = radius * (1.0 + structure * (0.15 + 0.75 * (1.0 - broad)) * spread);\n    // Feather the whole outer envelope, not just its last narrow rim. A modest\n    // core compensation retains body while suppressing independent puff edges.\n    // Zero softness retains the original envelope and rotation range.\n    let edge = exp(-1.5 * normalized * normalized)\n        * (1.0 - smoothstep(mix(0.72, 0.32, softness), 1.0, normalized))\n        * mix(1.0, 1.16, softness);\n    // Fresh deposits retain a soft core across low-noise cells; otherwise a\n    // coherent field merely turns individual beads into long empty wake gaps.\n    let density = smoothstep(0.14, 0.85, n);\n    let fresh = mix(density, 0.35 + 0.65 * density, clamp(core, 0.0, 1.0));\n    let original = mix(fresh, smoothstep(0.34, 0.85, n), spread);\n    // Reuse detail already sampled above to break older smoke into wisps. No\n    // independent per-particle noise phase or extra noise octaves are introduced.\n    let filament = clamp(n + (n - broad) * 2.0, 0.0, 1.0);\n    let broken = smoothstep(mix(0.17, 0.31, spread), 0.78, filament);\n    let continuity = clamp(core, 0.0, 1.0) * (1.0 - spread);\n    let erosion = mix(original, broken, structure * (1.0 - 0.8 * continuity));\n    let tile = 1.0 - smoothstep(0.34, 0.50, max(abs(centered.x), abs(centered.y)));\n    return edge * erosion * tile * (0.85 + 0.15 * seed);\n}\n",
+        entry_points: {
+            "a3574a00-0000-4000-8000-000000f8d604": "billow",
+        },
+    )),
+)

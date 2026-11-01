@@ -1,6 +1,7 @@
 use aestra_artifact::{
     ARTIFACT_MAGIC, ArtifactError, CURRENT_ARTIFACT_VERSION, decode_effect, encode_effect,
 };
+
 use aestra_compiler::EffectCompiler;
 use aestra_core::{
     AssetId, AssetKind, ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, Curve,
@@ -703,4 +704,68 @@ fn compiled_fixture() -> aestra_runtime::CompiledEffect {
         .renderers
         .insert(RendererCapability::FlipbookParticles);
     compiled
+}
+
+#[test]
+fn spatial_flow_survives_offline_baking_with_its_seed_and_coordinate_contract() {
+    let mut source = EffectAsset::new("Flow artifact", 4.0);
+    let mut emitter = Emitter::basic_sprite("Smoke", 4.0);
+    let flow = aestra_core::spatial_flow::SpatialFlow {
+        seed: u32::MAX,
+        space: aestra_core::spatial_flow::FlowSpace::World,
+        ..Default::default()
+    };
+    emitter
+        .modules
+        .push(aestra_core::ModuleInstance::spatial_flow(flow));
+    source.emitters.push(emitter);
+    let compiled = EffectCompiler::default().compile(&source).unwrap();
+    let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(restored.emitters[0].spatial_flow, Some(flow));
+    assert_eq!(
+        restored.emitters[0].simulation_class,
+        compiled.emitters[0].simulation_class
+    );
+    let mut malformed = compiled;
+    malformed.emitters[0].simulation_class = aestra_runtime::SimulationClass::Analytic;
+    assert!(decode_effect(&encode_effect(&malformed).unwrap()).is_err());
+}
+
+#[test]
+fn sampling_survives_baking_and_rejects_invalid_configuration() {
+    use aestra_core::particle_sampling::*;
+    let mut source = EffectAsset::new("Sampling artifact", 4.0);
+    let mut emitter = Emitter::basic_sprite("Shell", 4.0);
+    let sampling = ParticleSampling {
+        seed: u32::MAX,
+        sequence_count: 7,
+        ..Default::default()
+    };
+    emitter
+        .modules
+        .push(aestra_core::ModuleInstance::particle_sampling(sampling));
+    source.emitters.push(emitter);
+    let mut compiled = EffectCompiler::default().compile(&source).unwrap();
+    let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(restored.emitters[0].particle_sampling, Some(sampling));
+    compiled.emitters[0]
+        .particle_sampling
+        .as_mut()
+        .unwrap()
+        .directions = SamplingMode::Stratified;
+    assert!(
+        decode_effect(&encode_effect(&compiled).unwrap()).is_err(),
+        "malformed artifacts must not bypass velocity compatibility"
+    );
+    compiled.emitters[0]
+        .particle_sampling
+        .as_mut()
+        .unwrap()
+        .directions = SamplingMode::Legacy;
+    compiled.emitters[0]
+        .particle_sampling
+        .as_mut()
+        .unwrap()
+        .sequence_count = 0;
+    assert!(decode_effect(&encode_effect(&compiled).unwrap()).is_err());
 }

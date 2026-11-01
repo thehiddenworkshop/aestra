@@ -1,4 +1,5 @@
 //! Shared lockstep particle/domain/event scheduling and stateful reset/telemetry.
+use super::phase_timing::{self, GpuSimulationPhase};
 use super::{
     catchup_pacing::{CatchupPacer, stateful_catchup_budget},
     effect_inputs::{RouteWiring, StatefulDispatch, event_link_counter_base},
@@ -207,7 +208,9 @@ pub(super) fn run_coupled_stateful(
                 stateful_tick_time(now),
             );
         }
+        let timing = phase_timing::begin(encoder, GpuSimulationPhase::History);
         trails.record(encoder, now);
+        phase_timing::end(encoder, timing);
     }
     // Temporarily move the effect-owned scratch out so ticking any emitter can
     // borrow the state slice. Restore ownership before returning. Buffer contents
@@ -249,12 +252,17 @@ pub(super) fn run_coupled_stateful(
                 warn!("coupled domain stopped: {error}");
             }
         }
+        let particle_timing = phase_timing::begin(encoder, GpuSimulationPhase::Particles);
         for (index, (dispatch, persistent)) in dispatches
             .iter()
             .zip(persistent_states.iter_mut())
             .enumerate()
         {
-            let (group, params) = stateful_tick_group(
+            let StatefulTickGroup {
+                group,
+                params,
+                spawn_workgroups,
+            } = stateful_tick_group(
                 device,
                 layout,
                 persistent,
@@ -275,8 +283,18 @@ pub(super) fn run_coupled_stateful(
                 pass.set_bind_group(0, &group, &[]);
                 pass.set_pipeline(death_integrate);
                 pass.dispatch_workgroups(workgroups, 1, 1);
-                pass.set_pipeline(spawn);
-                pass.dispatch_workgroups(workgroups, 1, 1);
+                let _spawn_scope = super::encoding_profile::scope(
+                    super::encoding_profile::Operation::StatefulSpawn,
+                    0,
+                    0,
+                    0,
+                    0,
+                    u64::from(spawn_workgroups > 0),
+                );
+                if spawn_workgroups > 0 {
+                    pass.set_pipeline(spawn);
+                    pass.dispatch_workgroups(spawn_workgroups, 1, 1);
+                }
             }
             // Particles the domain asked for this tick are born after the emitter's own (fluid F10).
             if let Some(spawn) = &dispatch.domain_spawn
@@ -317,6 +335,8 @@ pub(super) fn run_coupled_stateful(
             }
             tick_params.push(params);
         }
+        phase_timing::end(encoder, particle_timing);
+        let event_timing = phase_timing::begin(encoder, GpuSimulationPhase::Events);
         // Event links (host bindings HB9b): after every emitter's tick, each link's events of it
         // become its target's particles, in link order.
         for ((index, source, target, link), slot) in link_ends.iter().zip(&mut lists) {
@@ -445,6 +465,7 @@ pub(super) fn run_coupled_stateful(
                 }
             }
         }
+        phase_timing::end(encoder, event_timing);
         // Checkpoints capture each emitter after the tick's event spawns.
         for persistent in persistent_states.iter_mut() {
             persistent.last_tick += 1;
@@ -471,12 +492,14 @@ pub(super) fn run_coupled_stateful(
                     stateful_tick_time(next),
                 );
             }
+            let timing = phase_timing::begin(encoder, GpuSimulationPhase::History);
             trails.record(encoder, next);
             if next.is_multiple_of(STATEFUL_CHECKPOINT_CADENCE)
                 && persistent_states.iter().all(|state| !state.mixed_placement)
             {
                 checkpoint_capture_bytes += trails.capture(device, encoder, next);
             }
+            phase_timing::end(encoder, timing);
         }
     }
     // With histories, the canonical final tick is already presented and stamped;
@@ -498,7 +521,9 @@ pub(super) fn run_coupled_stateful(
                 stateful_tick_time(now),
             );
         }
+        let timing = phase_timing::begin(encoder, GpuSimulationPhase::History);
         trails.record(encoder, now);
+        phase_timing::end(encoder, timing);
     }
     if trails.is_none() {
         for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {

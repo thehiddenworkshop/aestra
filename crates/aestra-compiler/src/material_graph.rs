@@ -441,6 +441,11 @@ impl MaterialCompiler {
                                 format!("{} · {}", function.name, output.name)
                             },
                             category: match reference {
+                                MaterialFunctionRef::BuiltIn(_)
+                                    if functions.builtin_noise(reference).is_some() =>
+                                {
+                                    "Noise".to_owned()
+                                }
                                 MaterialFunctionRef::BuiltIn(_) => "Built-in Functions".to_owned(),
                                 MaterialFunctionRef::Project(_) => "Project Functions".to_owned(),
                             },
@@ -832,6 +837,18 @@ fn append_graph_function_call(
     for input in inputs {
         let expression = if Some(input.id) == source_input {
             source.expect("a selected function input requires a source")
+        } else if input.id == aestra_core::noise::POSITION
+            && functions.builtin_noise(reference).is_some()
+        {
+            let noise = functions.builtin_noise(reference).unwrap();
+            append_graph_expression(
+                program,
+                MaterialExpressionKind::Input(if noise.dimensions == 2 {
+                    MaterialInput::Uv0
+                } else {
+                    MaterialInput::WorldPosition
+                }),
+            )
         } else {
             let value = input
                 .default

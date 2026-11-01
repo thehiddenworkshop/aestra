@@ -46,8 +46,8 @@ const RENDERER_VERSION: u32 = 2;
 ///   uses no `HashMap`, so their serialization is deterministic), and
 /// - the file fingerprint of every referenced texture and mesh.
 ///
-/// Material *functions* are excluded: background previews do not run function
-/// calls (`effect::prepare` clears them), so they never affect the render.
+/// Reachable material functions are included when referenced. Unrelated project
+/// functions do not invalidate effects that do not use them.
 ///
 /// Returns `None` if any referenced asset's fingerprint is unavailable, so the
 /// caller treats it as a cache miss and never writes a key that might not
@@ -62,6 +62,40 @@ pub(super) fn resolved_fingerprint(
     serialize_hash(&resolved.root, &mut hasher)?;
     serialize_hash(&resolved.dependencies, &mut hasher)?;
     serialize_hash(&resolved.material_programs, &mut hasher)?;
+
+    let mut pending: Vec<_> = resolved
+        .material_programs
+        .values()
+        .flat_map(|p| &p.expressions)
+        .filter_map(|e| match e.kind {
+            MaterialExpressionKind::FunctionCall {
+                function: aestra_core::material::MaterialFunctionRef::Project(id),
+                ..
+            } => Some(id),
+            _ => None,
+        })
+        .collect();
+    let mut functions = BTreeMap::new();
+    while let Some(id) = pending.pop() {
+        if functions.contains_key(&id) {
+            continue;
+        }
+        if functions.len() >= 64 {
+            return None;
+        }
+        let function = resolved.material_functions.get(&id)?;
+        pending.extend(function.expressions.iter().filter_map(|e| match e.kind {
+            MaterialExpressionKind::FunctionCall {
+                function: aestra_core::material::MaterialFunctionRef::Project(id),
+                ..
+            } => Some(id),
+            _ => None,
+        }));
+        functions.insert(id, function);
+    }
+    if !functions.is_empty() {
+        serialize_hash(&functions, &mut hasher)?;
+    }
 
     // File fingerprints of every referenced texture/mesh, order-independent.
     let mut asset_fingerprints = Vec::new();
@@ -312,6 +346,39 @@ mod tests {
     fn identical_input_yields_identical_key() {
         let project = sample();
         assert_eq!(key(&project, |_| Some(0)), key(&project, |_| Some(0)),);
+    }
+
+    #[test]
+    fn effect_key_tracks_referenced_smoke_function_but_not_unrelated_functions() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+        let effect =
+            EffectAsset::load_ron(root.join("effects/smoke_material_lab.aestra.ron")).unwrap();
+        let project = aestra_project::ProjectAssetIndex::scan(&root)
+            .resolve_effect_project(&effect)
+            .unwrap();
+        let base = key(&project, |_| Some(0));
+        assert!(base.is_some());
+        let mut changed = project.clone();
+        let id = MaterialFunctionId::from_u128(0xa3574a00_0000_4000_8000_000000f8d600);
+        changed
+            .material_functions
+            .get_mut(&id)
+            .unwrap()
+            .custom_wesl
+            .as_mut()
+            .unwrap()
+            .source
+            .push_str("\n// edited");
+        assert_ne!(base, key(&changed, |_| Some(0)));
+        let mut unrelated = project.clone();
+        let mut extra = project.material_functions[&id].clone();
+        extra.id = MaterialFunctionId::from_u128(0xDEAD);
+        extra.name = "Unrelated".into();
+        unrelated.material_functions.insert(extra.id, extra);
+        assert_eq!(base, key(&unrelated, |_| Some(0)));
+        let mut missing = project;
+        missing.material_functions.remove(&id);
+        assert!(key(&missing, |_| Some(0)).is_none());
     }
 
     #[test]

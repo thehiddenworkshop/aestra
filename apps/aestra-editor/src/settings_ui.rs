@@ -80,6 +80,8 @@ enum SettingsToggle {
     ShowGrid,
     PlayOnOpen,
     PhotographicPreview,
+    WaterPreview,
+    WaterReflections,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -352,6 +354,22 @@ fn spawn_settings_category(
             );
         }
         SettingsCategory::Preview => {
+            spawn_settings_toggle(
+                parent,
+                &localizer.text("settings-preview-water"),
+                &localizer.text("settings-preview-water-description"),
+                settings.preview.water_enabled,
+                SettingsToggle::WaterPreview,
+                localizer,
+            );
+            spawn_settings_toggle(
+                parent,
+                &localizer.text("settings-preview-water-reflections"),
+                &localizer.text("settings-preview-water-reflections-description"),
+                settings.preview.water_reflections,
+                SettingsToggle::WaterReflections,
+                localizer,
+            );
             spawn_settings_toggle(
                 parent,
                 &localizer.text("settings-viewport-grid"),
@@ -908,6 +926,16 @@ fn apply_settings_toggle(
             settings.preview.photographic_enabled = value;
             changed
         }
+        SettingsToggle::WaterPreview => {
+            let changed = settings.preview.water_enabled != value;
+            settings.preview.water_enabled = value;
+            changed
+        }
+        SettingsToggle::WaterReflections => {
+            let changed = settings.preview.water_reflections != value;
+            settings.preview.water_reflections = value;
+            changed
+        }
     }
 }
 
@@ -1250,6 +1278,29 @@ mod tests {
     fn controls_apply_persisted_constraints() {
         let mut settings = EditorSettings::default();
         let mut menu = MenuState::default();
+        assert!(apply_settings_toggle(
+            &mut settings,
+            &mut menu,
+            SettingsToggle::WaterPreview,
+            true
+        ));
+        assert!(settings.preview.water_enabled);
+        assert!(
+            settings.preview.show_grid && menu.show_grid,
+            "water does not erase the grid preference"
+        );
+        assert!(!apply_settings_toggle(
+            &mut settings,
+            &mut menu,
+            SettingsToggle::WaterPreview,
+            true
+        ));
+        assert!(apply_settings_toggle(
+            &mut settings,
+            &mut menu,
+            SettingsToggle::WaterPreview,
+            false
+        ));
 
         assert!(apply_settings_toggle(
             &mut settings,

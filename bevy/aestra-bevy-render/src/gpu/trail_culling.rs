@@ -78,13 +78,14 @@ fn init_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: Res<Pi
     commands.insert_resource(TrailCullPipeline { layout, pipeline });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn prepare(
     views: Query<(
         Entity,
         &ExtractedView,
         Option<&TemporalJitter>,
         Option<&MainPassResolutionOverride>,
+        Has<crate::preview::planar::ReflectionView>,
     )>,
     draws: Query<(Entity, &GpuDrawInstance)>,
     effects: Query<&GpuEffectBuffers>,
@@ -102,7 +103,7 @@ fn prepare(
         .iter()
         .map(|effect| (effect.render_globals.id(), effect.history_epoch))
         .collect();
-    for (view_entity, view, jitter, resolution) in &views {
+    for (view_entity, view, jitter, resolution, reflection) in &views {
         // Until we consume the exact jittered view uniform, opt out for TAA views.
         if jitter.is_some() {
             continue;
@@ -119,6 +120,9 @@ fn prepare(
         let pixel_radius_per_clip_w = super::sprite_culling::prepare(view, resolution, false)
             .map_or(0.0, |view| view.pixel_radius_per_clip_w());
         for (draw_entity, draw) in &draws {
+            if reflection && !super::render::reflection_eligible(draw) {
+                continue;
+            }
             let Some(instance_count) = draw.trail_instances else {
                 continue;
             };

@@ -1,6 +1,7 @@
 //! Read-only, bounded previews of the current project page. No AssetServer full-size loads.
 mod disk_cache;
 mod effect;
+mod functions;
 mod material;
 mod mesh;
 use super::{
@@ -495,9 +496,23 @@ fn update(
             _ => None,
         };
         let gpu_material = render.enabled()
-            && material_program
-                .as_ref()
-                .is_some_and(|program| program.as_ref().is_ok_and(material::wants_gpu));
+            && material_program.as_ref().is_some_and(|program| {
+                program.as_ref().is_ok_and(|program| {
+                    material::wants_gpu(program)
+                        || (program.expressions.iter().any(|e| {
+                            matches!(
+                                e.kind,
+                                aestra_core::material::MaterialExpressionKind::FunctionCall { .. }
+                            )
+                        }) && material::wants_shared_smoke_gpu(
+                            program,
+                            &catalog
+                                .content()
+                                .cached_material_functions()
+                                .unwrap_or_default(),
+                        ))
+                })
+            });
         let is_gpu = is_effect || gpu_material;
         // Load an effect thumbnail from the on-disk cache before rendering: a hit
         // needs no worker slot (just a PNG decode) and no live renderer. Recording

@@ -89,7 +89,12 @@ pub(super) fn sync_gpu_render_transforms(
                     _ => {}
                 }
             }
-            if world_colliders || physics_colliders {
+            if world_colliders
+                || physics_colliders
+                || dispatch
+                    .spatial_flow
+                    .is_some_and(|f| f.space == aestra_core::spatial_flow::FlowSpace::World)
+            {
                 dispatch.world_from_effect = std::array::from_fn(|row| {
                     let r = world.row(row);
                     [r.x, r.y, r.z, r.w]

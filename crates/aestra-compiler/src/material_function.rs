@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct MaterialFunctionLibrary {
     built_ins: BTreeMap<MaterialFunctionId, MaterialFunction>,
     project: BTreeMap<MaterialFunctionId, MaterialFunction>,
+    noise: BTreeMap<MaterialFunctionId, aestra_core::noise::NoiseFunction>,
 }
 
 impl Default for MaterialFunctionLibrary {
@@ -24,6 +25,7 @@ impl Default for MaterialFunctionLibrary {
         let mut library = Self {
             built_ins: BTreeMap::new(),
             project: BTreeMap::new(),
+            noise: BTreeMap::new(),
         };
         for function in built_in_material_functions() {
             library.register_builtin(function);
@@ -50,7 +52,25 @@ impl MaterialFunctionLibrary {
     }
 
     pub fn register_builtin(&mut self, function: MaterialFunction) -> Option<MaterialFunction> {
+        self.noise.remove(&function.id);
+        if let Some(kind) = aestra_core::noise::NoiseFunction::from_id(function.id)
+            && function == crate::material_noise::definition(kind)
+        {
+            self.noise.insert(function.id, kind);
+        }
         self.built_ins.insert(function.id, function)
+    }
+
+    /// Only canonical, unmodified built-ins use the shared CPU evaluator.
+    /// Project functions or host overrides with the same ID cannot impersonate it.
+    pub fn builtin_noise(
+        &self,
+        reference: MaterialFunctionRef,
+    ) -> Option<aestra_core::noise::NoiseFunction> {
+        match reference {
+            MaterialFunctionRef::BuiltIn(id) => self.noise.get(&id).copied(),
+            MaterialFunctionRef::Project(_) => None,
+        }
     }
 
     pub fn get(&self, reference: MaterialFunctionRef) -> Option<&MaterialFunction> {
@@ -133,7 +153,7 @@ pub fn built_in_material_functions() -> Vec<MaterialFunction> {
     let result_expression = MaterialExpressionId::from_u128(0xa3574a0000004000800000000000f024);
     let output_id = MaterialFunctionOutputId::from_u128(0xa3574a0000004000800000000000f031);
 
-    vec![MaterialFunction {
+    let mut functions = vec![MaterialFunction {
         id: function_id,
         schema_version: MaterialSchemaVersion::CURRENT,
         name: "Fresnel Rim".to_owned(),
@@ -186,7 +206,13 @@ pub fn built_in_material_functions() -> Vec<MaterialFunction> {
             },
         ],
         custom_wesl: None,
-    }]
+    }];
+    functions.extend(
+        aestra_core::noise::NoiseFunction::ALL
+            .into_iter()
+            .map(crate::material_noise::definition),
+    );
+    functions
 }
 
 impl MaterialCompiler {

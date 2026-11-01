@@ -343,6 +343,9 @@ pub struct StatefulSimulation {
     world: Option<ParticleWorld>,
     /// The physics scene `Physics` colliders collide with (host bindings HB10).
     physics: Option<ParticlePhysics>,
+    spatial_flow: Option<aestra_core::spatial_flow::SpatialFlow>,
+    particle_sampling: Option<aestra_core::particle_sampling::ParticleSampling>,
+    flow_world_from_effect: [[f32; 4]; 3],
 }
 
 impl StatefulSimulation {
@@ -366,6 +369,9 @@ impl StatefulSimulation {
             output_births: Vec::new(),
             world: None,
             physics: None,
+            spatial_flow: None,
+            particle_sampling: None,
+            flow_world_from_effect: crate::spatial_flow::IDENTITY,
         }
     }
 
@@ -373,6 +379,42 @@ impl StatefulSimulation {
     /// lost. Ignored without a homing config.
     pub fn set_homing_target(&mut self, target: Option<HomingTarget>) {
         self.homing_input = target;
+    }
+
+    /// Sets opt-in launch sampling; existing particles and birth counts are unchanged.
+    pub fn set_particle_sampling(
+        &mut self,
+        settings: Option<aestra_core::particle_sampling::ParticleSampling>,
+    ) -> Result<(), &'static str> {
+        if settings.is_some_and(|s| {
+            !s.is_valid()
+                || (s.directions != aestra_core::particle_sampling::SamplingMode::Legacy
+                    && self.config.velocity_distribution.is_legacy())
+        }) {
+            return Err("sampling requires valid settings and an explicit velocity mode");
+        }
+        self.particle_sampling = settings;
+        Ok(())
+    }
+    /// Changes acceleration for future ticks without moving existing particles or
+    /// allocating replay storage. Call before playback for repeatable authoring.
+    pub fn set_spatial_flow(
+        &mut self,
+        flow: Option<aestra_core::spatial_flow::SpatialFlow>,
+    ) -> Result<(), &'static str> {
+        if flow.is_some_and(|f| !f.is_valid()) {
+            return Err("invalid spatial flow settings");
+        }
+        self.spatial_flow = flow;
+        Ok(())
+    }
+    /// Supplies the current effect-to-world affine for World flow. Replay callers
+    /// must provide the corresponding pose at every replayed tick themselves.
+    pub fn set_flow_world_from_effect(&mut self, pose: [[f32; 4]; 3]) -> Result<(), &'static str> {
+        crate::spatial_flow::inverse_linear(pose)
+            .ok_or("flow pose must be finite and invertible")?;
+        self.flow_world_from_effect = pose;
+        Ok(())
     }
 
     /// Sets the world `World` colliders collide with from the next tick (host bindings HB10).
@@ -464,9 +506,21 @@ impl StatefulSimulation {
             .iter()
             .flat_map(|event| std::iter::repeat_n(event, count as usize))
             .take((crate::PARTICLE_EVENT_CAPACITY as usize).min(room));
-        for event in records {
+        for (child, event) in records.enumerate() {
             let ordinal = self.spawned;
-            let launch = launch_velocity(&self.config, self.seed, ordinal);
+            let index = child as u32 % count;
+            let cohort = crate::particle_sampling::SamplingCohort {
+                index,
+                count,
+                first: (ordinal as u32).wrapping_sub(index),
+            };
+            let launch = sampled_velocity(
+                &self.config,
+                self.seed,
+                self.particle_sampling,
+                ordinal,
+                cohort,
+            );
             let velocity =
                 std::array::from_fn(|axis| inherit * event.velocity[axis] + launch[axis]);
             let lifetime = lerp(
@@ -624,8 +678,22 @@ impl StatefulSimulation {
                 particle.age,
                 self.config.turbulence,
             );
+            let flow = self
+                .spatial_flow
+                .and_then(|flow| {
+                    crate::spatial_flow::acceleration(
+                        particle.position,
+                        self.tick as f32 * dt,
+                        flow,
+                        self.flow_world_from_effect,
+                    )
+                })
+                .unwrap_or([0.0; 3]);
             for (axis, &turb) in turbulence.iter().enumerate() {
-                let acceleration = self.config.gravity[axis] + turb;
+                let mut acceleration = self.config.gravity[axis] + turb;
+                if self.spatial_flow.is_some() {
+                    acceleration += flow[axis];
+                }
                 let with_acceleration = particle.velocity[axis] + acceleration * dt;
                 let damped = with_acceleration - drag * with_acceleration * dt;
                 particle.velocity[axis] = damped;
@@ -701,8 +769,37 @@ impl StatefulSimulation {
         };
         for _ in 0..spawn {
             let ordinal = self.spawned;
-            let mut velocity = launch_velocity(&self.config, self.seed, ordinal);
-            let mut position = launch_position(&self.config, self.seed, ordinal);
+            let cohort = crate::particle_sampling::SamplingCohort::sequence(
+                ordinal as u32,
+                self.particle_sampling.map_or(1, |s| s.sequence_count),
+            );
+            let mut velocity = sampled_velocity(
+                &self.config,
+                self.seed,
+                self.particle_sampling,
+                ordinal,
+                cohort,
+            );
+            let mut position = if let Some(s) = self
+                .particle_sampling
+                .filter(|s| s.positions != aestra_core::particle_sampling::SamplingMode::Legacy)
+            {
+                let shape = match self.config.shape {
+                    SpawnShape::Point => aestra_core::EmitterShape::Point,
+                    SpawnShape::Sphere { radius } => aestra_core::EmitterShape::Sphere { radius },
+                    SpawnShape::Box { half_extents } => {
+                        aestra_core::EmitterShape::Box { half_extents }
+                    }
+                };
+                crate::particle_sampling::position(
+                    s,
+                    self.seed as u32 ^ (self.seed >> 32) as u32,
+                    cohort,
+                    shape,
+                )
+            } else {
+                launch_position(&self.config, self.seed, ordinal)
+            };
             let placement = self.config.placement;
             if placement != SpawnPlacement::IDENTITY {
                 position = placement.point(position);
@@ -770,6 +867,35 @@ impl StatefulSimulation {
 /// unit vector to a spread cone, renormalized, and scaled by a per-particle random speed. Canonical for
 /// both this CPU reference and the GPU spawn kernel. Legacy sampling is
 /// trig-free/bit-exact; explicit F2 modes are checked within float tolerance.
+fn sampled_velocity(
+    config: &StatefulConfig,
+    seed: u64,
+    settings: Option<aestra_core::particle_sampling::ParticleSampling>,
+    ordinal: u64,
+    cohort: crate::particle_sampling::SamplingCohort,
+) -> [f32; 3] {
+    if let Some(s) =
+        settings.filter(|s| s.directions != aestra_core::particle_sampling::SamplingMode::Legacy)
+    {
+        let d = crate::particle_sampling::direction(
+            s,
+            seed as u32 ^ (seed >> 32) as u32,
+            cohort,
+            config.velocity_distribution,
+            config.direction,
+            config.spread,
+        );
+        let speed = lerp(
+            config.speed.0,
+            config.speed.1,
+            spawn_uniform(seed, ordinal, 0),
+        );
+        d.map(|v| v * speed)
+    } else {
+        launch_velocity(config, seed, ordinal)
+    }
+}
+
 fn launch_velocity(config: &StatefulConfig, seed: u64, ordinal: u64) -> [f32; 3] {
     let direction = if config.velocity_distribution.is_legacy() {
         let random_unit = launch_direction(seed, ordinal);
@@ -1848,3 +1974,7 @@ mod tests {
         assert!(simulation.live_count() <= 2, "only this tick's spawns live");
     }
 }
+
+#[cfg(test)]
+#[path = "tests/particle_sampling.rs"]
+mod sampling_tests;

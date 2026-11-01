@@ -3668,6 +3668,128 @@ mod tests {
     }
 
     #[test]
+    fn spatial_flow_choices_and_strength_use_the_real_inspector_and_undo_path() {
+        let mut session = test_support::session_with_timing_slack();
+        let flow = aestra_core::ModuleInstance::spatial_flow(Default::default());
+        let id = flow.id;
+        let layer = session.selected_layer().unwrap();
+        let emitter = layer.id;
+        let index = layer.modules.len();
+        assert!(session.execute(
+            "Add flow",
+            EffectCommand::AddModule {
+                emitter,
+                module: flow,
+                index
+            },
+            true
+        ));
+        let registry = ModuleRegistry::builtin();
+        let metadata = registry
+            .get(&aestra_core::ModuleTypeId::new(
+                aestra_core::spatial_flow::MODULE_SPATIAL_FLOW,
+            ))
+            .unwrap();
+        for (name, choice, expected) in [("flow_mode", 0, "noise"), ("flow_space", 1, "world")] {
+            let index = metadata
+                .inputs
+                .iter()
+                .position(|input| input.name == name)
+                .unwrap() as u8;
+            let original = properties_module_parameter(&session, id, name);
+            set_module_choice(
+                &mut session,
+                &registry,
+                id,
+                index,
+                choice,
+                &test_localizer(),
+            );
+            assert_eq!(
+                properties_module_parameter(&session, id, name),
+                Some(Value::Text(expected.into()))
+            );
+            session.undo();
+            assert_eq!(properties_module_parameter(&session, id, name), original);
+        }
+        let command =
+            properties_module_parameter_command(&session, id, "strength", Value::Scalar(2.5))
+                .unwrap();
+        assert!(session.execute("Change flow force", command, true));
+        assert_eq!(
+            properties_module_parameter(&session, id, "strength"),
+            Some(Value::Scalar(2.5))
+        );
+        session.undo();
+        assert_eq!(
+            properties_module_parameter(&session, id, "strength"),
+            Some(Value::Scalar(1.0))
+        );
+    }
+    #[test]
+    fn particle_sampling_choices_and_jitter_use_the_real_inspector_and_undo_path() {
+        let mut session = test_support::session_with_timing_slack();
+        let flow = aestra_core::ModuleInstance::particle_sampling(Default::default());
+        let id = flow.id;
+        let layer = session.selected_layer().unwrap();
+        let emitter = layer.id;
+        let index = layer.modules.len();
+        assert!(session.execute(
+            "Add flow",
+            EffectCommand::AddModule {
+                emitter,
+                module: flow,
+                index
+            },
+            true
+        ));
+        let registry = ModuleRegistry::builtin();
+        let metadata = registry
+            .get(&aestra_core::ModuleTypeId::new(
+                aestra_core::particle_sampling::MODULE_PARTICLE_SAMPLING,
+            ))
+            .unwrap();
+        for (name, choice, expected) in [
+            ("position_sampling", 2, "stratified"),
+            ("direction_sampling", 1, "uniform"),
+        ] {
+            let index = metadata
+                .inputs
+                .iter()
+                .position(|input| input.name == name)
+                .unwrap() as u8;
+            let original = properties_module_parameter(&session, id, name);
+            set_module_choice(
+                &mut session,
+                &registry,
+                id,
+                index,
+                choice,
+                &test_localizer(),
+            );
+            assert_eq!(
+                properties_module_parameter(&session, id, name),
+                Some(Value::Text(expected.into()))
+            );
+            session.undo();
+            assert_eq!(properties_module_parameter(&session, id, name), original);
+        }
+        let command =
+            properties_module_parameter_command(&session, id, "jitter", Value::Scalar(0.4))
+                .unwrap();
+        assert!(session.execute("Change flow force", command, true));
+        assert_eq!(
+            properties_module_parameter(&session, id, "jitter"),
+            Some(Value::Scalar(0.4))
+        );
+        session.undo();
+        assert_eq!(
+            properties_module_parameter(&session, id, "jitter"),
+            Some(Value::Scalar(0.12))
+        );
+    }
+
+    #[test]
     fn properties_emitter_transform_components_are_semantic_and_undoable() {
         let mut session = test_support::session_with_timing_slack();
         assert!(set_emitter_transform_component(
@@ -3857,6 +3979,24 @@ pub(crate) fn set_module_choice(
         return;
     }
     let current = properties_module_parameter(session, module_id, input.name);
+    if let Some(options) = flow_choices(input.name) {
+        let Some(value) = options.get(choice as usize) else {
+            return;
+        };
+        if let Some(command) = properties_module_parameter_command(
+            session,
+            module_id,
+            input.name,
+            Value::Text((*value).into()),
+        ) {
+            session.execute(
+                localizer.text("properties-edit-module-input-command"),
+                command,
+                true,
+            );
+        }
+        return;
+    }
     if input.name == "velocity_distribution" {
         let Some(mode) = aestra_core::VelocityDistribution::ALL.get(choice as usize) else {
             set_properties_status(session, localizer, PropertiesStatus::ChoiceUnavailable);
@@ -6034,6 +6174,15 @@ fn handle_properties_scalar_change(
         return;
     }
     apply_properties_number(&mut session, *control, change.value, &localizer);
+}
+
+fn flow_choices(name: &str) -> Option<&'static [&'static str]> {
+    match name {
+        "position_sampling" | "direction_sampling" => Some(&["legacy", "uniform", "stratified"]),
+        "flow_mode" => Some(&["noise", "curl"]),
+        "flow_space" => Some(&["effect", "world"]),
+        _ => None,
+    }
 }
 
 fn properties_module_parameter(
@@ -8243,6 +8392,25 @@ fn spawn_properties_choice_control(
     description: &str,
     value: &Value,
 ) {
+    if let Some(choices) = flow_choices(input_name)
+        && let Value::Text(current) = value
+    {
+        let options = choices
+            .iter()
+            .enumerate()
+            .map(|(choice, label)| ComboOption {
+                label: (*label).into(),
+                selected: current == label,
+                action: PropertiesAction::SetModuleChoice {
+                    module,
+                    input,
+                    choice: choice as u8,
+                },
+            })
+            .collect::<Vec<_>>();
+        spawn_properties_combo_row(parent, title, current, &options, Some(description));
+        return;
+    }
     if input_name == "velocity_distribution"
         && let Value::Text(name) = value
         && let Some(mode) = aestra_core::VelocityDistribution::from_name(name)

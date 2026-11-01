@@ -1,0 +1,1486 @@
+{
+  "date": "2026-10-29",
+  "scope": "Skip redundant per-view particle permutations for approved eligible partition capture only. No per-tile geometry binning or whole-frame/finale acceptance.",
+  "sources": [
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/alpha_sort.rs",
+      "sha256": "02187700672730d15ceec4b6c4461bdf84ee84853dcdd8187a0cc8cf72c3876f"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/pipeline.rs",
+      "sha256": "534f3c467b3e7b3c69e9942fd2bfcaa29ff15b4a13bd9b9e6cbcfef7cb42b078"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/render.rs",
+      "sha256": "3234b100de3180e4ff13e6a57ecd0233a54fe7637f195652571615767dd3c01d"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/cross_pool_partition.rs",
+      "sha256": "6cdbb3e6d7e1340c4f7183ab135086968c007dce850742f545f31a6981958c31"
+    },
+    {
+      "path": "demos/fireworks/src/report.rs",
+      "sha256": "ede09d5afa15109556767ec8eb9b308a62c61114f598b66d85959012a9b14073"
+    }
+  ],
+  "baseline_binary": {
+    "path": "target/fireworks-f8/partition-alpha-baseline-2026-10-29.exe",
+    "sha256": "5725b3e7791733299bebf88304b485d1cdccab2ca4d355fab95b474667511550"
+  },
+  "candidate_binary": {
+    "path": "target/fireworks-f8/partition-alpha-profiled-2026-10-29.exe",
+    "sha256": "eb1710f13d1b191c92e0791fefaf98887fb03656b058d32e832db6e019953904"
+  },
+  "native_binary": {
+    "path": "target/debug/deps/aestra_viewer-c47fea5cee329db3.exe",
+    "sha256": "576d259812f2f9aba700ea9fdb756770ded6106f909af9f971d9850ba99d824b"
+  },
+  "provenance": "Preserved regional-scan baseline. Baseline manifests fingerprint current checkout, not reconstructed old sources. Initial baseline-1 overlaps Clippy; candidate-1 retained as warm-up. Accepted runs 2/3/4 are serial, without Cargo builds. Candidate profiled binary precedes a lint-only query-complexity annotation; executable preserved separately.",
+  "excluded_warmups": [
+    {
+      "path": "target/fireworks-f8/partition-alpha-baseline-1-2026-10-29/tuned-high.json",
+      "sha256": "52d5e36371e54ad4a024b7f8cbfd578a6cd0e6a47507cc855b2fcdedaaa794ae"
+    },
+    {
+      "path": "target/fireworks-f8/partition-alpha-candidate-1-2026-10-29/tuned-high.json",
+      "sha256": "46711541526f9bd151a9bc8cec3b5ab9075d8ff8bd884b9bdbeb6eb84e293aeb"
+    }
+  ],
+  "retained_startup_failures": [
+    {
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-images-near-2026-10-29/tuned-high.json",
+        "sha256": "9fc1ff9a500d82004833c32e8b876f80aa08f41f814b4f3827c68776dd6a6daf"
+      },
+      "log": {
+        "path": "target/fireworks-f8/partition-alpha-images-near-2026-10-29/tuned-high.log",
+        "sha256": "b1b53d6d21535448318078ee84e0a8acb81201387e30d2aac2a16f6b527c4c40"
+      },
+      "reason": "OIT rejected invalid shared target capacity (estimated zero bytes) before playback. Retried once to a fresh directory; not classified as a successful capacity run or a fixed lifecycle bug."
+    },
+    {
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-images-orbit-2026-10-29/tuned-high.json",
+        "sha256": "9fc1ff9a500d82004833c32e8b876f80aa08f41f814b4f3827c68776dd6a6daf"
+      },
+      "log": {
+        "path": "target/fireworks-f8/partition-alpha-images-orbit-2026-10-29/tuned-high.log",
+        "sha256": "9933bd67c91b73fa8818e6c192ed3e9364fe013ea2ec2aed89c3e88e8eca7384"
+      },
+      "reason": "OIT rejected invalid shared target capacity (estimated zero bytes) before playback. Retried once to a fresh directory; not classified as a successful capacity run or a fixed lifecycle bug."
+    }
+  ],
+  "native": {
+    "report": {
+      "path": "target/fireworks-f8/partition-alpha-oracle-3-2026-10-29/partition-alpha-sort/report.json",
+      "sha256": "988f233bfe56ba73ced65d740a128f68efc2830b376e6d0d0ca8c605e1bc606e"
+    },
+    "result": {
+      "cases": [
+        {
+          "attempted": 651496,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "max_byte_error": 0,
+          "opposite": false,
+          "partition_sort_bytes": 0,
+          "reference_sort_bytes": 18912
+        },
+        {
+          "attempted": 651496,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "max_byte_error": 0,
+          "opposite": false,
+          "partition_sort_bytes": 0,
+          "reference_sort_bytes": 18912
+        },
+        {
+          "attempted": 651496,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "max_byte_error": 0,
+          "opposite": false,
+          "partition_sort_bytes": 0,
+          "reference_sort_bytes": 18912
+        },
+        {
+          "attempted": 601796,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "max_byte_error": 0,
+          "opposite": true,
+          "partition_sort_bytes": 0,
+          "reference_sort_bytes": 18912
+        },
+        {
+          "attempted": 601796,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "max_byte_error": 0,
+          "opposite": true,
+          "partition_sort_bytes": 0,
+          "reference_sort_bytes": 18912
+        },
+        {
+          "attempted": 601796,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "max_byte_error": 0,
+          "opposite": true,
+          "partition_sort_bytes": 0,
+          "reference_sort_bytes": 18912
+        }
+      ],
+      "ordinary_view_preserved": true,
+      "passed": true,
+      "retired_and_restored_per_view_buffers": true,
+      "scope": "native sprite ParticleRandom identity, exact SDR captures of HDR/Reinhard rendering; second ordinary camera has its own target"
+    },
+    "captures": [
+      {
+        "path": "target/fireworks-f8/partition-alpha-oracle-3-2026-10-29/partition-alpha-sort/sprite-false-1.png",
+        "sha256": "ee0a43fa6f454b89886c2cfed923963a73ef1e0da9fe624c53f0ba362c0f0fdd"
+      },
+      {
+        "path": "target/fireworks-f8/partition-alpha-oracle-3-2026-10-29/partition-alpha-sort/sprite-false-2.png",
+        "sha256": "ee0a43fa6f454b89886c2cfed923963a73ef1e0da9fe624c53f0ba362c0f0fdd"
+      },
+      {
+        "path": "target/fireworks-f8/partition-alpha-oracle-3-2026-10-29/partition-alpha-sort/sprite-false-4.png",
+        "sha256": "ee0a43fa6f454b89886c2cfed923963a73ef1e0da9fe624c53f0ba362c0f0fdd"
+      },
+      {
+        "path": "target/fireworks-f8/partition-alpha-oracle-3-2026-10-29/partition-alpha-sort/sprite-true-1.png",
+        "sha256": "db05bad12f5a211ec42e355ea377029816d2b73b12bc18c27f102f78ae9387bd"
+      },
+      {
+        "path": "target/fireworks-f8/partition-alpha-oracle-3-2026-10-29/partition-alpha-sort/sprite-true-2.png",
+        "sha256": "db05bad12f5a211ec42e355ea377029816d2b73b12bc18c27f102f78ae9387bd"
+      },
+      {
+        "path": "target/fireworks-f8/partition-alpha-oracle-3-2026-10-29/partition-alpha-sort/sprite-true-4.png",
+        "sha256": "db05bad12f5a211ec42e355ea377029816d2b73b12bc18c27f102f78ae9387bd"
+      }
+    ]
+  },
+  "existing_phase_oracle": {
+    "report": {
+      "path": "target/fireworks-f8/partition-alpha-phase-2026-10-29/native-partition-phase/report.json",
+      "sha256": "edbdc4712d58f89829a6e848022ea5feb9c3558895c49600ff7c577f5857a383"
+    },
+    "result": {
+      "cases": [
+        {
+          "attempted": 1313980,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": false,
+          "regions": [
+            [
+              1313980,
+              51984,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1313980,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": false,
+          "regions": [
+            [
+              157573,
+              12996,
+              0,
+              9
+            ],
+            [
+              499417,
+              12996,
+              0,
+              9
+            ],
+            [
+              157573,
+              12996,
+              0,
+              9
+            ],
+            [
+              499417,
+              12996,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1313980,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": false,
+          "regions": [
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              33823,
+              2736,
+              0,
+              9
+            ],
+            [
+              92347,
+              2736,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              123750,
+              10260,
+              0,
+              9
+            ],
+            [
+              407070,
+              10260,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              123750,
+              10260,
+              0,
+              9
+            ],
+            [
+              407070,
+              10260,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              33823,
+              2736,
+              0,
+              9
+            ],
+            [
+              92347,
+              2736,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 378501,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": false,
+          "regions": [
+            [
+              378501,
+              14641,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 378501,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": false,
+          "regions": [
+            [
+              44414,
+              3600,
+              0,
+              9
+            ],
+            [
+              143250,
+              3660,
+              0,
+              9
+            ],
+            [
+              45144,
+              3660,
+              0,
+              9
+            ],
+            [
+              145693,
+              3721,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 378501,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": false,
+          "regions": [
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              9374,
+              720,
+              0,
+              9
+            ],
+            [
+              25986,
+              732,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              35040,
+              2880,
+              0,
+              9
+            ],
+            [
+              117264,
+              2928,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              35040,
+              2880,
+              0,
+              9
+            ],
+            [
+              117264,
+              2928,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              10104,
+              780,
+              0,
+              9
+            ],
+            [
+              28429,
+              793,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1610028,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": true,
+          "regions": [
+            [
+              1610028,
+              47524,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1610028,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": true,
+          "regions": [
+            [
+              471993,
+              11881,
+              0,
+              9
+            ],
+            [
+              333021,
+              11881,
+              0,
+              9
+            ],
+            [
+              471993,
+              11881,
+              0,
+              9
+            ],
+            [
+              333021,
+              11881,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 1610028,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "invalid": 0,
+          "node_capacity": 2764800,
+          "node_head_bytes": 33868800,
+          "opposite": true,
+          "regions": [
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              76263,
+              2071,
+              0,
+              9
+            ],
+            [
+              58251,
+              2071,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              395730,
+              9810,
+              0,
+              9
+            ],
+            [
+              274770,
+              9810,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              395730,
+              9810,
+              0,
+              9
+            ],
+            [
+              274770,
+              9810,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              76263,
+              2071,
+              0,
+              9
+            ],
+            [
+              58251,
+              2071,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "size": [
+            480,
+            360
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 462390,
+          "dropped": 0,
+          "grid": [
+            1,
+            1
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": true,
+          "regions": [
+            [
+              462390,
+              13689,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 462390,
+          "dropped": 0,
+          "grid": [
+            2,
+            2
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": true,
+          "regions": [
+            [
+              133496,
+              3364,
+              0,
+              9
+            ],
+            [
+              95734,
+              3422,
+              0,
+              9
+            ],
+            [
+              135833,
+              3422,
+              0,
+              9
+            ],
+            [
+              97327,
+              3481,
+              0,
+              9
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        },
+        {
+          "attempted": 462390,
+          "dropped": 0,
+          "grid": [
+            4,
+            4
+          ],
+          "invalid": 0,
+          "node_capacity": 793616,
+          "node_head_bytes": 9721796,
+          "opposite": true,
+          "regions": [
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              21224,
+              580,
+              0,
+              9
+            ],
+            [
+              16486,
+              590,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              112272,
+              2784,
+              0,
+              9
+            ],
+            [
+              79248,
+              2832,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              112272,
+              2784,
+              0,
+              9
+            ],
+            [
+              79248,
+              2832,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              23561,
+              638,
+              0,
+              9
+            ],
+            [
+              18079,
+              649,
+              0,
+              9
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "size": [
+            257,
+            193
+          ],
+          "whole_image_max_byte_error": 0
+        }
+      ],
+      "empty_matches_ordinary_background_and_opaque": true,
+      "empty_reset_audit": true,
+      "passed": true,
+      "regional_diagnostics_match_full_target": true,
+      "repeated_empty_frames": 6,
+      "scope": "native phase SDR captures of HDR/Reinhard target, exact byte comparison; isolated raw HDR oracle remains separate",
+      "sticky_loss_survives_empty_audit": true
+    },
+    "exact_against_regional_binary": true
+  },
+  "profiles": [
+    {
+      "side": "baseline",
+      "run": 2,
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-baseline-2-2026-10-29/tuned-high.json",
+        "sha256": "48664e96706c5c78822e0fca0db58c58e6e5a24ab4236068ba103855a2f4eb4b"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-baseline-2-2026-10-29/manifest.json",
+        "sha256": "0b95cf4bd40cdedd34b3d27d1611940d349955c348d640181d8609c974b0d4b7"
+      },
+      "binary_sha256": "5725B3E7791733299BEBF88304B485D1CDCCAB2CA4D355FAB95B474667511550",
+      "active_partition_gpu_ms": {
+        "max_ms": 12.983296,
+        "median_ms": 11.090944,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 12.770304,
+        "p99_ms": 12.879872,
+        "samples": 193
+      },
+      "active_alpha_sort_gpu_ms": {
+        "max_ms": 1.65888,
+        "median_ms": 1.399808,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 1.588224,
+        "p99_ms": 1.601536,
+        "samples": 193
+      },
+      "host_intervals_including_vsync": {
+        "max_ms": 52.772600000000004,
+        "median_ms": 16.766099999999998,
+        "over_16_67ms": 1268,
+        "over_20ms": 363,
+        "over_33_33ms": 9,
+        "p95_ms": 24.7351,
+        "p99_ms": 27.6194,
+        "samples": 2242
+      },
+      "alpha_sort_ownership": null,
+      "node_head_bytes": 47923200,
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0
+    },
+    {
+      "side": "baseline",
+      "run": 3,
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-baseline-3-2026-10-29/tuned-high.json",
+        "sha256": "55e53ebfa695146585cd6a54f4e5a5ff0f5dd9a21282836f6bab4c52d5c4f0e6"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-baseline-3-2026-10-29/manifest.json",
+        "sha256": "a157f9cf0f7461fba74a7fc09306add7672749d496043d8a88b5e65df0dad1b1"
+      },
+      "binary_sha256": "5725B3E7791733299BEBF88304B485D1CDCCAB2CA4D355FAB95B474667511550",
+      "active_partition_gpu_ms": {
+        "max_ms": 12.97408,
+        "median_ms": 10.744832,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 12.81024,
+        "p99_ms": 12.853248,
+        "samples": 216
+      },
+      "active_alpha_sort_gpu_ms": {
+        "max_ms": 1.762304,
+        "median_ms": 1.414144,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 1.531904,
+        "p99_ms": 1.642496,
+        "samples": 216
+      },
+      "host_intervals_including_vsync": {
+        "max_ms": 49.3732,
+        "median_ms": 16.6933,
+        "over_16_67ms": 1232,
+        "over_20ms": 130,
+        "over_33_33ms": 7,
+        "p95_ms": 20.185200000000002,
+        "p99_ms": 25.9759,
+        "samples": 2352
+      },
+      "alpha_sort_ownership": null,
+      "node_head_bytes": 47923200,
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0
+    },
+    {
+      "side": "baseline",
+      "run": 4,
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-baseline-4-2026-10-29/tuned-high.json",
+        "sha256": "1ced1fae39c8a196ab4ec37f168576fe6a95d309d7275ad1a22684473d23b0d9"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-baseline-4-2026-10-29/manifest.json",
+        "sha256": "9708a4663bcc6296fd0b72cf67e480981cc28b5140e5d403995bceed9194da65"
+      },
+      "binary_sha256": "5725B3E7791733299BEBF88304B485D1CDCCAB2CA4D355FAB95B474667511550",
+      "active_partition_gpu_ms": {
+        "max_ms": 13.012992,
+        "median_ms": 10.831872,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 12.793856,
+        "p99_ms": 12.915712,
+        "samples": 230
+      },
+      "active_alpha_sort_gpu_ms": {
+        "max_ms": 1.671168,
+        "median_ms": 1.304576,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 1.4848,
+        "p99_ms": 1.524736,
+        "samples": 230
+      },
+      "host_intervals_including_vsync": {
+        "max_ms": 29.1597,
+        "median_ms": 16.7,
+        "over_16_67ms": 1268,
+        "over_20ms": 92,
+        "over_33_33ms": 0,
+        "p95_ms": 19.5387,
+        "p99_ms": 22.4549,
+        "samples": 2365
+      },
+      "alpha_sort_ownership": null,
+      "node_head_bytes": 47923200,
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0
+    },
+    {
+      "side": "candidate",
+      "run": 2,
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-candidate-2-2026-10-29/tuned-high.json",
+        "sha256": "80fe0cac97e6f1611f84981fab373074642a12443ea9d638799d5491c2e90568"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-candidate-2-2026-10-29/manifest.json",
+        "sha256": "067ff3d28a887df80444448bf51049b26b3ae728c1ffbb5b54c411ba8e9e40c6"
+      },
+      "binary_sha256": "EB1710F13D1B191C92E0791FEFAF98887FB03656B058D32E832DB6E019953904",
+      "active_partition_gpu_ms": {
+        "max_ms": 13.07136,
+        "median_ms": 11.559936,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 12.750848,
+        "p99_ms": 12.900352,
+        "samples": 233
+      },
+      "active_alpha_sort_gpu_ms": null,
+      "host_intervals_including_vsync": {
+        "max_ms": 174.4252,
+        "median_ms": 16.7029,
+        "over_16_67ms": 1152,
+        "over_20ms": 125,
+        "over_33_33ms": 62,
+        "p95_ms": 20.714,
+        "p99_ms": 84.7926,
+        "samples": 2159
+      },
+      "alpha_sort_ownership": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "node_head_bytes": 47923200,
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0
+    },
+    {
+      "side": "candidate",
+      "run": 3,
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-candidate-3-2026-10-29/tuned-high.json",
+        "sha256": "1baf710457c003585f237d2d73560f8c9647359c1186547965c0037b6f768791"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-candidate-3-2026-10-29/manifest.json",
+        "sha256": "e278b848a6207ad248ede2cbf5fabdaa4e2361c4950f2031162e48a6c08525fe"
+      },
+      "binary_sha256": "EB1710F13D1B191C92E0791FEFAF98887FB03656B058D32E832DB6E019953904",
+      "active_partition_gpu_ms": {
+        "max_ms": 13.229056,
+        "median_ms": 11.260928,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 12.869632,
+        "p99_ms": 13.02528,
+        "samples": 226
+      },
+      "active_alpha_sort_gpu_ms": null,
+      "host_intervals_including_vsync": {
+        "max_ms": 77.3982,
+        "median_ms": 16.6744,
+        "over_16_67ms": 1185,
+        "over_20ms": 97,
+        "over_33_33ms": 23,
+        "p95_ms": 19.5808,
+        "p99_ms": 32.431599999999996,
+        "samples": 2333
+      },
+      "alpha_sort_ownership": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "node_head_bytes": 47923200,
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0
+    },
+    {
+      "side": "candidate",
+      "run": 4,
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-candidate-4-2026-10-29/tuned-high.json",
+        "sha256": "112f6b5bcaca2c8dba94084c09903a80cc4774c03b57e4570960eee522f24663"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-candidate-4-2026-10-29/manifest.json",
+        "sha256": "25b4c13d4bccdc54eb792c47f65765f5044b85bf29406c422ae487833efded72"
+      },
+      "binary_sha256": "EB1710F13D1B191C92E0791FEFAF98887FB03656B058D32E832DB6E019953904",
+      "active_partition_gpu_ms": {
+        "max_ms": 12.832768,
+        "median_ms": 11.447296,
+        "over_16_67ms": 0,
+        "over_20ms": 0,
+        "over_33_33ms": 0,
+        "p95_ms": 12.75392,
+        "p99_ms": 12.80512,
+        "samples": 221
+      },
+      "active_alpha_sort_gpu_ms": null,
+      "host_intervals_including_vsync": {
+        "max_ms": 28.028299999999998,
+        "median_ms": 16.6828,
+        "over_16_67ms": 1229,
+        "over_20ms": 29,
+        "over_33_33ms": 0,
+        "p95_ms": 18.127000000000002,
+        "p99_ms": 20.2408,
+        "samples": 2387
+      },
+      "alpha_sort_ownership": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "node_head_bytes": 47923200,
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0
+    }
+  ],
+  "images": [
+    {
+      "name": "near",
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-images-near-retry-2026-10-29/tuned-high.json",
+        "sha256": "1ffcb30de984b5aa2585a8edeb625d3e6df9578dfe966b214727e590c85c68a3"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-images-near-retry-2026-10-29/manifest.json",
+        "sha256": "6cca8f9f2f88588bd6eaccaf8f10c348a20c6a955eaa16092ab89c43588a8ee7"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 20101101,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 220727,
+        "observations": 2341,
+        "observed_partition_loss": false
+      },
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "node_head_bytes": 47923200,
+      "sort_ownership": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-retry-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "8484ebdbd4d5abbc22d5394697ef3a32efeb5d6862e363d0aa7b67cce809f6e2"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-retry-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "ded50aebd4f6d2bbbac7217c786a2aa289410ad2efe71533f0c2c734b4840759"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-retry-2026-10-29/tuned-high-12s.png",
+          "sha256": "48c35e729b47d95f1133d4fd5801cea186e12d8e6278ff4d5ce397caad6a3ee6"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-retry-2026-10-29/tuned-high-23s.png",
+          "sha256": "a8bb575acf2872f1c6245ec90aed8a00f1d30e091ecc1350863f9989eae63f62"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-retry-2026-10-29/tuned-high-36s.png",
+          "sha256": "f259e036510620ef9185395bc9d75ac45fe7e295576b11710385512bdddc8b1e"
+        }
+      ]
+    },
+    {
+      "name": "orbit",
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-images-orbit-retry-2026-10-29/tuned-high.json",
+        "sha256": "630f18015836ef0f691a38be7f59f306ddf438587f63ed171a11b0e01b3e21f3"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-images-orbit-retry-2026-10-29/manifest.json",
+        "sha256": "8b6bfb24c56f1f1ed4d92b513a9c5c39cc1b594dcd1023306140b0ff373aed7f"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 7012845,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 74568,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "node_head_bytes": 47923200,
+      "sort_ownership": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-orbit-retry-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "df50a2b1edb161cc0601466b352dc3598bd956d8f542552f29a27ee2f1b634d8"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-orbit-retry-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "5f55f63d8e49a142b0cc9cbad036162b4fcde64203bac59d408c176ff914af78"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-orbit-retry-2026-10-29/tuned-high-12s.png",
+          "sha256": "85ca480fa3896e7a87bbc6dadd4b82f87c77dbd233791311a9b78e5d08e9cec4"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-orbit-retry-2026-10-29/tuned-high-23s.png",
+          "sha256": "79e6f0b6a955b4dd19da2924f1fa087f23bf4e26581949b98ca8d9b82f108442"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-orbit-retry-2026-10-29/tuned-high-36s.png",
+          "sha256": "24760fa1ed27afee92639ddb18f8d721b8fef42d0ec1cc9bc7253b784943d5b5"
+        }
+      ]
+    },
+    {
+      "name": "near-2x2-negative",
+      "report": {
+        "path": "target/fireworks-f8/partition-alpha-images-near-2x2-negative-2026-10-29/tuned-high.json",
+        "sha256": "13350357ebc6d9de19b6b295d39b39e934c75c71fa66e25a05ae81e5816bac76"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/partition-alpha-images-near-2x2-negative-2026-10-29/manifest.json",
+        "sha256": "d2f7c5dcf3e3dbd24346ee54802d85557faaae6d3d48b0c0c2090c4f2d2358a2"
+      },
+      "capacity": {
+        "loss_free": false,
+        "max_attempted_fragments": 20107876,
+        "max_dropped": 6841456,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 81369,
+        "observations": 2407,
+        "observed_partition_loss": true
+      },
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "node_head_bytes": 47923200,
+      "sort_ownership": {
+        "last_owned_buffer_bytes": 0,
+        "last_view_draw_pairs": 0,
+        "peak_owned_buffer_bytes": 0,
+        "peak_view_draw_pairs": 0,
+        "scope": "CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "final_alive": 0,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-2x2-negative-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "9b3a1cbc1c2c65e4f5764110700d3a4c59e2485115ee0355a2d263706dd6feb2"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-2x2-negative-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "97c8d51a76d03250793cf41fcc3ee35aff38c37dcacc9ad5e242d111a26934ce"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-2x2-negative-2026-10-29/tuned-high-12s.png",
+          "sha256": "d64232e9ad122fa58b6aafb5d6969abb6118df765adf4d1390275f6658d21f57"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-2x2-negative-2026-10-29/tuned-high-23s.png",
+          "sha256": "3b9f7c29c5c4b56ecbf32164f2005c82c65141eda788ee1c796ddc7b7f06909f"
+        },
+        {
+          "path": "target/fireworks-f8/partition-alpha-images-near-2x2-negative-2026-10-29/tuned-high-36s.png",
+          "sha256": "f259e036510620ef9185395bc9d75ac45fe7e295576b11710385512bdddc8b1e"
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "renderer_tests": 187,
+    "renderer_gpu_ignored": 4,
+    "native_identity_cases": 6,
+    "existing_native_phase_cases": 12,
+    "renderer_unit_log": {
+      "path": "target/fireworks-f8/partition-alpha-unit-2026-10-29.log",
+      "sha256": "eab255bc89f9eb4265cff710e8449ec8ecf2422480dff7930ca31b766a1c4936"
+    },
+    "strict_scoped_clippy_log": {
+      "path": "target/fireworks-f8/partition-alpha-clippy-2026-10-29.log",
+      "sha256": "c4a149f37871dcf3505fa0c4aa9993e0fc6ff2187455662c299ea7d3582c10b6"
+    },
+    "workspace_format_check": true
+  },
+  "timing_scope": "Ranges of three per-run p95s; no sum of quantiles. Removed alpha scope is separate from aggregate partition capture/sort/resolve/health. Host intervals include vsync, async phases, and all other work; not GPU-completion timestamps. Image lane has separate scans/readbacks and is not timed."
+}

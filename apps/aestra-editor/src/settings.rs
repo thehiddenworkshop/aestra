@@ -127,6 +127,8 @@ impl Default for GeneralSettings {
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct PreviewSettings {
     pub(crate) show_grid: bool,
+    pub(crate) water_enabled: bool,
+    pub(crate) water_reflections: bool,
     pub(crate) play_on_open: bool,
     pub(crate) photographic_enabled: bool,
     pub(crate) photographic: aestra_bevy_render::preview::PhotographicPreview,
@@ -136,6 +138,8 @@ impl Default for PreviewSettings {
     fn default() -> Self {
         Self {
             show_grid: true,
+            water_enabled: false,
+            water_reflections: false,
             play_on_open: true,
             photographic_enabled: false,
             photographic: Default::default(),
@@ -599,10 +603,12 @@ mod tests {
                 .unwrap();
         let mut migrated = legacy.normalized();
         assert!(!migrated.preview.photographic_enabled);
+        assert!(!migrated.preview.water_enabled);
         assert!(!migrated.preview.show_grid);
         assert!(!migrated.preview.play_on_open);
         assert_eq!(migrated.version, SETTINGS_FORMAT_VERSION);
         migrated.preview.photographic_enabled = true;
+        migrated.preview.water_enabled = true;
         migrated.preview.photographic = PhotographicPreview {
             exposure_stops: 2.0,
             tonemapping: DisplayTransform::Aces,

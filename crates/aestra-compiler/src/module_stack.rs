@@ -111,6 +111,20 @@ fn shape_summary(shape: &EmitterShape) -> String {
 
 /// A one-line summary of a module's key authored values (§28.3), derived from its parameters.
 pub fn module_summary(module: &ModuleInstance) -> String {
+    if let Some(s) = module.particle_sampling_settings() {
+        return format!(
+            "Directions {:?} · Positions {:?} · Pattern {}",
+            s.directions, s.positions, s.sequence_count
+        );
+    }
+    if let Some(flow) = module.spatial_flow_settings() {
+        return format!(
+            "{:?} · {:?} · Strength {}",
+            flow.mode,
+            flow.space,
+            num(flow.strength)
+        );
+    }
     match &module.parameters {
         ModuleParameters::Emission {
             spawn_rate,

@@ -9,6 +9,10 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 
+pub mod planar;
+/// Shared host/editor water receiver. The caller supplies the effect clock.
+pub mod water;
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DisplayTransform {

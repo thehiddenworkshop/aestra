@@ -1,0 +1,454 @@
+{
+  "date": "2026-11-01",
+  "scope": "N1 shared material noise, opt-in smoke study, not baseline adoption",
+  "command": "fireworks --no-audio --star-lights --effect effects/fireworks_noise_smoke.aestra.ron --history playback-only",
+  "binary_sha256": "5391359FF642403DD689D138A0E073C6DF328D63B93FEEFF215BA28E7674A657",
+  "adapter": {
+    "backend": "Vulkan",
+    "driver": "NVIDIA",
+    "name": "NVIDIA GeForce RTX 4070 SUPER"
+  },
+  "completed": true,
+  "backend": "Gpu",
+  "captures": [
+    {
+      "asynchronous_populations": [
+        {
+          "effect": "Fireworks — Shared Noise Smoke Study",
+          "effect_id": "a3574a00-0000-4000-8000-00000000e004",
+          "emitters": [
+            {
+              "alive": 0,
+              "name": "Launch shell"
+            },
+            {
+              "alive": 64,
+              "name": "Main stars"
+            },
+            {
+              "alive": 0,
+              "name": "Burst flash"
+            },
+            {
+              "alive": 43,
+              "name": "Launch smoke"
+            },
+            {
+              "alive": 48,
+              "name": "Burst smoke"
+            },
+            {
+              "alive": 13926,
+              "name": "Gold tail embers"
+            },
+            {
+              "alive": 2417,
+              "name": "Star path smoke"
+            }
+          ],
+          "observed_source_seconds": 1.9500000476837158,
+          "owner": "502v0",
+          "source_seconds": 2.0
+        }
+      ],
+      "delivered": true,
+      "host_state": null,
+      "nominal_seconds": 2.0,
+      "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n1-final\\fireworks-report-2s.png",
+      "representative_accepted": 1,
+      "representative_active": 0,
+      "representative_proxy_peak_lumens": 0.0,
+      "request_camera_pose": {
+        "rotation_xyzw": [
+          -0.06278383731842041,
+          -0.0,
+          -0.0,
+          0.9980270862579346
+        ],
+        "translation": [
+          0.0,
+          44.0,
+          95.0
+        ]
+      },
+      "request_seconds": 2.0,
+      "selected_lights": {
+        "buffer_bytes": 9264,
+        "capacity_bound": 32,
+        "dispatches": 126,
+        "invalid_sources": 0,
+        "rejection": null,
+        "reserved_slots": 96,
+        "sequence": 126
+      }
+    },
+    {
+      "asynchronous_populations": [
+        {
+          "effect": "Fireworks — Shared Noise Smoke Study",
+          "effect_id": "a3574a00-0000-4000-8000-00000000e004",
+          "emitters": [
+            {
+              "alive": 0,
+              "name": "Launch shell"
+            },
+            {
+              "alive": 64,
+              "name": "Main stars"
+            },
+            {
+              "alive": 0,
+              "name": "Burst flash"
+            },
+            {
+              "alive": 43,
+              "name": "Launch smoke"
+            },
+            {
+              "alive": 48,
+              "name": "Burst smoke"
+            },
+            {
+              "alive": 13136,
+              "name": "Gold tail embers"
+            },
+            {
+              "alive": 8414,
+              "name": "Star path smoke"
+            }
+          ],
+          "observed_source_seconds": 3.950000047683716,
+          "owner": "502v0",
+          "source_seconds": 4.0
+        }
+      ],
+      "delivered": true,
+      "host_state": null,
+      "nominal_seconds": 4.0,
+      "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n1-final\\fireworks-report-4s.png",
+      "representative_accepted": 1,
+      "representative_active": 0,
+      "representative_proxy_peak_lumens": 0.0,
+      "request_camera_pose": {
+        "rotation_xyzw": [
+          -0.06278383731842041,
+          -0.0,
+          -0.0,
+          0.9980270862579346
+        ],
+        "translation": [
+          0.0,
+          44.0,
+          95.0
+        ]
+      },
+      "request_seconds": 4.0,
+      "selected_lights": {
+        "buffer_bytes": 9264,
+        "capacity_bound": 32,
+        "dispatches": 246,
+        "invalid_sources": 0,
+        "rejection": null,
+        "reserved_slots": 96,
+        "sequence": 246
+      }
+    },
+    {
+      "asynchronous_populations": [
+        {
+          "effect": "Fireworks — Shared Noise Smoke Study",
+          "effect_id": "a3574a00-0000-4000-8000-00000000e004",
+          "emitters": [
+            {
+              "alive": 0,
+              "name": "Launch shell"
+            },
+            {
+              "alive": 0,
+              "name": "Main stars"
+            },
+            {
+              "alive": 0,
+              "name": "Burst flash"
+            },
+            {
+              "alive": 43,
+              "name": "Launch smoke"
+            },
+            {
+              "alive": 48,
+              "name": "Burst smoke"
+            },
+            {
+              "alive": 6,
+              "name": "Gold tail embers"
+            },
+            {
+              "alive": 11209,
+              "name": "Star path smoke"
+            }
+          ],
+          "observed_source_seconds": 6.300000190734863,
+          "owner": "502v0",
+          "source_seconds": 6.349999904632568
+        }
+      ],
+      "delivered": true,
+      "host_state": null,
+      "nominal_seconds": 6.349999904632568,
+      "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n1-final\\fireworks-report-6.35s.png",
+      "representative_accepted": 1,
+      "representative_active": 0,
+      "representative_proxy_peak_lumens": 0.0,
+      "request_camera_pose": {
+        "rotation_xyzw": [
+          -0.06278383731842041,
+          -0.0,
+          -0.0,
+          0.9980270862579346
+        ],
+        "translation": [
+          0.0,
+          44.0,
+          95.0
+        ]
+      },
+      "request_seconds": 6.349999904632568,
+      "selected_lights": {
+        "buffer_bytes": 9264,
+        "capacity_bound": 32,
+        "dispatches": 387,
+        "invalid_sources": 0,
+        "rejection": null,
+        "reserved_slots": 96,
+        "sequence": 387
+      }
+    },
+    {
+      "asynchronous_populations": [
+        {
+          "effect": "Fireworks — Shared Noise Smoke Study",
+          "effect_id": "a3574a00-0000-4000-8000-00000000e004",
+          "emitters": [
+            {
+              "alive": 0,
+              "name": "Launch shell"
+            },
+            {
+              "alive": 0,
+              "name": "Main stars"
+            },
+            {
+              "alive": 0,
+              "name": "Burst flash"
+            },
+            {
+              "alive": 20,
+              "name": "Launch smoke"
+            },
+            {
+              "alive": 48,
+              "name": "Burst smoke"
+            },
+            {
+              "alive": 0,
+              "name": "Gold tail embers"
+            },
+            {
+              "alive": 8853,
+              "name": "Star path smoke"
+            }
+          ],
+          "observed_source_seconds": 9.949999809265137,
+          "owner": "502v0",
+          "source_seconds": 10.0
+        }
+      ],
+      "delivered": true,
+      "host_state": null,
+      "nominal_seconds": 10.0,
+      "path": "C:/Users/flore/Documents/GitHub/TheHiddenWorkshop/aestra/target/noise-n1-final\\fireworks-report-10s.png",
+      "representative_accepted": 1,
+      "representative_active": 0,
+      "representative_proxy_peak_lumens": 0.0,
+      "request_camera_pose": {
+        "rotation_xyzw": [
+          -0.06278383731842041,
+          -0.0,
+          -0.0,
+          0.9980270862579346
+        ],
+        "translation": [
+          0.0,
+          44.0,
+          95.0
+        ]
+      },
+      "request_seconds": 10.0,
+      "selected_lights": {
+        "buffer_bytes": 9264,
+        "capacity_bound": 32,
+        "dispatches": 606,
+        "invalid_sources": 0,
+        "rejection": null,
+        "reserved_slots": 96,
+        "sequence": 606
+      }
+    }
+  ],
+  "event_link_admission": {
+    "502v0/0": {
+      "counts": {
+        "accepted": 43,
+        "captured_demand": 43,
+        "destination_rejected": 0,
+        "expansion_omitted": 0
+      },
+      "effect": "Fireworks — Shared Noise Smoke Study",
+      "readback_samples": 1101,
+      "source": "Launch shell",
+      "source_overflow": 0,
+      "target": "Launch smoke"
+    },
+    "502v0/1": {
+      "counts": {
+        "accepted": 64,
+        "captured_demand": 64,
+        "destination_rejected": 0,
+        "expansion_omitted": 0
+      },
+      "effect": "Fireworks — Shared Noise Smoke Study",
+      "readback_samples": 1101,
+      "source": "Launch shell",
+      "source_overflow": 0,
+      "target": "Main stars"
+    },
+    "502v0/2": {
+      "counts": {
+        "accepted": 1,
+        "captured_demand": 1,
+        "destination_rejected": 0,
+        "expansion_omitted": 0
+      },
+      "effect": "Fireworks — Shared Noise Smoke Study",
+      "readback_samples": 1101,
+      "source": "Launch shell",
+      "source_overflow": 0,
+      "target": "Burst flash"
+    },
+    "502v0/3": {
+      "counts": {
+        "accepted": 48,
+        "captured_demand": 48,
+        "destination_rejected": 0,
+        "expansion_omitted": 0
+      },
+      "effect": "Fireworks — Shared Noise Smoke Study",
+      "readback_samples": 1101,
+      "source": "Launch shell",
+      "source_overflow": 0,
+      "target": "Burst smoke"
+    },
+    "502v0/4": {
+      "counts": {
+        "accepted": 67254,
+        "captured_demand": 67254,
+        "destination_rejected": 0,
+        "expansion_omitted": 0
+      },
+      "effect": "Fireworks — Shared Noise Smoke Study",
+      "readback_samples": 1101,
+      "source": "Main stars",
+      "source_overflow": 0,
+      "target": "Gold tail embers"
+    },
+    "502v0/5": {
+      "counts": {
+        "accepted": 11209,
+        "captured_demand": 11209,
+        "destination_rejected": 0,
+        "expansion_omitted": 0
+      },
+      "effect": "Fireworks — Shared Noise Smoke Study",
+      "readback_samples": 1101,
+      "source": "Main stars",
+      "source_overflow": 0,
+      "target": "Star path smoke"
+    }
+  },
+  "particle_output_audit": {
+    "omitted_route_messages": 0,
+    "routes": {
+      "502v0/[]/Emitter(0)/launch": {
+        "clip_path": [],
+        "first_tick": 1,
+        "kind": "launch",
+        "last_tick": 1,
+        "max_delivery_age_seconds": 0.03333333134651184,
+        "messages": 1,
+        "source_effect": "a3574a00-0000-4000-8000-00000000e004"
+      },
+      "502v0/[]/Emitter(0)/main_break": {
+        "clip_path": [],
+        "first_tick": 79,
+        "kind": "main_break",
+        "last_tick": 79,
+        "max_delivery_age_seconds": 0.03333330154418945,
+        "messages": 1,
+        "source_effect": "a3574a00-0000-4000-8000-00000000e004"
+      }
+    },
+    "scope": "At most 256 aggregate route keys. Main-world source messages and root-clock age at observation; not GPU capture counts or display latency."
+  },
+  "last_async_alive": 0,
+  "peak_async_alive": 23301,
+  "selected_lighting": {
+    "final": {
+      "buffer_bytes": 9264,
+      "capacity_bound": 32,
+      "dispatches": 1095,
+      "invalid_sources": 0,
+      "rejection": null,
+      "reserved_slots": 96,
+      "sequence": 1095
+    },
+    "last_rejection": null,
+    "peak_capacity_bound": 32,
+    "rejected_updates": 0,
+    "scope": "Asynchronous native adapter capacity/dispatch metadata, not live or illuminated particle counts. No selected-position readback."
+  },
+  "source_hashes": [
+    {
+      "sha256": "02BD7FEB42E5FD91B1685ECF1F1E4948CF15723F9215D0FCD7EAE166730DC33E",
+      "path": "crates/aestra-core/src/noise.rs"
+    },
+    {
+      "sha256": "D0D588774DF7EDF9746D6391BFF7E3727A7CFA81C13A4F370A47EC4FF014425B",
+      "path": "crates/aestra-runtime/src/noise.rs"
+    },
+    {
+      "sha256": "8C211155D065797D4080D74F12269513FF6A1784ABF90FF6D93AF0C7BF5F6EBE",
+      "path": "crates/aestra-compiler/src/material_noise.rs"
+    },
+    {
+      "sha256": "29428057D4F46BE1BF289377ACE45AF4C965778E8B28A5F1EA69DBCC8A227D42",
+      "path": "crates/aestra-compiler/src/material_noise/field.wesl"
+    },
+    {
+      "sha256": "4905876D30346CD2916D5F49C10AA68975F163EBBC326AFA2B50DF859447333D",
+      "path": "crates/aestra-compiler/src/material_noise/gradient.wesl"
+    },
+    {
+      "sha256": "EF3484F395E4CAFE7F49A57086E0655E3E2C9B2327CFB5529FE55159CDF71D5B",
+      "path": "assets/test/effects/fireworks_noise_smoke.aestra.ron"
+    },
+    {
+      "sha256": "3FED5B28B24C8F33E2CC1621E022F2EF9D875B811DDAAD76366D0EEB44617230",
+      "path": "assets/test/materials/noise_smoke.aestra.material.ron"
+    },
+    {
+      "sha256": "3D3F212612763D99EF94D1F778B3ACAB0FF42C26E2BAFE17098E3D146FACBF61",
+      "path": "assets/test/materials/noise_smoke_density.aestra.material-function.ron"
+    }
+  ]
+}

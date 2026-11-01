@@ -417,6 +417,22 @@ pub(super) fn fragment_list_eligible(
     )
 }
 
+/// Keep preprocessing and pipeline selection on the same capture contract.
+pub(super) fn fragment_list_for_view(
+    draw: &GpuDrawInstance,
+    approved: bool,
+    mesh_key: MeshPipelineKey,
+) -> bool {
+    approved
+        && mesh_key.contains(MeshPipelineKey::OIT_ENABLED)
+        && fragment_list_eligible(
+            draw.renderer_kind,
+            draw.blend,
+            draw.render_mode,
+            material_for_draw(draw).map(|material| material.render_state),
+        )
+}
+
 pub(super) fn draw_pipeline_key(
     effect: &GpuDrawInstance,
     target_format: TextureFormat,

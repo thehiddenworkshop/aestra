@@ -4,6 +4,7 @@ mod material_function;
 mod material_function_graph;
 mod material_graph;
 mod material_ir;
+mod material_noise;
 mod material_reflection;
 mod material_stack;
 mod module_stack;
@@ -16,10 +17,14 @@ pub use material_function::*;
 pub use material_function_graph::*;
 pub use material_graph::*;
 pub use material_ir::*;
+pub use material_noise::{evaluate_builtin_noise, spatial_noise_wesl};
 pub use material_reflection::*;
 pub use material_stack::*;
 pub use module_stack::*;
 
+use aestra_core::EmitterShape;
+use aestra_core::particle_sampling::MODULE_PARTICLE_SAMPLING;
+use aestra_core::spatial_flow::MODULE_SPATIAL_FLOW;
 use aestra_core::{
     Collider, ColorKey, Curve, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
     Emitter, EmitterId, Gradient, MODULE_APPEARANCE, MODULE_COLLISION, MODULE_EMISSION,
@@ -977,6 +982,48 @@ impl EffectCompiler {
                 .collect();
             // Every region of an emitter shares its modules, hence its simulation class (hybrid M3).
             let simulation_class = self.emitter_simulation(asset, emitter).0;
+            if let Some(s) = emitter
+                .modules
+                .iter()
+                .filter(|m| m.enabled)
+                .find_map(ModuleInstance::particle_sampling_settings)
+            {
+                if s.directions != aestra_core::particle_sampling::SamplingMode::Legacy
+                    && emitter.modules.iter().filter(|m| m.enabled).any(|m| {
+                        matches!(
+                            m.parameters,
+                            ModuleParameters::Initialize {
+                                velocity_distribution:
+                                    aestra_core::VelocityDistribution::LegacyCone,
+                                ..
+                            }
+                        )
+                    })
+                {
+                    let mut r = ValidationReport::default();
+                    r.push(Diagnostic::error(DiagnosticCode::InvalidValue,"particle_sampling.directions","Choose an explicit Initialize velocity mode (Sphere, Cone, Ring, etc.) before enabling direction sampling; Legacy Cone keeps its historical sampler"));
+                    return Err(CompileError::Validation(r));
+                }
+                if s.positions != aestra_core::particle_sampling::SamplingMode::Legacy
+                    && simulation_class != aestra_runtime::SimulationClass::Analytic
+                    && emitter.modules.iter().filter(|m| m.enabled).any(|m| {
+                        matches!(
+                            m.parameters,
+                            ModuleParameters::Shape {
+                                shape: EmitterShape::Circle { .. }
+                                    | EmitterShape::Ring { .. }
+                                    | EmitterShape::Hemisphere { .. }
+                                    | EmitterShape::Cylinder { .. }
+                                    | EmitterShape::Cone { .. }
+                            }
+                        )
+                    })
+                {
+                    let mut r = ValidationReport::default();
+                    r.push(Diagnostic::error(DiagnosticCode::InvalidValue,"particle_sampling.positions","Stateful position sampling currently supports Point, Sphere and Box; other position shapes require analytic simulation"));
+                    return Err(CompileError::Validation(r));
+                }
+            }
             // Collision colliders (hybrid roadmap M10): gathered from the emitter's enabled collision
             // modules in order, so the stateful backend resolves them after each tick. Their presence
             // is also what promoted the emitter to a stateful class above.
@@ -1136,6 +1183,16 @@ impl EffectCompiler {
                     field_follow: field_follow.clone(),
                     domain_spawn: domain_spawn.clone(),
                     homing: homing.clone(),
+                    spatial_flow: emitter
+                        .modules
+                        .iter()
+                        .filter(|m| m.enabled)
+                        .find_map(ModuleInstance::spatial_flow_settings),
+                    particle_sampling: emitter
+                        .modules
+                        .iter()
+                        .filter(|m| m.enabled)
+                        .find_map(ModuleInstance::particle_sampling_settings),
                     attachment: attachment.clone(),
                     stages: aestra_runtime::CompiledLifecycleStages::from_execution_plan(
                         &execution, emitter.id,
@@ -1329,6 +1386,30 @@ impl EffectCompiler {
         let Some(stage) = stage else {
             return;
         };
+        if module.module_type.0 == MODULE_PARTICLE_SAMPLING
+            && (!module.bindings.is_empty() || !module.host_bindings.is_empty())
+        {
+            push_unique(
+                report,
+                Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    path.clone(),
+                    "Particle Sampling v1 settings are authored constants; edit them before playback",
+                ),
+            );
+        }
+        if module.module_type.0 == MODULE_SPATIAL_FLOW
+            && (!module.bindings.is_empty() || !module.host_bindings.is_empty())
+        {
+            push_unique(
+                report,
+                Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    path.clone(),
+                    "Spatial Flow v1 settings are authored constants; edit them before playback rather than binding them",
+                ),
+            );
+        }
         // A plugin payload must match the installed schema (extensible-stages M11, §35): a
         // newer one is preserved but not compiled; an older one that could not be migrated
         // is reported (compilation already tried the plugin's migrations).
@@ -2985,6 +3066,8 @@ fn is_builtin_module(type_id: &ModuleTypeId) -> bool {
             | MODULE_SHAPE
             | MODULE_INITIALIZE
             | MODULE_MOTION
+            | MODULE_SPATIAL_FLOW
+            | MODULE_PARTICLE_SAMPLING
             | MODULE_PERSISTENT
             | MODULE_COLLISION
             | MODULE_FOLLOW_FIELD
@@ -2995,6 +3078,12 @@ fn is_builtin_module(type_id: &ModuleTypeId) -> bool {
 }
 
 fn parameters_match(module: &ModuleInstance) -> bool {
+    if module.module_type.0 == MODULE_PARTICLE_SAMPLING {
+        return module.particle_sampling_settings().is_some();
+    }
+    if module.module_type.0 == MODULE_SPATIAL_FLOW {
+        return module.spatial_flow_settings().is_some();
+    }
     // A plugin module carries a generic payload validated against its schema (M10).
     if !is_builtin_module(&module.module_type) {
         return matches!(module.parameters, ModuleParameters::Custom(_));

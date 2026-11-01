@@ -51,10 +51,13 @@ pub(super) struct Report {
     observed_owners: usize,
     last_sequence: u64,
     observations: usize,
-    max_attempts: u32,
-    max_drops: u32,
-    max_invalid: u32,
+    max_attempts: u64,
+    max_drops: u64,
+    max_invalid: u64,
     max_over_sort: u32,
+    alpha_sort_peak_pairs: usize,
+    alpha_sort_peak_bytes: u64,
+    partition_observed_loss: bool,
     playback_sequence: u64,
     playback_frames: usize,
     blocked_owner_frames: usize,
@@ -66,6 +69,8 @@ pub(super) struct Report {
     selected_peak_capacity: u32,
     selected_rejected_updates: usize,
     selected_last_rejection: Option<String>,
+    reflection_peak_draws: usize,
+    reflection_peak_omitted: usize,
 }
 
 pub fn install(app: &mut App) -> Result<(), String> {
@@ -175,6 +180,9 @@ pub fn install(app: &mut App) -> Result<(), String> {
         max_drops: 0,
         max_invalid: 0,
         max_over_sort: 0,
+        alpha_sort_peak_pairs: 0,
+        alpha_sort_peak_bytes: 0,
+        partition_observed_loss: false,
         playback_sequence: 0,
         playback_frames: 0,
         blocked_owner_frames: 0,
@@ -186,6 +194,8 @@ pub fn install(app: &mut App) -> Result<(), String> {
         selected_peak_capacity: 0,
         selected_rejected_updates: 0,
         selected_last_rejection: None,
+        reflection_peak_draws: 0,
+        reflection_peak_omitted: 0,
     })
     .add_systems(Startup, review_camera_setup.after(super::setup))
     .add_systems(
@@ -376,6 +386,7 @@ fn record(
             Option<&Msaa>,
             Option<&aestra_bevy::EffectPipelinePreparation>,
             &Transform,
+            Option<&aestra_bevy::preview::planar::PlanarReflectionStatus>,
         ),
         With<AudienceCamera>,
     >,
@@ -383,12 +394,22 @@ fn record(
     capabilities: Res<aestra_bevy::GpuCapabilities>,
     lights: Res<TransientLightStatistics>,
     allocation: Res<ExperimentalOitStatistics>,
-    diagnostics: Res<ExperimentalOitDiagnostics>,
+    diagnostic_sources: (
+        Res<ExperimentalOitDiagnostics>,
+        Res<aestra_bevy::ExperimentalOitPartitionStatus>,
+        Res<aestra_bevy::gpu::GpuAlphaSortStatistics>,
+    ),
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
     time: Res<Time<Real>>,
     game_time: Res<Time>,
 ) {
+    let (diagnostics, partitions, alpha_sort) = diagnostic_sources;
+    let alpha_sort = alpha_sort.snapshot();
+    report.alpha_sort_peak_pairs = report.alpha_sort_peak_pairs.max(alpha_sort.pairs);
+    report.alpha_sort_peak_bytes = report
+        .alpha_sort_peak_bytes
+        .max(alpha_sort.owned_buffer_bytes);
     let (
         effects,
         clips,
@@ -404,6 +425,15 @@ fn record(
         error!("Full-show report timed out");
         exit.write(AppExit::error());
         return;
+    }
+    if let Ok((.., Some(reflection))) = camera.single() {
+        let reflection = reflection.snapshot();
+        report.reflection_peak_draws = report
+            .reflection_peak_draws
+            .max(reflection.queued_additive_draws);
+        report.reflection_peak_omitted = report
+            .reflection_peak_omitted
+            .max(reflection.omitted_transparent_draws);
     }
     if !readiness.started {
         return;
@@ -525,7 +555,10 @@ fn record(
     report.live_peak = report.live_peak.max(alive);
     report.last_live = alive;
     report.observed_owners = owners;
-    if let Some(sample) = diagnostics.snapshot()
+    let partition_snapshot = partitions.snapshot();
+    report.partition_observed_loss |= partition_snapshot.as_ref().is_some_and(|p| p.observed_loss);
+    if options.oit_partitions.is_some()
+        && let Some(sample) = partition_snapshot.as_ref().and_then(|p| p.sample.as_ref())
         && sample.sequence > report.last_sequence
     {
         report.last_sequence = sample.sequence;
@@ -533,6 +566,19 @@ fn record(
         report.max_attempts = report.max_attempts.max(sample.attempted_fragments);
         report.max_drops = report.max_drops.max(sample.dropped_fragments);
         report.max_invalid = report.max_invalid.max(sample.invalid_links);
+        let over: u32 = sample.regions.iter().map(|r| r[1]).sum();
+        report.max_over_sort = report.max_over_sort.max(over);
+    } else if options.oit_partitions.is_none()
+        && let Some(sample) = diagnostics.snapshot()
+        && sample.sequence > report.last_sequence
+    {
+        report.last_sequence = sample.sequence;
+        report.observations += 1;
+        report.max_attempts = report
+            .max_attempts
+            .max(u64::from(sample.attempted_fragments));
+        report.max_drops = report.max_drops.max(u64::from(sample.dropped_fragments));
+        report.max_invalid = report.max_invalid.max(u64::from(sample.invalid_links));
         report.max_over_sort = report.max_over_sort.max(sample.over_sort_pixels);
     }
     let index = report.captures.len();
@@ -564,7 +610,7 @@ fn record(
                 )
             })
             .collect();
-        let view = camera.single().ok().map(|(_, _, _, _, _, _, _, pose)| json!({"translation":pose.translation.to_array(),"rotation_xyzw":pose.rotation.to_array()}));
+        let view = camera.single().ok().map(|(_, _, _, _, _, _, _, pose, _)| json!({"translation":pose.translation.to_array(),"rotation_xyzw":pose.rotation.to_array()}));
         report.captures.push(json!({"path":path,"nominal_seconds":sample,"request_seconds":player.elapsed(),"request_camera_pose":view,"delivered":false,
             "representative_proxy_peak_lumens":flash_peak,"representative_active":lights.active,
             "representative_accepted":lights.accepted,"asynchronous_populations":populations,
@@ -583,19 +629,21 @@ fn record(
     if report.cleanup_frames < 10 || report.captured < report.captures.len() {
         return;
     }
-    let Ok((camera, status, hdr, tonemapping, bloom, msaa, preparation, _)) = camera.single()
+    let Ok((camera, status, hdr, tonemapping, bloom, msaa, preparation, _, reflection)) =
+        camera.single()
     else {
         return;
     };
     let allocation = allocation.snapshot();
-    let capacity = (report.images && options.experimental_oit).then(|| json!({
+    let capacity = (options.experimental_oit && (report.images || options.oit_partitions.is_some())).then(|| json!({
         "observations":report.observations,"max_attempted_fragments":report.max_attempts,"max_dropped":report.max_drops,"max_invalid_links":report.max_invalid,
-        "max_over_sort_pixels":report.max_over_sort,"loss_free":report.observations>0 && report.max_drops==0 && report.max_invalid==0}));
+        "max_over_sort_pixels":report.max_over_sort,"observed_partition_loss":report.partition_observed_loss,
+        "loss_free":report.observations>0 && report.max_drops==0 && report.max_invalid==0 && !report.partition_observed_loss}));
     let encoding_ledger = json!({"frames":report.playback_frames,"encoded_owner_frames":report.encoded_owner_frames,"blocked_owner_frames":report.blocked_owner_frames,"max_requested_minus_encoded_seconds":report.max_encoding_lag,"max_clip_schedule_error_seconds":report.max_schedule_error,
         "missing_scheduled_owner_frames":report.missing_scheduled_owner_frames,"worst_lag":report.worst_encoding_lag,
         "scope":"CPU command encoding only; asynchronous latest frame, no GPU completion fence or visible-pixel assertion. Stateful quantization up to one simulation tick is expected."});
     let mut output = json!({"completed":true,"adoption_accepted":false,
-        "lane":if report.images {"images-and-capacity"} else {"host-pacing-no-scans-no-screenshots"},
+        "lane":if report.images {"images-and-capacity"} else if options.oit_partitions.is_some() {"host-pacing-with-partition-health"} else {"host-pacing-no-scans-no-screenshots"},
         "experimental_oit":options.experimental_oit,"tier":options.tier,"history":format!("{:?}", options.history),
         "effect":(!options.host_driven).then_some(&options.effect_path),"seed":super::project::SHOW_SEED,"backend":format!("{:?}",runtime.active),
         "native_gpu":runtime.active==ActiveBackend::Gpu,"final_seconds":player.elapsed(),"duration":player.effect().duration,
@@ -607,16 +655,39 @@ fn record(
         "oit_estimated_bytes":status.map(|s|s.estimated_storage_bytes),"oit_rejection":status.and_then(|s|s.rejection),
         "node_head_allocated_bytes":allocation.storage_bytes,"capacity":capacity,
         "static_renderers":admission.renderers,"static_sprites":admission.sprites,"static_trails":admission.trails,
+        "target_preparation_updates":admission.target_preparation_updates,
         "peak_async_alive":report.live_peak,"last_async_alive":report.last_live,"last_observed_owners":report.observed_owners,
         "flashes_accepted":lights.accepted,"flashes_peak":lights.peak_active,
         "captures":report.captures,"audio_enabled":options.audio_root.is_some(),
         "scope":"Actual public-window HDR/bloom/environment show. Real-time forward playback, asynchronous screenshots/counts. Image lane adds readback/scans and is not a cost lane. Host intervals are not GPU completion or exact display-present timestamps. No automatic adoption or photographic approval."});
     output["encoding_ledger"] = encoding_ledger;
-    output["fragment_capacity_passed"] = if report.images && options.experimental_oit {
-        json!(report.observations > 0 && report.max_drops == 0 && report.max_invalid == 0)
-    } else {
-        serde_json::Value::Null
-    };
+    output["showcase_preset"] = json!(options.showcase.then_some(super::project::SHOWCASE_PRESET));
+    output["build"] = json!({"profile":env!("AESTRA_DEMO_PROFILE"),"opt_level":env!("AESTRA_DEMO_OPT_LEVEL"),
+        "debug_assertions":cfg!(debug_assertions),"audio_compiled":cfg!(feature="fireworks-audio")});
+    output["scene"] = json!(if options.sea { "sea" } else { "calibration" });
+    output["launch_lights"] = json!(options.sea && !options.no_launch_lights);
+    output["water_state"] = json!(options.sea.then(|| options.water.name()));
+    output["planar_reflection"] = json!(reflection.map(|s| {
+        let s = s.snapshot();
+        json!({"target_size":s.target_size.to_array(),"estimated_target_bytes":s.estimated_target_bytes,
+            "peak_queued_additive_draws":report.reflection_peak_draws,"peak_omitted_transparent_draws":report.reflection_peak_omitted,
+            "rejection":s.rejection,"alpha_smoke":"excluded","scope":"Queued draw counts, not GPU completion or live-particle counts; target estimate excludes view-local draw buffers"})
+    }));
+    output["alpha_sort"] = json!({"peak_view_draw_pairs":report.alpha_sort_peak_pairs,
+        "peak_owned_buffer_bytes":report.alpha_sort_peak_bytes,"last_view_draw_pairs":alpha_sort.pairs,
+        "last_owned_buffer_bytes":alpha_sort.owned_buffer_bytes,
+        "scope":"CPU-visible per-view particle permutation buffer ownership, not OIT list sorting or driver residency"});
+    output["fragment_capacity_passed"] =
+        if options.experimental_oit && (report.images || options.oit_partitions.is_some()) {
+            json!(
+                report.observations > 0
+                    && report.max_drops == 0
+                    && report.max_invalid == 0
+                    && !report.partition_observed_loss
+            )
+        } else {
+            serde_json::Value::Null
+        };
     output["oit_health_scope"] = json!(
         "Interactive experimental OIT enables async capacity/integrity scans and stops after observed fragment loss. Report lanes deliberately finish failed qualifications; completed is not acceptance. Only image reports scan fragment lists; cost/profile lanes omit that health-scan overhead and do not measure the entire interactive guarded-demo cost."
     );
@@ -639,6 +710,18 @@ fn record(
     output["review_camera"] = json!(report.camera_name);
     output["requested_msaa_off"] = json!(report.msaa_off);
     output["oit_fragments_per_pixel"] = json!(options.oit_fragments_per_pixel);
+    output["oit_partition_grid"] = json!(options.oit_partitions.map(|side| [side, side]));
+    output["oit_partition_last_sample"] = json!(partition_snapshot.and_then(|p| p.sample).map(
+        |s| json!({"sequence":s.sequence,"empty_phase":s.empty_phase,"regions":s.regions,"node_capacity":s.node_capacity})
+    ));
+    output["oit_partition_scope"] = json!(
+        "Opt-in real Bevy draw repetition; regional sort/health scans with mandatory bounded async health in every lane (including cost), unlike unpartitioned costs. Capacity failures are summed per region, not total attempts minus one pool. Single full-target view; foreign transparent commands, scene-depth materials, jitter and overrides rejected. Not adoption or a performance claim."
+    );
+    if options.oit_partitions.is_some() {
+        output["oit_health_scope"] = json!(
+            "Partitioned transport includes bounded per-region async health scans in all lanes. Interactive mode stops on sticky observed loss; reports finish failed capacity runs. Observations lag and cannot certify unsampled frames. Cost comparisons to unpartitioned scan-free lanes include different diagnostic overhead."
+        );
+    }
     output["review_camera_scope"] = json!(
         "Image orbit reads the root clock after Playback, before render preparation/transform propagation. Capture poses are request-time local transforms of the unparented camera; image and GPU observations arrive asynchronously. Constant 180-unit horizontal radius, y=48, target=(0,28,0), yaw=30-75*cos(2*pi*t/16) degrees. No lens, effect, seek or history changes; fixed views ignore the orbit formula."
     );

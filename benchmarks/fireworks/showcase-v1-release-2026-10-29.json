@@ -1,0 +1,2157 @@
+{
+  "preset": "fireworks-showcase-v1",
+  "manifest": {
+    "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/manifest.json",
+    "sha256": "bf7330fe3e23771a6ae209e5d294272f4ee909fe330180b1b99d504848f8afdc"
+  },
+  "adapter": {
+    "backend": "Vulkan",
+    "driver": "NVIDIA",
+    "name": "NVIDIA GeForce RTX 4070 SUPER"
+  },
+  "presentation": {
+    "camera_physical_size": [
+      1280,
+      720
+    ],
+    "review_camera": "audience",
+    "hdr": true,
+    "tonemapping": "TonyMcMapface",
+    "bloom_intensity": 0.15000000596046448,
+    "msaa": "Off"
+  },
+  "binary": {
+    "path": "target/fireworks-f8/showcase-v1-release-2026-10-29.exe",
+    "sha256": "28ca1234e8c9f80fd14118c588b008dfd75a896e4a95b31686e4291b32180849"
+  },
+  "analyzer": {
+    "path": "benchmarks/fireworks/summarize-showcase-baseline.py",
+    "sha256": "16cac83b56d44ecf7ac4b44b5cb422361bb2368bae4ab07c512a23c9b8010af5"
+  },
+  "runs": [
+    {
+      "name": "images",
+      "report": {
+        "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/images.json",
+        "sha256": "116721f1afd96728063b7519dd591f8669071f666437d2d5d273f7b7cf2a65ad"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847412,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61862,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "build": {
+        "audio_compiled": false,
+        "debug_assertions": false,
+        "opt_level": "3",
+        "profile": "release"
+      },
+      "host_phases": {
+        "active-fireworks": {
+          "max_ms": 24.1556,
+          "median_ms": 16.7913,
+          "over_16_67ms": 174,
+          "over_20ms": 1,
+          "over_33_33ms": 0,
+          "p95_ms": 17.909499999999998,
+          "p99_ms": 18.3954,
+          "samples": 303
+        },
+        "idle": {
+          "max_ms": 31.8977,
+          "median_ms": 16.6672,
+          "over_16_67ms": 492,
+          "over_20ms": 6,
+          "over_33_33ms": 0,
+          "p95_ms": 17.0328,
+          "p99_ms": 17.785700000000002,
+          "samples": 984
+        },
+        "launch-and-overlap": {
+          "max_ms": 30.8978,
+          "median_ms": 16.6845,
+          "over_16_67ms": 178,
+          "over_20ms": 3,
+          "over_33_33ms": 0,
+          "p95_ms": 17.6183,
+          "p99_ms": 19.162599999999998,
+          "samples": 333
+        },
+        "smoke-drain": {
+          "max_ms": 22.234199999999998,
+          "median_ms": 16.6721,
+          "over_16_67ms": 390,
+          "over_20ms": 3,
+          "over_33_33ms": 0,
+          "p95_ms": 17.6428,
+          "p99_ms": 19.342200000000002,
+          "samples": 777
+        }
+      },
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "captures": [
+        {
+          "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/images-2.8s.png",
+          "sha256": "feb4b2ce14c01db04026560c0ff0a07d4041c841d6adde4650850d95a2d0d010"
+        },
+        {
+          "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/images-6.9s.png",
+          "sha256": "268cee028a28e85a65237a3db9eb7041d3ffdeabb5c0789fae82a7553b61f855"
+        },
+        {
+          "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/images-12s.png",
+          "sha256": "50c25f7255cd625c8ebf93e0386afb825e750d7a36fe6688d4aa5adedb43a101"
+        },
+        {
+          "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/images-23s.png",
+          "sha256": "de4e1152cf5eae2d1f6d78c83b1753725b967261c7cfba9614bdf6036cb87ccf"
+        },
+        {
+          "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/images-36s.png",
+          "sha256": "29727c4589476a41faf26b1a11279c992229c60e1e89bdaefac9e58320f68b71"
+        }
+      ]
+    },
+    {
+      "name": "warmup",
+      "report": {
+        "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/warmup.json",
+        "sha256": "3d16cf0e5fb48e24c94d1a326fdc789749350e46fd7e5c6e95bf85353cc255d9"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847457,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61867,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "build": {
+        "audio_compiled": false,
+        "debug_assertions": false,
+        "opt_level": "3",
+        "profile": "release"
+      },
+      "host_phases": {
+        "active-fireworks": {
+          "max_ms": 19.4146,
+          "median_ms": 16.8219,
+          "over_16_67ms": 181,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.4897,
+          "p99_ms": 18.0372,
+          "samples": 303
+        },
+        "idle": {
+          "max_ms": 31.712799999999998,
+          "median_ms": 16.6727,
+          "over_16_67ms": 503,
+          "over_20ms": 5,
+          "over_33_33ms": 0,
+          "p95_ms": 17.035600000000002,
+          "p99_ms": 18.1924,
+          "samples": 984
+        },
+        "launch-and-overlap": {
+          "max_ms": 19.4018,
+          "median_ms": 16.6816,
+          "over_16_67ms": 172,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.5233,
+          "p99_ms": 18.6226,
+          "samples": 333
+        },
+        "smoke-drain": {
+          "max_ms": 19.6112,
+          "median_ms": 16.673199999999998,
+          "over_16_67ms": 395,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.6559,
+          "p99_ms": 18.8803,
+          "samples": 777
+        }
+      }
+    },
+    {
+      "name": "ordinary-1",
+      "report": {
+        "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/ordinary-1.json",
+        "sha256": "15e156dea5250ee800d88256e0c8c069af8805983d9cec8f9b0122cfced25402"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847507,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61875,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "build": {
+        "audio_compiled": false,
+        "debug_assertions": false,
+        "opt_level": "3",
+        "profile": "release"
+      },
+      "host_phases": {
+        "active-fireworks": {
+          "max_ms": 18.5481,
+          "median_ms": 16.7927,
+          "over_16_67ms": 166,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.7434,
+          "p99_ms": 18.3681,
+          "samples": 303
+        },
+        "idle": {
+          "max_ms": 31.540699999999998,
+          "median_ms": 16.6828,
+          "over_16_67ms": 528,
+          "over_20ms": 4,
+          "over_33_33ms": 0,
+          "p95_ms": 17.0346,
+          "p99_ms": 18.6238,
+          "samples": 984
+        },
+        "launch-and-overlap": {
+          "max_ms": 19.7538,
+          "median_ms": 16.652,
+          "over_16_67ms": 163,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.686500000000002,
+          "p99_ms": 18.406100000000002,
+          "samples": 333
+        },
+        "smoke-drain": {
+          "max_ms": 19.4461,
+          "median_ms": 16.6582,
+          "over_16_67ms": 384,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.5689,
+          "p99_ms": 18.1231,
+          "samples": 777
+        }
+      }
+    },
+    {
+      "name": "profile-1",
+      "report": {
+        "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/profile-1.json",
+        "sha256": "6126071a1ff2ba04de1f48e441c3007e18c07f248241b01a7f4e5b010d53c83a"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847495,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61864,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "build": {
+        "audio_compiled": false,
+        "debug_assertions": false,
+        "opt_level": "3",
+        "profile": "release"
+      },
+      "host_phases": {
+        "active-fireworks": {
+          "max_ms": 19.1068,
+          "median_ms": 16.7145,
+          "over_16_67ms": 156,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.742,
+          "p99_ms": 18.3007,
+          "samples": 303
+        },
+        "idle": {
+          "max_ms": 31.5772,
+          "median_ms": 16.6781,
+          "over_16_67ms": 514,
+          "over_20ms": 2,
+          "over_33_33ms": 0,
+          "p95_ms": 17.0329,
+          "p99_ms": 18.0674,
+          "samples": 984
+        },
+        "launch-and-overlap": {
+          "max_ms": 19.8337,
+          "median_ms": 16.6816,
+          "over_16_67ms": 174,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.7319,
+          "p99_ms": 18.8481,
+          "samples": 333
+        },
+        "smoke-drain": {
+          "max_ms": 18.9929,
+          "median_ms": 16.6673,
+          "over_16_67ms": 390,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.543,
+          "p99_ms": 18.12,
+          "samples": 777
+        }
+      },
+      "profile_phases": {
+        "active-fireworks": {
+          "cpu_encoding_ms": {
+            "max_ms": 1.4182,
+            "median_ms": 0.6929,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.765,
+            "p99_ms": 0.8687,
+            "samples": 303
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1717,
+            "median_ms": 0.0781,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.107,
+            "p99_ms": 0.124,
+            "samples": 303
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 1.7551999999999999,
+            "median_ms": 1.4121,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.5751000000000002,
+            "p99_ms": 1.6720000000000002,
+            "samples": 255
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.8658,
+            "median_ms": 0.0118,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0159,
+            "p99_ms": 0.019,
+            "samples": 303
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.016384,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.01536,
+              "p99_ms": 0.01536,
+              "samples": 255
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.331776,
+              "median_ms": 0.29184,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.310272,
+              "p99_ms": 0.318464,
+              "samples": 255
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 3.540992,
+              "median_ms": 2.771968,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 3.257344,
+              "p99_ms": 3.350528,
+              "samples": 255
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.664576,
+              "median_ms": 0.487424,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.642048,
+              "p99_ms": 0.65536,
+              "samples": 255
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 6.672384,
+              "median_ms": 6.122496,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 6.508544,
+              "p99_ms": 6.59968,
+              "samples": 255
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.268288,
+              "median_ms": 0.073728,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.080896,
+              "p99_ms": 0.264192,
+              "samples": 255
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 10.903552,
+              "median_ms": 10.107904,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 10.479616,
+              "p99_ms": 10.635264,
+              "samples": 255
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.014336,
+              "median_ms": 0.012288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.013312,
+              "p99_ms": 0.013312,
+              "samples": 255
+            }
+          }
+        },
+        "idle": {
+          "cpu_encoding_ms": {
+            "max_ms": 0.0778,
+            "median_ms": 0.0044,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0052,
+            "p99_ms": 0.0062,
+            "samples": 994
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1648,
+            "median_ms": 0.055600000000000004,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1013,
+            "p99_ms": 0.12760000000000002,
+            "samples": 994
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 0.5786,
+            "median_ms": 0.2592,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.315,
+            "p99_ms": 0.34650000000000003,
+            "samples": 994
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.0194,
+            "median_ms": 0.0002,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0003,
+            "p99_ms": 0.0005,
+            "samples": 993
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.017408,
+              "median_ms": 0.002048,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.003072,
+              "p99_ms": 0.004096,
+              "samples": 994
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.058368,
+              "median_ms": 0.058368,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.057344,
+              "p99_ms": 0.057344,
+              "samples": 2
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 0.442368,
+              "median_ms": 0.002048,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.004096,
+              "p99_ms": 0.004096,
+              "samples": 994
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.06656,
+              "median_ms": 0.003072,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.004096,
+              "p99_ms": 0.004096,
+              "samples": 994
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 1.707008,
+              "median_ms": 0.157696,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.164864,
+              "p99_ms": 0.166912,
+              "samples": 994
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.76288,
+              "median_ms": 0.754688,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.758784,
+              "p99_ms": 0.760832,
+              "samples": 994
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 3.180544,
+              "median_ms": 2.220032,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.243584,
+              "p99_ms": 2.256896,
+              "samples": 994
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.14336,
+              "median_ms": 0.13824,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.142336,
+              "p99_ms": 0.142336,
+              "samples": 994
+            }
+          }
+        },
+        "launch-and-overlap": {
+          "cpu_encoding_ms": {
+            "max_ms": 1.3583,
+            "median_ms": 0.343,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.6716,
+            "p99_ms": 0.9266,
+            "samples": 334
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1922,
+            "median_ms": 0.07150000000000001,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1085,
+            "p99_ms": 0.1421,
+            "samples": 334
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 1.8134,
+            "median_ms": 0.8984000000000001,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.4263,
+            "p99_ms": 1.5537,
+            "samples": 257
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.9388,
+            "median_ms": 0.0062,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0896,
+            "p99_ms": 0.8669,
+            "samples": 334
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.02048,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.01536,
+              "p99_ms": 0.016384,
+              "samples": 257
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.313344,
+              "median_ms": 0.201728,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.303104,
+              "p99_ms": 0.310272,
+              "samples": 196
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 3.093504,
+              "median_ms": 1.50528,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.980864,
+              "p99_ms": 3.080192,
+              "samples": 257
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.621568,
+              "median_ms": 0.251904,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.591872,
+              "p99_ms": 0.612352,
+              "samples": 257
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 5.069824,
+              "median_ms": 2.501632,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 4.798464,
+              "p99_ms": 4.990976,
+              "samples": 257
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.28672,
+              "median_ms": 0.0768,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.178176,
+              "p99_ms": 0.27136,
+              "samples": 257
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 9.495552,
+              "median_ms": 4.865024,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 9.259008,
+              "p99_ms": 9.42592,
+              "samples": 257
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.22016,
+              "median_ms": 0.013312,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.027648,
+              "p99_ms": 0.029696,
+              "samples": 257
+            }
+          }
+        },
+        "smoke-drain": {
+          "cpu_encoding_ms": {
+            "max_ms": 0.886,
+            "median_ms": 0.6117,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.7405,
+            "p99_ms": 0.7942,
+            "samples": 777
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1515,
+            "median_ms": 0.0737,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1,
+            "p99_ms": 0.1128,
+            "samples": 777
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 1.7026999999999999,
+            "median_ms": 1.3278999999999999,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.5165,
+            "p99_ms": 1.5878999999999999,
+            "samples": 628
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.05,
+            "median_ms": 0.0112,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0165,
+            "p99_ms": 0.0233,
+            "samples": 777
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.022528,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.016384,
+              "p99_ms": 0.02048,
+              "samples": 628
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.483328,
+              "median_ms": 0.277504,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.326656,
+              "p99_ms": 0.467968,
+              "samples": 628
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 5.071872,
+              "median_ms": 2.536448,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.860032,
+              "p99_ms": 5.026816,
+              "samples": 628
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.515072,
+              "median_ms": 0.32256,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.370688,
+              "p99_ms": 0.503808,
+              "samples": 628
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 6.311936,
+              "median_ms": 1.445888,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 5.629952,
+              "p99_ms": 6.080512,
+              "samples": 628
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.559104,
+              "median_ms": 0.073728,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.17408,
+              "p99_ms": 0.180224,
+              "samples": 628
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 10.016768,
+              "median_ms": 5.202944,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 9.52832,
+              "p99_ms": 9.80992,
+              "samples": 628
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.026624,
+              "median_ms": 0.012288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.023552,
+              "p99_ms": 0.0256,
+              "samples": 628
+            }
+          }
+        }
+      },
+      "render_graph_scope": "Paired timestamps around RenderGraph Begin through Render and selected-light copy, before diagnostic resolve/submission. GPU includes intervening graph work and gaps, not presentation latency or every upload. CPU is command-encoding wall time, not whole-game CPU or active CPU cycles. Nested scopes overlap; never add their quantiles."
+    },
+    {
+      "name": "profile-2",
+      "report": {
+        "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/profile-2.json",
+        "sha256": "d95a606aae75091f2a5bf8c144feda7a5a5a14e1aeb5808c099cd9d2ef8e740d"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847456,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61860,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "build": {
+        "audio_compiled": false,
+        "debug_assertions": false,
+        "opt_level": "3",
+        "profile": "release"
+      },
+      "host_phases": {
+        "active-fireworks": {
+          "max_ms": 19.0207,
+          "median_ms": 16.6825,
+          "over_16_67ms": 152,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.7432,
+          "p99_ms": 18.6464,
+          "samples": 303
+        },
+        "idle": {
+          "max_ms": 31.5263,
+          "median_ms": 16.6679,
+          "over_16_67ms": 494,
+          "over_20ms": 2,
+          "over_33_33ms": 0,
+          "p95_ms": 17.0426,
+          "p99_ms": 18.197000000000003,
+          "samples": 984
+        },
+        "launch-and-overlap": {
+          "max_ms": 19.4515,
+          "median_ms": 16.6459,
+          "over_16_67ms": 160,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.889100000000003,
+          "p99_ms": 18.5809,
+          "samples": 333
+        },
+        "smoke-drain": {
+          "max_ms": 19.3879,
+          "median_ms": 16.6583,
+          "over_16_67ms": 378,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.574099999999998,
+          "p99_ms": 18.259,
+          "samples": 777
+        }
+      },
+      "profile_phases": {
+        "active-fireworks": {
+          "cpu_encoding_ms": {
+            "max_ms": 1.3745,
+            "median_ms": 0.6912,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.7971,
+            "p99_ms": 0.9053,
+            "samples": 303
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1712,
+            "median_ms": 0.08009999999999999,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.10959999999999999,
+            "p99_ms": 0.1252,
+            "samples": 303
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 2.1432,
+            "median_ms": 1.4188,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.6286,
+            "p99_ms": 1.685,
+            "samples": 228
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.9079,
+            "median_ms": 0.0113,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0173,
+            "p99_ms": 0.0202,
+            "samples": 303
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.01536,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.014336,
+              "p99_ms": 0.01536,
+              "samples": 228
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.330752,
+              "median_ms": 0.289792,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.310272,
+              "p99_ms": 0.319488,
+              "samples": 228
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 3.37408,
+              "median_ms": 2.768896,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 3.161088,
+              "p99_ms": 3.214336,
+              "samples": 228
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.657408,
+              "median_ms": 0.4864,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.63488,
+              "p99_ms": 0.648192,
+              "samples": 228
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 6.664192,
+              "median_ms": 6.144,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 6.49216,
+              "p99_ms": 6.608896,
+              "samples": 228
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.275456,
+              "median_ms": 0.073728,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.079872,
+              "p99_ms": 0.249856,
+              "samples": 228
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 10.614784,
+              "median_ms": 10.107904,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 10.466304,
+              "p99_ms": 10.595328,
+              "samples": 228
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.18432,
+              "median_ms": 0.012288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.013312,
+              "p99_ms": 0.013312,
+              "samples": 228
+            }
+          }
+        },
+        "idle": {
+          "cpu_encoding_ms": {
+            "max_ms": 0.0761,
+            "median_ms": 0.0044,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0053,
+            "p99_ms": 0.0059,
+            "samples": 994
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1629,
+            "median_ms": 0.055600000000000004,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1012,
+            "p99_ms": 0.1241,
+            "samples": 994
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 0.5482,
+            "median_ms": 0.2592,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.31320000000000003,
+            "p99_ms": 0.3676,
+            "samples": 992
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.0222,
+            "median_ms": 0.0002,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0005,
+            "p99_ms": 0.0053,
+            "samples": 992
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.01536,
+              "median_ms": 0.003072,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.004096,
+              "p99_ms": 0.004096,
+              "samples": 992
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.059392,
+              "median_ms": 0.059392,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.059392,
+              "p99_ms": 0.059392,
+              "samples": 1
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 0.446464,
+              "median_ms": 0.002048,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.004096,
+              "p99_ms": 0.004096,
+              "samples": 992
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.05632,
+              "median_ms": 0.002048,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.003072,
+              "p99_ms": 0.004096,
+              "samples": 992
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 1.708032,
+              "median_ms": 0.1536,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.164864,
+              "p99_ms": 0.167936,
+              "samples": 992
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.76288,
+              "median_ms": 0.74752,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.75776,
+              "p99_ms": 0.759808,
+              "samples": 992
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 3.172352,
+              "median_ms": 2.197504,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.225152,
+              "p99_ms": 2.233344,
+              "samples": 992
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.14336,
+              "median_ms": 0.13824,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.142336,
+              "p99_ms": 0.142336,
+              "samples": 992
+            }
+          }
+        },
+        "launch-and-overlap": {
+          "cpu_encoding_ms": {
+            "max_ms": 1.2914,
+            "median_ms": 0.3412,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.6815,
+            "p99_ms": 1.0477,
+            "samples": 334
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1666,
+            "median_ms": 0.07150000000000001,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1133,
+            "p99_ms": 0.1351,
+            "samples": 334
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 1.8986999999999998,
+            "median_ms": 0.8905000000000001,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.3877,
+            "p99_ms": 1.5353,
+            "samples": 259
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 1.1199,
+            "median_ms": 0.007,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1001,
+            "p99_ms": 0.7664,
+            "samples": 334
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.023552,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.016384,
+              "p99_ms": 0.018432,
+              "samples": 259
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.308224,
+              "median_ms": 0.208896,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.295936,
+              "p99_ms": 0.30208,
+              "samples": 199
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 3.033088,
+              "median_ms": 1.590272,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.93888,
+              "p99_ms": 2.968576,
+              "samples": 259
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.610304,
+              "median_ms": 0.265216,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.58368,
+              "p99_ms": 0.607232,
+              "samples": 259
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 5.0432,
+              "median_ms": 2.67776,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 4.788224,
+              "p99_ms": 4.870144,
+              "samples": 259
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.284672,
+              "median_ms": 0.0768,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.172032,
+              "p99_ms": 0.24576,
+              "samples": 259
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 9.40032,
+              "median_ms": 5.154816,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 9.145344,
+              "p99_ms": 9.35424,
+              "samples": 259
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.029696,
+              "median_ms": 0.013312,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.0256,
+              "p99_ms": 0.028672,
+              "samples": 259
+            }
+          }
+        },
+        "smoke-drain": {
+          "cpu_encoding_ms": {
+            "max_ms": 0.9362,
+            "median_ms": 0.6142,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.7453,
+            "p99_ms": 0.8194,
+            "samples": 777
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1561,
+            "median_ms": 0.07619999999999999,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.10880000000000001,
+            "p99_ms": 0.12760000000000002,
+            "samples": 777
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 1.7283000000000002,
+            "median_ms": 1.3313000000000001,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.5575999999999999,
+            "p99_ms": 1.6164,
+            "samples": 606
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.1036,
+            "median_ms": 0.0112,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0182,
+            "p99_ms": 0.0258,
+            "samples": 777
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.022528,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.017408,
+              "p99_ms": 0.02048,
+              "samples": 606
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.487424,
+              "median_ms": 0.275456,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.319488,
+              "p99_ms": 0.467968,
+              "samples": 606
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 5.269504,
+              "median_ms": 2.533376,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.855936,
+              "p99_ms": 5.018624,
+              "samples": 606
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.513024,
+              "median_ms": 0.321536,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.369664,
+              "p99_ms": 0.50176,
+              "samples": 606
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 6.356992,
+              "median_ms": 1.458176,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 5.525504,
+              "p99_ms": 6.176768,
+              "samples": 606
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.462848,
+              "median_ms": 0.075776,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.172032,
+              "p99_ms": 0.237568,
+              "samples": 606
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 10.16832,
+              "median_ms": 5.184512,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 9.489408,
+              "p99_ms": 10.007552,
+              "samples": 606
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.028672,
+              "median_ms": 0.012288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.022528,
+              "p99_ms": 0.024576,
+              "samples": 606
+            }
+          }
+        }
+      },
+      "render_graph_scope": "Paired timestamps around RenderGraph Begin through Render and selected-light copy, before diagnostic resolve/submission. GPU includes intervening graph work and gaps, not presentation latency or every upload. CPU is command-encoding wall time, not whole-game CPU or active CPU cycles. Nested scopes overlap; never add their quantiles."
+    },
+    {
+      "name": "ordinary-2",
+      "report": {
+        "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/ordinary-2.json",
+        "sha256": "da9b95d55ad5f23be14e6b1c6dc7fe153c727c2c927b67e3c5b81c501be3c528"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847459,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61859,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "build": {
+        "audio_compiled": false,
+        "debug_assertions": false,
+        "opt_level": "3",
+        "profile": "release"
+      },
+      "host_phases": {
+        "active-fireworks": {
+          "max_ms": 18.7357,
+          "median_ms": 16.8277,
+          "over_16_67ms": 179,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.738899999999997,
+          "p99_ms": 18.4554,
+          "samples": 303
+        },
+        "idle": {
+          "max_ms": 31.6139,
+          "median_ms": 16.6781,
+          "over_16_67ms": 520,
+          "over_20ms": 8,
+          "over_33_33ms": 0,
+          "p95_ms": 17.0308,
+          "p99_ms": 19.1646,
+          "samples": 984
+        },
+        "launch-and-overlap": {
+          "max_ms": 19.6677,
+          "median_ms": 16.6462,
+          "over_16_67ms": 160,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.7448,
+          "p99_ms": 18.1398,
+          "samples": 333
+        },
+        "smoke-drain": {
+          "max_ms": 29.7571,
+          "median_ms": 16.688399999999998,
+          "over_16_67ms": 408,
+          "over_20ms": 1,
+          "over_33_33ms": 0,
+          "p95_ms": 17.6779,
+          "p99_ms": 18.139499999999998,
+          "samples": 777
+        }
+      }
+    },
+    {
+      "name": "ordinary-3",
+      "report": {
+        "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/ordinary-3.json",
+        "sha256": "5f247c06870dfacae86d50c6dad23059f4c359b9fadd889d7057539f73ecaedb"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847534,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61842,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "build": {
+        "audio_compiled": false,
+        "debug_assertions": false,
+        "opt_level": "3",
+        "profile": "release"
+      },
+      "host_phases": {
+        "active-fireworks": {
+          "max_ms": 19.6706,
+          "median_ms": 16.8016,
+          "over_16_67ms": 177,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.848200000000002,
+          "p99_ms": 18.5653,
+          "samples": 303
+        },
+        "idle": {
+          "max_ms": 19.489800000000002,
+          "median_ms": 16.6734,
+          "over_16_67ms": 509,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 16.9946,
+          "p99_ms": 17.2447,
+          "samples": 984
+        },
+        "launch-and-overlap": {
+          "max_ms": 19.289299999999997,
+          "median_ms": 16.6695,
+          "over_16_67ms": 168,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.6696,
+          "p99_ms": 18.2668,
+          "samples": 333
+        },
+        "smoke-drain": {
+          "max_ms": 30.2608,
+          "median_ms": 16.6841,
+          "over_16_67ms": 402,
+          "over_20ms": 1,
+          "over_33_33ms": 0,
+          "p95_ms": 17.72,
+          "p99_ms": 18.4077,
+          "samples": 777
+        }
+      }
+    },
+    {
+      "name": "profile-3",
+      "report": {
+        "path": "target/fireworks-f8/showcase-v1-release-baseline-final-2026-10-29/profile-3.json",
+        "sha256": "e418d6511597fa2601b2d44a8a4d6d745d3a661568b86755c093256c934f6c78"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5847537,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 61845,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": null,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "build": {
+        "audio_compiled": false,
+        "debug_assertions": false,
+        "opt_level": "3",
+        "profile": "release"
+      },
+      "host_phases": {
+        "active-fireworks": {
+          "max_ms": 18.9496,
+          "median_ms": 16.7063,
+          "over_16_67ms": 156,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.7952,
+          "p99_ms": 18.4111,
+          "samples": 303
+        },
+        "idle": {
+          "max_ms": 31.5526,
+          "median_ms": 16.6665,
+          "over_16_67ms": 489,
+          "over_20ms": 2,
+          "over_33_33ms": 0,
+          "p95_ms": 17.0272,
+          "p99_ms": 18.2334,
+          "samples": 984
+        },
+        "launch-and-overlap": {
+          "max_ms": 19.3304,
+          "median_ms": 16.6767,
+          "over_16_67ms": 172,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.8029,
+          "p99_ms": 18.6531,
+          "samples": 333
+        },
+        "smoke-drain": {
+          "max_ms": 19.627499999999998,
+          "median_ms": 16.6539,
+          "over_16_67ms": 385,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 17.6568,
+          "p99_ms": 18.2943,
+          "samples": 777
+        }
+      },
+      "profile_phases": {
+        "active-fireworks": {
+          "cpu_encoding_ms": {
+            "max_ms": 1.5119,
+            "median_ms": 0.6477,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.755,
+            "p99_ms": 0.8512,
+            "samples": 303
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1578,
+            "median_ms": 0.08009999999999999,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1041,
+            "p99_ms": 0.1148,
+            "samples": 303
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 2.2277,
+            "median_ms": 1.3623999999999998,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.5569,
+            "p99_ms": 1.6518,
+            "samples": 247
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.9128,
+            "median_ms": 0.0116,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0162,
+            "p99_ms": 0.0187,
+            "samples": 303
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.01536,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.014336,
+              "p99_ms": 0.01536,
+              "samples": 247
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.32256,
+              "median_ms": 0.287744,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.309248,
+              "p99_ms": 0.318464,
+              "samples": 247
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 3.299328,
+              "median_ms": 2.742272,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 3.131392,
+              "p99_ms": 3.171328,
+              "samples": 247
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.65024,
+              "median_ms": 0.45568,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.633856,
+              "p99_ms": 0.644096,
+              "samples": 247
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 6.796288,
+              "median_ms": 6.1184,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 6.47168,
+              "p99_ms": 6.69184,
+              "samples": 247
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.268288,
+              "median_ms": 0.073728,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.074752,
+              "p99_ms": 0.23552,
+              "samples": 247
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 10.576896,
+              "median_ms": 10.066944,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 10.381312,
+              "p99_ms": 10.533888,
+              "samples": 247
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.014336,
+              "median_ms": 0.012288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.013312,
+              "p99_ms": 0.013312,
+              "samples": 247
+            }
+          }
+        },
+        "idle": {
+          "cpu_encoding_ms": {
+            "max_ms": 0.0725,
+            "median_ms": 0.0045,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0054,
+            "p99_ms": 0.0069,
+            "samples": 994
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.1711,
+            "median_ms": 0.0549,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1054,
+            "p99_ms": 0.124,
+            "samples": 994
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 0.583,
+            "median_ms": 0.2647,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.3275,
+            "p99_ms": 0.36469999999999997,
+            "samples": 991
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.0136,
+            "median_ms": 0.0002,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0003,
+            "p99_ms": 0.002,
+            "samples": 993
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.014336,
+              "median_ms": 0.003072,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.003072,
+              "p99_ms": 0.004096,
+              "samples": 991
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.065536,
+              "median_ms": 0.065536,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.065536,
+              "p99_ms": 0.065536,
+              "samples": 1
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 0.437248,
+              "median_ms": 0.002048,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.003072,
+              "p99_ms": 0.004096,
+              "samples": 991
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.065536,
+              "median_ms": 0.002048,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.004096,
+              "p99_ms": 0.004096,
+              "samples": 991
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 1.705984,
+              "median_ms": 0.157696,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.162816,
+              "p99_ms": 0.164864,
+              "samples": 991
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.760832,
+              "median_ms": 0.751616,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.75776,
+              "p99_ms": 0.758784,
+              "samples": 991
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 3.186688,
+              "median_ms": 2.212864,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.23744,
+              "p99_ms": 2.244608,
+              "samples": 991
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.14336,
+              "median_ms": 0.13824,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.142336,
+              "p99_ms": 0.142336,
+              "samples": 991
+            }
+          }
+        },
+        "launch-and-overlap": {
+          "cpu_encoding_ms": {
+            "max_ms": 1.5097,
+            "median_ms": 0.3438,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.7134,
+            "p99_ms": 0.8975,
+            "samples": 334
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.6374,
+            "median_ms": 0.07279999999999999,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.11950000000000001,
+            "p99_ms": 0.1548,
+            "samples": 334
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 1.9675,
+            "median_ms": 0.8734,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.4630999999999998,
+            "p99_ms": 1.6228,
+            "samples": 258
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 1.3867,
+            "median_ms": 0.0063,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1024,
+            "p99_ms": 0.809,
+            "samples": 334
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.021504,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.019456,
+              "p99_ms": 0.02048,
+              "samples": 258
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.299008,
+              "median_ms": 0.207872,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.293888,
+              "p99_ms": 0.299008,
+              "samples": 198
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 3.058688,
+              "median_ms": 1.691648,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.937856,
+              "p99_ms": 2.972672,
+              "samples": 258
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.612352,
+              "median_ms": 0.268288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.580608,
+              "p99_ms": 0.606208,
+              "samples": 258
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 5.21216,
+              "median_ms": 2.729984,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 4.818944,
+              "p99_ms": 4.893696,
+              "samples": 258
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.26112,
+              "median_ms": 0.075776,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.177152,
+              "p99_ms": 0.188416,
+              "samples": 258
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 9.449472,
+              "median_ms": 5.496832,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 9.109504,
+              "p99_ms": 9.36448,
+              "samples": 258
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.031744,
+              "median_ms": 0.013312,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.028672,
+              "p99_ms": 0.029696,
+              "samples": 258
+            }
+          }
+        },
+        "smoke-drain": {
+          "cpu_encoding_ms": {
+            "max_ms": 1.0511,
+            "median_ms": 0.6062,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.7353,
+            "p99_ms": 0.8028,
+            "samples": 777
+          },
+          "cpu_playback_ms": {
+            "max_ms": 0.15760000000000002,
+            "median_ms": 0.0741,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.1042,
+            "p99_ms": 0.1207,
+            "samples": 777
+          },
+          "cpu_render_graph_ms": {
+            "max_ms": 1.8104,
+            "median_ms": 1.3058,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 1.5272000000000001,
+            "p99_ms": 1.6037,
+            "samples": 629
+          },
+          "cpu_stateful_preparation_ms": {
+            "max_ms": 0.096,
+            "median_ms": 0.0101,
+            "over_16_67ms": 0,
+            "over_20ms": 0,
+            "over_33_33ms": 0,
+            "p95_ms": 0.0147,
+            "p99_ms": 0.0225,
+            "samples": 777
+          },
+          "gpu_scopes_ms": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "max_ms": 0.02048,
+              "median_ms": 0.007168,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.016384,
+              "p99_ms": 0.019456,
+              "samples": 629
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "max_ms": 0.47104,
+              "median_ms": 0.275456,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.31744,
+              "p99_ms": 0.459776,
+              "samples": 629
+            },
+            "render/aestra::gpu::simulate/elapsed_gpu": {
+              "max_ms": 5.230592,
+              "median_ms": 2.520064,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 2.837504,
+              "p99_ms": 4.964352,
+              "samples": 629
+            },
+            "render/aestra::gpu::trail_compaction/elapsed_gpu": {
+              "max_ms": 0.515072,
+              "median_ms": 0.320512,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.372736,
+              "p99_ms": 0.510976,
+              "samples": 629
+            },
+            "render/aestra_oit_partitions_with_health/elapsed_gpu": {
+              "max_ms": 6.279168,
+              "median_ms": 1.386496,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 5.548032,
+              "p99_ms": 6.022144,
+              "samples": 629
+            },
+            "render/bloom/elapsed_gpu": {
+              "max_ms": 0.658432,
+              "median_ms": 0.073728,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.172032,
+              "p99_ms": 0.233472,
+              "samples": 629
+            },
+            "render/fireworks_render_graph/elapsed_gpu": {
+              "max_ms": 10.310656,
+              "median_ms": 5.188608,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 9.41568,
+              "p99_ms": 9.703424,
+              "samples": 629
+            },
+            "render/tonemapping/elapsed_gpu": {
+              "max_ms": 0.214016,
+              "median_ms": 0.012288,
+              "over_16_67ms": 0,
+              "over_20ms": 0,
+              "over_33_33ms": 0,
+              "p95_ms": 0.023552,
+              "p99_ms": 0.0256,
+              "samples": 629
+            }
+          }
+        }
+      },
+      "render_graph_scope": "Paired timestamps around RenderGraph Begin through Render and selected-light copy, before diagnostic resolve/submission. GPU includes intervening graph work and gaps, not presentation latency or every upload. CPU is command-encoding wall time, not whole-game CPU or active CPU cycles. Nested scopes overlap; never add their quantiles."
+    }
+  ],
+  "scope": "One hardware/view release baseline, not final art/F9 approval. Warm-up and images excluded from timing tables. Phase classification and diagnostic sampling are asynchronous."
+}

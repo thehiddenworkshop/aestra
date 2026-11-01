@@ -27,10 +27,12 @@ use bevy::{
 };
 
 #[derive(Resource)]
-struct Pipeline {
+pub(super) struct Pipeline {
     layout: BindGroupLayoutDescriptor,
-    id: CachedComputePipelineId,
-    group: Option<BindGroup>,
+    pub(super) id: CachedComputePipelineId,
+    pub(super) group: Option<BindGroup>,
+    pub(super) region_id: CachedComputePipelineId,
+    pub(super) region_layout: BindGroupLayoutDescriptor,
 }
 
 pub(super) fn install(app: &mut App) {
@@ -75,12 +77,35 @@ fn init(
         label: Some("aestra OIT overflow merge sort".into()),
         layout: vec![layout.clone()],
         shader: load_embedded_asset!(&*assets, "sort.wesl"),
+        entry_point: Some("main".into()),
+        ..default()
+    });
+    let region_layout = BindGroupLayoutDescriptor::new(
+        "aestra OIT regional overflow links",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                uniform_buffer::<ViewUniform>(true),
+                uniform_buffer::<OrderIndependentTransparencySettings>(true),
+                storage_buffer_sized(false, None),
+                storage_buffer_sized(false, None),
+                uniform_buffer::<UVec4>(false),
+            ),
+        ),
+    );
+    let region_id = cache.queue_compute_pipeline(ComputePipelineDescriptor {
+        label: Some("aestra OIT regional overflow merge sort".into()),
+        layout: vec![region_layout.clone()],
+        shader: load_embedded_asset!(&*assets, "sort.wesl"),
+        entry_point: Some("region_main".into()),
         ..default()
     });
     commands.insert_resource(Pipeline {
         layout,
         id,
         group: None,
+        region_id,
+        region_layout,
     });
 }
 

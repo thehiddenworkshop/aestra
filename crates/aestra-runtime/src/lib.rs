@@ -15,12 +15,15 @@ mod transform_context;
 pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod execution_ir;
+pub mod noise;
 mod outputs;
 mod particle_lights;
+pub mod particle_sampling;
 mod physics;
 mod profile;
 mod scene_outputs;
 mod sdf;
+pub mod spatial_flow;
 mod staged;
 mod stateful;
 mod tier;
@@ -1136,6 +1139,9 @@ pub struct CompiledEmitter {
     pub domain_spawn: Option<CompiledDomainSpawn>,
     /// Homing steering (host bindings HB7), when a Homing module is enabled. Run by the stateful path.
     pub homing: Option<CompiledHoming>,
+    /// Opt-in shared spatial acceleration, integrated by the stateful backend.
+    pub spatial_flow: Option<aestra_core::spatial_flow::SpatialFlow>,
+    pub particle_sampling: Option<aestra_core::particle_sampling::ParticleSampling>,
     /// The host binding this emitter follows (host bindings HB7b), when it is attached to one.
     pub attachment: Option<CompiledAttachment>,
     /// The interpreter's execution input (typed, three lifecycle slots).
@@ -2497,7 +2503,23 @@ fn evaluate_cycle(
                     hash01(index, 16, cycle_seed),
                 ],
             );
-            let direction = if initializer.velocity_distribution.is_legacy() {
+            let cohort = emitter
+                .particle_sampling
+                .map(|s| particle_sampling::SamplingCohort::sequence(index, s.sequence_count));
+            let sampling_seed = cycle_seed as u32 ^ (cycle_seed >> 32) as u32;
+            let direction = if let Some(s) = emitter
+                .particle_sampling
+                .filter(|s| s.directions != aestra_core::particle_sampling::SamplingMode::Legacy)
+            {
+                particle_sampling::direction(
+                    s,
+                    sampling_seed,
+                    cohort.unwrap(),
+                    initializer.velocity_distribution,
+                    initializer.direction,
+                    initializer.spread_degrees,
+                )
+            } else if initializer.velocity_distribution.is_legacy() {
                 sample_direction(
                     initializer.direction,
                     initializer.spread_degrees,
@@ -2514,7 +2536,14 @@ fn evaluate_cycle(
                 )
             };
             let speed = initializer.speed.sample(hash01(index, 2, cycle_seed));
-            let origin = sample_shape(shape, index, cycle_seed);
+            let origin = if let Some(s) = emitter
+                .particle_sampling
+                .filter(|s| s.positions != aestra_core::particle_sampling::SamplingMode::Legacy)
+            {
+                particle_sampling::position(s, sampling_seed, cohort.unwrap(), shape)
+            } else {
+                sample_shape(shape, index, cycle_seed)
+            };
             let damping = (-drag.max(0.0) * age).exp();
             let travel = if drag.abs() < 0.0001 {
                 speed * age

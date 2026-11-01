@@ -53,6 +53,7 @@ mod shape_gizmo;
 use shape_gizmo::*;
 mod scene;
 mod transform_gizmo;
+mod water;
 mod workspace;
 pub(crate) use actions::PreviewDisplayState;
 #[cfg(test)]

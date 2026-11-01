@@ -92,9 +92,10 @@ pub use aestra_bevy_render::{
     AestraRuntimeStatus, BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode,
     CompatibilityReport, CompatibilityTarget, DEFAULT_GPU_PARTICLE_BUDGET, EffectRenderMode,
     EffectRequirements, EffectRuntimeStatus, ExperimentalOitAllocation,
-    ExperimentalOitDiagnosticSample, ExperimentalOitDiagnostics, ExperimentalOitSettings,
-    ExperimentalOitStatistics, ExperimentalOitStatus, GpuCapabilities, PresentationMode,
-    PresentedEffect, RendererCapability, TransparentOrderMode, gpu,
+    ExperimentalOitDiagnosticSample, ExperimentalOitDiagnostics, ExperimentalOitPartitionSample,
+    ExperimentalOitPartitionSnapshot, ExperimentalOitPartitionStatus, ExperimentalOitPartitions,
+    ExperimentalOitSettings, ExperimentalOitStatistics, ExperimentalOitStatus, GpuCapabilities,
+    PresentationMode, PresentedEffect, RendererCapability, TransparentOrderMode, gpu,
 };
 // The host's world and what effects report back to gameplay (fluid F11, host bindings HB9/HB10).
 pub use aestra_bevy_render::gpu::{
@@ -106,6 +107,8 @@ pub use aestra_compiler::{
     AestraExtension, CompileError, EffectCompiler, ExtensionManifest, ExtensionRegistry,
     ModuleRegistry, ProjectCompileError, link_extension,
 };
+pub use aestra_core::particle_sampling::{ParticleSampling, SamplingMode};
+pub use aestra_core::spatial_flow::{FlowMode, FlowSpace, SpatialFlow};
 pub use aestra_core::*;
 pub use aestra_runtime::{
     BindingError, BindingFrame, BindingSlot, BindingSnapshot, BindingState, BindingStatus,

@@ -39,6 +39,7 @@ impl Plugin for ViewportPlugin {
         app.add_plugins(TransformGizmoPlugin)
             .insert_resource(preview_transform_gizmo_settings())
             .add_plugins(MaterialPlugin::<PreviewGridMaterial>::default())
+            .add_plugins(aestra_bevy_render::preview::water::WaterMaterialPlugin)
             .init_gizmo_group::<PreviewSceneGizmos>()
             .init_resource::<PreviewCameraController>()
             .init_resource::<PreviewNavigationState>()
@@ -78,7 +79,12 @@ impl Plugin for ViewportPlugin {
                     track_event_link_drops,
                     record_preview_outputs,
                     navigate_preview_camera,
-                    sync_preview_grid,
+                    (
+                        sync_preview_grid,
+                        super::water::sync_water,
+                        super::water::sync_reflections,
+                    )
+                        .chain(),
                     sync_preview_display_mode,
                     sync_preview_photographic_response,
                     sync_photographic_overlay_composition,

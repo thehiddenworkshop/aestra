@@ -1,0 +1,212 @@
+(
+    format_version: 4,
+    id: "a3574a00-0000-4000-8000-00000000d901",
+    name: "Smoke Material Lab",
+    duration: 14.0,
+    playback_mode: LoopRestart,
+    material_instances: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000d903",
+            program: Project("a3574a00-0000-4000-8000-000000f8d700"),
+            values: {
+                "a3574a00-0000-4000-8000-000000f8d702": EffectParameter("a3574a00-0000-4000-8000-000000f8d812"),
+                "a3574a00-0000-4000-8000-000000f8d704": Constant(Float(1.0)),
+                "a3574a00-0000-4000-8000-000000f8d705": EffectParameter("a3574a00-0000-4000-8000-000000f8d810"),
+                "a3574a00-0000-4000-8000-000000f8d706": EffectParameter("a3574a00-0000-4000-8000-000000f8d811"),
+                "a3574a00-0000-4000-8000-000000f8d707": EffectParameter("a3574a00-0000-4000-8000-000000f8d813"),
+                "a3574a00-0000-4000-8000-000000f8d708": EffectParameter("a3574a00-0000-4000-8000-000000f8d814"),
+            },
+            render_state: (
+                blend: Alpha,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ),
+    ],
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d810",
+            name: "Smoke pattern velocity",
+            default: Vec3((0.6, 0.12, 0.08)),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d811",
+            name: "Smoke edge feather",
+            default: Scalar(0.75),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d813",
+            name: "Smoke billow breakup",
+            default: Scalar(0.65),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d814",
+            name: "Smoke depth variation",
+            default: Bool(true),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f8d812",
+            name: "Smoke density",
+            default: Scalar(0.75),
+            exposed: true,
+        ),
+    ],
+    emitters: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000d902",
+            name: "Smoke Plume",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 6.0,
+            max_particles: 256,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000d910",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 24.0,
+                                burst_count: 8,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000d911",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Point,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000d912",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 5.0,
+                                    max: 8.0,
+                                ),
+                                speed: (
+                                    min: 5.0,
+                                    max: 9.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 20.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                velocity_distribution: Cone,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000d913",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.6, 0.18, 0.1),
+                                drag: 0.35,
+                                turbulence: 0.6,
+                            ),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000d914",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "a3574a00-0000-4000-8000-00000000d931",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 8.0,
+                                        ),
+                                        (
+                                            time: 0.3,
+                                            value: 14.0,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 24.0,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "a3574a00-0000-4000-8000-00000000d932",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.0,
+                                        ),
+                                        (
+                                            time: 0.06,
+                                            value: 0.4,
+                                        ),
+                                        (
+                                            time: 0.55,
+                                            value: 0.2,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "a3574a00-0000-4000-8000-00000000d933",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (0.3, 0.22, 0.27, 1.0),
+                                        ),
+                                        (
+                                            time: 0.25,
+                                            color: (0.16, 0.13, 0.15, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.055, 0.06, 0.07, 1.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-00000000d940",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-00000000d903",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+    metadata: {
+        "notes": "Editor-ready reusable smoke material: open the Material Graph, edit Smoke edge feather / Smoke pattern velocity / Smoke density, or drag Advected Smoke Density into another graph. No fireworks, host outputs or demo runtime required. Six seconds of emission, then a finite tail before the 14-second restart.",
+    },
+)

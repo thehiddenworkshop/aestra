@@ -6,6 +6,222 @@
 
 ---
 
+## Current showcase priority — 2026-10-30
+
+**Shared product requirement:** every fireworks improvement must record its
+benefit to Aestra's editor: a reusable capability, editable project content or a
+validated authoring workflow. A demo-only visual change does not complete a
+milestone on its own. Shared VFX/material behavior belongs in reusable
+implementation and assets, with editor-facing controls and regression coverage.
+
+The explicit `--showcase` / `fireworks-showcase-v1` candidate now freezes high-tier
+tuned host overlap, star/flash lighting, PlaybackOnly and 4×4 experimental OIT at
+four reserved fragments/pixel. Owners remain uncapped; ordinary CLI defaults are
+unchanged. The VS Code demo task selects the candidate. Release opt-level 3,
+audience 1280×720, audio-off measurements now include a true paired render-graph
+timestamp interval and separately reported CPU encoding windows. Three runs give
+active GPU p95 **10.381–10.480 ms** and ordinary host p95 **17.739–17.848 ms**
+including vsync on RTX 4070 SUPER/Vulkan. Eight native lanes retain zero fragment
+loss, unchanged births and full cleanup. See
+[`showcase-v1-release-2026-10-29.md`](../../benchmarks/fireworks/showcase-v1-release-2026-10-29.md).
+
+**F8 reference pass now has a separate gold-shell draft:** smoke mask and
+size/opacity changes, with all births, simulation, lifetimes and lights preserved.
+Nine native image lanes/61 captures cover the complete shell, older smoke revealed
+by a younger burst, and gameplay-host audience/near overlap. The first broader
+mask overflowed (64,219 dropped fragments) and remains rejected; the revised
+footprint passes observed capacity at unchanged storage. One release profile pair
+is observational, not a replacement for the repeated v1 baseline. See
+[`f8-gold-smoke-reference-2026-10-29.md`](../../benchmarks/fireworks/f8-gold-smoke-reference-2026-10-29.md).
+
+The follow-up now exposes the existing world-position varying to authored sprite
+and ribbon materials. The opt-in gold draft uses a coarse shared world-space
+density field and a soft launch/burst core; dense star paths keep eroding without
+that core. Forward 12 Hz control/candidate captures cover launch through later
+blue relighting. An all-particle core failed near capacity and stays rejected.
+See [`f8-coherent-smoke-motion-2026-10-29.md`](../../benchmarks/fireworks/f8-coherent-smoke-motion-2026-10-29.md)
+for the revised footprint, capacity and separate cost evidence.
+
+The point-star family now shares the coherent material through a separate saved
+candidate and gold/blue pair. Its narrower smoke paths preserve birth/lifetime/
+light contracts; the gold asset and shared material fingerprints are unchanged.
+The mixed-family audience/near lanes pass observed capacity/cleanup, retaining
+the wider draft's 478,659-fragment near-view failure. Forward pair comparisons,
+all-tier compile/material bindings and a separate release cost pair are recorded
+in [`f8-blue-gold-smoke-2026-10-29.md`](../../benchmarks/fireworks/f8-blue-gold-smoke-2026-10-29.md).
+
+Effect-clock procedural advection now moves the shared density pattern through
+the exposed `Smoke pattern velocity` parameter, retaining particle motion and
+all previous smoke curves/light/birth contracts. Explicit zero-flow and advected
+controls, 578 forward/audience/near captures and a separate release cost pair pass
+observed capacity/cleanup. All-tier compilation, public uniform refresh and
+compiled-program reuse are checked. This is pattern drift, not a fluid solver or
+continuous-changing-weather API. See
+[`f8-smoke-advection-2026-10-29.md`](../../benchmarks/fireworks/f8-smoke-advection-2026-10-29.md).
+
+The plume feather pass promotes the kernel to the portable GPU crate and ships
+**Smoke Material Lab**, **Advected Smoke** and **Advected Smoke Density** in the
+sample project. Editor graph discovery/native thumbnail preparation have targeted
+tests, and a native editor-viewport capture verifies the saved lab. Density,
+pattern velocity and edge feather are editable controls. The demo retains its
+workload/capacity gates using that same implementation. See
+[the editor guide](../examples/advected_smoke.md) and
+[`f8-smoke-feather-editor-2026-10-30.md`](../../benchmarks/fireworks/f8-smoke-feather-editor-2026-10-30.md).
+
+The shared kernel now also exposes **Smoke billow breakup** and ships a separate
+**Smoke Wake Lab**. Ordinary distance events leave zero-inheritance deposits after
+the moving source dies; older smoke fragments using existing density octaves.
+Both editor labs pass native thumbnail/hover checks. Zero/candidate, lighting-off,
+audience and near image lanes pass observed capacity/cleanup with unchanged demo
+births, motion, lifetimes and storage guard. One separate profile pair records no
+regression; it is observational. See
+[`f8-smoke-breakup-editor-2026-10-30.md`](../../benchmarks/fireworks/f8-smoke-breakup-editor-2026-10-30.md).
+
+**Smoke depth variation** now adds a switchable three-dimensional density field
+to the same editor labs and opt-in demo candidates. Disabling it preserves all
+four previous editor RGB captures. Native orbit, side and near lanes deliver 44
+images with unchanged births, no observed fragment loss and full cleanup; both
+editor labs still pass native thumbnails/hover. A separate profile pair records
+the added sampling tradeoff (active GPU p95 9.908 → 9.999 ms; smoke drain
+8.008 → 8.418 ms), not a repeated performance guarantee. See
+[`f8-smoke-depth-editor-2026-10-30.md`](../../benchmarks/fireworks/f8-smoke-depth-editor-2026-10-30.md).
+
+The frozen medium/low candidate now passes native 12-shell audience/near capacity,
+event admission and cleanup checks. Both editor labs have native captures at both
+tiers. The new explicit host `finale` schedule launches 32 shells at 0.15-second
+intervals with unrestricted owner admission. All tiers complete the 32 launches/
+detonations and retire 64 peak owners without particle-event loss. High fails
+transparency capacity (583,927 maximum dropped fragments in images; 576,782 in
+the separate profile); medium/low retain zero observed fragment loss. All tiers
+miss a 16.67 ms reference active GPU interval at 29.688/21.841/19.001 ms. Existing
+representative-light budget drops remain explicit. See
+[`f8-frozen-tiers-finale-2026-10-30.md`](../../benchmarks/fireworks/f8-frozen-tiers-finale-2026-10-30.md).
+
+The first shared-runtime optimization now skips zero-birth rate/burst spawn
+dispatches and sizes nonempty dispatches to requested births. Event/domain/input
+spawning and integration remain unchanged. All 23 native scheduling/trail/field
+regressions pass; ten editor smoke/wake captures match the previous RGB pixels
+exactly. Low's fresh control/candidate pair records 97.36% fewer commands in this
+spawn category and active graph GPU p95 18.910 → 18.032 ms (simulation
+14.393 → 12.447 ms), an observation rather than repeated performance proof.
+Medium records 21.563 ms active graph without a new paired control. All image
+birth counts match; high still fails fragment capacity (580,544 maximum dropped).
+See [`f9-spawn-dispatch-2026-10-30.md`](../../benchmarks/fireworks/f9-spawn-dispatch-2026-10-30.md).
+
+The shared renderer now provides bounded opt-in GPU category totals for particle
+ticks, event routes, presentation and trail recording. The first diagnostic run
+points to routing/presentation; categories rotate across frames and their
+percentiles must not be added. Event-spawn planning and indirect spawning now
+share one compute pass, preserving both dispatches and all GPU admission decisions.
+All 23 native coupled regressions and ten exact editor image matches pass; all
+tier birth totals remain unchanged. Two low cost observations do **not** establish
+a GPU speedup: active ranges overlap and the broader smoke-drain graph interval
+is higher despite lower simulation timings. High still fails capacity (584,990
+maximum dropped fragments). See
+[`f9-event-passes-2026-10-30.md`](../../benchmarks/fireworks/f9-event-passes-2026-10-30.md).
+
+**Next priority remains measured runtime scalability:** investigate the broader
+graph/drain discrepancy and remaining event/presentation work, plus high-tier transparency capacity,
+while keeping smoke controls, workload and storage guard frozen. These are real
+finale failures, unlike the earlier 12-shell audience headroom. Repeated full-frame
+budgets, active/retired trail counts and other hardware remain unqualified.
+F8 final visual review/default adoption stays separate; do not adopt the draft by
+default yet. F9 now has a named benchmark and failed gates, not certification.
+F9, other tiers/hardware, final choreography/audio and public delivery remain open.
+
+**Parallel art track — repertoire and reference morphology (2026-10-30):** an
+explicit host-owned `variety` sequence now mixes eight families over 22 uncapped
+launches. Six saved editor-ready effects add rings, palms, willows, crossettes,
+crackle and strobe; all-tier audience plus medium near capacity/admission/cleanup
+checks and 24 native editor captures pass. See the
+[variety review](../../benchmarks/fireworks/f8-variety-2026-10-30.md).
+This is not realism acceptance. The user's newer video frames show that coherent
+thin luminous spokes, progressive cooling and subordinate residual embers are
+still missing from the visual read. An isolated gold-filament A/B study now extends
+connected history and subordinates the heads/loose embers, preserving parent motion
+and measured birth totals. Native high/medium control/study and editor captures pass;
+the spokes still look too regular, so realism remains unapproved. See the
+[filament review](../../benchmarks/fireworks/f8-gold-filaments-2026-10-30.md).
+Tune one shell's burn progression before further family expansion/default adoption. Existing
+F9 performance/capacity failures remain open; new art workloads do not replace them.
+
+**Offshore host venue (2026-10-31):** the demo's `--scene sea` option adds a small
+launch barge, low shore camera, dark water and distant shore lights. Rocket
+origins are real deck mounts; host velocity retargeting preserves the intended
+aerial layout. Water uses ordinary Bevy materials and effect-clock-driven normal
+drift, without another VFX simulation. The VS Code demo task selects the offshore
+variety draft; the frozen v1/calibration workloads remain explicit controls.
+Full water reflections and final firework realism remain open. See the
+[offshore review](../../benchmarks/fireworks/f8-offshore-2026-10-31.md).
+The next visual slice adds a reusable editor material function for spatial burn
+grain and color cooling, with matched uniform controls on the isolated gold
+study. Launch rockets now carry a host-owned light so the sea and deck receive
+direct illumination during ascent. Its lifecycle follows the authoritative rocket;
+it does not require particle readback or a second playback clock.
+The [burn-grain/launch-light review](../../benchmarks/fireworks/f8-burn-grain-launch-light-2026-10-31.md)
+keeps the first weak grain draft and matched refined/uniform controls. The study
+is still too orderly for realism approval and is not adopted across the show.
+
+**Water follow-up, requested 2026-10-31:** replace the simple drifting-normal
+draft with realistic multi-scale waves and Fresnel/specular response. Launches
+must produce visible, broken highlights along the water toward the observer,
+and aerial bursts must reflect coherently with exposure, distance and wave
+roughness. Validate launch-lit/unlit and calm/rough controls, pause/restart,
+near/audience views and actual GPU costs. Scenery/reflection realization stays
+on the demo host; general light outputs, material controls and editor previews
+must continue to share Aestra paths. A direct point-light highlight alone does
+not close the realistic-water or full-firework-reflection requirement.
+
+**Shared water receiver foundation (2026-10-31):** the demo and editor now use
+one public opaque PBR material, with eight direction/speed wave bands,
+derivative-filtered normals, unresolved slope variance folded into roughness,
+water/air IOR 1.333 and an art-directed Fresnel sky contribution. The demo exposes
+`--water calm|rough`; the editor adds an opt-in Preview water surface that follows
+the editor effect clock and preserves its grid preference. Geometry remains flat;
+this does not implement foam, refraction, SSR or reflected particle images. The
+sky term is a uniform radiance, not a captured skybox. Final water art, true
+firework reflections and production-cost acceptance remain open. See the
+[water receiver instructions](../examples/water_preview.md).
+The requested particle/trail reflections need a selective mirrored render pass,
+not more scene lights. The [planar reflection plan](AESTRA_PLANAR_REFLECTIONS_PLAN.md)
+defines shared GPU simulation, view-specific presentation, lower-resolution HDR
+capture, explicit smoke approximation and the current single-view OIT boundary.
+**Additive planar prototype (2026-11-01):** shared host/editor opt-in now mirrors
+native additive sprite/trail/flipbook presentation and opaque scenery into a
+640×360 HDR target, reusing simulation and adding no OIT list. Three matched
+native controls/24 images preserve five launches/detonations, five host break
+messages and all 85,893 accepted event-linked births, with zero observed loss
+and full drain. The estimated target family is 6.15 MiB, excluding view-local
+draw buffers. Alpha smoke is excluded; other receiver lighting, GPU pass timings,
+multi-resolution energy and dense-show/final art acceptance remain open. See
+the [native reflection review](../../benchmarks/fireworks/f8-planar-reflections-2026-11-01.md).
+
+**Shared noise and sampling authoring (2026-11-01):** N1 exposes shared scalar
+material fields with CPU/editor/thumbnail/GPU evaluation; N2 adds opt-in coherent
+spatial Noise/Curl acceleration; N3 adds independent position/direction layouts,
+seeded Fibonacci shell spacing and bounded jitter. All are normal saved editor
+features with public host/offline artifact support. N3 event/input cohorts use
+requested per-source fan-out, with no owner cap or rejection sampler. The separate
+gold-shell control/candidate changes only main-star Uniform/Stratified sampling;
+material, ballistic, range and event authoring remains fixed. Native qualification
+and exact limits are recorded in the [procedural noise plan](AESTRA_PROCEDURAL_NOISE_PLAN.md)
+and [sampling guide](../examples/particle_sampling.md). These are opt-in studies:
+readable spokes, burn/droop/cooling and final smoke/reference art acceptance still
+need controlled visual review before repertoire adoption.
+
+**Wave-normal water response (2026-11-01):** the initial offset/blur mirror is
+replaced in the shared water shader with reflected wave-normal GGX samples,
+dielectric Fresnel/Smith weights and a GPU-filtered HDR mip chain. Four native
+image runs/32 captures preserve all births/events and drain, with separate
+on/off GPU instrumentation and an odd-sized HDR filter energy oracle. The
+target-family estimate is now 8.50 MiB at 640×360, within the same configurable
+16 MiB ceiling. The capture is still planar/far-field, with close-object parallax,
+smoke, finite coverage and full art/performance gates open. Static-scene idle
+capture reuse is a measured follow-up, not silently accepted overhead. See the
+[wave-water review](../../benchmarks/fireworks/f8-wave-water-2026-11-01.md).
+
+The detailed sections below retain historical implementation/qualification notes.
+
 ## Host/demo organization — 2026-10-28
 
 The flagship now lives in the workspace package `demos/fireworks`
@@ -5470,12 +5686,106 @@ small pool without partitions loses 1,029,768 fragments and is explicitly reject
 mode and does not certify real host geometry/material costs. See
 [`partition-probe-2026-10-28.md`](../../benchmarks/fireworks/partition-probe-2026-10-28.md).
 
-**Next:** integrate guarded opt-in transport for one approved full-target host
-view, with actual phase scheduling/readiness, per-region loss reporting and
-unsupported-view/foreign-draw rejection. Compare fewer/more partitions on real
-high-tier near/orbit workloads under the unchanged memory ceiling and measure
-repeated material/trail/draw work before adoption. Preserve mixed-scene
-restrictions and default ordinary rendering; no new owner-count caps.
+**Native host partition transport (2026-10-29):** `ExperimentalOitPartitions`
+now routes actual Bevy/Aestra transparent phases through repeated scissored
+capture/sort/resolve, restores retained items before cleanup, gates all pipelines
+and validates actual command/material participation. Pending/rejected phases
+cannot silently fall back. Single-view guards reject foreign transparent or
+transmissive phases, subviewports, jitter and overrides; scene-depth materials
+remain outside this transport. The existing automatic depth prepass is supported.
+Three native executions pass 36 exact display-image comparisons at two target
+sizes/opposite views/grids, plus overflow/recovery, foreign/invalid-view rejection,
+visibility and ordinary-mode restoration. The earlier isolated raw-HDR oracle
+remains distinct. Per-region asynchronous loss counters are bounded to three
+slots; observed loss is sticky and stale callbacks are generation-checked.
+The demo exposes explicit `--experimental-oit --oit-partitions 4` with the same
+128 MiB ceiling, default ordinary rendering and no new owner-count cap.
+
+High-tier host 2×2 near drops 6,841,306 fragments and remains rejected. High 4×4
+near/orbit observes zero drops/invalid links at the same 47,923,200 node/head
+bytes. All three image runs preserve 374,514 accepted gold-tail ember and 115,283
+star-path smoke births without route loss; 12 launches/detonations/flashes and
+zero final particles/owners pass. The separate near profile measures aggregate
+partition work including health at active-fireworks GPU p95 13.753 ms and idle
+p95 4.894 ms. This first transport repeats full-target sort/health scans and all
+geometry per region; it is not default adoption or a full-game budget certificate.
+See [`native-partition-2026-10-29.md`](../../benchmarks/fireworks/native-partition-2026-10-29.md).
+
+**Empty-phase retirement (2026-10-29):** an admitted empty queued phase now
+resets shared heads/counter once and performs one full-target GPU audit, skipping
+every regional capture/sort/resolve pass. It does not trust particle-count
+readbacks or fabricate CPU-zero samples. Explicit `empty_phase` samples have one
+audit row; sticky loss and generation/backpressure behavior remain intact.
+Three native executions preserve all 36 active exact comparisons and match the
+previous binary's frozen PNG pixels. Eighteen repeated empty/ordinary-background
+comparisons and six loss→empty controls pass. Three alternating profile pairs
+reduce idle aggregate GPU p95 from 4.737–5.622 to 0.157–0.163 ms, approximately
+97%, while active p95 remains similar at 13.637–13.767 ms. Node/head allocation,
+memory ceiling, densities, owner policy and default rendering are unchanged.
+See [`partition-empty-phase-2026-10-29.md`](../../benchmarks/fireworks/partition-empty-phase-2026-10-29.md).
+
+**Regional scans (2026-10-29):** production sort and diagnostic shaders now
+have separate regional entries sharing the existing pixel algorithms. Rounded
+workgroups guard tile extents and retain full-target addresses; the local
+origin records each tile's attempted counter. Ordinary binding requirements
+remain unchanged. One cached aligned rectangle buffer serves sort/health
+independently of readback-slot availability, and admission gates the new sorter.
+At 1280×720/4×4, sort workgroups fall from 230,400 to 14,720 and health groups
+from 230,400 to 14,400, retaining accepted layer and geometry work.
+Three native runs pass all 36 exact display comparisons and full-target
+diagnostic equivalence, including odd tiles; frozen PNG pixels match the
+preceding binary. The updated raw-HDR oracle also passes explicitly.
+Three alternating profile pairs lower active aggregate GPU p95 about 7%, from
+13.699–13.740 to 12.702–12.769 ms, while idle stays near 0.16 ms. High 4×4
+near/orbit capacity and unchanged route totals/cleanup pass; 2×2 near still loses
+6,841,223 fragments and remains rejected. Node/head storage stays 47,923,200 bytes;
+bounds add 4 KiB of uniform data on this device. Host p95 including vsync remains
+19.385–19.780 ms, so full-frame/finale acceptance is open. See
+[`partition-regional-scans-2026-10-29.md`](../../benchmarks/fireworks/partition-regional-scans-2026-10-29.md).
+
+**Redundant particle permutations (2026-10-29):** approved eligible partition
+capture now skips sprite/flipbook depth permutations, sharing pipeline selection's
+eligibility predicate. Exact per-pixel lists still sort normally; ordinary and
+unpartitioned views retain particle sorting. Six particle-random HDR/Reinhard
+image controls pass exactly, including opposite cameras and 1×1/2×2/4×4 grids;
+two reference permutations own 18,912 bytes versus zero for partition capture.
+A simultaneous ordinary camera keeps its sorting and image, and removing the
+partition request restores the original view's buffers and pixels. The existing
+12-case native phase/diagnostic/lifecycle oracle also passes with unchanged frozen
+PNG pixels. Three uncontended profile pairs remove the separate 1.485–1.588 ms
+active GPU particle-sort pass; remaining aggregate partition p95 stays similar
+at 12.751–12.870 ms. Host p95 including vsync is 18.127–20.714 ms, still above
+16.67 ms. Live near/orbit retains zero drops at 47,923,200 node/head bytes;
+2×2 near still loses 6,841,456 fragments. All image runs retain 374,514 gold-tail
+and 115,283 star-path smoke births with zero admission loss and full cleanup.
+Live reports independently record zero peak/last particle-sort ownership.
+See [`partition-alpha-sort-2026-10-29.md`](../../benchmarks/fireworks/partition-alpha-sort-2026-10-29.md).
+Two image attempts rejected zero estimated shared capacity before playback;
+their failed artifacts and fresh retries are retained. Startup admission remains
+an exposed lifecycle gap, not a fixed or accepted result.
+
+**Startup admission (2026-10-29):** missing and zero-axis target dimensions are
+explicitly retryable preparation without OIT approval. The demo waits for this
+state while preserving genuine rejection/loss handling and its 60-second timeout.
+Partition admission also waits for a compiled pipeline before accessing its
+descriptor, fixing the newly queued-ID panic exposed by native target recovery.
+Two forced native target-preparation/asset-arrival cases recover with exact pixels;
+the existing 12 phase cases still pass with unchanged frozen PNG pixels. Six
+fresh native window startups and both full high 4×4 near/orbit shows pass with
+unchanged birth totals, storage, zero observed loss and complete cleanup. Fresh
+full shows observed no pending target updates; deterministic native/CPU tests
+supply forced transient coverage. 188 renderer/55 demo tests and strict scoped
+Clippy pass. Generic minimize/window/multi-camera lifecycle remains unqualified.
+See [`startup-admission-2026-10-29.md`](../../benchmarks/fireworks/startup-admission-2026-10-29.md).
+
+**Release baseline update:** the frozen audience-view showcase candidate now has
+three opt-level-3 timing pairs with active render-graph GPU p95 10.381–10.480 ms.
+Ordinary host p95 is 17.739–17.848 ms including vsync, so no stable-60-FPS verdict
+is inferred. See [`showcase-v1-release-2026-10-29.md`](../../benchmarks/fireworks/showcase-v1-release-2026-10-29.md).
+**Next:** prioritize F8 reference/art acceptance. Measure and reduce repeated
+capture/geometry work when near/higher-resolution/finale targets require it, using
+the same exact native images, route/capacity controls and frame observations. Preserve the failed
+2×2 control, mixed-scene restrictions, ordinary default and existing memory ceiling.
 Final photographic smoke/depth, broader host overload policies and
 production-finale acceptance remain separate gates.
 Arbitrary no-prepass/custom-depth,
@@ -5598,6 +5908,32 @@ Repeated shells build a persistent, moving smoke layer that later shells illumin
 ---
 
 ## Milestone F9 — Finale optimization & quality tiers
+
+**Initial named baseline (2026-10-30):** the public demo now exposes the 32-shell
+`--launch-pattern finale` workload, preserving host-owned gameplay and the frozen
+editor-ready smoke assets. Native high/medium/low image and separate timestamp
+lanes complete all launches and cleanup. High fails the unchanged OIT capacity
+guard, while all tiers miss the 16.67 ms reference graph interval. Simulation
+and transparency are measured investigation priorities; no automatic cap or
+art reduction hides the failure. See the
+[tier/finale qualification](../../benchmarks/fireworks/f8-frozen-tiers-finale-2026-10-30.md).
+The milestone remains in progress.
+
+**First runtime slice (2026-10-30):** shared coupled/independent stateful schedulers
+now avoid empty rate/burst spawn commands. Native behavior and exact editor images
+are preserved; low's initial matched graph observation improves to 18.032 ms but
+still misses the reference interval. No workload or memory guard was reduced.
+The [spawn-dispatch review](../../benchmarks/fireworks/f9-spawn-dispatch-2026-10-30.md)
+retains high's capacity failure and the remaining timing gates.
+
+**Routing follow-up (2026-10-30):** bounded opt-in category sampling distinguishes
+complete totals from partial/overflowed windows without limiting effects. The
+shared spawn planner and indirect spawn now use one pass, keeping both dispatches
+and route order. Native behavior, all-tier births and ten exact editor captures
+pass. Two low comparisons remain inconclusive for speedup and retain a higher
+smoke-drain graph interval; high's transparency capacity still fails. The
+[event-pass review](../../benchmarks/fireworks/f9-event-passes-2026-10-30.md)
+records these failures alongside the structural pass reduction. F9 remains open.
 
 **Goal:** tune and certify production-level scalability already established by F1/F1B and tested throughout shell development. F9 must not be the first time event/trail limits are addressed.
 
@@ -6196,8 +6532,30 @@ tightly fitted full-list control at roughly 5.5–5.7x GPU cost in the small fix
 four regions halve storage at roughly twice the time. Detailed/aggregate timing
 lanes are separate; the lossy unpartitioned small-pool control remains rejected.
 See [`partition-probe-2026-10-28.md`](../../benchmarks/fireworks/partition-probe-2026-10-28.md).
-Next is guarded opt-in host phase transport, actual near/orbit loss and repeated
-geometry/material costs before adoption; final art, broader overload and
+Guarded native host phase transport now passes exact display-image/lifecycle
+controls and high 4×4 near/orbit observed capacity at unchanged storage; high
+2×2 near remains lossy. The initial active/idle aggregate GPU p95 13.753/4.894 ms
+identified repeated empty/region work before adoption. See
+[`native-partition-2026-10-29.md`](../../benchmarks/fireworks/native-partition-2026-10-29.md).
+Empty-phase retirement now replaces the repeated passes with one real GPU reset
+audit, retaining sticky loss and exact images. Three profile pairs reduce idle
+p95 to 0.157–0.163 ms from 4.737–5.622 ms.
+See [`partition-empty-phase-2026-10-29.md`](../../benchmarks/fireworks/partition-empty-phase-2026-10-29.md).
+Regional sort/health dispatch now preserves exact images and diagnostics while
+reducing active aggregate GPU p95 about 7% to 12.702–12.769 ms; repeated capture/
+geometry work is next. Near/orbit route/capacity/cleanup controls remain intact
+and the 2×2 negative remains rejected. See
+[`partition-regional-scans-2026-10-29.md`](../../benchmarks/fireworks/partition-regional-scans-2026-10-29.md).
+Approved eligible partition capture now also omits redundant per-view particle
+permutations, with exact particle-identity HDR images, ordinary-view sorting and
+buffer retirement/restoration controls. It retains the existing per-pixel sort,
+density and storage ceiling. See
+[`partition-alpha-sort-2026-10-29.md`](../../benchmarks/fireworks/partition-alpha-sort-2026-10-29.md).
+The zero-capacity startup gap now has explicit pending-target handling and safe
+queued-pipeline descriptor admission, with forced exact native recovery and fresh
+window/full-show controls. Generic window/minimize lifecycle remains outside this
+qualification. See [`startup-admission-2026-10-29.md`](../../benchmarks/fireworks/startup-admission-2026-10-29.md).
+Final art, broader overload and
 production-finale latency remain open. These
 candidates do not replace the cinematic reference art; see the detailed C4S gate above.
 Large-pool/production-finale costs and generic injection remain open.

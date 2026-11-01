@@ -1,0 +1,164 @@
+(
+    id: "a3574a00-0000-4000-8000-00000000e002",
+    schema_version: 1,
+    name: "Noise Smoke",
+    domain: Sprite,
+    render_state_policy: (
+        default: (
+            blend: Alpha,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Alpha,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000e100",
+            name: "Scale",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(2.2)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e101",
+            name: "Seed",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(73.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e102",
+            name: "Octaves",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(4.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e103",
+            name: "Flow",
+            value_type: Vec3,
+            evaluation_domain: Effect,
+            default: Some(Vec3((0.6, 0.12, 0.08))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e104",
+            name: "Footprint",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(0.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e105",
+            name: "Density",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(0.85)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e106",
+            name: "Ambient",
+            value_type: Vec3,
+            evaluation_domain: Effect,
+            default: Some(Vec3((0.65, 0.7, 0.75))),
+        ),
+    ],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000e300",
+            kind: Input(Uv0),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e301",
+            kind: Input(WorldPosition),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e302",
+            kind: Input(EffectTime),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e303",
+            kind: Parameter("a3574a00-0000-4000-8000-00000000e100"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e304",
+            kind: Parameter("a3574a00-0000-4000-8000-00000000e101"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e305",
+            kind: Parameter("a3574a00-0000-4000-8000-00000000e102"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e306",
+            kind: Parameter("a3574a00-0000-4000-8000-00000000e103"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e307",
+            kind: Parameter("a3574a00-0000-4000-8000-00000000e104"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e308",
+            kind: FunctionCall(
+                function: Project("a3574a00-0000-4000-8000-00000000e000"),
+                arguments: {
+                    "a3574a00-0000-4000-8000-00000000e200": "a3574a00-0000-4000-8000-00000000e300",
+                    "a3574a00-0000-4000-8000-00000000e201": "a3574a00-0000-4000-8000-00000000e301",
+                    "a3574a00-0000-4000-8000-00000000e202": "a3574a00-0000-4000-8000-00000000e302",
+                    "a3574a00-0000-4000-8000-00000000e203": "a3574a00-0000-4000-8000-00000000e303",
+                    "a3574a00-0000-4000-8000-00000000e204": "a3574a00-0000-4000-8000-00000000e304",
+                    "a3574a00-0000-4000-8000-00000000e205": "a3574a00-0000-4000-8000-00000000e305",
+                    "a3574a00-0000-4000-8000-00000000e206": "a3574a00-0000-4000-8000-00000000e306",
+                    "a3574a00-0000-4000-8000-00000000e207": "a3574a00-0000-4000-8000-00000000e307",
+                },
+                output: "a3574a00-0000-4000-8000-00000000e001",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e309",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e30a",
+            kind: Multiply("a3574a00-0000-4000-8000-00000000e308", "a3574a00-0000-4000-8000-00000000e309"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e30b",
+            kind: Parameter("a3574a00-0000-4000-8000-00000000e105"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e30c",
+            kind: Multiply("a3574a00-0000-4000-8000-00000000e30a", "a3574a00-0000-4000-8000-00000000e30b"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e30d",
+            kind: Input(ScenePointIrradiance),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e30e",
+            kind: Constant(Float(0.035)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e30f",
+            kind: Multiply("a3574a00-0000-4000-8000-00000000e30d", "a3574a00-0000-4000-8000-00000000e30e"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e310",
+            kind: Parameter("a3574a00-0000-4000-8000-00000000e106"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000e311",
+            kind: Add("a3574a00-0000-4000-8000-00000000e30f", "a3574a00-0000-4000-8000-00000000e310"),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-00000000e311",
+        alpha: "a3574a00-0000-4000-8000-00000000e30c",
+    ),
+)

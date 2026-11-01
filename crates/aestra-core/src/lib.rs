@@ -12,10 +12,13 @@ mod id;
 pub mod material;
 mod migration;
 mod model;
+pub mod noise;
 mod particle_budget;
 mod particle_lights;
+pub mod particle_sampling;
 mod property_schema;
 mod scene_outputs;
+pub mod spatial_flow;
 mod transform_curve;
 mod velocity;
 

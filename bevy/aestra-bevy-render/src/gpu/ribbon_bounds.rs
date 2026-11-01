@@ -8,15 +8,17 @@ use bevy::{
 #[derive(Component, Default)]
 pub(super) struct RibbonBoundsSource(pub Option<RibbonParticleBounds>);
 
+type RibbonBoundsDraw<'a> = (
+    Entity,
+    &'a RibbonBoundsSource,
+    &'a GlobalTransform,
+    &'a mut Aabb,
+    Has<NoFrustumCulling>,
+);
+
 pub(super) fn sync_ribbon_bounds(
     mut commands: Commands,
-    mut draws: Query<(
-        Entity,
-        &RibbonBoundsSource,
-        &GlobalTransform,
-        &mut Aabb,
-        Has<NoFrustumCulling>,
-    )>,
+    mut draws: Query<RibbonBoundsDraw<'_>, Without<super::bounds::WorldSpatialFlow>>,
 ) {
     for (entity, source, transform, mut aabb, uncullable) in &mut draws {
         let bounds = source.0.and_then(|model| {

@@ -599,6 +599,12 @@ impl ModuleRegistry {
                 ScalarRange::new(-1.0, 1.0),
             )),
             MODULE_MOTION => Some(ModuleInstance::motion([0.0, -18.0, 0.0], 0.6, 4.0)),
+            aestra_core::spatial_flow::MODULE_SPATIAL_FLOW => {
+                Some(ModuleInstance::spatial_flow(Default::default()))
+            }
+            aestra_core::particle_sampling::MODULE_PARTICLE_SAMPLING => {
+                Some(ModuleInstance::particle_sampling(Default::default()))
+            }
             MODULE_PERSISTENT => Some(ModuleInstance::persistent()),
             MODULE_FOLLOW_FIELD => Some(ModuleInstance::follow_field(4.0)),
             MODULE_SPAWN_FROM_DOMAIN => Some(ModuleInstance::spawn_from_domain(1.0)),

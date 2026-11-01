@@ -33,8 +33,9 @@ pub(crate) enum Operation {
     ParameterDestination,
     ParameterCopy,
     ParameterUpload,
+    StatefulSpawn,
 }
-const NAMES: [&str; 14] = [
+const NAMES: [&str; 15] = [
     "event_list",
     "tick_params",
     "present_params",
@@ -49,9 +50,11 @@ const NAMES: [&str; 14] = [
     "parameter_destination",
     "parameter_copy",
     "parameter_upload",
+    // Calls count scheduled ticks; dispatches count nonempty rate/burst kernels.
+    "stateful_spawn",
 ];
 thread_local! {
-    static ACTIVE: RefCell<Option<[GpuEncodingOperation; 14]>> = const { RefCell::new(None) };
+    static ACTIVE: RefCell<Option<[GpuEncodingOperation; 15]>> = const { RefCell::new(None) };
 }
 
 pub(super) fn begin() {

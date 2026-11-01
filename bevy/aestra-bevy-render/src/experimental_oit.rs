@@ -1,6 +1,8 @@
 //! Bounded, opt-in fragment-list experiment. Not production transparency acceptance.
 #[path = "experimental_oit/diagnostics.rs"]
 mod diagnostics;
+#[path = "experimental_oit/partition.rs"]
+mod partition;
 #[cfg(test)]
 #[path = "experimental_oit/partition_probe.rs"]
 mod partition_probe;
@@ -18,6 +20,10 @@ use bevy::{
     },
 };
 pub use diagnostics::{ExperimentalOitDiagnosticSample, ExperimentalOitDiagnostics};
+pub use partition::{
+    ExperimentalOitPartitionSample, ExperimentalOitPartitionSnapshot,
+    ExperimentalOitPartitionStatus, ExperimentalOitPartitions,
+};
 
 /// Experimental 3D alpha/additive integration with Bevy's fragment-list OIT.
 /// Requires explicit `Msaa::Off`. Owns Bevy's OIT camera settings while approved.
@@ -110,6 +116,24 @@ pub struct ExperimentalOitStatus {
     pub rejection: Option<&'static str>,
 }
 
+impl ExperimentalOitStatus {
+    /// The target has not acquired a nonzero extent yet (for example at window
+    /// startup). No OIT approval is installed. Hosts may wait and retry instead
+    /// of treating this transient rejection as an unsupported configuration.
+    /// Other rejections, including invalid capacity/settings, are not retryable.
+    pub fn is_preparing(&self) -> bool {
+        self.rejection == Some(TARGET_NOT_READY)
+    }
+}
+
+const TARGET_NOT_READY: &str = "camera target is not ready";
+
+fn ready_target_size(camera: &Camera) -> Option<UVec2> {
+    camera
+        .physical_target_size()
+        .filter(|size| size.min_element() > 0)
+}
+
 /// CPU-side buffer ownership metadata only; never maps particle/fragment buffers.
 #[derive(Resource, Clone, Default)]
 pub struct ExperimentalOitStatistics(std::sync::Arc<std::sync::Mutex<ExperimentalOitAllocation>>);
@@ -136,6 +160,7 @@ pub(crate) fn install(app: &mut App) {
     diagnostics::install(app);
     resolve::install(app);
     sort::install(app);
+    partition::install(app);
     let statistics = ExperimentalOitStatistics::default();
     app.insert_resource(statistics.clone());
     app.add_plugins(ExtractComponentPlugin::<OitApproved, RenderApp>::default())
@@ -232,7 +257,7 @@ fn approve(
         if let Some(settings) = settings
             && valid(settings)
             && *msaa == Msaa::Off
-            && let Some(size) = camera.physical_target_size()
+            && let Some(size) = ready_target_size(camera)
         {
             extent = extent.max(size);
             average = average.max(settings.fragments_per_pixel_average);
@@ -268,8 +293,8 @@ fn approve(
             Some("invalid experimental OIT settings")
         } else if *msaa != Msaa::Off {
             Some("experimental OIT requires explicit Msaa::Off")
-        } else if camera.physical_target_size().is_none() {
-            Some("camera target is not ready")
+        } else if ready_target_size(camera).is_none() {
+            Some(TARGET_NOT_READY)
         } else if !supported {
             Some("experimental OIT requires fragment storage writes and 12 storage bindings")
         } else if foreign_oit {
@@ -301,6 +326,82 @@ fn approve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_and_zero_axis_targets_prepare_without_approving_or_hiding_invalid_settings() {
+        use bevy::camera::RenderTargetInfo;
+        let mut app = App::new();
+        app.add_systems(Update, approve);
+        let entity = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Camera::default(),
+                Msaa::Off,
+                ExperimentalOitSettings::default(),
+            ))
+            .id();
+        for size in [
+            None,
+            Some(UVec2::ZERO),
+            Some(UVec2::new(0, 720)),
+            Some(UVec2::new(1280, 0)),
+        ] {
+            app.world_mut()
+                .get_mut::<Camera>(entity)
+                .unwrap()
+                .computed
+                .target_info = size.map(|physical_size| RenderTargetInfo {
+                physical_size,
+                scale_factor: 1.0,
+            });
+            // Stale approval must be removed before any native OIT work.
+            app.world_mut()
+                .entity_mut(entity)
+                .insert((OitApproved, OrderIndependentTransparencySettings::default()));
+            app.update();
+            let status = app.world().get::<ExperimentalOitStatus>(entity).unwrap();
+            assert!(status.is_preparing());
+            assert_eq!(status.estimated_storage_bytes, 0);
+            assert!(!app.world().entity(entity).contains::<OitApproved>());
+            assert!(
+                !app.world()
+                    .entity(entity)
+                    .contains::<OrderIndependentTransparencySettings>()
+            );
+        }
+        app.world_mut()
+            .get_mut::<ExperimentalOitSettings>(entity)
+            .unwrap()
+            .max_storage_bytes = 0;
+        app.update();
+        let status = app.world().get::<ExperimentalOitStatus>(entity).unwrap();
+        assert!(!status.is_preparing());
+        assert_eq!(status.rejection, Some("invalid experimental OIT settings"));
+        app.world_mut()
+            .get_mut::<ExperimentalOitSettings>(entity)
+            .unwrap()
+            .max_storage_bytes = 32 * 1024 * 1024;
+        app.world_mut()
+            .get_mut::<Camera>(entity)
+            .unwrap()
+            .computed
+            .target_info = Some(RenderTargetInfo {
+            physical_size: UVec2::new(480, 360),
+            scale_factor: 1.0,
+        });
+        app.update();
+        let status = app.world().get::<ExperimentalOitStatus>(entity).unwrap();
+        assert!(!status.is_preparing());
+        assert_eq!(status.estimated_storage_bytes, 8_985_600);
+        // This CPU-only fixture has no RenderDevice; it must not fake approval.
+        assert!(
+            status
+                .rejection
+                .unwrap()
+                .contains("requires fragment storage")
+        );
+    }
+
     #[test]
     fn storage_estimate_and_configuration_are_bounded() {
         assert_eq!(estimate(UVec2::new(480, 360), 4.0), Some(8_985_600));

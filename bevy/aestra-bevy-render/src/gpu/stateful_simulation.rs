@@ -545,6 +545,12 @@ pub(super) fn stateful_params_bytes(
         .and_then(|(schedule, tick)| TickSchedule::at(&schedule.placement, tick))
         .unwrap_or(dispatch.placement);
     let mut words = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+    aestra_gpu::spatial_flow::pack(
+        dispatch.spatial_flow,
+        tick.unwrap_or_default() as f32 * STATEFUL_TICK_DT,
+        &mut words,
+    );
+    aestra_gpu::particle_sampling::pack(dispatch.particle_sampling, &mut words);
     words[aestra_gpu::STATEFUL_VELOCITY_MODE_INDEX] = dispatch.velocity_distribution;
     if let Some((spacing, limit)) = dispatch.distance_emission {
         words[aestra_gpu::STATEFUL_DISTANCE_BASE] = spacing.to_bits();
@@ -709,6 +715,13 @@ pub(super) fn stateful_bind_group(
 
 /// One tick's bind group and params (with this tick's spawn count, advancing the fractional spawn
 /// carry). A `live` tick raises its events; a replayed one does not.
+pub(super) struct StatefulTickGroup {
+    pub group: BindGroup,
+    pub params: Buffer,
+    /// Only scheduled rate/burst births. Domain/input/event births run separately.
+    pub spawn_workgroups: u32,
+}
+
 pub(super) fn stateful_tick_group(
     device: &RenderDevice,
     layout: &BindGroupLayout,
@@ -717,7 +730,7 @@ pub(super) fn stateful_tick_group(
     render: &StatefulRenderBuffers<'_>,
     live: bool,
     encoder: Option<&mut CommandEncoder>,
-) -> (BindGroup, Buffer) {
+) -> StatefulTickGroup {
     // A host's stop_emitting / kill (event system E2b): nothing spawns from its tick on.
     let stopped = dispatch
         .cutoffs
@@ -739,10 +752,16 @@ pub(super) fn stateful_tick_group(
             .min(dispatch.capacity)
     };
     let bytes = stateful_params_bytes(dispatch, spawn_count, 0.0, live, Some(persistent.last_tick));
+    let spawn_workgroups = spawn_count.div_ceil(WORKGROUP_SIZE);
     if let Some((uploads, encoder)) = render.uploads.zip(encoder) {
-        return super::stateful_parameters::StatefulParameters::encode(
+        let (group, params) = super::stateful_parameters::StatefulParameters::encode(
             device, encoder, layout, persistent, render, uploads, &bytes,
         );
+        return StatefulTickGroup {
+            group,
+            params,
+            spawn_workgroups,
+        };
     }
     let params = {
         let _allocation = super::encoding_profile::scope(
@@ -760,7 +779,11 @@ pub(super) fn stateful_tick_group(
         })
     };
     let group = stateful_bind_group(device, layout, persistent, &params, render);
-    (group, params)
+    StatefulTickGroup {
+        group,
+        params,
+        spawn_workgroups,
+    }
 }
 
 /// Resets one emitter's indirect instance count, then presents + compacts its live slots into the
@@ -782,6 +805,10 @@ pub(super) fn present_stateful_emitter(
     simulation_time: f32,
 ) {
     let instance_count_offset = u64::from(dispatch.emitter_index * 4 + 1) * 4;
+    let timing = super::phase_timing::begin(
+        encoder,
+        super::phase_timing::GpuSimulationPhase::Presentation,
+    );
     encoder.clear_buffer(render.indirect, instance_count_offset, Some(4));
     let subtick = (simulation_time - persistent.last_tick as f32 * STATEFUL_TICK_DT)
         .clamp(0.0, STATEFUL_TICK_DT);
@@ -827,6 +854,7 @@ pub(super) fn present_stateful_emitter(
         pass.set_pipeline(order_present);
         pass.dispatch_workgroups(1, 1, 1);
     }
+    super::phase_timing::end(encoder, timing);
 }
 
 /// Encodes one stateful *emitter's* per-frame GPU work (hybrid roadmap M6/M7): advance its persistent
@@ -875,10 +903,12 @@ pub(super) fn dispatch_stateful_effect(
         let to_boundary =
             STATEFUL_CHECKPOINT_CADENCE - (persistent.last_tick % STATEFUL_CHECKPOINT_CADENCE);
         let segment = remaining.min(to_boundary);
-        let groups: Vec<BindGroup> = (0..segment)
+        let timing =
+            super::phase_timing::begin(encoder, super::phase_timing::GpuSimulationPhase::Particles);
+        let groups: Vec<StatefulTickGroup> = (0..segment)
             .map(|_| {
                 let group =
-                    stateful_tick_group(device, layout, persistent, dispatch, render, live, None).0;
+                    stateful_tick_group(device, layout, persistent, dispatch, render, live, None);
                 // Each encoded tick needs its own burst/cutoff/trace inputs, even
                 // when all dispatches share one compute pass.
                 persistent.last_tick += 1;
@@ -891,13 +921,24 @@ pub(super) fn dispatch_stateful_effect(
                 timestamp_writes: None,
             });
             for group in &groups {
-                pass.set_bind_group(0, group, &[]);
+                pass.set_bind_group(0, &group.group, &[]);
                 pass.set_pipeline(death_integrate);
                 pass.dispatch_workgroups(workgroups, 1, 1);
-                pass.set_pipeline(spawn);
-                pass.dispatch_workgroups(workgroups, 1, 1);
+                let _spawn_scope = super::encoding_profile::scope(
+                    super::encoding_profile::Operation::StatefulSpawn,
+                    0,
+                    0,
+                    0,
+                    0,
+                    u64::from(group.spawn_workgroups > 0),
+                );
+                if group.spawn_workgroups > 0 {
+                    pass.set_pipeline(spawn);
+                    pass.dispatch_workgroups(group.spawn_workgroups, 1, 1);
+                }
             }
         }
+        super::phase_timing::end(encoder, timing);
         remaining -= segment;
         if persistent
             .last_tick

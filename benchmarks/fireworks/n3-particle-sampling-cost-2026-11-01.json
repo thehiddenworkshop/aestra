@@ -1,0 +1,260 @@
+{
+  "adapter": "AdapterInfo { name: \"NVIDIA GeForce RTX 4070 SUPER\", vendor: 4318, device: 10115, device_type: DiscreteGpu, device_pci_bus_id: \"0000:01:00.0\", driver: \"NVIDIA\", driver_info: \"621.01\", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: Some(false), limit_bucket: None }",
+  "cases": [
+    {
+      "count": 1,
+      "gpu_ns_per_launch_pair": 0.6640625,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.115964889526367e-6,
+      "median_gpu_dispatch_ms": 0.00272,
+      "mode": "Uniform"
+    },
+    {
+      "count": 1,
+      "gpu_ns_per_launch_pair": 0.5234375,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 2.115964889526367e-6,
+      "median_gpu_dispatch_ms": 0.002144,
+      "mode": "Uniform"
+    },
+    {
+      "count": 2,
+      "gpu_ns_per_launch_pair": 0.5,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.1457672119140625e-6,
+      "median_gpu_dispatch_ms": 0.002048,
+      "mode": "Uniform"
+    },
+    {
+      "count": 2,
+      "gpu_ns_per_launch_pair": 0.671875,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 2.1457672119140625e-6,
+      "median_gpu_dispatch_ms": 0.002752,
+      "mode": "Uniform"
+    },
+    {
+      "count": 3,
+      "gpu_ns_per_launch_pair": 0.640625,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.0265579223632812e-6,
+      "median_gpu_dispatch_ms": 0.002624,
+      "mode": "Uniform"
+    },
+    {
+      "count": 3,
+      "gpu_ns_per_launch_pair": 0.6640625,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 2.0265579223632812e-6,
+      "median_gpu_dispatch_ms": 0.00272,
+      "mode": "Uniform"
+    },
+    {
+      "count": 7,
+      "gpu_ns_per_launch_pair": 0.625,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.384185791015625e-6,
+      "median_gpu_dispatch_ms": 0.00256,
+      "mode": "Uniform"
+    },
+    {
+      "count": 7,
+      "gpu_ns_per_launch_pair": 0.65625,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 2.384185791015625e-6,
+      "median_gpu_dispatch_ms": 0.002688,
+      "mode": "Uniform"
+    },
+    {
+      "count": 64,
+      "gpu_ns_per_launch_pair": 0.5859375,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.0265579223632812e-6,
+      "median_gpu_dispatch_ms": 0.0024,
+      "mode": "Uniform"
+    },
+    {
+      "count": 64,
+      "gpu_ns_per_launch_pair": 0.6328125,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 2.0265579223632812e-6,
+      "median_gpu_dispatch_ms": 0.002592,
+      "mode": "Uniform"
+    },
+    {
+      "count": 800,
+      "gpu_ns_per_launch_pair": 0.609375,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 1.430511474609375e-6,
+      "median_gpu_dispatch_ms": 0.002496,
+      "mode": "Uniform"
+    },
+    {
+      "count": 800,
+      "gpu_ns_per_launch_pair": 0.6328125,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 1.430511474609375e-6,
+      "median_gpu_dispatch_ms": 0.002592,
+      "mode": "Uniform"
+    },
+    {
+      "count": 65537,
+      "gpu_ns_per_launch_pair": 0.6171875,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.562999725341797e-6,
+      "median_gpu_dispatch_ms": 0.002528,
+      "mode": "Uniform"
+    },
+    {
+      "count": 65537,
+      "gpu_ns_per_launch_pair": 0.5859375,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 2.562999725341797e-6,
+      "median_gpu_dispatch_ms": 0.0024,
+      "mode": "Uniform"
+    },
+    {
+      "count": 1,
+      "gpu_ns_per_launch_pair": 0.671875,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.294778823852539e-6,
+      "median_gpu_dispatch_ms": 0.002752,
+      "mode": "Stratified"
+    },
+    {
+      "count": 1,
+      "gpu_ns_per_launch_pair": 0.65625,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 2.1457672119140625e-6,
+      "median_gpu_dispatch_ms": 0.002688,
+      "mode": "Stratified"
+    },
+    {
+      "count": 2,
+      "gpu_ns_per_launch_pair": 0.609375,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.5480985641479492e-6,
+      "median_gpu_dispatch_ms": 0.002496,
+      "mode": "Stratified"
+    },
+    {
+      "count": 2,
+      "gpu_ns_per_launch_pair": 0.625,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 4.887580871582031e-6,
+      "median_gpu_dispatch_ms": 0.00256,
+      "mode": "Stratified"
+    },
+    {
+      "count": 3,
+      "gpu_ns_per_launch_pair": 0.5625,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.2649765014648438e-6,
+      "median_gpu_dispatch_ms": 0.002304,
+      "mode": "Stratified"
+    },
+    {
+      "count": 3,
+      "gpu_ns_per_launch_pair": 0.6328125,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 0.000012367963790893555,
+      "median_gpu_dispatch_ms": 0.002592,
+      "mode": "Stratified"
+    },
+    {
+      "count": 7,
+      "gpu_ns_per_launch_pair": 0.625,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.0265579223632812e-6,
+      "median_gpu_dispatch_ms": 0.00256,
+      "mode": "Stratified"
+    },
+    {
+      "count": 7,
+      "gpu_ns_per_launch_pair": 0.625,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 5.334615707397461e-6,
+      "median_gpu_dispatch_ms": 0.00256,
+      "mode": "Stratified"
+    },
+    {
+      "count": 64,
+      "gpu_ns_per_launch_pair": 0.609375,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 1.9669532775878906e-6,
+      "median_gpu_dispatch_ms": 0.002496,
+      "mode": "Stratified"
+    },
+    {
+      "count": 64,
+      "gpu_ns_per_launch_pair": 0.609375,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 1.9669532775878906e-6,
+      "median_gpu_dispatch_ms": 0.002496,
+      "mode": "Stratified"
+    },
+    {
+      "count": 800,
+      "gpu_ns_per_launch_pair": 0.640625,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 1.4603137969970703e-6,
+      "median_gpu_dispatch_ms": 0.002624,
+      "mode": "Stratified"
+    },
+    {
+      "count": 800,
+      "gpu_ns_per_launch_pair": 0.6171875,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 2.086162567138672e-6,
+      "median_gpu_dispatch_ms": 0.002528,
+      "mode": "Stratified"
+    },
+    {
+      "count": 65537,
+      "gpu_ns_per_launch_pair": 0.6171875,
+      "jitter": 0.0,
+      "launches": 4096,
+      "max_abs_error": 2.0265579223632812e-6,
+      "median_gpu_dispatch_ms": 0.002528,
+      "mode": "Stratified"
+    },
+    {
+      "count": 65537,
+      "gpu_ns_per_launch_pair": 0.6171875,
+      "jitter": 1.0,
+      "launches": 4096,
+      "max_abs_error": 1.9073486328125e-6,
+      "median_gpu_dispatch_ms": 0.002528,
+      "mode": "Stratified"
+    }
+  ],
+  "repeats_after_warmup": 8,
+  "scope": "Production position and direction functions, six velocity modes and all eight shapes. Compute-only timestamps exclude admission/integration/uploads/rendering. Not a full-frame benchmark.",
+  "tolerance": 0.0001
+}

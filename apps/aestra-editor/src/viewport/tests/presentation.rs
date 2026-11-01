@@ -1,6 +1,7 @@
 //! Actual grid assets, PresentedEffect payloads and viewport icon/text consumers.
 use super::super::navigation::{DEFAULT_PREVIEW_PITCH, preview_camera_transform};
 use super::*;
+use crate::settings::EditorSettings;
 use std::sync::Arc;
 
 struct Fixture {
@@ -9,6 +10,33 @@ struct Fixture {
     camera: Entity,
     canvas: Entity,
     material: Handle<PreviewGridMaterial>,
+}
+
+#[test]
+fn water_replaces_the_grid_without_losing_its_visibility_preference() {
+    let mut f = Fixture::new();
+    f.app.init_resource::<EditorSettings>();
+    f.app
+        .world_mut()
+        .resource_mut::<EditorSettings>()
+        .preview
+        .water_enabled = true;
+    f.app.update();
+    assert_eq!(
+        f.app.world().get::<Visibility>(f.grid),
+        Some(&Visibility::Hidden)
+    );
+    assert!(f.app.world().resource::<MenuState>().show_grid);
+    f.app
+        .world_mut()
+        .resource_mut::<EditorSettings>()
+        .preview
+        .water_enabled = false;
+    f.app.update();
+    assert_eq!(
+        f.app.world().get::<Visibility>(f.grid),
+        Some(&Visibility::Inherited)
+    );
 }
 impl Fixture {
     fn new() -> Self {

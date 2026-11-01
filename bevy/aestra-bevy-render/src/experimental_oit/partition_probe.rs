@@ -71,13 +71,14 @@ fn shaders() -> [String; 3] {
             .join("\n")
     };
     let source = include_str!("sort.wesl").replace("\r\n", "\n");
-    let entry = "fn main(@builtin(global_invocation_id) id: vec3<u32>) {";
+    // Use the actual production regional entry, with fixture view/types only.
+    let full = "@compute @workgroup_size(8, 8, 1)\nfn main(@builtin(global_invocation_id) id: vec3<u32>) {\n    sort_pixel(id.xy);\n}";
+    let entry = "fn region_main(@builtin(global_invocation_id) id: vec3<u32>) {";
+    assert_eq!(source.matches(full).count(), 1);
     assert_eq!(source.matches(entry).count(), 1);
-    assert_eq!(source.matches("@group(0) @binding(0)").count(), 1);
-    let source = source.replace(entry, "fn main(@builtin(global_invocation_id) raw_id: vec3<u32>) {\n if any(raw_id.xy >= region.zw) { return; }\n let id = vec3(raw_id.xy + region.xy, 0u);");
-    let source = source.replace(
-        "@group(0) @binding(0)",
-        "@group(0) @binding(4) var<uniform> region: vec4<u32>;\n@group(0) @binding(0)",
+    let source = source.replace(full, "").replace(
+        entry,
+        "fn main(@builtin(global_invocation_id) id: vec3<u32>) {",
     );
     let sort = format!("{VIEW}\n{TYPES}\n{}", without_imports(&source, 2));
     let source = include_str!("resolve.wesl").replace("\r\n", "\n");

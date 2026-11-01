@@ -36,6 +36,8 @@ pub(crate) fn install(app: &mut App) {
     extension_stages::install(app);
     volume::install(app);
     let timing_mailbox = simulation_timing::TimingMailbox::default();
+    let phase_timings = super::phase_timing::GpuSimulationPhaseTimings::default();
+    app.insert_resource(phase_timings.clone());
     let preparation_mailboxes = preparation_timing::PreparationMailboxes::default();
     app.insert_resource(preparation_mailboxes.clone())
         .add_systems(PreUpdate, preparation_timing::receive);
@@ -74,6 +76,7 @@ pub(crate) fn install(app: &mut App) {
             ),
         )
         .insert_resource(timing_mailbox)
+        .insert_resource(phase_timings)
         .add_systems(RenderStartup, (init_pipeline, init_stateful_pipeline))
         .init_resource::<StatefulStates>()
         .add_systems(

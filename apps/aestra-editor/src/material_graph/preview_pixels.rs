@@ -59,7 +59,8 @@ pub(super) struct MaterialPreviewEvaluator<'a> {
     pub(super) program: &'a MaterialProgram,
     pub(super) instance: Option<&'a MaterialInstance>,
     /// The function library, so graph `FunctionCall` nodes can be inlined and previewed rather
-    /// than showing as unrenderable. Custom-WESL functions still can't be interpreted on the CPU.
+    /// than showing as unrenderable. Canonical noise uses the shared CPU sampler;
+    /// arbitrary custom-WESL functions cannot be interpreted here.
     pub(super) functions: &'a aestra_compiler::MaterialFunctionLibrary,
 }
 
@@ -120,8 +121,36 @@ impl MaterialPreviewEvaluator<'_> {
                 arguments,
                 output,
             } => {
+                let noise = self.functions.builtin_noise(*function);
                 let function = self.functions.get(*function)?;
-                if function.custom_wesl.is_some() {
+                if let Some(noise) = noise {
+                    if *output != aestra_core::noise::OUTPUT {
+                        return None;
+                    }
+                    let mut values = BTreeMap::new();
+                    for input in &function.inputs {
+                        let value = match arguments.get(&input.id) {
+                            Some(argument) => read(*argument)?,
+                            None => input.default.as_ref().and_then(preview_value)?,
+                        };
+                        let (value, lanes) = value.numeric()?;
+                        let value = match input.value_type {
+                            MaterialValueType::Float if lanes == 1 => {
+                                MaterialValue::Float(value[0])
+                            }
+                            MaterialValueType::Vec2 if lanes == 2 => {
+                                MaterialValue::Vec2([value[0], value[1]])
+                            }
+                            MaterialValueType::Vec3 if lanes == 3 => {
+                                MaterialValue::Vec3([value[0], value[1], value[2]])
+                            }
+                            _ => return None,
+                        };
+                        values.insert(input.id, value);
+                    }
+                    aestra_compiler::evaluate_builtin_noise(noise, &values)
+                        .map(PreviewValue::scalar)
+                } else if function.custom_wesl.is_some() {
                     // Raw WESL can't be interpreted on the CPU; leave it unrenderable.
                     None
                 } else {

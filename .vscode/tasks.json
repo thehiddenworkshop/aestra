@@ -29,7 +29,19 @@
         "--release",
         "--locked",
         "-p",
-        "aestra-demo-fireworks"
+        "aestra-demo-fireworks",
+        "--",
+        "--launch-pattern",
+        "variety",
+        "--scene",
+        "sea",
+        "--tier",
+        "medium",
+        "--tuned-smoke",
+        "--star-lights",
+        "--experimental-oit",
+        "--oit-partitions",
+        "4"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -41,6 +53,15 @@
         "panel": "dedicated",
         "clear": true
       }
+    },
+    {
+      "label": "Aestra: Review Gold Filament Study",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["run", "--release", "--locked", "-p", "aestra-demo-fireworks", "--", "--smoke-art-show", "--effect", "effects/fireworks_gold_filament_candidate.aestra.ron", "--tier", "high", "--experimental-oit", "--star-lights", "--no-audio"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": ["$rustc"],
+      "presentation": {"reveal": "always", "panel": "dedicated", "clear": true}
     },
     {
       "label": "Aestra: Run Benchmarks",

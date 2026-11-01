@@ -1588,19 +1588,18 @@ impl DomainSpawnPipeline {
                 events,
             ],
         );
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("aestra domain spawn plan"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.plan);
-            pass.set_bind_group(0, &plan_group, &[]);
-            pass.dispatch_workgroups(1, 1, 1);
-        }
+        // Compute resource usage is scoped to each dispatch. The plan writes its
+        // storage buffer first; the following dispatch reads it as both read-only
+        // storage and indirect arguments. wgpu inserts that dependency inside the
+        // pass, so every route need not end and restart a compute pass. Preserve
+        // route order and the GPU's acceptance/zero-work decision.
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("aestra domain spawn"),
+            label: Some("aestra domain spawn plan and spawn"),
             timestamp_writes: None,
         });
+        pass.set_pipeline(&self.plan);
+        pass.set_bind_group(0, &plan_group, &[]);
+        pass.dispatch_workgroups(1, 1, 1);
         pass.set_pipeline(&self.spawn);
         pass.set_bind_group(0, &spawn_group, &[]);
         pass.dispatch_workgroups_indirect(plan, 0);
@@ -1927,17 +1926,20 @@ impl EventGatherPipeline {
 
 /// An input route's burst on the device (event system E3), the host counterpart of the link gather:
 /// its records ([`aestra_runtime::InputSpawnBurst::records`]) as a Spawn From Domain emission list —
-/// the `[count, 0, 0, 0]` header, then 8-word records `[position xyz, 0, velocity xyz, 0]`, velocity
-/// zero — and the spawn that turns them into the target's particles with its launch velocity.
+/// a versioned event-list header, then 8-word records
+/// `[position xyz, child index, velocity xyz, requested count]`. Velocity is zero;
+/// the spawn adds the target's launch velocity. Generic extension lists keep their ABI.
 pub fn input_burst_list(
     burst: &aestra_runtime::InputSpawnBurst,
 ) -> (Vec<u32>, aestra_runtime::CompiledDomainSpawn) {
     let records: Vec<[f32; 3]> = burst.records().collect();
     let count = records.len() as u32;
-    let mut words = vec![count, 0, 0, 0];
-    for position in records {
+    let mut words = vec![count, 0, 0, 0xa3570003];
+    for (index, position) in records.into_iter().enumerate() {
         words.extend(position.map(f32::to_bits));
-        words.extend([0; 5]);
+        words.push(index as u32 % burst.count.max(1));
+        words.extend([0; 3]);
+        words.push(burst.count);
     }
     let spawn = aestra_runtime::CompiledDomainSpawn {
         stage: 0,

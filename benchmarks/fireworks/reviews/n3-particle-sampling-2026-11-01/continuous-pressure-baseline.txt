@@ -1,0 +1,8 @@
+Negative control: sampling module disabled; 128-slot analytic LoopContinuous fixture with 64 initial births and 12/s.
+The sufficient-capacity (512-slot) layout oracle passes all 48 cases.
+This is an existing live-versus-raw-slot admission mismatch, not corrected by N3.
+
+assertion `left == right` failed: alive particle count diverged for LoopContinuous at elapsed 2.550s (simulation 2.550s)
+  left: 80
+ right: 70
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.60s

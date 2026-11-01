@@ -18,7 +18,14 @@ pub(super) use super::timestamp_observation::Sample;
 #[derive(Default)]
 struct Mailbox {
     sequence: u64,
-    pending: Option<Vec<Sample>>,
+    pending: Option<TimestampFrame>,
+}
+
+#[derive(Clone)]
+pub(super) struct TimestampFrame {
+    pub sequence: u64,
+    pub requested: usize,
+    pub samples: Vec<Sample>,
 }
 
 /// A single latest-frame snapshot, not a growing queue of diagnostic paths/results.
@@ -27,14 +34,32 @@ pub(super) struct TimingMailbox(Arc<Mutex<Mailbox>>);
 
 impl TimingMailbox {
     pub(super) fn take(&self) -> Option<Vec<Sample>> {
-        self.0.lock().unwrap().pending.take()
+        self.0
+            .lock()
+            .unwrap()
+            .pending
+            .take()
+            .map(|frame| frame.samples)
     }
 
+    pub(super) fn latest(&self) -> Option<TimestampFrame> {
+        self.0.lock().unwrap().pending.clone()
+    }
+
+    #[cfg(test)]
     pub(super) fn publish(&self, sequence: u64, samples: Vec<Sample>) {
+        self.publish_frame(sequence, samples.len(), samples);
+    }
+
+    fn publish_frame(&self, sequence: u64, requested: usize, samples: Vec<Sample>) {
         let mut mailbox = self.0.lock().unwrap();
         if sequence > mailbox.sequence {
             mailbox.sequence = sequence;
-            mailbox.pending = Some(samples);
+            mailbox.pending = Some(TimestampFrame {
+                sequence,
+                requested,
+                samples,
+            });
         }
     }
 }
@@ -48,14 +73,14 @@ struct Slot {
 }
 
 impl Slot {
-    fn new(device: &RenderDevice) -> Self {
+    fn new(device: &RenderDevice, capacity: usize) -> Self {
         let device = device.wgpu_device();
-        let size = (MAX_INSTANCES * 2 * size_of::<u64>()) as u64;
+        let size = (capacity * 2 * size_of::<u64>()) as u64;
         Self {
             queries: wrap(device.create_query_set(&wgpu::QuerySetDescriptor {
                 label: Some("aestra simulation timestamps"),
                 ty: wgpu::QueryType::Timestamp,
-                count: (MAX_INSTANCES * 2) as u32,
+                count: (capacity * 2) as u32,
             })),
             resolve: wrap(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("aestra simulation timestamp resolve"),
@@ -74,10 +99,16 @@ impl Slot {
     }
 }
 
-#[derive(Default)]
 pub(super) struct SimulationTimer {
     slots: Vec<Slot>,
     sequence: u64,
+    capacity: usize,
+}
+
+impl Default for SimulationTimer {
+    fn default() -> Self {
+        Self::with_capacity(MAX_INSTANCES)
+    }
 }
 
 fn supported(features: wgpu::Features, period: f32) -> bool {
@@ -85,6 +116,15 @@ fn supported(features: wgpu::Features, period: f32) -> bool {
 }
 
 impl SimulationTimer {
+    pub(super) fn with_capacity(capacity: usize) -> Self {
+        // Diagnostic storage only; never a runtime owner/effect limit.
+        assert!((1..=1024).contains(&capacity));
+        Self {
+            slots: Vec::new(),
+            sequence: 0,
+            capacity,
+        }
+    }
     pub(super) fn begin(&mut self, device: &RenderDevice, period: f32) -> Option<TimingBatch> {
         if !supported(device.features(), period) {
             return None;
@@ -97,7 +137,7 @@ impl SimulationTimer {
             if self.slots.len() == MAX_IN_FLIGHT {
                 return None;
             }
-            self.slots.push(Slot::new(device));
+            self.slots.push(Slot::new(device, self.capacity));
             Some(self.slots.len() - 1)
         })?;
         let slot = self.slots[index].clone();
@@ -108,6 +148,8 @@ impl SimulationTimer {
             sequence: self.sequence,
             period,
             samples: Vec::new(),
+            requested: 0,
+            capacity: self.capacity,
         })
     }
 }
@@ -117,6 +159,8 @@ pub(super) struct TimingBatch {
     sequence: u64,
     period: f32,
     samples: Vec<Sample>,
+    requested: usize,
+    capacity: usize,
 }
 
 impl TimingBatch {
@@ -126,7 +170,8 @@ impl TimingBatch {
     }
 
     pub(super) fn instance(&mut self, owner: Entity, token: u32, time: f32) -> Option<u32> {
-        if self.samples.len() == MAX_INSTANCES {
+        self.requested = self.requested.saturating_add(1);
+        if self.samples.len() == self.capacity {
             return None;
         }
         let index = (self.samples.len() * 2) as u32;
@@ -177,7 +222,7 @@ impl TimingBatch {
     ) -> Option<wgpu::CommandBuffer> {
         if self.samples.is_empty() {
             self.slot.busy.store(false, Ordering::Release);
-            mailbox.publish(self.sequence, Vec::new());
+            mailbox.publish_frame(self.sequence, self.requested, Vec::new());
             return None;
         }
         let count = self.samples.len() as u32 * 2;
@@ -216,7 +261,7 @@ impl TimingBatch {
                 } else {
                     Vec::new()
                 };
-                mailbox.publish(self.sequence, samples);
+                mailbox.publish_frame(self.sequence, self.requested, samples);
                 self.slot.busy.store(false, Ordering::Release);
             },
         );
@@ -363,6 +408,35 @@ pub(crate) mod tests {
                     .is_none()
             );
         }
+        // Phase sampling may reserve more segments than its diagnostic capacity.
+        // A successful native readback must retain the omitted demand, so a
+        // consumer cannot mistake the measured prefix for a complete frame.
+        let mut bounded = SimulationTimer::with_capacity(2);
+        let mut batch = bounded.begin(&device, period).unwrap();
+        let mut encoder = device.create_command_encoder(&Default::default());
+        for _ in 0..2 {
+            let index = batch.instance(Entity::PLACEHOLDER, 1, 0.0).unwrap();
+            drop(encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                timestamp_writes: batch.writes(index, true, true),
+                ..Default::default()
+            }));
+        }
+        assert!(batch.instance(Entity::PLACEHOLDER, 1, 0.0).is_none());
+        let overflow_mailbox = TimingMailbox::default();
+        let copy = batch
+            .resolve_and_copy(&mut encoder, &device, overflow_mailbox.clone())
+            .unwrap();
+        let submission = queue.submit([encoder.finish(), copy]);
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(std::time::Duration::from_secs(60)),
+            })
+            .unwrap();
+        let frame = overflow_mailbox.latest().unwrap();
+        assert_eq!(frame.requested, 3);
+        assert_eq!(frame.samples.len(), 2);
+        assert_eq!(bounded.slots.len(), 1);
     }
 
     #[test]

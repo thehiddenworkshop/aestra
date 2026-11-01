@@ -28,11 +28,20 @@ impl MeshBoundsSource {
 
 type GeometryCache = HashMap<AssetId<Mesh>, Option<(Vec3, Vec3)>>;
 
+/// World acceleration depends on live inverse placement. Static artifact bounds
+/// cannot cover arbitrary host scales; keep these draws visible until GPU bounds
+/// are available rather than using an unsafe identity-placement approximation.
+#[derive(Component)]
+pub(super) struct WorldSpatialFlow;
+
 pub(super) fn sync_mesh_bounds(
     mut commands: Commands,
     meshes: Res<Assets<Mesh>>,
     mut cache: Local<GeometryCache>,
-    mut draws: Query<(Entity, &MeshBoundsSource, &mut Aabb, Has<NoFrustumCulling>)>,
+    mut draws: Query<
+        (Entity, &MeshBoundsSource, &mut Aabb, Has<NoFrustumCulling>),
+        Without<WorldSpatialFlow>,
+    >,
 ) {
     // Assets change on load, reload, mutation and removal. Cache per shared mesh, not per
     // emitter, and avoid scanning all vertex buffers on every playback frame.
@@ -106,6 +115,32 @@ mod tests {
             linear_from_local: Default::default(),
             maximum_size: size,
         }
+    }
+
+    #[test]
+    fn world_flow_never_reenables_culling_from_static_identity_bounds() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .add_systems(Update, sync_mesh_bounds);
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<Mesh>>()
+            .add(mesh(1.0));
+        let entity = app
+            .world_mut()
+            .spawn((
+                MeshBoundsSource {
+                    mesh: handle,
+                    motion: Some(motion(1.0)),
+                    displacement: Some(Vec3::ZERO),
+                },
+                Aabb::default(),
+                NoFrustumCulling,
+                WorldSpatialFlow,
+            ))
+            .id();
+        app.update();
+        assert!(app.world().entity(entity).contains::<NoFrustumCulling>());
     }
 
     #[test]

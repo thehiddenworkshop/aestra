@@ -21,6 +21,84 @@ fn sample_time_is_deterministic_and_bounded() {
 }
 
 #[test]
+fn smoke_effect_thumbnail_and_hover_prepare_keep_the_shared_function() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    let saved = fixture_project(&root, "smoke_material_lab");
+    let original = saved.clone();
+    let prepared = prepare(saved.clone(), &root, &AtomicBool::new(false)).unwrap();
+    assert_eq!(prepared.players.len(), 1);
+    assert_eq!(prepared.players[0].simulation_time(), 2.0);
+    for emitter in &prepared.players[0].effect().emitters {
+        for renderer in &emitter.renderers {
+            assert!(
+                prepared.players[0]
+                    .material_binding_for_emitter(renderer.material, emitter.source)
+                    .is_some()
+            );
+        }
+    }
+    assert_eq!(saved.root, original.root);
+    assert_eq!(saved.material_functions, original.material_functions);
+    let mut edited = saved.clone();
+    let function = edited
+        .material_functions
+        .values_mut()
+        .find(|f| super::super::material::shared_smoke_function(f))
+        .unwrap();
+    function
+        .custom_wesl
+        .as_mut()
+        .unwrap()
+        .source
+        .push_str("\n// project-edited WESL");
+    assert!(prepare(edited, &root, &AtomicBool::new(false)).is_err());
+    let mut missing = saved.clone();
+    missing.material_functions.clear();
+    assert!(prepare(missing, &root, &AtomicBool::new(false)).is_err());
+    let mut unrelated = saved;
+    let mut function = original.material_functions.values().next().unwrap().clone();
+    function.id = aestra_core::MaterialFunctionId::from_u128(0xDEAD);
+    function.custom_wesl = None;
+    unrelated.material_functions.insert(function.id, function);
+    assert!(prepare(unrelated, &root, &AtomicBool::new(false)).is_ok());
+}
+
+#[test]
+fn nested_noise_effect_thumbnails_keep_the_transitive_graph_and_reject_unbounded_or_custom_calls() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    let saved = fixture_project(&root, "noise_smoke_lab");
+    let prepared = prepare(saved.clone(), &root, &AtomicBool::new(false)).unwrap();
+    assert_eq!(prepared.players.len(), 1);
+    assert!(prepared.radius.is_finite() && prepared.radius > 0.0);
+    let program = saved.material_programs.values().next().unwrap();
+    let deps =
+        super::super::functions::effect_dependencies(program, &saved.material_functions).unwrap();
+    assert_eq!(deps.len(), 1);
+    let mut functions = saved.material_functions.clone();
+    let function = functions.values_mut().next().unwrap();
+    let call = function
+        .expressions
+        .iter()
+        .find(|e| matches!(e.kind, MaterialExpressionKind::FunctionCall { .. }))
+        .unwrap()
+        .clone();
+    for i in 0..5 {
+        let mut call = call.clone();
+        call.id = aestra_core::MaterialExpressionId::from_u128(0xAA00 + i);
+        function.expressions.push(call);
+    }
+    assert!(super::super::functions::effect_dependencies(program, &functions).is_none());
+    let mut functions = saved.material_functions.clone();
+    let function = functions.values_mut().next().unwrap();
+    function.custom_wesl = Some(aestra_core::material::MaterialCustomWeslImplementation {
+        source: "fn arbitrary() -> f32 { return 0.0; }".into(),
+        entry_points: BTreeMap::new(),
+        evaluation_domain: aestra_core::material::MaterialExpressionDomain::Particle,
+    });
+    assert!(super::super::functions::effect_dependencies(program, &functions).is_none());
+}
+
+#[test]
 fn saved_players_and_framing_are_deterministic_and_do_not_modify_source() {
     let saved = project();
     let original = saved.root.clone();
@@ -301,6 +379,13 @@ fn native_gpu_prism_thumbnail_fills_the_tile() {
 
 #[test]
 #[ignore = "requires native GPU and shader compilation"]
+fn native_gpu_smoke_material_thumbnail_captures_pixels_and_hover_animates() {
+    capture_fixture("smoke_material_lab", true);
+    capture_fixture("smoke_wake_lab", true);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
 fn native_gpu_fluid_thumbnails_capture_volumes_without_emitters() {
     aestra_fluid::link();
     for name in ["fluid_smoke", "fluid_sparse_plume", "fluid_fire"] {
@@ -333,11 +418,13 @@ fn native_gpu_project_mesh_uses_project_root_without_thumbnail_overrides() {
 fn capture_fixture(name: &str, private_assets: bool) {
     use bevy::{app::PluginsState, ecs::system::RunSystemOnce, window::ExitCondition};
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(if name.starts_with("fluid_") || name == "plugin_lab" {
-            "../../sample-project"
-        } else {
-            "../../assets/test"
-        })
+        .join(
+            if name.starts_with("fluid_") || name == "plugin_lab" || name.starts_with("smoke_") {
+                "../../sample-project"
+            } else {
+                "../../assets/test"
+            },
+        )
         .canonicalize()
         .unwrap();
     let mut prepared =
@@ -489,7 +576,7 @@ fn capture_fixture(name: &str, private_assets: bool) {
             .iter()
             .all(|id| !app.world().resource::<Assets<Image>>().contains(*id))
     );
-    if name.starts_with("fluid_") {
+    if name.starts_with("fluid_") || name.starts_with("smoke_") {
         assert_live_preview_animates(&mut app, name);
     }
 }

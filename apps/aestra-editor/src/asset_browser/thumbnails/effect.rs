@@ -168,9 +168,9 @@ pub(super) fn assemble(
     root: &Path,
     cancelled: &AtomicBool,
     injected_meshes: &BTreeMap<PathBuf, (Mesh, f32)>,
-    // When false (effects), the function library is dropped and any material function call is
-    // rejected. A material preview passes true and supplies a bounded library so graph
-    // `FunctionCall`s resolve; the material's own inline custom WESL stays rejected either way.
+    // Material previews may use their bounded graph-function library. Effect previews
+    // retain bounded nested noise graphs and source-verified smoke; arbitrary custom code
+    // and the material's own inline WESL remain excluded from background rendering.
     keep_functions: bool,
 ) -> Result<Assembled, String> {
     check_cancelled(cancelled)?;
@@ -187,10 +187,18 @@ pub(super) fn assemble(
         }
     }
     if !keep_functions {
-        // The project resolver includes the entire function library, including unrelated WESL.
-        // Calls are rejected below for this slice, so none of those definitions are required.
-        saved.material_functions.clear();
-    } else if saved.material_functions.len() > 64 {
+        // The resolver includes unrelated definitions. Keep only qualified transitive
+        // dependencies so unrelated project WESL cannot block or enter this job.
+        let mut used = BTreeSet::new();
+        for program in saved.material_programs.values() {
+            used.extend(
+                super::functions::effect_dependencies(program, &saved.material_functions)
+                    .ok_or("Material functions exceed the bounded noise/smoke preview contract")?,
+            );
+        }
+        saved.material_functions.retain(|id, _| used.contains(id));
+    }
+    if saved.material_functions.len() > 64 {
         return Err("Preview limit: 64 material functions".into());
     }
     if saved.dependencies.len() >= INSTANCES || saved.material_programs.len() > 32 {
@@ -210,7 +218,8 @@ pub(super) fn assemble(
             }
         }
     }
-    // Bound authoring inputs before compiling/inlining. Custom code is not run in background previews.
+    // Bound authoring inputs before compiling/inlining. Only qualified shared
+    // function code is admitted for effects, through the same policy as materials.
     let effects = std::iter::once(&saved.root).chain(saved.dependencies.values());
     for effect in effects {
         if effect.emitters.len() > 32
@@ -225,7 +234,8 @@ pub(super) fn assemble(
             return Err("Effect exceeds the bounded thumbnail complexity limit".into());
         }
     }
-    for expressions in saved.material_programs.values().map(|p| &p.expressions) {
+    for program in saved.material_programs.values() {
+        let expressions = &program.expressions;
         if expressions.len() > 256 {
             return Err("Preview limit: 256 material expressions".into());
         }
@@ -235,8 +245,14 @@ pub(super) fn assemble(
                 MaterialExpressionKind::CustomWeslCall { .. } => {
                     return Err("Inline custom WESL is not previewed in the background".into());
                 }
-                // Calls to defined project functions resolve only when the library is kept (materials).
-                MaterialExpressionKind::FunctionCall { .. } if !keep_functions => {
+                MaterialExpressionKind::FunctionCall { .. }
+                    if !keep_functions
+                        && super::functions::effect_dependencies(
+                            program,
+                            &saved.material_functions,
+                        )
+                        .is_none() =>
+                {
                     return Err("Material function calls are not previewed for effects".into());
                 }
                 _ => {}

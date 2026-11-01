@@ -12,11 +12,24 @@ struct Result {
 @group(0) @binding(2) var<storage, read> counter: u32;
 @group(0) @binding(3) var<uniform> params: Params;
 @group(0) @binding(4) var<storage, read_write> result: Result;
+// Unused by main, so the ordinary diagnostic retains its original binding ABI.
+@group(0) @binding(5) var<uniform> region: vec4<u32>;
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if id.x >= params.width { return; }
     let pixel = id.x + id.y * params.width;
     if pixel == 0u { atomicStore(&result.attempted, counter); }
+    inspect(pixel);
+}
+@compute @workgroup_size(64)
+fn region_main(@builtin(global_invocation_id) id: vec3<u32>) {
+    if any(id.xy >= region.zw) { return; }
+    // The first *local* invocation records attempts even for a nonzero origin.
+    if all(id.xy == vec2<u32>(0u)) { atomicStore(&result.attempted, counter); }
+    let xy = region.xy + id.xy;
+    inspect(xy.x + xy.y * params.width);
+}
+fn inspect(pixel: u32) {
     if pixel >= params.pixels { return; }
     var next = heads[pixel] - 1u;
     var depth = 0u;

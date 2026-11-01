@@ -226,6 +226,14 @@ mod projection;
 use projection::selected_projection_for;
 
 #[cfg(test)]
+#[path = "material_graph/tests/smoke_material_lab.rs"]
+mod smoke_material_lab_tests;
+
+#[cfg(test)]
+#[path = "material_graph/tests/noise.rs"]
+mod noise_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support;

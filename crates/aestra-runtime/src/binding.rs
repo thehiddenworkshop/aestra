@@ -754,6 +754,15 @@ impl crate::EffectInstance {
     /// bindings, `ForwardOnly` when the simulation reads live host objects nobody records — a backward
     /// seek then replays the past with the present input, and is not exact.
     pub fn host_input_availability(&self) -> aestra_core::HostInputAvailability {
+        // World flow samples the host's effect pose. A binding trace does not
+        // record GlobalTransform; do not advertise exact replay of that input.
+        if self.effect.emitters.iter().any(|e| {
+            e.enabled
+                && e.spatial_flow
+                    .is_some_and(|f| f.space == aestra_core::spatial_flow::FlowSpace::World)
+        }) {
+            return aestra_core::HostInputAvailability::ForwardOnly;
+        }
         if !self.has_forward_only_inputs() {
             aestra_core::HostInputAvailability::TimeAddressable
         } else if self.binding_trace.is_some() {
@@ -776,6 +785,13 @@ impl crate::EffectInstance {
     /// [`crate::BindingTrace`], HB8). `SnapshotOnSpawn` values are latched and reproducible, and
     /// declared-but-unread bindings do not affect the simulation.
     pub fn has_forward_only_inputs(&self) -> bool {
+        if self.effect.emitters.iter().any(|e| {
+            e.enabled
+                && e.spatial_flow
+                    .is_some_and(|f| f.space == aestra_core::spatial_flow::FlowSpace::World)
+        }) {
+            return true;
+        }
         let live = |slot: BindingSlot| {
             self.effect
                 .bindings

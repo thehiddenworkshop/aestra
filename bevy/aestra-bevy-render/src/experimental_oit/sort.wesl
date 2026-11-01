@@ -6,6 +6,8 @@ import bevy_pbr::render::mesh_view_types::{OitFragmentNode, OrderIndependentTran
 @group(0) @binding(1) var<uniform> settings: OrderIndependentTransparencySettings;
 @group(0) @binding(2) var<storage, read_write> nodes: array<OitFragmentNode>;
 @group(0) @binding(3) var<storage, read_write> heads: array<u32>;
+// Referenced only by region_main; the ordinary entry/layout stays unchanged.
+@group(0) @binding(4) var<uniform> region: vec4<u32>;
 const END: u32 = 0xffffffffu;
 
 fn before(a: u32, b: u32) -> bool {
@@ -17,8 +19,18 @@ fn before(a: u32, b: u32) -> bool {
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    sort_pixel(id.xy);
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn region_main(@builtin(global_invocation_id) id: vec3<u32>) {
+    if any(id.xy >= region.zw) { return; }
+    sort_pixel(id.xy + region.xy);
+}
+
+fn sort_pixel(id: vec2<u32>) {
     let size = vec2<u32>(view.viewport.zw);
-    if any(id.xy >= size) { return; }
+    if any(id >= size) { return; }
     let pixel = id.x + id.y * size.x;
     if pixel >= arrayLength(&heads) { return; }
     var head = heads[pixel] - 1u;

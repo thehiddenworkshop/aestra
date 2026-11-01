@@ -6,7 +6,9 @@ mod lighting;
 mod oit;
 mod project;
 mod readiness;
+mod repertoire;
 mod report;
+mod venue;
 
 use aestra_bevy::{
     AestraParticleLightPlugin, AestraPlugin, AestraRuntimeStatus, AestraSet, AestraSettings,
@@ -116,6 +118,9 @@ fn main() -> AppExit {
     lighting::install(&mut app, lighting);
     readiness::install(&mut app);
     host::install(&mut app);
+    if options.sea {
+        venue::install(&mut app);
+    }
     app.insert_resource(options);
     report::install(&mut app).unwrap_or_else(|error| {
         eprintln!("Cannot configure fireworks report: {error}");
@@ -146,11 +151,11 @@ fn setup(
     mut commands: Commands,
     options: Res<Options>,
     project: Res<ShowProject>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    scene_assets: venue::SceneAssets,
     admission: Res<oit::Admission>,
     mut presentations: ResMut<aestra_bevy::EffectPresentationCache>,
 ) {
+    let (mut meshes, mut materials, mut water_materials) = scene_assets;
     info!("Fireworks project: {}", options.project_root.display());
     if options.experimental_oit {
         info!("Experimental OIT static renderer audit: {admission:?}");
@@ -160,6 +165,8 @@ fn setup(
     }
     let camera_transform = if options.smoke_lighting {
         Transform::from_xyz(0.0, 4.0, 16.0).looking_at(Vec3::new(0.0, 3.0, 0.0), Vec3::Y)
+    } else if options.sea {
+        venue::camera(0)
     } else {
         Transform::from_xyz(0.0, 48.0, 180.0).looking_at(Vec3::new(0.0, 28.0, 0.0), Vec3::Y)
     };
@@ -184,6 +191,13 @@ fn setup(
             .entity(camera)
             .insert((Msaa::Off, oit::settings(&options)));
     }
+    if let Some(side) = options.oit_partitions {
+        commands
+            .entity(camera)
+            .insert(aestra_bevy::ExperimentalOitPartitions {
+                grid: UVec2::splat(side),
+            });
+    }
     if options.host_driven || options.smoke_art_show || options.persistent_smoke_show {
         commands
             .entity(camera)
@@ -193,7 +207,24 @@ fn setup(
                     .map(|effect| presentations.instantiate(effect)),
             ));
     }
-    if !options.smoke_lighting {
+    if !options.smoke_lighting && options.sea {
+        let receiver = venue::spawn(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            water_materials
+                .as_deref_mut()
+                .expect("sea water plugin installed"),
+            options.water,
+        );
+        if options.water_reflections {
+            commands
+                .entity(camera)
+                .insert(aestra_bevy::preview::planar::PlanarReflection::new(
+                    receiver,
+                ));
+        }
+    } else if !options.smoke_lighting {
         commands.spawn((
             DirectionalLight {
                 illuminance: 25.0,
@@ -302,6 +333,20 @@ fn controls(
     if options.smoke_lighting {
         return;
     }
+    if options.sea {
+        for (key, index) in [
+            (KeyCode::Digit1, 1),
+            (KeyCode::Digit2, 0),
+            (KeyCode::Digit3, 2),
+        ] {
+            if keys.just_pressed(key) {
+                for mut camera in &mut cameras {
+                    *camera = venue::camera(index);
+                }
+            }
+        }
+        return;
+    }
     for (key, eye, target) in [
         (
             KeyCode::Digit1,
@@ -344,7 +389,9 @@ fn status(
         return;
     };
     *frame_ms += (time.delta_secs() * 1000.0 - *frame_ms) * 0.05;
-    let title = if options.host_driven {
+    let title = if options.sea {
+        "AESTRA / OFFSHORE FIREWORKS"
+    } else if options.host_driven {
         "AESTRA / HOST-OWNED ROCKETS"
     } else if options.smoke_art_show && player.effect().name.contains("Star-Path") {
         "AESTRA / STAR-PATH SMOKE ART CANDIDATE"

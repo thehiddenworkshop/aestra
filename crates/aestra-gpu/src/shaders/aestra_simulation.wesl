@@ -80,6 +80,8 @@ struct Emitter {
     trail_sampling: u32,
     trail_distance: f32,
     trail_tolerance: f32,
+    sampling: vec4<u32>,
+    sampling_seed: u32,
 }
 
 struct Particle {
@@ -628,6 +630,10 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 hash01_seeded(particle_index, 30u, particle_seed),
                 hash01_seeded(particle_index, 31u, particle_seed));
         }
+        let cohort = aestra_sampling_sequence(particle_index, max(emitter.sampling.z,1u));
+        if emitter.sampling.y != 0u {
+            direction = aestra_sampled_direction(emitter.sampling,emitter.sampling_seed,particle_seed,cohort,emitter.velocity_distribution,emitter.direction,emitter.spread_radians * 57.29577951308232);
+        }
         let speed = sample_range(emitter.speed, hash01_seeded(particle_index, 2u, particle_seed));
         let shape_angle = hash01_seeded(particle_index, 5u, particle_seed) * TAU;
         var origin = vec3<f32>(0.0);
@@ -670,6 +676,9 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
             origin = vec3<f32>(cos(shape_angle) * radius, y, sin(shape_angle) * radius);
         }
 
+        if emitter.sampling.x != 0u {
+            origin=aestra_sampled_position(emitter.sampling,emitter.sampling_seed,particle_seed,cohort,emitter.shape_kind,emitter.shape_radius,emitter.shape_depth,emitter.shape_extent_z);
+        }
         let normalized_emitter_time = local_time / max(emitter.source_duration, 0.000000119);
         let drag = resolved_particle_scalar(
             emitter.drag,

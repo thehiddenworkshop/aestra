@@ -1,0 +1,80 @@
+{
+  "adapter": "AdapterInfo { name: \"NVIDIA GeForce RTX 4070 SUPER\", vendor: 4318, device: 10115, device_type: DiscreteGpu, device_pci_bus_id: \"0000:01:00.0\", driver: \"NVIDIA\", driver_info: \"621.01\", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: Some(false), limit_bucket: None }",
+  "cases": [
+    {
+      "gpu_ns_per_sample": 1.671875,
+      "max_abs_error": 2.86102294921875e-6,
+      "median_gpu_dispatch_ms": 0.006848,
+      "mode": "Noise",
+      "octaves": 1,
+      "samples": 4096,
+      "space": "Effect"
+    },
+    {
+      "gpu_ns_per_sample": 1.6640625,
+      "max_abs_error": 1.9073486328125e-6,
+      "median_gpu_dispatch_ms": 0.006816,
+      "mode": "Noise",
+      "octaves": 1,
+      "samples": 4096,
+      "space": "World"
+    },
+    {
+      "gpu_ns_per_sample": 3.671875,
+      "max_abs_error": 1.6689300537109375e-6,
+      "median_gpu_dispatch_ms": 0.01504,
+      "mode": "Noise",
+      "octaves": 3,
+      "samples": 4096,
+      "space": "Effect"
+    },
+    {
+      "gpu_ns_per_sample": 3.734375,
+      "max_abs_error": 1.430511474609375e-6,
+      "median_gpu_dispatch_ms": 0.015296,
+      "mode": "Noise",
+      "octaves": 3,
+      "samples": 4096,
+      "space": "World"
+    },
+    {
+      "gpu_ns_per_sample": 4.75,
+      "max_abs_error": 0.000018835067749023438,
+      "median_gpu_dispatch_ms": 0.019456,
+      "mode": "Curl",
+      "octaves": 1,
+      "samples": 4096,
+      "space": "Effect"
+    },
+    {
+      "gpu_ns_per_sample": 4.9296875,
+      "max_abs_error": 0.00003662705421447754,
+      "median_gpu_dispatch_ms": 0.020192,
+      "mode": "Curl",
+      "octaves": 1,
+      "samples": 4096,
+      "space": "World"
+    },
+    {
+      "gpu_ns_per_sample": 12.890625,
+      "max_abs_error": 0.000026270747184753418,
+      "median_gpu_dispatch_ms": 0.0528,
+      "mode": "Curl",
+      "octaves": 3,
+      "samples": 4096,
+      "space": "Effect"
+    },
+    {
+      "gpu_ns_per_sample": 13.40625,
+      "max_abs_error": 0.00007613003253936768,
+      "median_gpu_dispatch_ms": 0.054912,
+      "mode": "Curl",
+      "octaves": 3,
+      "samples": 4096,
+      "space": "World"
+    }
+  ],
+  "repeats_after_warmup": 8,
+  "scope": "Production force functions; compute-only timestamps, no simulation integration, uploads, rendering or screenshots. Not a full-frame benchmark.",
+  "tolerance": 0.003
+}

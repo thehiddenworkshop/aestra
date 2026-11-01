@@ -159,7 +159,7 @@ impl MaterialVaryingLayout {
             // Append so the existing authored-input locations stay stable.
             varyings.push(MaterialVarying::SamplingCoverage);
         }
-        if reads(MaterialInput::ScenePointIrradiance)
+        if (reads(MaterialInput::ScenePointIrradiance) || reads(MaterialInput::WorldPosition))
             && !varyings.contains(&MaterialVarying::WorldPosition)
         {
             varyings.push(MaterialVarying::WorldPosition);

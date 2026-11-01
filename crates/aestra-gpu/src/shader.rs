@@ -11,10 +11,15 @@ use crate::GpuEffectArtifact;
 /// it is deliberately separate from the authored schema and GPU buffer ABI versions.
 pub const SHADER_COMPILER_ID: &str = "wesl-0.6.0/naga-30.0.1/composition-1";
 
+/// Reusable material-function source for advected, feathered sprite smoke.
+/// The editor sample and offline fireworks author share this implementation.
+pub const ADVECTED_SMOKE_WESL: &str = include_str!("shaders/advected_smoke.wesl");
+
 pub const SIMULATION_MODULE: &str = "package::aestra_simulation";
 pub const SPRITE_RENDER_MODULE: &str = "package::aestra_sprite_render";
 pub const SIMULATION_WESL: &str = concat!(
     include_str!("shaders/aestra_velocity.wesl"),
+    include_str!("shaders/aestra_particle_sampling.wesl"),
     "\n",
     include_str!("shaders/aestra_simulation.wesl"),
     "\n",

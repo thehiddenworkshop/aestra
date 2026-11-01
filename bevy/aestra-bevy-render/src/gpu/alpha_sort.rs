@@ -119,7 +119,7 @@ fn eligible(draw: &GpuDrawInstance) -> bool {
         && draw.render_mode == GpuRenderMode::Rendered
         && draw.sort_range.y > 0
 }
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn prepare(
     settings: Res<AestraRenderSettings>,
     draws: Query<(Entity, &GpuDrawInstance)>,
@@ -128,10 +128,14 @@ fn prepare(
             Entity,
             &ExtractedView,
             &bevy::render::view::RenderVisibleEntities,
+            Has<crate::experimental_oit::OitApproved>,
+            Has<crate::ExperimentalOitPartitions>,
+            Has<crate::preview::planar::ReflectionView>,
         ),
         With<Camera3d>,
     >,
     buffers: Res<RenderAssets<GpuShaderBuffer>>,
+    view_keys: Res<bevy::pbr::ViewKeyCache>,
     device: Res<RenderDevice>,
     queue: Res<RenderQueue>,
     cache: Res<PipelineCache>,
@@ -143,12 +147,29 @@ fn prepare(
     let mut retained = std::collections::BTreeSet::new();
     let mut allocations = 0;
     if settings.transparent_order == TransparentOrderMode::DepthBackToFront {
-        for (view_entity, view, visible) in &views {
+        for (view_entity, view, visible, approved, partitioned, reflection) in &views {
+            if reflection {
+                continue;
+            }
             for (draw_entity, _) in super::render::visible_gpu_draws(visible) {
                 let Ok((_, draw)) = draws.get(draw_entity) else {
                     continue;
                 };
                 if !eligible(draw) {
+                    continue;
+                }
+                // Partition capture sorts exact fragment lists later. A particle
+                // permutation adds no ordering information and needlessly owns
+                // buffers/dispatches for every smoke pool. Requested partitions
+                // fail closed while pending/rejected, so cannot fall back to an
+                // unsorted ordinary draw. Other views retain their permutations.
+                if partitioned
+                    && view_keys
+                        .get(&view.retained_view_entity)
+                        .is_some_and(|&key| {
+                            super::pipeline::fragment_list_for_view(draw, approved, key)
+                        })
+                {
                     continue;
                 }
                 let Some((count, widths)) = stages(draw.sort_range.y) else {

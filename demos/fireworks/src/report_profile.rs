@@ -2,10 +2,12 @@
 use super::*;
 use aestra_bevy::{
     AestraRenderSet, AestraSet,
-    gpu::{GpuActivationTiming, GpuSimulationTiming},
+    gpu::{GpuActivationTiming, GpuSimulationPhaseTimings, GpuSimulationTiming},
 };
 use bevy::{diagnostic::DiagnosticsStore, render::diagnostic::RenderDiagnosticsPlugin};
 use std::collections::{BTreeMap, BTreeSet};
+#[path = "report_frame_timing.rs"]
+mod frame_timing;
 
 #[derive(Default)]
 struct Owner {
@@ -35,9 +37,10 @@ struct EncodingOperation {
 pub(super) struct Profile {
     start: Option<Instant>,
     playback_cpu: Vec<f64>,
+    render_graph_cpu: Vec<f64>,
     encoding_cpu: Vec<f64>,
     gpu: BTreeMap<String, Vec<f64>>,
-    seen_gpu: BTreeMap<String, bevy::platform::time::Instant>,
+    seen_measurements: BTreeMap<String, bevy::platform::time::Instant>,
     owners: BTreeMap<String, Owner>,
     owner_sequences: BTreeMap<Entity, u64>,
     activation_seen: BTreeSet<Entity>,
@@ -52,10 +55,21 @@ pub(super) struct Profile {
     preparation_cpu: Vec<f64>,
     preparation_births: Vec<serde_json::Value>,
     phases: BTreeMap<&'static str, Phase>,
+    simulation_phases: BTreeMap<&'static str, SimulationPhase>,
+}
+
+#[derive(Default)]
+struct SimulationPhase {
+    sequence: u64,
+    complete_ms: Vec<f64>,
+    partial_windows: u64,
+    max_requested_segments: usize,
+    measured_segments: u64,
 }
 
 #[derive(Default)]
 struct Phase {
+    render_graph_cpu: Vec<f64>,
     playback: Vec<f64>,
     encoding: Vec<f64>,
     preparation: Vec<f64>,
@@ -63,6 +77,9 @@ struct Phase {
 }
 
 pub(super) fn install(app: &mut App) {
+    app.world()
+        .resource::<GpuSimulationPhaseTimings>()
+        .set_enabled(std::env::var("AESTRA_EXAMPLE_SIMULATION_PHASES").as_deref() == Ok("1"));
     app.world()
         .resource::<GpuPlaybackDiagnostics>()
         .set_profiling_enabled(true);
@@ -85,6 +102,7 @@ pub(super) fn install(app: &mut App) {
                 .after(AestraRenderSet::Prepare)
                 .before(super::record),
         );
+    frame_timing::install(app);
 }
 
 fn begin(mut profile: ResMut<Profile>, readiness: Res<Readiness>) {
@@ -109,7 +127,7 @@ fn collect(
     mut profile: ResMut<Profile>,
     readiness: Res<Readiness>,
     root: Query<&EffectPlayer, With<ShowRoot>>,
-    diagnostics: Res<DiagnosticsStore>,
+    measurements: (Res<DiagnosticsStore>, Res<GpuSimulationPhaseTimings>),
     ledger: Res<GpuPlaybackDiagnostics>,
     host_context: (Res<Options>, Res<super::super::host::HostShow>),
     effects: Query<(
@@ -124,6 +142,24 @@ fn collect(
 ) {
     if !readiness.started {
         return;
+    }
+    let (diagnostics, simulation_timings) = measurements;
+    for sample in simulation_timings.samples() {
+        let phase = profile
+            .simulation_phases
+            .entry(sample.phase.name())
+            .or_default();
+        if sample.sequence <= phase.sequence {
+            continue;
+        }
+        phase.sequence = sample.sequence;
+        phase.max_requested_segments = phase.max_requested_segments.max(sample.requested_segments);
+        phase.measured_segments += sample.measured_segments as u64;
+        if let Some(ns) = sample.nanoseconds {
+            phase.complete_ms.push(ns as f64 / 1e6);
+        } else {
+            phase.partial_windows += 1;
+        }
     }
     let root_time = root.single().map_or(0.0, EffectPlayer::elapsed);
     let phase = super::observed_phase(
@@ -150,15 +186,29 @@ fn collect(
     }
     for d in diagnostics.iter() {
         let path = d.path().as_str();
-        if !path.ends_with("elapsed_gpu") {
+        let render_cpu = path == frame_timing::CPU_PATH;
+        if !path.ends_with("elapsed_gpu") && !render_cpu {
             continue;
         }
         if let Some(m) = d.measurement()
             && m.value.is_finite()
             && m.value >= 0.0
-            && profile.seen_gpu.get(path).is_none_or(|time| *time < m.time)
+            && profile
+                .seen_measurements
+                .get(path)
+                .is_none_or(|time| *time < m.time)
         {
-            profile.seen_gpu.insert(path.to_owned(), m.time);
+            profile.seen_measurements.insert(path.to_owned(), m.time);
+            if render_cpu {
+                profile.render_graph_cpu.push(m.value);
+                profile
+                    .phases
+                    .entry(phase)
+                    .or_default()
+                    .render_graph_cpu
+                    .push(m.value);
+                continue;
+            }
             profile
                 .gpu
                 .entry(path.to_owned())
@@ -273,16 +323,22 @@ impl Profile {
             "copy_bytes":op.copy_bytes,"queue_write_bytes":op.queue_write_bytes
         }))).collect();
         let phases: BTreeMap<_, _> = self.phases.iter().map(|(name, p)| (*name, json!({
+            "cpu_render_graph_ms":distribution(&p.render_graph_cpu),
             "cpu_playback_ms":distribution(&p.playback),"cpu_encoding_ms":distribution(&p.encoding),
             "cpu_stateful_preparation_ms":distribution(&p.preparation),
             "gpu_scopes_ms":p.gpu.iter().map(|(k,v)|(k,distribution(v))).collect::<BTreeMap<_,_>>()
         }))).collect();
-        json!({"observed_phases":phases,"cpu_playback_scope_ms":distribution(&self.playback_cpu),"cpu_simulation_encoding_scope_ms":distribution(&self.encoding_cpu),"gpu_phases_ms":gpu,"owners":owners,"activations":self.activations,
+        json!({"observed_phases":phases,"cpu_render_graph_ms":distribution(&self.render_graph_cpu),"cpu_playback_scope_ms":distribution(&self.playback_cpu),"cpu_simulation_encoding_scope_ms":distribution(&self.encoding_cpu),"gpu_phases_ms":gpu,"owners":owners,"activations":self.activations,
+            "simulation_phase_sampling": {
+                "categories":self.simulation_phases.iter().map(|(name,p)|(*name,json!({"complete_frame_total_ms":distribution(&p.complete_ms),"partial_windows":p.partial_windows,"max_requested_segments":p.max_requested_segments,"measured_segments":p.measured_segments}))).collect::<BTreeMap<_,_>>(),
+                "scope":"Opt-in diagnostic lane with extra GPU marker passes. One category per frame, at most 1024 pairs and three in-flight slots. Complete totals sum disjoint segments within that category/frame; overflow or invalid timestamps are unknown. Categories sample different frames: never add their percentiles. Missing windows may include unsupported timestamps, busy slots or missed latest results. Excludes domain advance, analytic/trail preparation, checkpoints outside trail recording, and other graph work. Do not compare this lane's aggregate costs to runs without phase sampling."
+            },
+            "render_graph_scope":"Paired timestamps around RenderGraph Begin through Render and selected-light copy, before diagnostic resolve/submission. GPU includes intervening graph work and gaps, not presentation latency or every upload. CPU is command-encoding wall time, not whole-game CPU or active CPU cycles. Nested scopes overlap; never add their quantiles.",
             "encoding_operations":operations,
             "stateful_render_preparation":{"cpu_ms":distribution(&self.preparation_cpu),"observed_allocation_windows":self.preparation_births,"scope":"Latest CPU stateful preparation system windows only; excludes ShaderBuffer asset preparation, other render systems, submission, driver allocation and GPU execution. May skip frames."},
             "parameter_scratch_retained":{"order":["destinations","destination_bytes","bind_groups","upload_pages","upload_bytes"],"observed_peak":self.parameter_peak,"last":self.parameter_last,"scope":"CPU-visible GPU handle ownership, not driver residency."},
             "event_scratch_retained":{"order":["links","buffers","bytes"],"observed_peak":self.scratch_peak,"last":self.scratch_last,"scope":"Render-world cache ownership, not driver residency or completed-submission frees."},
             "encoding_operations_scope":"Instrumented simulation-thread API call sites in observed latest-ledger frames only. Buffer bytes are requested sizes; initialized bytes are create-with-data payloads, not measured PCIe traffic. CPU scopes exclude parameter-byte construction and GPU execution. Initial render-world preparation, uninstrumented helpers, driver allocations and skipped ledger frames are not counted. Gather/spawn scopes include command encoding; other scopes measure allocation/bind-group calls.",
-            "scope":"Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshot/capacity scan."})
+            "scope":"Separate instrumented lane. GPU phases are asynchronous distinct measurement times; per-owner results are deduplicated by owner/sequence and may omit retired or budget-omitted owners. Work totals cover observed timestamp windows only. Nested GPU scopes overlap; do not add parent and child durations. CPU activation excludes render-thread allocation/submission. No replay/seek or screenshots. Unpartitioned profiling omits capacity scans; opt-in partitioned transport includes bounded health scans in every lane."})
     }
 }

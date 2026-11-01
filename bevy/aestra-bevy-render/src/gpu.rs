@@ -26,7 +26,9 @@ mod draw_resources;
 mod effect_inputs;
 pub(crate) mod encoding_profile;
 mod event_link_scratch;
+mod phase_timing;
 pub use encoding_profile::GpuEncodingOperation;
+pub use phase_timing::{GpuSimulationPhase, GpuSimulationPhaseSample, GpuSimulationPhaseTimings};
 mod extension_stages;
 #[path = "gpu/extraction.rs"]
 mod extraction;
@@ -67,6 +69,7 @@ mod preparation_observation;
 mod preparation_timing;
 mod presentation_readiness;
 mod render;
+pub(crate) use render::partition_draw_check;
 mod ribbon_bounds;
 #[path = "gpu/scene_depth.rs"]
 mod scene_depth;
@@ -303,6 +306,8 @@ mod tests {
             field_follow: None,
             domain_spawn: None,
             homing: None,
+            spatial_flow: None,
+            particle_sampling: None,
             homing_target: None,
             homing_tracker: aestra_runtime::HomingTracker::default(),
             attachment: None,
@@ -863,6 +868,9 @@ mod coupled_tests {
     include!("gpu/tests/stateful_trails.rs");
     include!("gpu/tests/parameter_uploads.rs");
     include!("gpu/tests/particle_output_catchup.rs");
+    include!("gpu/tests/stateful_spawn.rs");
+    include!("gpu/tests/spatial_flow.rs");
+    include!("gpu/tests/particle_sampling.rs");
 
     struct Scene {
         device: RenderDevice,
@@ -1011,6 +1019,8 @@ mod coupled_tests {
             }),
             domain_spawn: None,
             homing: None,
+            spatial_flow: None,
+            particle_sampling: None,
             homing_target: None,
             homing_tracker: aestra_runtime::HomingTracker::default(),
             attachment: None,

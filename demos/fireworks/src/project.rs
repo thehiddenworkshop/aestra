@@ -11,13 +11,19 @@ use std::{path::PathBuf, sync::Arc};
 mod paths;
 
 pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
-pub const USAGE: &str = "cargo run --release -p aestra-demo-fireworks -- [--cinematic] [--smoke-art-show | --persistent-smoke-show | --smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--experimental-oit] [--oit-fragments-per-pixel N] [--star-lights] [--no-flash-lights] [--tuned-smoke] [--launch-pattern spaced|overlap] [--max-owners N] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--experimental-oit supports host rockets or a qualified show candidate; it audits renderer eligibility, uses Msaa::Off and an explicit 128 MiB shared transparency guard, and exits on admission failure. The default reservation is 4 fragments/pixel; an explicit --oit-fragments-per-pixel changes reservation within the same ceiling. Interactive mode stops after observed loss. It is not default-show adoption.\n--smoke-art-show plays the separate F8.1C4 smaller distributed wisp draft; --persistent-smoke-show plays the opt-in F8.1C3 authored show candidate, not final art approval. --smoke-lighting plays F8.3B fluid; --particle-smoke-lighting plays F8.3C sprites; --smoke-persistence plays F8.1A billows; --smoke-cohorts plays F8.1B death-linked shell smoke (these labs are not the full show). Default: host-owned rockets; Enter launches, and --cinematic restores the authored reference show. Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles flashes, P toggles selected lights when enabled, M mutes, Esc exits.";
+pub const SHOWCASE_PRESET: &str = "fireworks-showcase-v1";
+pub const USAGE: &str = "cargo run --release -p aestra-demo-fireworks -- [--showcase] [--scene calibration|sea] [--water calm|rough] [--water-reflections] [--no-launch-lights] [--cinematic] [--smoke-art-show | --persistent-smoke-show | --smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--experimental-oit] [--oit-fragments-per-pixel N] [--oit-partitions 1|2|4|8] [--star-lights] [--no-flash-lights] [--tuned-smoke] [--launch-pattern spaced|overlap|finale|variety] [--max-owners N] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--experimental-oit supports host rockets or a qualified show candidate; it audits renderer eligibility, uses Msaa::Off and an explicit 128 MiB shared transparency guard, and exits on admission failure. The default reservation is 4 fragments/pixel; an explicit --oit-fragments-per-pixel changes reservation within the same ceiling. Interactive mode stops after observed loss. It is not default-show adoption. --oit-partitions explicitly repeats host draw phases on a square grid, with per-region async health scans in every lane; it preserves the byte ceiling and can be substantially slower.\n--smoke-art-show plays the separate F8.1C4 smaller distributed wisp draft; --persistent-smoke-show plays the opt-in F8.1C3 authored show candidate, not final art approval. --smoke-lighting plays F8.3B fluid; --particle-smoke-lighting plays F8.3C sprites; --smoke-persistence plays F8.1A billows; --smoke-cohorts plays F8.1B death-linked shell smoke (these labs are not the full show). --showcase selects the frozen v1 high-tier tuned overlap candidate with star/flash lights, PlaybackOnly and 4x4 experimental OIT; conflicting visual/workload overrides are rejected. It is not final art or performance approval. Default: host-owned rockets; Enter launches, and --cinematic restores the authored reference show. Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles flashes, P toggles selected lights when enabled, M mutes, Esc exits.";
 
 #[derive(Resource)]
 pub struct ShowProject(pub Arc<CompiledEffectProject>);
 
 #[derive(Resource)]
 pub struct Options {
+    pub sea: bool,
+    pub water_reflections: bool,
+    pub water: aestra_bevy::preview::water::SeaState,
+    pub no_launch_lights: bool,
+    pub showcase: bool,
     pub max_owners: Option<usize>,
     pub tuned_smoke: bool,
     pub launch_pattern: String,
@@ -37,6 +43,7 @@ pub struct Options {
     pub smoke_art_show: bool,
     pub experimental_oit: bool,
     pub oit_fragments_per_pixel: f32,
+    pub oit_partitions: Option<u32>,
 }
 
 impl Options {
@@ -70,6 +77,11 @@ impl Options {
         audio_root: PathBuf,
     ) -> Result<Self, String> {
         let mut options = Self {
+            sea: false,
+            water_reflections: false,
+            water: Default::default(),
+            no_launch_lights: false,
+            showcase: false,
             max_owners: None,
             tuned_smoke: false,
             launch_pattern: "spaced".into(),
@@ -85,6 +97,7 @@ impl Options {
             smoke_art_show: false,
             experimental_oit: false,
             oit_fragments_per_pixel: 4.0,
+            oit_partitions: None,
             history: PlaybackHistoryPolicy::PlaybackOnly,
             project_root,
             effect_path: "effects/fireworks_show.aestra.ron".into(),
@@ -94,12 +107,29 @@ impl Options {
                 None
             },
         };
+        let args: Vec<_> = args.into_iter().collect();
+        if args.iter().any(|arg| arg == "--showcase") {
+            options.showcase = true;
+            options.tuned_smoke = true;
+            options.star_lights = true;
+            options.launch_pattern = "overlap".into();
+            options.experimental_oit = true;
+            options.oit_partitions = Some(4);
+        }
         let mut args = args.into_iter();
         let mut explicit_effect = false;
+        let mut explicit_water = false;
         let mut fluid_lab = false;
         let mut particle_lab = false;
         let mut explicit_oit_reserve = false;
         while let Some(arg) = args.next() {
+            if arg == "--water-reflections" {
+                options.water_reflections = true;
+                continue;
+            }
+            if arg == "--showcase" {
+                continue;
+            }
             if arg == "--tuned-smoke" {
                 options.tuned_smoke = true;
                 continue;
@@ -110,6 +140,10 @@ impl Options {
             }
             if arg == "--no-flash-lights" {
                 options.no_flash_lights = true;
+                continue;
+            }
+            if arg == "--no-launch-lights" {
+                options.no_launch_lights = true;
                 continue;
             }
             if arg == "--cinematic" {
@@ -159,6 +193,26 @@ impl Options {
                 .next()
                 .ok_or_else(|| format!("Missing value for {arg}"))?;
             match arg.as_str() {
+                "--water" => {
+                    options.water = match value.as_str() {
+                        "calm" => aestra_bevy::preview::water::SeaState::Calm,
+                        "rough" => aestra_bevy::preview::water::SeaState::Rough,
+                        _ => return Err("Water state must be calm or rough".into()),
+                    };
+                    explicit_water = true;
+                }
+                "--scene" if matches!(value.as_str(), "calibration" | "sea") => {
+                    options.sea = value == "sea"
+                }
+                "--oit-partitions" => {
+                    let side = value
+                        .parse::<u32>()
+                        .map_err(|_| "OIT partition side must be 1, 2, 4 or 8")?;
+                    if ![1, 2, 4, 8].contains(&side) {
+                        return Err("OIT partition side must be 1, 2, 4 or 8".into());
+                    }
+                    options.oit_partitions = Some(side);
+                }
                 "--oit-fragments-per-pixel" => {
                     let reserve: f32 = value.parse().map_err(|_| "Invalid OIT reservation")?;
                     if !reserve.is_finite() || reserve <= 0.0 {
@@ -176,7 +230,9 @@ impl Options {
                     }
                     options.max_owners = Some(limit);
                 }
-                "--launch-pattern" if matches!(value.as_str(), "spaced" | "overlap") => {
+                "--launch-pattern"
+                    if matches!(value.as_str(), "spaced" | "overlap" | "finale" | "variety") =>
+                {
                     options.launch_pattern = value
                 }
                 "--tier" if LightingQualityPolicy::preset(&value).is_some() => options.tier = value,
@@ -242,6 +298,11 @@ impl Options {
         {
             options.host_driven = false;
         }
+        if options.oit_partitions.is_some() && (!options.experimental_oit || !options.host_driven) {
+            return Err(
+                "--oit-partitions requires --experimental-oit with host-driven rockets".into(),
+            );
+        }
         if options.experimental_oit
             && !(options.host_driven || options.smoke_art_show || options.persistent_smoke_show)
         {
@@ -253,6 +314,33 @@ impl Options {
                 || options.max_owners.is_some())
         {
             return Err("--tuned-smoke, --launch-pattern and --max-owners are host options; cinematic reviews select their explicit effect asset".into());
+        }
+        if explicit_water && !options.sea {
+            return Err("--water requires --scene sea".into());
+        }
+        if options.water_reflections && !options.sea {
+            return Err("--water-reflections requires --scene sea".into());
+        }
+        if options.no_launch_lights && !options.sea {
+            return Err("--no-launch-lights requires --scene sea".into());
+        }
+        if options.sea && !options.host_driven {
+            return Err("--scene sea requires host-driven rockets".into());
+        }
+        if options.showcase
+            && (options.tier != "high"
+                || options.sea
+                || options.history != PlaybackHistoryPolicy::PlaybackOnly
+                || !options.host_driven
+                || !options.tuned_smoke
+                || !options.star_lights
+                || options.no_flash_lights
+                || options.launch_pattern != "overlap"
+                || options.oit_fragments_per_pixel != 4.0
+                || options.oit_partitions != Some(4)
+                || options.max_owners.is_some())
+        {
+            return Err("--showcase freezes the v1 high-tier tuned host-overlap candidate: PlaybackOnly, star/flash lights, 4x4 OIT at 4 fragments/pixel, uncapped owners. Omit --showcase to customize these settings.".into());
         }
         options.project_root = options
             .project_root
@@ -327,6 +415,55 @@ mod wind_smoke_tests;
 mod tests {
     use super::*;
     use aestra_bevy::{EffectPlaybackMode, EffectPlayer};
+    #[test]
+    fn showcase_freezes_the_candidate_without_changing_normal_defaults() {
+        let normal = Options::parse([]).unwrap();
+        assert!(
+            !normal.showcase
+                && !normal.tuned_smoke
+                && !normal.star_lights
+                && !normal.experimental_oit
+        );
+        assert_eq!(normal.launch_pattern, "spaced");
+        let candidate = Options::parse(["--showcase".into(), "--no-audio".into()]).unwrap();
+        assert!(
+            candidate.showcase
+                && candidate.host_driven
+                && candidate.tuned_smoke
+                && candidate.star_lights
+        );
+        assert!(candidate.experimental_oit && !candidate.no_flash_lights);
+        assert_eq!(candidate.oit_partitions, Some(4));
+        assert_eq!(candidate.oit_fragments_per_pixel, 4.0);
+        assert_eq!(candidate.max_owners, None);
+        assert_eq!(candidate.history, PlaybackHistoryPolicy::PlaybackOnly);
+        assert_eq!(candidate.launch_pattern, "overlap");
+        assert_eq!(candidate.tier, "high");
+        assert!(candidate.audio_root.is_none());
+        for override_args in [
+            vec!["--tier", "low"],
+            vec!["--history", "replay-enabled"],
+            vec!["--no-flash-lights"],
+            vec!["--oit-partitions", "2"],
+            vec!["--oit-fragments-per-pixel", "8"],
+            vec!["--max-owners", "24"],
+            vec!["--launch-pattern", "spaced"],
+            vec!["--launch-pattern", "finale"],
+            vec!["--scene", "sea"],
+            vec!["--cinematic"],
+            vec!["--smoke-art-show"],
+        ] {
+            for first in [false, true] {
+                let mut args: Vec<String> = override_args.iter().map(|s| (*s).into()).collect();
+                if first {
+                    args.insert(0, "--showcase".into());
+                } else {
+                    args.push("--showcase".into());
+                }
+                assert!(Options::parse(args).is_err(), "{override_args:?}");
+            }
+        }
+    }
     #[test]
     fn host_look_and_overlap_are_explicit_and_cannot_silently_change_cinematic_playback() {
         assert_eq!(Options::parse([]).unwrap().max_owners, None);
@@ -495,6 +632,10 @@ mod tests {
         assert_eq!(replay.history, PlaybackHistoryPolicy::ReplayEnabled);
         for args in [
             vec!["--tier", "ultra"],
+            vec!["--no-launch-lights"],
+            vec!["--water", "calm"],
+            vec!["--water-reflections"],
+            vec!["--scene", "sea", "--water", "invalid"],
             vec!["--history", "yes"],
             vec!["--effect"],
             vec!["--smoke-lighting", "--smoke-persistence"],

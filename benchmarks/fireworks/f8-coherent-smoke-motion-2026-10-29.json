@@ -1,0 +1,3267 @@
+{
+  "status": "Opt-in draft; motion-sampled comparison, not final art acceptance",
+  "binary": {
+    "path": "target/fireworks-f8/coherent-smoke-release-2026-10-29.exe",
+    "sha256": "a49ede18e95b5adf46b8e7e3697191fe5dcfd1435e868b287b6abbb65f53d268"
+  },
+  "source_inputs": [
+    {
+      "path": "crates/aestra-gpu/src/material.rs",
+      "sha256": "4c1103ce6315b75fc7a34df231549a3a06e80a0d3f44da013eca851935492c34"
+    },
+    {
+      "path": "crates/aestra-gpu/src/material/varying.rs",
+      "sha256": "beeeafa2459b9481a2827561c615bb6a0599f4ad436c83d4618e5e2ddab6682e"
+    },
+    {
+      "path": "crates/aestra-gpu/tests/material_shader_contract.rs",
+      "sha256": "ebfa9fb072195b994ce1cd936c0631d440edb6b3a301b45f7b7bc7086f397245"
+    },
+    {
+      "path": "demos/fireworks/src/bin/author_fireworks_reference_smoke.rs",
+      "sha256": "8f799cf555d81f647cf6a71a0be1a7f40b12ada6b1d9b0ea080f7adce9eaca5f"
+    },
+    {
+      "path": "demos/fireworks/src/bin/reference_smoke.wesl",
+      "sha256": "2b82cbb810e9303d0e694cbe854364b9acbccada96b006ddfe6d7f90d8b310b9"
+    },
+    {
+      "path": "assets/test/effects/fireworks_gold_tail_reference_smoke.aestra.ron",
+      "sha256": "87312fedbb9083957602e3ad9ba2c09311ee44ae9ad4123e39dd1f9c0c93c047"
+    },
+    {
+      "path": "assets/test/materials/fireworks_filament_smoke.aestra.material.ron",
+      "sha256": "2d866b6c7c924c110870dbcf2dcedd9cd4f16b233f5e75883f30a9506151eb28"
+    },
+    {
+      "path": "assets/test/materials/filament_smoke_wisp.aestra.material-function.ron",
+      "sha256": "f048750301b91143c073051af27436156e37f286cbb030da1d2a3acc1a1f352e"
+    }
+  ],
+  "frozen_original_assets_verified": 97,
+  "runs": [
+    {
+      "case": "f8-coherent-motion-control-2026-10-29",
+      "report": {
+        "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high.json",
+        "sha256": "fbdb7ddd31b94ad2a32ec149fe039084153ca18223ab3ae848f7fa8f815fa74c"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/manifest.json",
+        "sha256": "acbe33e5aa3ff128643bf6ef73a8dc01a7edf4c60128b0914dd84abbac35c513"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 800987,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 1521,
+        "observations": 1449,
+        "observed_partition_loss": false
+      },
+      "routes": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "node_head_bytes": 47923200,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.083333s.png",
+          "sha256": "36c6555c6df53e07f48410a5785501a7cb6f3d3b6e1e9e7173f9ca3b21ae3403"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.166667s.png",
+          "sha256": "c0fe816cdbf8c13ac4e3132a7d35643a163b689d0261116f5e79a95476c65605"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.25s.png",
+          "sha256": "392fa772d359cd9e463a23e798e318960a2b05df978d3ce1fbb22574cdd70c74"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.333333s.png",
+          "sha256": "cd7f4994fd91dd77679c3c312aa4c36ca2fb3dbc1accde05f53045ed62f84906"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.416667s.png",
+          "sha256": "659f40e55c31c5970a7f260aa09d74256a87aa28a3cc789967d2daf470986f2e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.5s.png",
+          "sha256": "cc97752d9a4008ba9de00ae08a3ae95e3e46ba76bdbcebaf581bdab1181f869c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.583333s.png",
+          "sha256": "faa82bd58cdaffb479be05dc68fed92ddc026c4ca1ddf81cbfb7dd37f4fd4e7a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.666667s.png",
+          "sha256": "5c670bd00d8368f6f2e1c09a4bf602fe9a93ae043017f218a68122f9b81ed09c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.75s.png",
+          "sha256": "a9b6098c149f75280eb1a343161537390f3385b2fcc57eb14fbc68e966ec6d3b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.833333s.png",
+          "sha256": "201d6e02dba73d927fba07e7cacf4871b3a14d8390852c3c163547cfd47398a2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-0.916667s.png",
+          "sha256": "23446c16b159a9d3170c31e367aa831f1ae47274b25d70c08dd969260bd005c9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1s.png",
+          "sha256": "667e6d93fa75fc3298f015696cb776befbd30743f0769e7f96e230aed2030350"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.083333s.png",
+          "sha256": "760c720cee3176695facb33acae9223dc6b982930677e8fa1ad44ed6070de84d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.166667s.png",
+          "sha256": "acd5a0b7db783b4ba8be7bce1e0da833975024baccd894c41420ae07434a8688"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.25s.png",
+          "sha256": "2bfd2e1e9b6905f6fdf2a5e2ea8bf513cd8032e4be0668256d6518903e0dad4c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.333333s.png",
+          "sha256": "f1ebd977432d8fecd63e51e8e37f7ff57243941bdff6d658f4c0792907575306"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.416667s.png",
+          "sha256": "cb2eb3f1d8cbf6499284aca3b3bf047028b5de5a84e9fc1423d53be59813da74"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.5s.png",
+          "sha256": "4cd0c1d5a453a5eb35b1b096764e5f0d4222dc6166ab349406f633abdabcb5a8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.583333s.png",
+          "sha256": "d0c536b000d9b648bf83d969a1ecb32f388479f9a82de7eb23e8c878d623b4cb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.666667s.png",
+          "sha256": "c91b624b43ff5301c4b0548237b3fa4dd32ca9203528af571e5fc0e9fc67fec9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.75s.png",
+          "sha256": "097849453d29a564c1ea1faf356cf4b9ca610e1ed24f2080292da73b668fa066"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.833333s.png",
+          "sha256": "f78ffa91a6e79e1a3e636346de2dfcf27a1c4446084d0d37f773e7c67830b16b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-1.916667s.png",
+          "sha256": "96816453c07db1572cbc6b5a2327b5f15a1746bfcf1e0776a79ec4a8e02cc665"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2s.png",
+          "sha256": "043e1ddcd95e1e7008de57d9255b4b87ab788a6e7e3037d63a47faf3bf895428"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.083333s.png",
+          "sha256": "facd24f995a016f1a4af10b935e5adf72447793c96ea450a2ac203b9cd687cce"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.166667s.png",
+          "sha256": "b705c0e5f933bb554a3a4912587611dcec7e3d9a140f6105cfafa6bb9acbc861"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.25s.png",
+          "sha256": "4e701631083d9e68dcf01d7ef967e1965664d8abb16ff41ff665c8d0309d5db6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.333333s.png",
+          "sha256": "a3f4428c8a9ae32ba3b7211374d7acdcbfaeb2ab0b6708b8ca51110843bff426"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.416667s.png",
+          "sha256": "b867990879957ca12edd668664c75f7f8c9ff9541df830ada3a7f8f37534d2c4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.5s.png",
+          "sha256": "25443ce72698ed271cf113ffdccbcaadfe8955c74b32db562e0ccbbf57e30695"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.583333s.png",
+          "sha256": "87fae78acdfdebea3dc8a4afd8bbdc697bd15a86544ad1388d22b9f0cb45c09c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.666667s.png",
+          "sha256": "e0edc42a977d221c2e8a556ee94622a7c9bf48a1e858097eade458364201c7fa"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.75s.png",
+          "sha256": "dae73abff834f4d8d3122f308ef6e278042d712ece419dc572f8b4574a6df3b0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.833333s.png",
+          "sha256": "df93f8e69dd6e8e61ae9437fca10520ac3e64b8ae388db63cd40ed0ca91dfc70"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-2.916667s.png",
+          "sha256": "7c94a89bc8fba48feccd479f98eef6b2f1a33e04180f72049e48cf2a6a6aabaa"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3s.png",
+          "sha256": "4b8c256bfc752a996f4e0f268a454787309aee8d44d3c06582d3f17604963412"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.083333s.png",
+          "sha256": "5e94d28198c990f1a1863dab602489b591c094b7205ec2101bc9d68aefc2c6a4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.166667s.png",
+          "sha256": "06108a1a2454dd7ccfc93426f776538e3e295c78fb71742c76e211bb8a2b3daf"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.25s.png",
+          "sha256": "881fdf69335682be5048f0a6139235bee41b5b07a6de95310c0e83c06b953c5b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.333333s.png",
+          "sha256": "c3d385ce41c569a1cb865cce6516366e13b31b546723e9c8f8edbf22d2f2a88a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.416667s.png",
+          "sha256": "b2e77a32e152c4072576e50451e12bc4fd4084105ed80f140d9ff55115df808f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.5s.png",
+          "sha256": "c7aea83510de90389fc31b4b91f4e656c60bd8ec4ddd9502f5dd96b851bec8b1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.583333s.png",
+          "sha256": "17b4664f81f8d2ca06837dbfb5dcaa7bf08a95363d4aae6c4f13cc306cfcd4e9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.666667s.png",
+          "sha256": "115fb8697d3489361499da37fb0747ab13fc2dffa2d3ceb06cd006ec4c2dc953"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.75s.png",
+          "sha256": "3674a938c1a85ee298691435ce31032a7d8625fd8c8a196438de4c2ecd190f62"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.833333s.png",
+          "sha256": "37b1ff3b5e8c8309a7f2bcce945f6b9655f1b1e834a6e25c73682f764e2823cf"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-3.916667s.png",
+          "sha256": "dd71d86337f2177fe0b1d98d27e0e49c054c35bd4fe0c388895a644f8b73086c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4s.png",
+          "sha256": "6ed31ff54f520bf2a9ee14160b7a297739caeff89bcd71cd4a5464fb4ab1af4f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.083333s.png",
+          "sha256": "0bf0ea037786bba1e39e97389a69d60d047bbb680713e536a27583ba4521b838"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.166667s.png",
+          "sha256": "463363720e7f9a21e45f355fc9e78c325ac82d7aabf544e179d5ff0dc323d1ef"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.25s.png",
+          "sha256": "3bf9e27ca18386938c8b49b00aaa4b7101e7554d9f5ef41f31dab37059cb2e7b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.333333s.png",
+          "sha256": "d6e9dd7efaae3ebd68d67515792aa220cd570dda0f242264e38ad8cdce4e272a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.416667s.png",
+          "sha256": "75f7d5c2bebda43d70d0de2a632085f3a6198c735df6ea793bcfdc0a1ddb6792"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.5s.png",
+          "sha256": "b157596b2aac62492be19f674b387acf435fd0b86d769e45a0ec62e2f9e7cf26"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.583333s.png",
+          "sha256": "9d00d635fad9e0286e4ae8d298c4fdab80cf65dd8ec67e3c577d3bdff94eefa3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.666667s.png",
+          "sha256": "4687581d151f17c4bffaad931c35a62d392387ece85b58c1dc0ba7284f60e683"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.75s.png",
+          "sha256": "9db2d7bc4d49ce82c4b95f06b7a9ed3bb6257b1457ef38ff1523b44892a0b316"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.833333s.png",
+          "sha256": "687fe764f8388b443b9bb38a2a744d0701f086b62909487c42b1c107818559eb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-4.916667s.png",
+          "sha256": "979d657e457afde23be251d04dbb1740d22df861cffdb15342c3108fe53ff7f1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5s.png",
+          "sha256": "40f54fad4eeea2d1f2c862696d9e15b0190ca3c18a51060cbbb1602c19013514"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.083333s.png",
+          "sha256": "7289c776a76dceced0b7d2c7cf246d53c081ea0d17588de3c0607f2bb1d41e2f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.166667s.png",
+          "sha256": "352989709922a45c1553bcb04ea88fcef509b974bf11031a4662b5db8bd90633"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.25s.png",
+          "sha256": "995e95ecf8f46e41aa51a2b85c30e8cbdb03d99e3ef632086d24498e779f8075"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.333333s.png",
+          "sha256": "c7b7846970b9925ccef30665827ca58352b6ba6f806d487c7ac221f8d5d3e0c0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.416667s.png",
+          "sha256": "a584fd76f0b7833c57b3a3a879cd4848f4ff8ecb5e36c6b1b1a16382cf79f653"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.5s.png",
+          "sha256": "2ae803ed95e0bd79b33e96230a0d8bf61fb12de6c410558ccb6b868576bf199e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.583333s.png",
+          "sha256": "f500df538c26cbf453eaadfc66c9136a5eab949f23dc6aad48c4ce15ef0ee5a9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.666667s.png",
+          "sha256": "4ab7504c3603f402ef2d33fc626f608e7b7d4dda4316a518897347794350171e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.75s.png",
+          "sha256": "366eddc304a60d5d04470e23eb490727b9dd95124ea371e716ad2cb9e4af121f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.833333s.png",
+          "sha256": "7efa821f0da946f6f2a99f00e21667ceb32b2acf0a4e81df6926c89d892530a1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-5.916667s.png",
+          "sha256": "c3199ef28a444a6a6282cb9f0fbcc1df00750cf835e8abb37ee0bcfb07692460"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6s.png",
+          "sha256": "c81ccb9d2b2ec7edf1bc5acad0c3d7ebb2cbdde37b4e131251616ef2d09bfe3a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.083333s.png",
+          "sha256": "6c7c74bbfa2b43dd1636b2daf17b6f254c4df2b8551891129bc5d54ae1e1532d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.166667s.png",
+          "sha256": "64fb0331a62daac2e2c888a9223f328fdbc9fa415dcfbe2676a6681feb7b80f2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.25s.png",
+          "sha256": "9133b1c04efc383f4041013346516c57b61bd2d562fcaf4ed0919955fdd11e64"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.333333s.png",
+          "sha256": "591490586a8440881f502a0b1df96a19994d86e02e6a44f087504d65febd63b9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.416667s.png",
+          "sha256": "45c3589f00f1e816e91afe259482cd6a3814b3aefba38130a99b12197fd81fc9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.5s.png",
+          "sha256": "9842a9b72851c1d2430c256988e61165364d6b7f8683c6dc4cd8ad0cfdbd0904"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.583333s.png",
+          "sha256": "ed15cd8c893fce50df579652bfcf0ea2ad7935e2626dd5db0f9a731ea2d642f7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.666667s.png",
+          "sha256": "ec0a467507612d2b5ac7abf767b902b90c5a8a67da705c59bcaba4e5c53f2ecd"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.75s.png",
+          "sha256": "ee3326282ff996208ec9c370e3b02d27c15274ffcc6e9c2098020f32ae461cda"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.833333s.png",
+          "sha256": "ad90a0ad7d3732d7ce7b624210a108d69976f01766d015e398c79a9ddcce8cc8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-6.916667s.png",
+          "sha256": "b28ce83f31b8cd3845f2ef0ea542bb3b3a6b75081d41e8a1fd39225f82103e1a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7s.png",
+          "sha256": "a21153483304f5c25af89d00a60e16016c23cf550d8bd65208221a790f2905d1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.083333s.png",
+          "sha256": "e456410e2a4f7b30a7fa0ff8375d137bab148da19ec8b0d05f7bb8b7653b0bf9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.166667s.png",
+          "sha256": "e998ec0b51e30a7eda8a7ab9c108c6b50a7f2523bdb831fdfda1ad44645ceaba"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.25s.png",
+          "sha256": "632b590a281223035bbe98133b7eef13e0d360642396fa719394abe443b0ade3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.333333s.png",
+          "sha256": "7b449d0f452d487d3c1ae1ecfb75f2daeb634fc337e7c00e23f565b04a05e48a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.416667s.png",
+          "sha256": "4d59d815fdd9599b474ee7e59f119c98730d86d2ed764b69bc141e1f6bf21005"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.5s.png",
+          "sha256": "9395f713eccd7ef8d57e311d462a25ba10795593c565701cb3e07ecb3fcc7788"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.583333s.png",
+          "sha256": "014b8f84e48c871700745b854e113f78a350ed55b641633ac771a6458ee2f1ba"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.666667s.png",
+          "sha256": "74a261a99c5d6d31a7d3211218a12ea8369792306054e71b9da0477df6a962c3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.75s.png",
+          "sha256": "70f27fd26e54862db6c3057a0efdf0f048eb09429dcde0bf579defdf69ed2c22"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.833333s.png",
+          "sha256": "3e42eb83d82cab7380dade1c2579010fc2e29858c5501563f5fc67c463ec01b4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-7.916667s.png",
+          "sha256": "c2dd42401b4d1279e023db75826dbeaea5e7e7002aa9f1b797f312d86a91fe4b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8s.png",
+          "sha256": "c4a13272951503c6c008786f75b52306789e380d2e15a97df53a11c7cea9962c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.083333s.png",
+          "sha256": "eeb499eb4976b1a297b0c9dc27edba007e5e7d1467b3fe45c8c87f5e24f627d4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.166667s.png",
+          "sha256": "15a46e0796e36c9c41482cbd06072dd65dadfc0fd5b03c576899cef19358ff1a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.25s.png",
+          "sha256": "5d42ba75c7ac1fb8a6b023e67842647dd2865abf43e08208dd853c5e135b2749"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.333333s.png",
+          "sha256": "fc4332e557b1c1e6f8b675fbac6188591fc006c735e6d1aea34a755446469249"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.416667s.png",
+          "sha256": "01f00a972e65b055db793e0509c4199be82f531a99051ac9fda666de04e14ef6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.5s.png",
+          "sha256": "4732fcb5e64f4c92dcf15b8904cdc0be708cb0406e68ca2dc84236949f7f7771"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.583333s.png",
+          "sha256": "60117eeb212232a503ff1a769238f69e7786daaa6fe5577881a9d563e62e02e2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.666667s.png",
+          "sha256": "6dd3fd117af90ffe290fafaa3f8acac3396bee483f41c176728dd55e5be5bd76"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.75s.png",
+          "sha256": "d535332dc8fc53463090da6019a17cdee64d88797a284f15607f2e7fe3e33f58"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.833333s.png",
+          "sha256": "f7a62b9ce25e4125bc9f2a8590ee14e7770185034c7e09b53cd2d5a23c1301c9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-8.916667s.png",
+          "sha256": "eb30198dcc7cc14fe2840dc9552c051f6a8fd042463fb2001586fea19fc3b5a3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9s.png",
+          "sha256": "31f1acc74ad6938132ff1a38679079dc4c3ad95732384ad427a5c7ec9dceae57"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.083333s.png",
+          "sha256": "555363beff945f840821a9b318eaece072798b7692781dd5dfd81e1b7ad5063f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.166667s.png",
+          "sha256": "313d9c71d431a416fc3237a2b571ea8cdebbf1a923632ea9d268ce314071e0fb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.25s.png",
+          "sha256": "972489d16871dce96b7d8b7937b54ddf0b040ea73a98c1460396e421cb89897b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.333333s.png",
+          "sha256": "a7aeabad1cda673f50de573713f59d9c2380adcae7af4ea36d7354d36c167522"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.416667s.png",
+          "sha256": "7308ce9905150bb7847512850223188f4e219332eedfa0fa9951c79743352e90"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.5s.png",
+          "sha256": "dc715d155f06d523f2e0dca5eb9f0a7099e6050ae316dfab9d1a34c72ee01869"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.583333s.png",
+          "sha256": "b32ca2c14afdd2edaa83e4e310667dec89cd0409643be26a44f4516750acfab2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.666667s.png",
+          "sha256": "e5be051ba3cb7451f6d9ca045dfac06442dd74ac202dd9b84de10e0fb9e1b521"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.75s.png",
+          "sha256": "0c8f2a1db98ee15de46d0b08cf7cb0fc1d578d426fe771c5d3fe8a1faefe8259"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.833333s.png",
+          "sha256": "9823232840fc6ba363466a468957f37c7c36fa42f5c6d91b02bc8cdb0687d7d2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-9.916667s.png",
+          "sha256": "cb8139cb58d6af6ea6fab705367dd686ff61f5cdbd60ae522d1276fce00414e5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10s.png",
+          "sha256": "27d4951320d066597306bbf24219d33ed9b83bfb87661f51889d878cc31f29b8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.083333s.png",
+          "sha256": "c1ac2960653cb5ca987d75eef4e9153864fededbc1c78a1db29e779c53f20633"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.166667s.png",
+          "sha256": "d2d4ff9990556da61abfaee531e3b78f7da147cd30c83dd228acb595b0051e7c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.25s.png",
+          "sha256": "9fdac0b088821b4b9768635179291b10216291aa90a1c88f7d8294974255101c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.333333s.png",
+          "sha256": "bbf1167aa18c2238e8ac2175e5805935aa202379917f4988a4b0141cae40f7d8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.416667s.png",
+          "sha256": "d33f13727a8183e166cd6f22f795ecacdfe4e7435f3b61470fc56b34013699b7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.5s.png",
+          "sha256": "783c85e1ed3e5eeb6ccac10745aad8c646c5b3d342fe47a8301815803d282656"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.583333s.png",
+          "sha256": "262d79a81daf147fead01346aba956723c2ad7202aedbc944f9b5868215347ce"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.666667s.png",
+          "sha256": "5a091bac1b5a45bf6ecf9b59a1ba12092d9be8ed4416fceb7d8df9c048df13d2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.75s.png",
+          "sha256": "bd046d0cf56762c9876d337c8f335c3d80a3e9fec7d6ae9dc4e679d5cd1f9eba"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.833333s.png",
+          "sha256": "bd0f7a1d950c8d67a573961374d431d10ef0bc167e11ed24aca36bd778b25e6c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-10.916667s.png",
+          "sha256": "338bd0626825848ac9459dbbfe451850ca115fd730906a789936407ee4f9e9d0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11s.png",
+          "sha256": "1884739154ebb7c7f23549952e8a4ce919b2f456325bf224f7a8533f9e1988f9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.083333s.png",
+          "sha256": "6f8633864be9bc0f54e8cc66ba63cdeb3c567d56ce64f04609dcec638c96188f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.166667s.png",
+          "sha256": "775fda594371f59d94301631e5b4dc85c192347976f055acd2c7969dcb3347a7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.25s.png",
+          "sha256": "1d00bc3347049c06e03d829cd49790f69828b3a503bffe46bf00519f51b88bb3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.333333s.png",
+          "sha256": "36d37f8ba2f7107eab1e15da3d4ed81097ea780283c24776a8c39292989bb774"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.416667s.png",
+          "sha256": "0ee0f46bd34200568ec54a2495d6f04db9d37f46f85aef1422c2baf471b808b8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.5s.png",
+          "sha256": "4585299e3433e459634fc14306d1574e339fded13291b032f2e5218b83ee756c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.583333s.png",
+          "sha256": "bd077796dbf2609e3b488cfd3ce3362f00019aa3f872f575240c235f3089d58b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.666667s.png",
+          "sha256": "802e2cb1ee9339998b8fee9e2075b5587b4191330f97285dbb9e0d0710a1e87d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.75s.png",
+          "sha256": "c43bed99660f929143405231492d1adb403f8b7e1e1a6f6d00a1311a63f6fe97"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.833333s.png",
+          "sha256": "871ebf00e7cf5823fac6d9043d2883f7ab9632493fca2bd27b98cdad9c683187"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-11.916667s.png",
+          "sha256": "36ca20d8a87da5874ce9378448745ddb64de7f56079fa827a7f3d19b94fe7cd4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12s.png",
+          "sha256": "cc385da2cb0cd84de00d75f9e6498cc7d75942f580f05706dfb1047d3eb26fc2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.083333s.png",
+          "sha256": "3fb7b460719976271eb63d68dc025771d2ceb53b1b9b72667d3042c4775966bd"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.166667s.png",
+          "sha256": "2bb33b4fb589e0270b63977a82997f36efd90b9714b836829f2d8fd8f7952a6f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.25s.png",
+          "sha256": "986f18b758404d0fdc0e45878383ae40b94d0b014f82cf3f29755f1c56cb101b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.333333s.png",
+          "sha256": "0206ad3e7bb473e9294243832dbbd0094365f220fd145708f22ba820909014b4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.416667s.png",
+          "sha256": "11907b6f75641450a03cf86d6325c6e810b053c23d261d906cb3f08bf4e09691"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.5s.png",
+          "sha256": "8779600f4509b06c77d53da645829095b7d0425be56766fdc25904a391056bd1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.583333s.png",
+          "sha256": "7a7163e291feaf02cb28033a58aba02d9b9cc1a367da68bc6f9f8809146089e2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.666667s.png",
+          "sha256": "b6451ac40537cb5da7468cc8d535fa03ba80a6bb878008f08da00440726b9ae0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.75s.png",
+          "sha256": "eb2ed972714d802cb9e36d076320e86550d4817166f59493af34690fb3106cb8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.833333s.png",
+          "sha256": "e69eb8d03403d75eac93b61fd386b0d715e2b92711516891bf96750bc761ae7b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-12.916667s.png",
+          "sha256": "db71528d9d549faedd49b83fba80564db1344eadb2f3857883173e3fa4639416"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13s.png",
+          "sha256": "070c8aae70cd5082cf1fe2e4247dd99fc4b6fb3aa7bc956d473027aa95d87beb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.083333s.png",
+          "sha256": "f4924b9a9f46c2ab47237c29011d2129a375c2267bf20bf9c8332ac4a7e647c5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.166667s.png",
+          "sha256": "50992bcc48ecb17c41c3c65cea0e255992bc1a70b5bca0b92c082e2a5b345266"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.25s.png",
+          "sha256": "2f2959ab4cdb69e26f980cbb7c97c33423b5cfdc238206351f45c72cfd5bb286"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.333333s.png",
+          "sha256": "7ce3f152bfa81010e734cb5bc62c516ad1c096b27ea954e1e5afd76479b71a16"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.416667s.png",
+          "sha256": "d7644b0ea41bfa0507abc0710893b1fd046659ca7f715a99086e37dd82f25792"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.5s.png",
+          "sha256": "e6aa87c010c04ccfcc31cacb1a71250e8fbc36857d1231d2d1702bd7cc6a8bd7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.583333s.png",
+          "sha256": "9b49d62e829aa8bf569651d56cb0bf7c98831c04ba7823ed347fcdf521d125de"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.666667s.png",
+          "sha256": "a24d7b2ad7f0c721117728d239b2dd236ea9b6c854189bdbac35b0193aab5240"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.75s.png",
+          "sha256": "c4b6a5817368e314309584351e95d42d583cf3d978d266d737737f4cd1dbee16"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.833333s.png",
+          "sha256": "5b7020c9ac743acb6ebbe84e476f266264ff3d23f5d8eb3f5d9ee82c63452f48"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-13.916667s.png",
+          "sha256": "1ac079e7fd2552fc244ea42c9cb211f5a721778b43363db5135820af93170543"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14s.png",
+          "sha256": "78999622b97f75767b2efc20bd6261d559b019bddc6c102433bd3a62e17e39f6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.083333s.png",
+          "sha256": "ed9023a6ef1b1bd12b6306d684f968ee2e26420d95b6a02ed6c90260374c679c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.166667s.png",
+          "sha256": "6b08fec2dc3beb451404f22eec038d2aded8a9f9cf8befa5789b74256696b87f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.25s.png",
+          "sha256": "d65fd7bebaa6a2327e3640d4e319c4ab69167b2dc96f5c7136da9c8d088cc3a3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.333333s.png",
+          "sha256": "fbe3141abc12a316f6160e958049af236fb9765040c87b9a041ee42ecd536619"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.416667s.png",
+          "sha256": "c4c760501bfa3bdb4682d8788cd5fb35d8362ff99f6383411acc88d981181f47"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.5s.png",
+          "sha256": "8ab84e68b12ce02191b7c500bb60e4516c8a7750bdf9823bb99c3313877e6d2c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.583333s.png",
+          "sha256": "3bd42b74e512a1e06e15877587855ac635c0abe3c1108eff91278bd879a2fb30"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.666667s.png",
+          "sha256": "ba459d016d20843d25644c9011436ea58fb7b993207a001e3ebab68b742e59bf"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.75s.png",
+          "sha256": "40a2fd87c8d330b523bbaac5bc36b49504b08ab00383d9ca19e55b34f65bb9e6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.833333s.png",
+          "sha256": "d77e4666d681e2ea75c71a508e45cceb99d7af90da461d1e013a60cabea74666"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-14.916667s.png",
+          "sha256": "b8db15e29fd4397f1722a0ad8fce31fae918e89599daa8a144a1ffc24703e838"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15s.png",
+          "sha256": "8a56cbc6f75249acc1121435a8671da3619c249f7f39e87e561352fc00595462"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.083333s.png",
+          "sha256": "17d3aa295726a3fb47b0346107a9668ab44e7cfd60a88a94e6cb3da921024aaa"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.166667s.png",
+          "sha256": "ff9b8558a441b14668f7d84d6fdc100a557f4da49febc6327a9b61fbd27fda4d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.25s.png",
+          "sha256": "af4ef63c2e10f43a75752dd5aec6fa7c5f0d5126815d5a77b656065d94fabc86"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.333333s.png",
+          "sha256": "2311af94931fcf6f370ea6ad0048d108fe04b90cc8acf0bbcb1574953c234dd8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.416667s.png",
+          "sha256": "a2dc682678face4325a2d65752975239693a806da80ba3395584249b48b6c326"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.5s.png",
+          "sha256": "a9cfc6471ea56f48e6f31bd5010568d81de82fec42b59d61a65f5fbdb6715e8d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.583333s.png",
+          "sha256": "a412e6efc57619cc6be1b23ff793e8d4c400628bbcbf0892ec8087208e6c3ef3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.666667s.png",
+          "sha256": "ddbbb694dae031ecb037f9478683e2972721ea044f559b7eae146196c7ca8feb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.75s.png",
+          "sha256": "35004e6592e6d62995f2266dbd6b4909fbd3d14e5df4bacf69fd26d264b7a79d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.833333s.png",
+          "sha256": "71bf6352cc9fd8fb52755b4b751d6079a500becff73f1bacbc6d4add2b495ff8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-15.916667s.png",
+          "sha256": "e6353eeebaef025216da221cdd19ed87792db73ef062d39b4cdd6158a9882412"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16s.png",
+          "sha256": "ad6cc45b6a6ca9ad3f1df555aa7ebb4fbaf618c3283592e1a2a75c1b5e764300"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.083332s.png",
+          "sha256": "7cdecb70c2d622b3ee851f2335a4c4065b418d0c89b48a5c6cdff670d54bc173"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.166668s.png",
+          "sha256": "950dfbaf3fcc11590bc2c7c91b846d302d427650caaae0e2852190f30d1c2f4d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.25s.png",
+          "sha256": "bca150f8bd53f9d86179057f02510e571094301e78b1bcdfd447cb73a46b612a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.333332s.png",
+          "sha256": "c382624801e9207458957af91903d05fffb00dd03ae89f7e0f4fafd13cbbb9a9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.416668s.png",
+          "sha256": "5ddd0f7645b20ec5fc0ac8b31e0d331029e0f604026cfbe4d380083adaed2fb8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.5s.png",
+          "sha256": "b2805c0a5125f47da7911f918369da5917be2745bf7c0b36626e747b1015d1f4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.583332s.png",
+          "sha256": "f31edbc1a4d550325a7dc80f59711ed3df56d6fdb5482f2caedfd8b233209777"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.666668s.png",
+          "sha256": "bd56aec7ce55db950f46548c390f65068290d697ea53b7466e03a05440425170"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.75s.png",
+          "sha256": "bbae745697a06bb0d5534792713ff877de0faeeae0a64560175d614181449adb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.833332s.png",
+          "sha256": "033f7db307f09d042a39bc0533d08939ebdd643b10a644cccecb60aeff58fa30"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-16.916668s.png",
+          "sha256": "8154ee32e988fd2430ff6af6e2ef1b2bd321de53eee6475a0b5d27ca772492b7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17s.png",
+          "sha256": "345835d6145bea40c390476ab073f4511425b94d1c84b2ecddca2cbc160b7ddb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.083332s.png",
+          "sha256": "8801c541fbd9a0c4d44aa0c1c41189fddb3861f2a2ab4ecb8080677d92e7e3b2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.166668s.png",
+          "sha256": "6aa906f1e742719ca8cedaf9e664a8da4e67ecb65a1c5cd46fb5b6e04baae3ba"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.25s.png",
+          "sha256": "2bce2355979b740bf7d91acc9debf59b186a15a62c82ed10f704e4b1f978804d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.333332s.png",
+          "sha256": "bc0b578470a90f239ea23ac9a7a50a7052880eb19fc6ab199036d3f40a373847"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.416668s.png",
+          "sha256": "284529562af6409d446912afced36870cb69518b86d4bf9ebb11a628e44e777c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.5s.png",
+          "sha256": "b98026a6bf9969dc8b2717dcc5a1f562ba0768de69249dfc8c9594e09a2b2814"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.583332s.png",
+          "sha256": "917aa2207841e69e03be806f757d5260693b4ad8790bfdf1c1b4f0ff631f20c9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.666668s.png",
+          "sha256": "b04e6a27b7f846a5892ace7e5b4f77f9cffdb1dab2abca29e72b3c509faf8beb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.75s.png",
+          "sha256": "aaf9394368142d5c57ac84ac84e5e4578fabee4d753f73576166e7be64afd02b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.833332s.png",
+          "sha256": "3d4976c73a9d3e642d83893a5af43486d99d87d2162f381e67838a229eaca633"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-17.916668s.png",
+          "sha256": "cbd4c9f7e983c9044f087fd1aadb2b2628000f6c39529fc29547a44811ccae31"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18s.png",
+          "sha256": "3674afae8cd0610a30cfce3760dd144b6b339085bbf5a3d571dd246db12a3907"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.083332s.png",
+          "sha256": "b839ae29b753cbef40128ef516355ad3841c7f34e7501dcd055c26d91e2d14d2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.166668s.png",
+          "sha256": "dcdafc34adab64c194d7edb62075dc07af91749a0b93dcb2e0c9c303c5b3f81a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.25s.png",
+          "sha256": "3b1f8e4392ea7df54d8360ec243a3aff3011c1373873f9f7dd91ad6b39f284a1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.333332s.png",
+          "sha256": "db12252a1d97b5341d5dc9792483fb188206ab1954e1164c25663042a6d72376"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.416668s.png",
+          "sha256": "b1de48b146e6cfae1a7e8dd343638151c2621341bd534c78374a87cda837f975"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.5s.png",
+          "sha256": "185746dcba35b8fe412ecde77b8def4715a8dbf23cdcf6f169bdd82160f1e84b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.583332s.png",
+          "sha256": "a82982cfe3fc269e89cd29ee8cace0e99893fd6125c440f41d28fb6076298d9e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.666668s.png",
+          "sha256": "3f4560e58dee37303a8cb87efe1545a98ab44f92cc327837f30e9e39e68e477e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.75s.png",
+          "sha256": "0363c5f14303a2d924bf53a76be4ba6bee8a0eb46c6894f022cda0b529ab2d0e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.833332s.png",
+          "sha256": "cb1a0417f090ea3041d8c01537830588d6fbaaf07255e800a03cd560ca8ed992"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-18.916668s.png",
+          "sha256": "9185fb3a005bf5d1333093abe886a73deae73b9a29b0f91a7ae57d89ee034ce3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19s.png",
+          "sha256": "7254225623a9229c7dd5930f982f4ef4be0a8daa100b47f98a2706ab7fcd594d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.083332s.png",
+          "sha256": "47e7ab4ff43daa7b4efc1aa6396b12f9ef875ae45a8d6b2a324432a9a7a8db32"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.166668s.png",
+          "sha256": "265e7c664c0082dedd2a7acc65d801331b62f2815c8d507b78b3f948074fe4a9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.25s.png",
+          "sha256": "59c7fed1b3df217be300557092a9c270c6b4382f528710043d9ca38317a0d5e7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.333332s.png",
+          "sha256": "fa55c8fc96ddc10f098c97e251082b22147baf7577f50cbd1a5bd33a0753553e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.416668s.png",
+          "sha256": "a999b80f0a2832df84ed21f9ea9f5e77b859fec4463529196a146eb15e26741d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.5s.png",
+          "sha256": "16edf8eef728a2f3470dc6fd79742c5bc63ea2c6506cf782f4bb0c3ff0b6827d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.583332s.png",
+          "sha256": "8bc95f7a8b2c416f542d1017a7c105d7f8cde250f3344a78663e270f6f4d5a7b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.666668s.png",
+          "sha256": "dc183683fa392a793c87c11211d955c9b68e97dc6ab8358ef18c2f4960fab24c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.75s.png",
+          "sha256": "815c6a222c48fc5fc49b1790b5a052e196196fdfa61c87563a540d4d1cfa881c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.833332s.png",
+          "sha256": "815c6a222c48fc5fc49b1790b5a052e196196fdfa61c87563a540d4d1cfa881c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-19.916668s.png",
+          "sha256": "cdfdb718f7adb00f848aa7cf1712e70ff93bbdd9fdacd82c1f6bfad9ea8f3ef5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20s.png",
+          "sha256": "3e2eaa2807e57adf652211b2603f15d0075a2e4b657b3ee1e101735074540f24"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.083332s.png",
+          "sha256": "d36f0e492d6bfa2330603b4d020dc566bcd662337bba0fd176c8286c9a632d26"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.166668s.png",
+          "sha256": "e2098c96f3374e555cfa954dc27a418e9c90aee0d7eaa1643c0816676de2f860"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.25s.png",
+          "sha256": "e2098c96f3374e555cfa954dc27a418e9c90aee0d7eaa1643c0816676de2f860"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.333332s.png",
+          "sha256": "acb855861ce096f6defad45a3cb1f9fe7338c7bbe5c72b0b8e45f34bfd94e0db"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.416668s.png",
+          "sha256": "58e95443b5ba041193e2783de570a8b34d77a7e8b7777f4e7820cea4aba3d991"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.5s.png",
+          "sha256": "33ec6d92c4cba216edeeb53d4145f111e966a785de2f49ee61610cf75fd7b68c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.583332s.png",
+          "sha256": "e50aab06f14d9951a1d2f63aec8daa11093d757d483e664c9f405534fe0ab927"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.666668s.png",
+          "sha256": "721a65e998066dbfd13dc35711b41d38b469965cbe468eef603322b11ae8a18a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.75s.png",
+          "sha256": "2d3c51b57d5cd535b1d940d07803742710aa305ca6b100833abda56bda88389b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.833332s.png",
+          "sha256": "2d3c51b57d5cd535b1d940d07803742710aa305ca6b100833abda56bda88389b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-20.916668s.png",
+          "sha256": "9707561612edda3d24ea41ded7105a1c014c8ae7b9fc17670fe5d6bc47fb371e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21s.png",
+          "sha256": "77ee7a7e58c129935f83266c770f64729c9b7752b21aedc753769a005d942d94"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.083332s.png",
+          "sha256": "29a1be7fe8e9c16e9d1da7e21944da470cea7faaa3d5f7e20b293a118f706f43"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.166668s.png",
+          "sha256": "84fb55ee5a5729ceaa52cdc1b2d17341f57d67eabb79ebfc7d76aa41eb34d1ef"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.25s.png",
+          "sha256": "84fb55ee5a5729ceaa52cdc1b2d17341f57d67eabb79ebfc7d76aa41eb34d1ef"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.333332s.png",
+          "sha256": "cd7efa6af1d563d7ef1db142ec0125d4515ab3eb764ad98b59152132792ae723"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.416668s.png",
+          "sha256": "431e08b3ad3f5964bd0f2bdd8033e5e3028ee35782d4094f3e2b4bbb42fe0614"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.5s.png",
+          "sha256": "16cad80516d24242b7fd05d3cfe46120a62d2f19f3b4f3bbb10c2fcef573196c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.583332s.png",
+          "sha256": "beaf38863c8a1fc1d940c4a1b7956f1be07ad11f0b7ac2030295f024c803e688"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.666668s.png",
+          "sha256": "d7c5dc13f8dfe6b3e3d2f9c3ef7fe04b8d13fd233235fb456ed43a12be8cefd3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.75s.png",
+          "sha256": "0d0fa87e23fe9eef2acf1d334ad4bf60564ccee32e0a6323e8301e467c7a35a8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.833332s.png",
+          "sha256": "0d0fa87e23fe9eef2acf1d334ad4bf60564ccee32e0a6323e8301e467c7a35a8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-21.916668s.png",
+          "sha256": "352f1c1e8a1265256081b0554ddb3b9c422765fa088cf06ef06c7dfc677ccff0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22s.png",
+          "sha256": "be354941ddb9d3dc1edaf74a8db26eed463370c54503763bbc253b3798ee1784"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.083332s.png",
+          "sha256": "1cc4d5c860b7ae0dadec45bbded1f99b685f046390c9aa3fbc498efb1efebd87"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.166668s.png",
+          "sha256": "ba2db5d449fcf918aaa91889ab0437be0a3224d1ce76c1ee39a682c027efd614"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.25s.png",
+          "sha256": "ba2db5d449fcf918aaa91889ab0437be0a3224d1ce76c1ee39a682c027efd614"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.333332s.png",
+          "sha256": "b412086a2d9f828969abffd53bff28de7cfb838a30c63371ed48eb11d113e260"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.416668s.png",
+          "sha256": "9f0c196c8bc53a8ee79476f4b069955511563412eed1fbc2073d6b4cfa10324b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.5s.png",
+          "sha256": "dd41faf96f1904dff6a0799d319ab27fac4eecfc912f7a5fe5279f45dffc6663"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.583332s.png",
+          "sha256": "b722d6368dd325f042163068b9bbac31323749c79e0e9b70c3b344a85a9ca47b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.666668s.png",
+          "sha256": "a8a197db8cd219d96c98e4edf86dc1931b64917e4794936b6e51e217c135f7d6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.75s.png",
+          "sha256": "2eec1072a0286e337d23433759ae48bd34a6dc0921d9334ee8ac4a3f6e47df2d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.833332s.png",
+          "sha256": "2eec1072a0286e337d23433759ae48bd34a6dc0921d9334ee8ac4a3f6e47df2d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-22.916668s.png",
+          "sha256": "369f9cd148a53e380522234fc001be9566426e951e4eac098f33c68dc624dd56"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-23s.png",
+          "sha256": "966292bf6ac9a4ddb106d91607e1443f2902a56fa04d62c68803d64aaccfc001"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-23.083332s.png",
+          "sha256": "4302cb12c509cdb8c2884412123f72ffaf9a68a54aa65fee49d093333893a808"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-23.166668s.png",
+          "sha256": "858aaf1b28f9af25ab574426251e41679056dae22296aeb4a53204475c5482b7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-23.25s.png",
+          "sha256": "858aaf1b28f9af25ab574426251e41679056dae22296aeb4a53204475c5482b7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-23.333332s.png",
+          "sha256": "1fe90a01e8b9149c14e62c62963faf4f4cf3d5c725045ce3d7b91c4368d9234b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-23.416668s.png",
+          "sha256": "46c725b29cac5492cec561226f8356b35ba9bbef761d41a793d6909a4c8d9197"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-control-2026-10-29/tuned-high-23.5s.png",
+          "sha256": "8a3618e2d81bdeeb9fe958f7638f8e8f2a950b477e816e3c1fec48c39307b39e"
+        }
+      ],
+      "host_state": null,
+      "request_lateness_max_seconds": 0.03333306312561035,
+      "request_seconds": [
+        0.0833333358168602,
+        0.18333333730697632,
+        0.2666666805744171,
+        0.3333333432674408,
+        0.4333333373069763,
+        0.5,
+        0.6000000238418579,
+        0.699999988079071,
+        0.7666666507720947,
+        0.8333333134651184,
+        0.9333333373069763,
+        1.0,
+        1.100000023841858,
+        1.2000000476837158,
+        1.2666666507720947,
+        1.3333333730697632,
+        1.4333332777023315,
+        1.5,
+        1.5833333730697632,
+        1.6833332777023315,
+        1.75,
+        1.8333333730697632,
+        1.9333332777023315,
+        2.0,
+        2.0833332538604736,
+        2.183333396911621,
+        2.25,
+        2.3333332538604736,
+        2.433333396911621,
+        2.5,
+        2.5833332538604736,
+        2.683333396911621,
+        2.75,
+        2.8333332538604736,
+        2.933333396911621,
+        3.0,
+        3.0833332538604736,
+        3.183333396911621,
+        3.25,
+        3.3333332538604736,
+        3.433333396911621,
+        3.5,
+        3.5833332538604736,
+        3.683333396911621,
+        3.75,
+        3.8333332538604736,
+        3.933333396911621,
+        4.0,
+        4.083333492279053,
+        4.183333396911621,
+        4.25,
+        4.333333492279053,
+        4.433333396911621,
+        4.5,
+        4.583333492279053,
+        4.683333396911621,
+        4.75,
+        4.833333492279053,
+        4.933333396911621,
+        5.0,
+        5.083333492279053,
+        5.183333396911621,
+        5.25,
+        5.333333492279053,
+        5.433333396911621,
+        5.5,
+        5.583333492279053,
+        5.683333396911621,
+        5.75,
+        5.833333492279053,
+        5.933333396911621,
+        6.0,
+        6.083333492279053,
+        6.183333396911621,
+        6.25,
+        6.333333492279053,
+        6.433333396911621,
+        6.5,
+        6.583333492279053,
+        6.683333396911621,
+        6.75,
+        6.833333492279053,
+        6.933333396911621,
+        7.0,
+        7.083333492279053,
+        7.183333396911621,
+        7.25,
+        7.333333492279053,
+        7.433333396911621,
+        7.5,
+        7.583333492279053,
+        7.683333396911621,
+        7.75,
+        7.833333492279053,
+        7.933333396911621,
+        8.0,
+        8.083333015441895,
+        8.166666984558105,
+        8.25,
+        8.333333015441895,
+        8.416666984558105,
+        8.5,
+        8.583333015441895,
+        8.666666984558105,
+        8.75,
+        8.833333015441895,
+        8.916666984558105,
+        9.0,
+        9.083333015441895,
+        9.166666984558105,
+        9.25,
+        9.333333015441895,
+        9.416666984558105,
+        9.5,
+        9.583333015441895,
+        9.666666984558105,
+        9.75,
+        9.833333015441895,
+        9.916666984558105,
+        10.0,
+        10.083333015441895,
+        10.166666984558105,
+        10.25,
+        10.333333015441895,
+        10.416666984558105,
+        10.5,
+        10.583333015441895,
+        10.666666984558105,
+        10.75,
+        10.833333015441895,
+        10.916666984558105,
+        11.0,
+        11.083333015441895,
+        11.166666984558105,
+        11.25,
+        11.333333015441895,
+        11.416666984558105,
+        11.5,
+        11.583333015441895,
+        11.666666984558105,
+        11.75,
+        11.833333015441895,
+        11.916666984558105,
+        12.0,
+        12.083333015441895,
+        12.166666984558105,
+        12.25,
+        12.333333015441895,
+        12.416666984558105,
+        12.5,
+        12.583333015441895,
+        12.666666984558105,
+        12.75,
+        12.833333015441895,
+        12.916666984558105,
+        13.0,
+        13.083333015441895,
+        13.166666984558105,
+        13.25,
+        13.333333015441895,
+        13.416666984558105,
+        13.5,
+        13.583333015441895,
+        13.666666984558105,
+        13.75,
+        13.833333015441895,
+        13.916666984558105,
+        14.0,
+        14.083333015441895,
+        14.166666984558105,
+        14.25,
+        14.333333015441895,
+        14.416666984558105,
+        14.5,
+        14.583333015441895,
+        14.666666984558105,
+        14.75,
+        14.833333015441895,
+        14.916666984558105,
+        15.0,
+        15.083333015441895,
+        15.166666984558105,
+        15.25,
+        15.333333015441895,
+        15.416666984558105,
+        15.5,
+        15.583333015441895,
+        15.666666984558105,
+        15.75,
+        15.833333015441895,
+        15.916666984558105,
+        16.0,
+        16.08333396911621,
+        16.183332443237305,
+        16.25,
+        16.33333396911621,
+        16.433332443237305,
+        16.5,
+        16.58333396911621,
+        16.683332443237305,
+        16.75,
+        16.83333396911621,
+        16.933332443237305,
+        17.0,
+        17.08333396911621,
+        17.183332443237305,
+        17.25,
+        17.33333396911621,
+        17.433332443237305,
+        17.5,
+        17.58333396911621,
+        17.683332443237305,
+        17.75,
+        17.83333396911621,
+        17.933332443237305,
+        18.0,
+        18.08333396911621,
+        18.183332443237305,
+        18.25,
+        18.33333396911621,
+        18.433332443237305,
+        18.5,
+        18.58333396911621,
+        18.683332443237305,
+        18.75,
+        18.83333396911621,
+        18.933332443237305,
+        19.0,
+        19.08333396911621,
+        19.183332443237305,
+        19.25,
+        19.33333396911621,
+        19.433332443237305,
+        19.5,
+        19.58333396911621,
+        19.683332443237305,
+        19.75,
+        19.83333396911621,
+        19.933332443237305,
+        20.0,
+        20.08333396911621,
+        20.183332443237305,
+        20.25,
+        20.33333396911621,
+        20.433332443237305,
+        20.5,
+        20.58333396911621,
+        20.683332443237305,
+        20.75,
+        20.83333396911621,
+        20.933332443237305,
+        21.0,
+        21.08333396911621,
+        21.183332443237305,
+        21.25,
+        21.33333396911621,
+        21.433332443237305,
+        21.5,
+        21.58333396911621,
+        21.683332443237305,
+        21.75,
+        21.83333396911621,
+        21.933332443237305,
+        22.0,
+        22.08333396911621,
+        22.183332443237305,
+        22.25,
+        22.33333396911621,
+        22.433332443237305,
+        22.5,
+        22.58333396911621,
+        22.683332443237305,
+        22.75,
+        22.83333396911621,
+        22.933332443237305,
+        23.0,
+        23.08333396911621,
+        23.183332443237305,
+        23.25,
+        23.33333396911621,
+        23.433332443237305,
+        23.5
+      ]
+    },
+    {
+      "case": "f8-coherent-motion-qualified-2026-10-29",
+      "report": {
+        "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high.json",
+        "sha256": "b441058f984d5a8839fe702603d2d02348fddf2b8f808b489aad2484be6181d6"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/manifest.json",
+        "sha256": "8e0292ccbda4089e92166a53ba17b41e77cb373ec930d17e0de35c5080b4fce0"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 867368,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 2166,
+        "observations": 1447,
+        "observed_partition_loss": false
+      },
+      "routes": {
+        "Launch smoke": 86,
+        "Main stars": 192,
+        "Burst flash": 2,
+        "Burst smoke": 96,
+        "Gold tail embers": 67254,
+        "Star path smoke": 20339
+      },
+      "node_head_bytes": 47923200,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.083333s.png",
+          "sha256": "ee06f267e884a8e20535eeeeb7ba8a00d0fea0f40476ebc02a3c4c6277196ae2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.166667s.png",
+          "sha256": "8d2595a66f808f2649ae1ef63038300888151593931d0bb60af5b9b24e724526"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.25s.png",
+          "sha256": "f5a54a7d89078187efb326bddb2358418893c605d36455d16cf5892bc7df0cf3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.333333s.png",
+          "sha256": "8e1c0caa74909d76f8031adb81253aa1203ecbfb142bd0437de449e1d3c09b86"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.416667s.png",
+          "sha256": "a729d64453871300fc76db06b5ddc7bec33fc88352ff3dda3b52d65fbdc6533f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.5s.png",
+          "sha256": "9e2af0c7c3803e04339843c42d3df45b0c071777b88bb9ad6f42618d930d815f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.583333s.png",
+          "sha256": "155e4c0f071b2d5461126c3aabd0320f6a1e88b207dec486e8e372001a5ee895"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.666667s.png",
+          "sha256": "729fdd9a891dc2ada40a0b21fcb2ea04b9101999f64b97eaf2f0521fb2d941a8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.75s.png",
+          "sha256": "bcd08534eedceab571768cc26c506e7fc26523392d9484e9e49285cfc4ded19b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.833333s.png",
+          "sha256": "8a23654a99e85acdb74ce4c075af592dc912d838e09f5bba42d011dd6a64c919"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-0.916667s.png",
+          "sha256": "0e467e2a30c124ecac4848511cb42de9966756d161dffa043bb031f81fb38f33"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1s.png",
+          "sha256": "cec644ba309f3c46d7ce25f1eea351a997fbf061f686958c30faa4e4455b7000"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.083333s.png",
+          "sha256": "3062d4825539b43f9a095f37a352f62531a445771e347f3eeddb56364ed6cf04"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.166667s.png",
+          "sha256": "340078aa54a03d631e19c8293ac2388d3e71f28fc98fba0357db86a43f02f085"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.25s.png",
+          "sha256": "14b9f8cbec64f145d803add1144fb43d840870b173d5d76552c07f6c4b017487"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.333333s.png",
+          "sha256": "904bc261b02bb933e2ddda34008418556d70b937ca17ca182fc4623c3781b120"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.416667s.png",
+          "sha256": "66bd2914515557363f8f938fd0cb26078ee8ba8261aba11406f7c95d76c5314e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.5s.png",
+          "sha256": "2145d1b17594b9d032463eab3d2cc435866318f4b9392d5687ca0f159f700d42"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.583333s.png",
+          "sha256": "a3de34914413e63f76fa91d56292beec8416594d55a17153d9fc6efe0dd702d6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.666667s.png",
+          "sha256": "86101c9233ebae1cd061ebe0accca4d224302197d91de23d07a37746f7e5101e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.75s.png",
+          "sha256": "942bae20a18f69c1822b29634f6d42c99ffdbad3dcb725f84b93cd383b992037"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.833333s.png",
+          "sha256": "57166161c798541e732ea7c8284dbdb6151c273b3e8b03cbc35826dea24e3ff0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-1.916667s.png",
+          "sha256": "1e08e8220c3e457f80203c177af74e6a92d271d699accebb650e85ce457958f0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2s.png",
+          "sha256": "9960d1dcb60c3b63c131040d181a41027472b4c4c0390d3e345d920a84626c87"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.083333s.png",
+          "sha256": "34b24d7c1ea7beac8fba5e868212217b52a6fb449e794e022284146391d2b57d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.166667s.png",
+          "sha256": "16f3379e81a47b746f8fb13851322b4756ea46b79930c565f75eec6826b53fe3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.25s.png",
+          "sha256": "ad3dbe12e26d07cef1d748216a4272e56aada962c9bffbcdca05e368218b3f35"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.333333s.png",
+          "sha256": "5483942c7e5afb92f69640bb6b6c2d9d8cfdfde0cf4ee6f50ab1441b90d00699"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.416667s.png",
+          "sha256": "e292df1c0d6207032447cfaec686fb7f62a8b991b5e882d5f4a98eae7fb23b96"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.5s.png",
+          "sha256": "54b4f27212b761a96ca769b34b9c3f5d53d4631c13196e94286f46ab384857ef"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.583333s.png",
+          "sha256": "a77894eb4efd61bff43ff146228848ba545b6924b703622b03045bd7dc2317df"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.666667s.png",
+          "sha256": "d24a17692f3a638d131324312b37ac9c309501e58dc7c69699da66dac9af11c8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.75s.png",
+          "sha256": "da483652239ec62ac668991809bc00abd94e49d2667cb4baaa296ed7a856d637"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.833333s.png",
+          "sha256": "a66294ae00d6b7bd6b01bb9f2685e4a4e4c2555c4ca91534ad1d1e67eae19eb9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-2.916667s.png",
+          "sha256": "1e5e4d213b489f8c6f787bc002a409f398812ffaff51a6fdd0bf1dcaed68e2ca"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3s.png",
+          "sha256": "bcb409f1d540b07cde7cf66944441799283cabc73f07c723c8c6ebfd60a81780"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.083333s.png",
+          "sha256": "1bfa4fccbd751df77d98a221c9ae3df25e1156e531a1aa8234bbee5d7162eb85"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.166667s.png",
+          "sha256": "4b2d1219e8cb83746ddb594094881046c354fc28cc5cc8aa9a2ef96b493dd5e4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.25s.png",
+          "sha256": "9d1277d98a37b7699628e4a535832b1805761e4ac433589450ac152a89d487e5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.333333s.png",
+          "sha256": "4a7c975088b4e3fd8dd7909da5bd7bc6bd7114e4e1f0cadf1922b2bb8c84e35d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.416667s.png",
+          "sha256": "e8ccd26e267edee0b6e7dceb522d906b9e22f7b200665ec72c8b4ec38444cb59"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.5s.png",
+          "sha256": "f5d0cc03fb884ad9fb23fd94aab111045cba09b7c0f3e773bb5af32a1b655e5a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.583333s.png",
+          "sha256": "a619e867c06f5398a066bb551bbde14ba473bf3f9e1f1308fcd2098a72c96f81"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.666667s.png",
+          "sha256": "b9257505f23be00b7ab017585342cfee19f19eacd4f7487b61c3de6f6f47e2eb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.75s.png",
+          "sha256": "791d0afca95585aa7817f8213903e99d76f1b7e113ac2c6b8b718c684576c02a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.833333s.png",
+          "sha256": "2135ae6411ab7f85671be4ed415278f28a9e3c64bcb14f798dcb6f12ccc557ca"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-3.916667s.png",
+          "sha256": "c28eeea232512ca07d12ce89f0396145967c0d46f4666da3357b8e0508418af7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4s.png",
+          "sha256": "e74090a1da3201215de852bc2f28a3d531cbb1a369284583629d7430b8c8dbd6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.083333s.png",
+          "sha256": "b116cbf77ecb21edc698b3ca31799a6985002e9f3272aa605a3212fb54d660ff"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.166667s.png",
+          "sha256": "7f6970077d74e787021680c60b56492ff517b4ae6ae090d41db718ed51aab34a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.25s.png",
+          "sha256": "a8bdd72775a077bff5d1fb9fde93dda87391f08bed89122b58c54f766a43f7b4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.333333s.png",
+          "sha256": "f395e4a3617904fdf11dc9788f26f51b125029bcaf0c6d1a968034aad0d975a7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.416667s.png",
+          "sha256": "18209748a0fbb77e060c361c189636aede7010f03f8232299cd0f6c275d544b2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.5s.png",
+          "sha256": "a80f1c2528dfe54f7d1da6adcc037e34f6198c29a0769dd9d45bdf5244a24eff"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.583333s.png",
+          "sha256": "56b41bb7f9b07d507fa17a41bb192a71b7db0e92846329eb64dc44fd7ced7f9b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.666667s.png",
+          "sha256": "3c4731699b45816e4046b95bca340e4133806ec9990fdd8fbe16489983ed49f6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.75s.png",
+          "sha256": "26df149d3c980d1a919fe01220a5b4f441798fba8083d9d5d8864efabcc2a3c9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.833333s.png",
+          "sha256": "9f18a305ff1f0b0a800b85b2ba944d6ee4b2a67c9718b1e0fbb2ec79056c12a0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-4.916667s.png",
+          "sha256": "6f3b88a2d6c2291dbc23f6edc331864f2ca1b1af6c4715c169515375ddecea25"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5s.png",
+          "sha256": "35d8d8178bf4d50871418aeaa574ba7d27611b596d0335eae2663a3de4ebc062"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.083333s.png",
+          "sha256": "1513de788457ea015638ccfa0b5b7fd585e678e0e89e62008c4aa60cdd05a6dd"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.166667s.png",
+          "sha256": "375defa06f459a9e2516f2b1b8576ea7ea096413a669188fede4c30f8daa713f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.25s.png",
+          "sha256": "1911b1c35ac54776911bb4e3756de8596da00df125ad74a1addd7b3e0e29f8d6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.333333s.png",
+          "sha256": "c2ab67e8066f5d9c421458105a390a29974c96dc7564473d0ce04a100d2bfaa1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.416667s.png",
+          "sha256": "d1242f4f4f04cb0c82205e6ae62a20d495f5aa3eb9b725a97b538d8e67c345ac"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.5s.png",
+          "sha256": "5b84dc3214ff1f9eb22c84c2c4ddcbcbdda5b19360417be4053b1f09f32a535d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.583333s.png",
+          "sha256": "661a13ec4aae11ce5ff958d6ab90e71f9c1982aa847f74cd43c34ed037c286a2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.666667s.png",
+          "sha256": "da10b8c790aeda76eca629f9eae41671fb296ddd0470e7b6b0cbfd53eecfc0c2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.75s.png",
+          "sha256": "4a538f617324cb9c74b3a4d145db4364a8f45362fbe1aa75ca3ea5f8eba7dfae"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.833333s.png",
+          "sha256": "5a3230ce026b4a203c41abb746e53fdb08be3e840737eb2b99dbd02f2f839570"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-5.916667s.png",
+          "sha256": "d73c61156b137d9431534876a4ee5d2b86c0f6874b8c5fda9a878f8fc6d3b311"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6s.png",
+          "sha256": "ca2d68ff97df9c6d2405a6cb4172d75b267a996835f44e806f49e563b8e8b087"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.083333s.png",
+          "sha256": "bcd62c65b275ac871d5e7150e6d32842e2e25577ee53a1aa6d3a6dac03e7bfa8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.166667s.png",
+          "sha256": "25fe51966ac01640af8e97c393c2fd1f0aab116da46b2d9c95cecc5d6feb6b26"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.25s.png",
+          "sha256": "54fd41b3cdde0d17c11735eeb4c0e17629192ea787207dd77ac39b50d2b3bbec"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.333333s.png",
+          "sha256": "871539aa43d0d7eeee4deaeca8a0cfca7dc4da5f603ad4d55913648c429f6a82"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.416667s.png",
+          "sha256": "e36f0c87e983435baa94f7a604d0f5b47ad1e9770a4fc0e236ae386d92d28fe2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.5s.png",
+          "sha256": "98cb4ddc4a41fb46cfaddf5dcb0bb9516c3821f371cd50ca4e0605e5be5a9415"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.583333s.png",
+          "sha256": "0bf86387cbd14812b0fbbc05c9bf736c890089c4e5f6b5e7f7900eab3d821260"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.666667s.png",
+          "sha256": "1996af0912db600e7b1c2b58c9b40f7e56c218b6cd039a1ef1360db51f2640ff"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.75s.png",
+          "sha256": "349b2611bbe7a539a03236e7c6d2a6eff395b937c6d50e42127ca6e8f8bfca3a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.833333s.png",
+          "sha256": "c8cf9e81646f4034db819be63cf30eea4547be43d5956117ef42960dfc6f6c8a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-6.916667s.png",
+          "sha256": "e8a3d53255b6dfa7ca740c03abb821bbb65da6255fd5b5ff51a10f7aa288aa12"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7s.png",
+          "sha256": "8020ae9e9af53a8fb0913cc270366c297f8bc2918f529740cdd958ef5897b6cc"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.083333s.png",
+          "sha256": "7f0ec01f4b1a08b1c52776e51fd2d3b5d138633f4479d7ac1abb6ca36e1d5cd9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.166667s.png",
+          "sha256": "7f89af7cde8928d1b9e3aed8dcbc0c3784cbff2f409d0c9ad71ed7d2d2046649"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.25s.png",
+          "sha256": "2c4d90bc1c1a8e1bac7c51860c58bc1f96c48ed969483ef6f573d042c585cd94"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.333333s.png",
+          "sha256": "c5451030030fb5207113d2f060a508e0af7e96445d66c38f5d2e4077bcb70350"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.416667s.png",
+          "sha256": "d204c5a35d4a4129cd90596c61a548b0cb7e7ae45c30d9c4a5da5aaf67f51954"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.5s.png",
+          "sha256": "5b5da2a619121ab12166b4c83be54f0ee30ae827834f30fed1f0a673d7467a83"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.583333s.png",
+          "sha256": "9fac6a522b6c580ec0cb233fd3560f3538bf4747ec8df90fe66d46452220cdfa"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.666667s.png",
+          "sha256": "b6bf1a657937e5bef0022097184eb90d0ceb327d6a122687a3f742638e407d69"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.75s.png",
+          "sha256": "0fd573115d7e7a7f42af359e3df8a2004c34b9ac4a809bd6b575daecb5645687"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.833333s.png",
+          "sha256": "465f89d72439529de1177777a0d883c4d257e69c2354bace38eda4acbf16c6bc"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-7.916667s.png",
+          "sha256": "d8c94e556d86b5cc998ccffa507c66eb6248e4a240e343a6e265532ba433ef28"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8s.png",
+          "sha256": "d41a0c5d789129acb3e02bc863eaa0d540ed1b899c335503d2d0ec4079f15917"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.083333s.png",
+          "sha256": "529b42794f9627b38a36292daf05a56a890faffb20bd7dfe581abf8993ca34b8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.166667s.png",
+          "sha256": "a23cead37cf3042c6036ce46b7a7b842adc919eb1cd41c6f35711063e35602d5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.25s.png",
+          "sha256": "6ea3e2031601788f878280eb51f4241176dd2f794eac598d52a73aebc3aad628"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.333333s.png",
+          "sha256": "63530dec3d35458338ba40fb9dcd8f36a9df8bbf53c1757889d4a21e84886320"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.416667s.png",
+          "sha256": "4a31536e99595930421bb008fc421786d0ccc1a946a8ee3151aa4ea267f1fca2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.5s.png",
+          "sha256": "9aa3757b70aa739713faa199211c5f14b5c55687c8ea1a04565cfe15089351b0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.583333s.png",
+          "sha256": "01a06fc6e49b475c78562093395b69c21ef75c41cc85f0dea97fb8676071a362"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.666667s.png",
+          "sha256": "89262d56171fa5e8014a19d2b1ebf43b320d595faebba92e5225106b22544a6b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.75s.png",
+          "sha256": "de8376ca5a699c861da17ba0db364d30e6e99c8e799ee791612b83605a05b536"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.833333s.png",
+          "sha256": "0912c81167573639b1c03206b9104c1851be180a59938e783b115cf2c71072e1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-8.916667s.png",
+          "sha256": "2146b6238c3aa8f5f583bc9aa59e8e08370e09683f1130ed5414a386fe4c4fc0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9s.png",
+          "sha256": "bed7b47954e0a194e8c32663862e71a75dcb35a0910f61e50042d3ab56f08c6d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.083333s.png",
+          "sha256": "d96fb733f5e1946da1d000d864b1b7db50110bb73f0fd91342198a274f444bc6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.166667s.png",
+          "sha256": "883c7a0e4f83da6e6935b94734ff3f9e05a02f5432c6510da630237a74c02f8c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.25s.png",
+          "sha256": "e7426d373130db2e8765f4d79c2f7a1c7ab06b55dd2a9fd36e195efb14bbbecc"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.333333s.png",
+          "sha256": "53d6ed46f947fb1c07bed3c54f4504a440f51a4e78e7538074d4f1da4624a20e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.416667s.png",
+          "sha256": "9c088d6e908fd8123360aa3418635a7a9689cabc15cefb745e3721b108f18040"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.5s.png",
+          "sha256": "542545a00bd5d015e77c21213b12213b6c83f0da37f984cdb84bfd54320a33f5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.583333s.png",
+          "sha256": "b179de7162710337e4d914727d7e6faed20993773d826ee2ec4338dad64d4d6c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.666667s.png",
+          "sha256": "d5c86cc9401616a2893d64d472f01a3764d6405eb67be1c8cad748cdab073f1a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.75s.png",
+          "sha256": "91a5b8bc77dd43c933570e5a9ceef79c9a674fc3ce8354198dca6af19a42569f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.833333s.png",
+          "sha256": "dad94790156c6cd97451ffe0b6d22f9cb170eab3f17e93ebe0c5361fcccec816"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-9.916667s.png",
+          "sha256": "ca0d9c97a1d3b8158a82ccc187f62542a8b994dd75821d460d6380615f82dba7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10s.png",
+          "sha256": "d57d9f7cf507f83fe4de13cc50897056d6a25b2e2bc542616ca26b9e8219f766"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.083333s.png",
+          "sha256": "48ac5f2f519a7693ed9366fb34fbfd3f43b912c7696092ac22eef8f386e25633"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.166667s.png",
+          "sha256": "90ad1989bb2da5bf1880bd53d710d5ccaec6d68cc189df4848b6d2687ae1e192"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.25s.png",
+          "sha256": "bc014b913a7c98bc3d88eb0abfc7fad85d704a80f285f7743c68ddf20b6a02aa"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.333333s.png",
+          "sha256": "ab8f6170ff2f74a5c6aeb5e67cf8946dd2e123dab9df8a15b27cce5bcc54af1f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.416667s.png",
+          "sha256": "3d43d57151dcf42fe53da611d7bc78c9f19302279b89904f598d3c164276ce67"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.5s.png",
+          "sha256": "9828b37269027f6429f3998bbbaf3c404b039b8329158e8449d01ab4795ea8f5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.583333s.png",
+          "sha256": "ab15a0d4f513fe29fbc6ca8c7912a58ef09c9d768aa67f0bdb3e39302659a6e8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.666667s.png",
+          "sha256": "2176f644ab9cf813e4488f31fdea83aa49e47654dd00b2cb9a432a4cfe7fd3c0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.75s.png",
+          "sha256": "37931dfbf0a87761ac10600b2fb451a3e3cfe8bf26582ec9ea7f188ea07a95b2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.833333s.png",
+          "sha256": "0c8133ae983af5dc64be5b90ef4d799f061c3679765b70a24bbc407eb897be87"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-10.916667s.png",
+          "sha256": "cc8a94dcbd94ed3f2c0e45f5a9007ce1e3d21276108cb5ebe180ec597756166c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11s.png",
+          "sha256": "bd18b6b794fd66d7f0ccef68b2c79db45db0e71d07b0144c90823558a5a5d335"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.083333s.png",
+          "sha256": "330e1e2c826faf948aa8585688ebd4912e896d265ad6e0db389b3e29075b70bc"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.166667s.png",
+          "sha256": "c28369597b0d37c1b870931e0792ad681180467c03a77b0f15f0f32666cd9a7c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.25s.png",
+          "sha256": "36f571bddd567889ed940baaf04b49001359ce1b6ff0e9a9033f481282cf0bfa"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.333333s.png",
+          "sha256": "8db8bf3154803f4b877d8b59ce5116f12a76410dd3c342c6aa145bd980ad2547"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.416667s.png",
+          "sha256": "f1dfd7e00e0044f5e15e469b7fe8f3afc46a77ec085616ac290db4c156af2d85"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.5s.png",
+          "sha256": "4a81425282c1c89bfb32921dee7d0ee05092ab885b6b872c2c82d39fdbdea4a8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.583333s.png",
+          "sha256": "2b23078369779680182ba3eb845cfe1d498c10defa931ee4f830cd62b900a178"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.666667s.png",
+          "sha256": "fc2917ae86704a7d5afc73b46994cd1a100d78d134eb54a21c9133cb8d3e1d20"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.75s.png",
+          "sha256": "7d9a695d0948a0251ac84c57d813afe8040e12d6aa3ab0e781863d98490c28b7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.833333s.png",
+          "sha256": "0d5f1589a4e575d9cccc98f4a420923d47c98d4a475007c84e4af01d45fc2d6f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-11.916667s.png",
+          "sha256": "6754a15110333358fc70f48f47d2626b7bffa8eebd9c7492ce8cad7bc8883434"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12s.png",
+          "sha256": "e7fe29ddc6e1fb3d0276e6353fab3f08d89544bb50a62584013be02f89809a16"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.083333s.png",
+          "sha256": "dfef42449dc47235e80f7723618ff7d211af6f7dd09f881f9ba6173ee14dc091"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.166667s.png",
+          "sha256": "9653da8da6ddbc53226e88acea66cfa7b753fd2ff7809d532e091886a16946b4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.25s.png",
+          "sha256": "42d242ae35ad8532dfb574ea591c2c4503949fa9b64adb3a8dcc1881405df92e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.333333s.png",
+          "sha256": "5b90666facf371d039abb2189e29e40e57a5abedd6a324a08d3edda533bd39f7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.416667s.png",
+          "sha256": "9d9cb2845294737711b6a13a86f37be63d435a9ecbcec72ac62df68693499573"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.5s.png",
+          "sha256": "14fb15ba46d6aa901ac223df17e33dde0f47e52b84528d6db22cfdd7678465a0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.583333s.png",
+          "sha256": "a99cdb155040e1456d8064cde9f5103504c78fb57c04787f705f09d9f89c6522"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.666667s.png",
+          "sha256": "d7f2ef08cd6951ca84f0f6413dec588f9ab3951784434d1c0b896b827250263a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.75s.png",
+          "sha256": "8e76eb34961f5163a864cbc11a638ca108da2cf180c32a003f55ec95886facb0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.833333s.png",
+          "sha256": "f4a1d2522acdeecb2ed336091e87c9bc86f0e363b96945cff56a06e407823086"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-12.916667s.png",
+          "sha256": "ed8ff8c74a26cdf531f9603ce3a58c1121c8f35a376634c3fd0b1e907cad7623"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13s.png",
+          "sha256": "b6c41d47aef22478bfd539fcc5e8d06833b39c74d1e209975084c8a8cec9c875"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.083333s.png",
+          "sha256": "2757a8eee4a639edb71ac1a983a59426b6be2c87ca04f19a8ebf7d75296f0cda"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.166667s.png",
+          "sha256": "f185c17f57d64d5236921aec411fcea42b2e96d11071aa2c3d3716f5cacb4bb5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.25s.png",
+          "sha256": "0631de622b9d4d06419bfe8c0aeaee472f2609dd46261e44f96f3dc7c2259bd8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.333333s.png",
+          "sha256": "0a51359d3d85ed80291f810ab37551f213e6582b5a0cac6d4d4043d0313d522f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.416667s.png",
+          "sha256": "e35941ab2b6744e239c9a34bb729438ba4f25678b23f1003a36a2494f7398937"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.5s.png",
+          "sha256": "37f3eebd9c28a275c6b59078528ed24e36140db4624ad74f6106fdba0567be1e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.583333s.png",
+          "sha256": "8cf22ff6438f27171ba717ea870c6c2440f35595f8ef0b0e70aa7492c8005748"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.666667s.png",
+          "sha256": "de113e21feefb62492abcb10bcbfc20e115cd85cc2546af5d93bc90a392c6d13"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.75s.png",
+          "sha256": "8df481bdc1a0f3aef3c9892e05b4ee5bfa6a66ad19e9464215d56f54a3c6849b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.833333s.png",
+          "sha256": "4a45a244c62a51ce79caeb1857e3c0885ba97c599be905be8dc508ba33b259df"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-13.916667s.png",
+          "sha256": "f3036a99ed18699ee34188d2198693a1a54ca18cb4b2cd75d80552927b74d1a1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14s.png",
+          "sha256": "1d76408c9234e3e26bcd53e47af0e7d1faa518457633873748b0902ceaedd887"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.083333s.png",
+          "sha256": "90e2682162f96e4baf338f56b3181534163d275aeb08a236c9e49e1c9ccc086f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.166667s.png",
+          "sha256": "8244f50dd1a04d903be88c278c22e8da143e9f38f999d2497bb7a23ba0802008"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.25s.png",
+          "sha256": "8e53037f68814f837a2aecc21e32033c4cbc187536f21738c9f7fe9bee76ac66"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.333333s.png",
+          "sha256": "84b40e572f04e939cb2f68077f26b28d9a8e158570566e0acbfe0ce52b659bb8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.416667s.png",
+          "sha256": "8ff3e93f451d20676e133ca8073157ecdd030ac7dfb600d6caaf4d3f01798b8b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.5s.png",
+          "sha256": "d8fd93c6ac1166832af5c972042ac6ba4edef3befdba389d062d4ba016488558"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.583333s.png",
+          "sha256": "cc4583ca4f4ea5da9156e85e25f6ce578e9036e42e6f2db5e357cb82d15d7de3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.666667s.png",
+          "sha256": "8746c466045e7d556af92de1dd022477992f33019b581189d2231b246c9215a9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.75s.png",
+          "sha256": "61c392606486bde525313b7d12ed5e8adfb92a1cf8e0b19c030924bf0afbbcc0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.833333s.png",
+          "sha256": "17628f0d658fa0bfb9d346514d5b2c1400641176c0ba93224e3a7401d1249a27"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-14.916667s.png",
+          "sha256": "6572f6f7b6a46f7d16f4b692ac4fe693d5b403ad4e2a0fbd658e88fbff55173e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15s.png",
+          "sha256": "c8447299af1924f55d21ea72568e821f9bb270dafc4310725f5e98a3654f4dfd"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.083333s.png",
+          "sha256": "944a48d09517c709c8511f3dbfcaa05cc699544d81aa975d59909168856b9b0c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.166667s.png",
+          "sha256": "851b3cb6baeedb5b34c07e546463547d2581ad25a55330c208b065d225f7b71f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.25s.png",
+          "sha256": "af4ef63c2e10f43a75752dd5aec6fa7c5f0d5126815d5a77b656065d94fabc86"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.333333s.png",
+          "sha256": "2311af94931fcf6f370ea6ad0048d108fe04b90cc8acf0bbcb1574953c234dd8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.416667s.png",
+          "sha256": "ed70d2d648223436b4a816d67617061db98c011c836759c828e62c3e5889697b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.5s.png",
+          "sha256": "b1fa2fd7f8d50bb5700a68fe44a3c2f947ed27d75efb52fb5a2cfc700168488c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.583333s.png",
+          "sha256": "a412e6efc57619cc6be1b23ff793e8d4c400628bbcbf0892ec8087208e6c3ef3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.666667s.png",
+          "sha256": "ddbbb694dae031ecb037f9478683e2972721ea044f559b7eae146196c7ca8feb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.75s.png",
+          "sha256": "35004e6592e6d62995f2266dbd6b4909fbd3d14e5df4bacf69fd26d264b7a79d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.833333s.png",
+          "sha256": "71bf6352cc9fd8fb52755b4b751d6079a500becff73f1bacbc6d4add2b495ff8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-15.916667s.png",
+          "sha256": "e6353eeebaef025216da221cdd19ed87792db73ef062d39b4cdd6158a9882412"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16s.png",
+          "sha256": "ad6cc45b6a6ca9ad3f1df555aa7ebb4fbaf618c3283592e1a2a75c1b5e764300"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.083332s.png",
+          "sha256": "7cdecb70c2d622b3ee851f2335a4c4065b418d0c89b48a5c6cdff670d54bc173"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.166668s.png",
+          "sha256": "950dfbaf3fcc11590bc2c7c91b846d302d427650caaae0e2852190f30d1c2f4d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.25s.png",
+          "sha256": "bca150f8bd53f9d86179057f02510e571094301e78b1bcdfd447cb73a46b612a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.333332s.png",
+          "sha256": "c382624801e9207458957af91903d05fffb00dd03ae89f7e0f4fafd13cbbb9a9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.416668s.png",
+          "sha256": "5ddd0f7645b20ec5fc0ac8b31e0d331029e0f604026cfbe4d380083adaed2fb8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.5s.png",
+          "sha256": "b2805c0a5125f47da7911f918369da5917be2745bf7c0b36626e747b1015d1f4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.583332s.png",
+          "sha256": "a086cc47c0b6b53be74384eda6d190797a20bbd63d5633e8cfac396ab9d34a23"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.666668s.png",
+          "sha256": "784214078c76aeaf50d7ff2d49763590d5691b76b4fddc67b8c43c81fedaca88"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.75s.png",
+          "sha256": "bbae745697a06bb0d5534792713ff877de0faeeae0a64560175d614181449adb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.833332s.png",
+          "sha256": "033f7db307f09d042a39bc0533d08939ebdd643b10a644cccecb60aeff58fa30"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-16.916668s.png",
+          "sha256": "8154ee32e988fd2430ff6af6e2ef1b2bd321de53eee6475a0b5d27ca772492b7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17s.png",
+          "sha256": "345835d6145bea40c390476ab073f4511425b94d1c84b2ecddca2cbc160b7ddb"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.083332s.png",
+          "sha256": "8801c541fbd9a0c4d44aa0c1c41189fddb3861f2a2ab4ecb8080677d92e7e3b2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.166668s.png",
+          "sha256": "6aa906f1e742719ca8cedaf9e664a8da4e67ecb65a1c5cd46fb5b6e04baae3ba"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.25s.png",
+          "sha256": "2bce2355979b740bf7d91acc9debf59b186a15a62c82ed10f704e4b1f978804d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.333332s.png",
+          "sha256": "bc0b578470a90f239ea23ac9a7a50a7052880eb19fc6ab199036d3f40a373847"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.416668s.png",
+          "sha256": "284529562af6409d446912afced36870cb69518b86d4bf9ebb11a628e44e777c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.5s.png",
+          "sha256": "b98026a6bf9969dc8b2717dcc5a1f562ba0768de69249dfc8c9594e09a2b2814"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.583332s.png",
+          "sha256": "4c41ca5fa71993d0c60b511c1b33fe4ef3db00939231e9eb3c95c355e74874cd"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.666668s.png",
+          "sha256": "851cbe6fca838db4f735fd61ca629723ffdd0ea21fa1900f8ba2f3d443fcbe73"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.75s.png",
+          "sha256": "aaf9394368142d5c57ac84ac84e5e4578fabee4d753f73576166e7be64afd02b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.833332s.png",
+          "sha256": "3d4976c73a9d3e642d83893a5af43486d99d87d2162f381e67838a229eaca633"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-17.916668s.png",
+          "sha256": "65590e4b3d8c15b8de285846f215a53308b24bec838ddd82c857781bfbc62de8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18s.png",
+          "sha256": "3674afae8cd0610a30cfce3760dd144b6b339085bbf5a3d571dd246db12a3907"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.083332s.png",
+          "sha256": "b839ae29b753cbef40128ef516355ad3841c7f34e7501dcd055c26d91e2d14d2"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.166668s.png",
+          "sha256": "fafee7988617e947b5916d5ed8fe376ce49310c5fc7ce988d25945d495e4ed5a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.25s.png",
+          "sha256": "3b1f8e4392ea7df54d8360ec243a3aff3011c1373873f9f7dd91ad6b39f284a1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.333332s.png",
+          "sha256": "be52f975c55251815ecfbdfe444708acf2df244d6f72b050906eab88d08bee9e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.416668s.png",
+          "sha256": "4f5c6c2bffeabdf3e23cb4a530a9f756102bb770b11b1d32b9f7b3780d8c70e8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.5s.png",
+          "sha256": "bf26ca31bf1d7d0c35db5b89001fd159c76b0ea55b7365e16f41328b56239355"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.583332s.png",
+          "sha256": "bfc18253da92d5cbc1a909f5957cd49dec3802f53abb8948ed0a7b93cc012fd0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.666668s.png",
+          "sha256": "3f4560e58dee37303a8cb87efe1545a98ab44f92cc327837f30e9e39e68e477e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.75s.png",
+          "sha256": "0363c5f14303a2d924bf53a76be4ba6bee8a0eb46c6894f022cda0b529ab2d0e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.833332s.png",
+          "sha256": "cb1a0417f090ea3041d8c01537830588d6fbaaf07255e800a03cd560ca8ed992"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-18.916668s.png",
+          "sha256": "9185fb3a005bf5d1333093abe886a73deae73b9a29b0f91a7ae57d89ee034ce3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19s.png",
+          "sha256": "7254225623a9229c7dd5930f982f4ef4be0a8daa100b47f98a2706ab7fcd594d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.083332s.png",
+          "sha256": "47e7ab4ff43daa7b4efc1aa6396b12f9ef875ae45a8d6b2a324432a9a7a8db32"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.166668s.png",
+          "sha256": "265e7c664c0082dedd2a7acc65d801331b62f2815c8d507b78b3f948074fe4a9"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.25s.png",
+          "sha256": "59c7fed1b3df217be300557092a9c270c6b4382f528710043d9ca38317a0d5e7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.333332s.png",
+          "sha256": "fa55c8fc96ddc10f098c97e251082b22147baf7577f50cbd1a5bd33a0753553e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.416668s.png",
+          "sha256": "a999b80f0a2832df84ed21f9ea9f5e77b859fec4463529196a146eb15e26741d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.5s.png",
+          "sha256": "16edf8eef728a2f3470dc6fd79742c5bc63ea2c6506cf782f4bb0c3ff0b6827d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.583332s.png",
+          "sha256": "8bc95f7a8b2c416f542d1017a7c105d7f8cde250f3344a78663e270f6f4d5a7b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.666668s.png",
+          "sha256": "dc183683fa392a793c87c11211d955c9b68e97dc6ab8358ef18c2f4960fab24c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.75s.png",
+          "sha256": "815c6a222c48fc5fc49b1790b5a052e196196fdfa61c87563a540d4d1cfa881c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.833332s.png",
+          "sha256": "815c6a222c48fc5fc49b1790b5a052e196196fdfa61c87563a540d4d1cfa881c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-19.916668s.png",
+          "sha256": "cdfdb718f7adb00f848aa7cf1712e70ff93bbdd9fdacd82c1f6bfad9ea8f3ef5"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20s.png",
+          "sha256": "3e2eaa2807e57adf652211b2603f15d0075a2e4b657b3ee1e101735074540f24"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.083332s.png",
+          "sha256": "d36f0e492d6bfa2330603b4d020dc566bcd662337bba0fd176c8286c9a632d26"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.166668s.png",
+          "sha256": "e2098c96f3374e555cfa954dc27a418e9c90aee0d7eaa1643c0816676de2f860"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.25s.png",
+          "sha256": "e2098c96f3374e555cfa954dc27a418e9c90aee0d7eaa1643c0816676de2f860"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.333332s.png",
+          "sha256": "acb855861ce096f6defad45a3cb1f9fe7338c7bbe5c72b0b8e45f34bfd94e0db"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.416668s.png",
+          "sha256": "58e95443b5ba041193e2783de570a8b34d77a7e8b7777f4e7820cea4aba3d991"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.5s.png",
+          "sha256": "33ec6d92c4cba216edeeb53d4145f111e966a785de2f49ee61610cf75fd7b68c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.583332s.png",
+          "sha256": "e50aab06f14d9951a1d2f63aec8daa11093d757d483e664c9f405534fe0ab927"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.666668s.png",
+          "sha256": "721a65e998066dbfd13dc35711b41d38b469965cbe468eef603322b11ae8a18a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.75s.png",
+          "sha256": "2d3c51b57d5cd535b1d940d07803742710aa305ca6b100833abda56bda88389b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.833332s.png",
+          "sha256": "2d3c51b57d5cd535b1d940d07803742710aa305ca6b100833abda56bda88389b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-20.916668s.png",
+          "sha256": "9707561612edda3d24ea41ded7105a1c014c8ae7b9fc17670fe5d6bc47fb371e"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21s.png",
+          "sha256": "77ee7a7e58c129935f83266c770f64729c9b7752b21aedc753769a005d942d94"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.083332s.png",
+          "sha256": "29a1be7fe8e9c16e9d1da7e21944da470cea7faaa3d5f7e20b293a118f706f43"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.166668s.png",
+          "sha256": "84fb55ee5a5729ceaa52cdc1b2d17341f57d67eabb79ebfc7d76aa41eb34d1ef"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.25s.png",
+          "sha256": "84fb55ee5a5729ceaa52cdc1b2d17341f57d67eabb79ebfc7d76aa41eb34d1ef"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.333332s.png",
+          "sha256": "cd7efa6af1d563d7ef1db142ec0125d4515ab3eb764ad98b59152132792ae723"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.416668s.png",
+          "sha256": "431e08b3ad3f5964bd0f2bdd8033e5e3028ee35782d4094f3e2b4bbb42fe0614"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.5s.png",
+          "sha256": "16cad80516d24242b7fd05d3cfe46120a62d2f19f3b4f3bbb10c2fcef573196c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.583332s.png",
+          "sha256": "beaf38863c8a1fc1d940c4a1b7956f1be07ad11f0b7ac2030295f024c803e688"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.666668s.png",
+          "sha256": "d7c5dc13f8dfe6b3e3d2f9c3ef7fe04b8d13fd233235fb456ed43a12be8cefd3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.75s.png",
+          "sha256": "0d0fa87e23fe9eef2acf1d334ad4bf60564ccee32e0a6323e8301e467c7a35a8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.833332s.png",
+          "sha256": "0d0fa87e23fe9eef2acf1d334ad4bf60564ccee32e0a6323e8301e467c7a35a8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-21.916668s.png",
+          "sha256": "352f1c1e8a1265256081b0554ddb3b9c422765fa088cf06ef06c7dfc677ccff0"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22s.png",
+          "sha256": "be354941ddb9d3dc1edaf74a8db26eed463370c54503763bbc253b3798ee1784"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.083332s.png",
+          "sha256": "1cc4d5c860b7ae0dadec45bbded1f99b685f046390c9aa3fbc498efb1efebd87"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.166668s.png",
+          "sha256": "6b6ddee30751d7a46663d4c48fe0fac99b7d353207171c31467a4dc8137711ac"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.25s.png",
+          "sha256": "ba2db5d449fcf918aaa91889ab0437be0a3224d1ce76c1ee39a682c027efd614"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.333332s.png",
+          "sha256": "2d3bf55ba965bedd72f2ac7b4ecce86a4fa778917f90c82fc6b73f84f05d6645"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.416668s.png",
+          "sha256": "0c04dc01321817da90daf8ade2807677fb8fe0f9a146764dfd18d207bd1b3dd6"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.5s.png",
+          "sha256": "dd41faf96f1904dff6a0799d319ab27fac4eecfc912f7a5fe5279f45dffc6663"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.583332s.png",
+          "sha256": "f591ea6025bb267c52d7998cf2aa6863a1bc3e87c01614aee7559d912d348c77"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.666668s.png",
+          "sha256": "2d9c7a2d7cf8fdd9399177e15e07a0f4a7543463410d5d98aaa254fd10180c7c"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.75s.png",
+          "sha256": "2eec1072a0286e337d23433759ae48bd34a6dc0921d9334ee8ac4a3f6e47df2d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.833332s.png",
+          "sha256": "2eec1072a0286e337d23433759ae48bd34a6dc0921d9334ee8ac4a3f6e47df2d"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-22.916668s.png",
+          "sha256": "369f9cd148a53e380522234fc001be9566426e951e4eac098f33c68dc624dd56"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-23s.png",
+          "sha256": "966292bf6ac9a4ddb106d91607e1443f2902a56fa04d62c68803d64aaccfc001"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-23.083332s.png",
+          "sha256": "4302cb12c509cdb8c2884412123f72ffaf9a68a54aa65fee49d093333893a808"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-23.166668s.png",
+          "sha256": "858aaf1b28f9af25ab574426251e41679056dae22296aeb4a53204475c5482b7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-23.25s.png",
+          "sha256": "858aaf1b28f9af25ab574426251e41679056dae22296aeb4a53204475c5482b7"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-23.333332s.png",
+          "sha256": "1fe90a01e8b9149c14e62c62963faf4f4cf3d5c725045ce3d7b91c4368d9234b"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-23.416668s.png",
+          "sha256": "46c725b29cac5492cec561226f8356b35ba9bbef761d41a793d6909a4c8d9197"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-motion-qualified-2026-10-29/tuned-high-23.5s.png",
+          "sha256": "8a3618e2d81bdeeb9fe958f7638f8e8f2a950b477e816e3c1fec48c39307b39e"
+        }
+      ],
+      "host_state": null,
+      "request_lateness_max_seconds": 0.03333297371864319,
+      "request_seconds": [
+        0.0833333358168602,
+        0.18333333730697632,
+        0.25,
+        0.3499999940395355,
+        0.44999998807907104,
+        0.5166666507720947,
+        0.5833333134651184,
+        0.6833333373069763,
+        0.75,
+        0.8500000238418579,
+        0.9333333373069763,
+        1.0,
+        1.0833333730697632,
+        1.1833332777023315,
+        1.25,
+        1.3333333730697632,
+        1.4333332777023315,
+        1.5,
+        1.5833333730697632,
+        1.6833332777023315,
+        1.75,
+        1.8333333730697632,
+        1.9333332777023315,
+        2.0,
+        2.0833332538604736,
+        2.183333396911621,
+        2.25,
+        2.3333332538604736,
+        2.433333396911621,
+        2.5,
+        2.5833332538604736,
+        2.683333396911621,
+        2.75,
+        2.8333332538604736,
+        2.933333396911621,
+        3.0,
+        3.0833332538604736,
+        3.183333396911621,
+        3.25,
+        3.3333332538604736,
+        3.433333396911621,
+        3.5,
+        3.5833332538604736,
+        3.683333396911621,
+        3.75,
+        3.8333332538604736,
+        3.933333396911621,
+        4.0,
+        4.083333492279053,
+        4.183333396911621,
+        4.25,
+        4.333333492279053,
+        4.433333396911621,
+        4.5,
+        4.583333492279053,
+        4.683333396911621,
+        4.75,
+        4.833333492279053,
+        4.933333396911621,
+        5.0,
+        5.083333492279053,
+        5.183333396911621,
+        5.25,
+        5.333333492279053,
+        5.433333396911621,
+        5.5,
+        5.583333492279053,
+        5.683333396911621,
+        5.75,
+        5.833333492279053,
+        5.933333396911621,
+        6.0,
+        6.083333492279053,
+        6.183333396911621,
+        6.25,
+        6.333333492279053,
+        6.433333396911621,
+        6.5,
+        6.583333492279053,
+        6.683333396911621,
+        6.75,
+        6.833333492279053,
+        6.933333396911621,
+        7.0,
+        7.083333492279053,
+        7.183333396911621,
+        7.25,
+        7.333333492279053,
+        7.433333396911621,
+        7.5,
+        7.583333492279053,
+        7.683333396911621,
+        7.75,
+        7.833333492279053,
+        7.933333396911621,
+        8.0,
+        8.083333015441895,
+        8.166666984558105,
+        8.25,
+        8.333333015441895,
+        8.416666984558105,
+        8.5,
+        8.583333015441895,
+        8.666666984558105,
+        8.75,
+        8.833333015441895,
+        8.916666984558105,
+        9.0,
+        9.083333015441895,
+        9.166666984558105,
+        9.25,
+        9.333333015441895,
+        9.416666984558105,
+        9.5,
+        9.583333015441895,
+        9.666666984558105,
+        9.75,
+        9.833333015441895,
+        9.916666984558105,
+        10.0,
+        10.083333015441895,
+        10.166666984558105,
+        10.25,
+        10.333333015441895,
+        10.416666984558105,
+        10.5,
+        10.583333015441895,
+        10.666666984558105,
+        10.75,
+        10.833333015441895,
+        10.916666984558105,
+        11.0,
+        11.083333015441895,
+        11.166666984558105,
+        11.25,
+        11.333333015441895,
+        11.416666984558105,
+        11.5,
+        11.583333015441895,
+        11.666666984558105,
+        11.75,
+        11.833333015441895,
+        11.916666984558105,
+        12.0,
+        12.083333015441895,
+        12.166666984558105,
+        12.25,
+        12.333333015441895,
+        12.416666984558105,
+        12.5,
+        12.583333015441895,
+        12.666666984558105,
+        12.75,
+        12.833333015441895,
+        12.916666984558105,
+        13.0,
+        13.083333015441895,
+        13.166666984558105,
+        13.25,
+        13.333333015441895,
+        13.416666984558105,
+        13.5,
+        13.583333015441895,
+        13.666666984558105,
+        13.75,
+        13.833333015441895,
+        13.916666984558105,
+        14.0,
+        14.083333015441895,
+        14.166666984558105,
+        14.25,
+        14.333333015441895,
+        14.416666984558105,
+        14.5,
+        14.583333015441895,
+        14.666666984558105,
+        14.75,
+        14.833333015441895,
+        14.916666984558105,
+        15.0,
+        15.083333015441895,
+        15.166666984558105,
+        15.25,
+        15.333333015441895,
+        15.416666984558105,
+        15.5,
+        15.583333015441895,
+        15.666666984558105,
+        15.75,
+        15.833333015441895,
+        15.916666984558105,
+        16.0,
+        16.08333396911621,
+        16.183332443237305,
+        16.25,
+        16.33333396911621,
+        16.433332443237305,
+        16.5,
+        16.58333396911621,
+        16.683332443237305,
+        16.75,
+        16.83333396911621,
+        16.933332443237305,
+        17.0,
+        17.08333396911621,
+        17.183332443237305,
+        17.25,
+        17.33333396911621,
+        17.433332443237305,
+        17.5,
+        17.58333396911621,
+        17.683332443237305,
+        17.75,
+        17.83333396911621,
+        17.933332443237305,
+        18.0,
+        18.08333396911621,
+        18.183332443237305,
+        18.25,
+        18.33333396911621,
+        18.433332443237305,
+        18.5,
+        18.58333396911621,
+        18.683332443237305,
+        18.75,
+        18.83333396911621,
+        18.933332443237305,
+        19.0,
+        19.08333396911621,
+        19.183332443237305,
+        19.25,
+        19.33333396911621,
+        19.433332443237305,
+        19.5,
+        19.58333396911621,
+        19.683332443237305,
+        19.75,
+        19.83333396911621,
+        19.933332443237305,
+        20.0,
+        20.08333396911621,
+        20.183332443237305,
+        20.25,
+        20.33333396911621,
+        20.433332443237305,
+        20.5,
+        20.58333396911621,
+        20.683332443237305,
+        20.75,
+        20.83333396911621,
+        20.933332443237305,
+        21.0,
+        21.08333396911621,
+        21.183332443237305,
+        21.25,
+        21.33333396911621,
+        21.433332443237305,
+        21.5,
+        21.58333396911621,
+        21.683332443237305,
+        21.75,
+        21.83333396911621,
+        21.933332443237305,
+        22.0,
+        22.08333396911621,
+        22.183332443237305,
+        22.25,
+        22.33333396911621,
+        22.433332443237305,
+        22.5,
+        22.58333396911621,
+        22.683332443237305,
+        22.75,
+        22.83333396911621,
+        22.933332443237305,
+        23.0,
+        23.08333396911621,
+        23.183332443237305,
+        23.25,
+        23.33333396911621,
+        23.433332443237305,
+        23.5
+      ]
+    },
+    {
+      "case": "f8-coherent-host-audience-qualified-2026-10-29",
+      "report": {
+        "path": "target/fireworks-f8/f8-coherent-host-audience-qualified-2026-10-29/tuned-high.json",
+        "sha256": "bd919a5eae281f1c7fab638c85ade27cb2cc8fe570ae97c8eb84ed0536a191b6"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f8-coherent-host-audience-qualified-2026-10-29/manifest.json",
+        "sha256": "3a633228009dd9eeec1e9945c1e5b57df5e833003739cf2d1628f774eea20333"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 6611199,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 72973,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "node_head_bytes": 47923200,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-audience-qualified-2026-10-29/tuned-high-1.4s.png",
+          "sha256": "0e898af7264c2a69986ab12419f924066ae2b9fd60db8cee47b94c9e21ef93a1"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-audience-qualified-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "d7e0691efea38f387603a105bd560c10380dc026005ad7e972da136a5829cce8"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-audience-qualified-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "ade1001cda02dd7b21c5999b424fc324b5fd44f9d70d4cbf92e9e6edee551104"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-audience-qualified-2026-10-29/tuned-high-12s.png",
+          "sha256": "0bc69ddee69540158564c3204ce3a566eb19ce38f1eb56980dbd83161da268f3"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-audience-qualified-2026-10-29/tuned-high-23s.png",
+          "sha256": "de4e1152cf5eae2d1f6d78c83b1753725b967261c7cfba9614bdf6036cb87ccf"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-audience-qualified-2026-10-29/tuned-high-36s.png",
+          "sha256": "29727c4589476a41faf26b1a11279c992229c60e1e89bdaefac9e58320f68b71"
+        }
+      ],
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      }
+    },
+    {
+      "case": "f8-coherent-host-near-qualified-2026-10-29",
+      "report": {
+        "path": "target/fireworks-f8/f8-coherent-host-near-qualified-2026-10-29/tuned-high.json",
+        "sha256": "6bf7921f6bc8fa5d80d235774eaa5d2351121a90fcda87b8e0989960687c1219"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f8-coherent-host-near-qualified-2026-10-29/manifest.json",
+        "sha256": "3697135fd4e492fb2c1f61611fb4857fba3b768855ac2c689186ca7f0d0b7633"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 22678263,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 260764,
+        "observations": 2309,
+        "observed_partition_loss": false
+      },
+      "routes": {
+        "Star path smoke": 115283,
+        "Gold tail embers": 374514
+      },
+      "node_head_bytes": 47923200,
+      "captures": [
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-near-qualified-2026-10-29/tuned-high-1.4s.png",
+          "sha256": "f46cee56c51e223214152374c7a489e4d8ea2589c854813de1b67ed7e82a3821"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-near-qualified-2026-10-29/tuned-high-2.8s.png",
+          "sha256": "595e69ef41c2093213dee65448639fdb0af972c3f158aab2abc7d0a6b325b7d4"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-near-qualified-2026-10-29/tuned-high-6.9s.png",
+          "sha256": "15c9ead06a5af97200d0556e3386f9ca78149c22fe6836e3c94a83de208f2a1a"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-near-qualified-2026-10-29/tuned-high-12s.png",
+          "sha256": "2d5f1cbda7444f406ff14f4ac66a1c30ed3d8c2cf4020ba23670953096128370"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-near-qualified-2026-10-29/tuned-high-23s.png",
+          "sha256": "3b9f7c29c5c4b56ecbf32164f2005c82c65141eda788ee1c796ddc7b7f06909f"
+        },
+        {
+          "path": "target/fireworks-f8/f8-coherent-host-near-qualified-2026-10-29/tuned-high-36s.png",
+          "sha256": "f259e036510620ef9185395bc9d75ac45fe7e295576b11710385512bdddc8b1e"
+        }
+      ],
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      }
+    },
+    {
+      "case": "f8-coherent-cost-control-2026-10-29",
+      "report": {
+        "path": "target/fireworks-f8/f8-coherent-cost-control-2026-10-29/tuned-high.json",
+        "sha256": "099499397266e7af1d4870266c37f453d27f89025755ce965f0b4ab9f5746642"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f8-coherent-cost-control-2026-10-29/manifest.json",
+        "sha256": "28419f78cdb2e58f6e30c3e4c32c37c7226f7265112acb1008e74b77d850e21d"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 5993121,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 64513,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "routes": {},
+      "node_head_bytes": 47923200,
+      "captures": [],
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "render_graph_gpu_ms": {
+        "active-fireworks": {
+          "max_ms": 10.669056,
+          "median_ms": 10.097664,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 10.549248,
+          "p99_ms": 10.636288,
+          "samples": 251
+        },
+        "idle": {
+          "max_ms": 3.176448,
+          "median_ms": 2.200576,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 2.22208,
+          "p99_ms": 2.228224,
+          "samples": 993
+        },
+        "launch-and-overlap": {
+          "max_ms": 9.443328,
+          "median_ms": 5.669888,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 9.109504,
+          "p99_ms": 9.261056,
+          "samples": 262
+        },
+        "smoke-drain": {
+          "max_ms": 10.179584,
+          "median_ms": 5.230592,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 9.641984,
+          "p99_ms": 9.96864,
+          "samples": 638
+        }
+      },
+      "render_graph_scope": "Paired timestamps around RenderGraph Begin through Render and selected-light copy, before diagnostic resolve/submission. GPU includes intervening graph work and gaps, not presentation latency or every upload. CPU is command-encoding wall time, not whole-game CPU or active CPU cycles. Nested scopes overlap; never add their quantiles."
+    },
+    {
+      "case": "f8-coherent-cost-candidate-2026-10-29",
+      "report": {
+        "path": "target/fireworks-f8/f8-coherent-cost-candidate-2026-10-29/tuned-high.json",
+        "sha256": "4a6091dd8945c487df060ff1929228ae3704aca2c2c944473130391c15cdb073"
+      },
+      "manifest": {
+        "path": "target/fireworks-f8/f8-coherent-cost-candidate-2026-10-29/manifest.json",
+        "sha256": "fa38d0488a7f15ceae252928caeef4d34f1ce37ab489c40ee6e4a0839b2f78c0"
+      },
+      "capacity": {
+        "loss_free": true,
+        "max_attempted_fragments": 6611247,
+        "max_dropped": 0,
+        "max_invalid_links": 0,
+        "max_over_sort_pixels": 72980,
+        "observations": 2408,
+        "observed_partition_loss": false
+      },
+      "routes": {},
+      "node_head_bytes": 47923200,
+      "captures": [],
+      "host_state": {
+        "capacity_wait_updates": 0,
+        "current_gameplay_rockets": 0,
+        "current_vfx_owners": 0,
+        "detonations": 12,
+        "launches": 12,
+        "owner_limit": 24,
+        "peak_gameplay_and_vfx_owners": 24,
+        "peak_gameplay_rockets": 5,
+        "scheduled_launches": 12
+      },
+      "render_graph_gpu_ms": {
+        "active-fireworks": {
+          "max_ms": 11.390976,
+          "median_ms": 10.797056,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 11.085824,
+          "p99_ms": 11.17184,
+          "samples": 252
+        },
+        "idle": {
+          "max_ms": 3.150848,
+          "median_ms": 2.225152,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 2.24768,
+          "p99_ms": 2.256896,
+          "samples": 990
+        },
+        "launch-and-overlap": {
+          "max_ms": 10.053632,
+          "median_ms": 4.860928,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 9.624576,
+          "p99_ms": 9.792512,
+          "samples": 265
+        },
+        "smoke-drain": {
+          "max_ms": 10.433536,
+          "median_ms": 5.2224,
+          "over_16_67ms": 0,
+          "over_20ms": 0,
+          "over_33_33ms": 0,
+          "p95_ms": 9.740288,
+          "p99_ms": 10.094592,
+          "samples": 626
+        }
+      },
+      "render_graph_scope": "Paired timestamps around RenderGraph Begin through Render and selected-light copy, before diagnostic resolve/submission. GPU includes intervening graph work and gaps, not presentation latency or every upload. CPU is command-encoding wall time, not whole-game CPU or active CPU cycles. Nested scopes overlap; never add their quantiles."
+    }
+  ],
+  "captures": 576,
+  "control_overlay": "target/fireworks-f8/f8-reference-project-final-2026-10-29",
+  "candidate_overlay": "target/fireworks-f8/f8-coherent-project-qualified-2026-10-29",
+  "rejected_all_particle_core": {
+    "report": {
+      "path": "target/fireworks-f8/f8-coherent-host-near-final-2026-10-29/tuned-high.json",
+      "sha256": "5e51597ec9bd4f7445f22107fbacd95ea13e8f6307560c00798e6f5a286d6e69"
+    },
+    "capacity": {
+      "loss_free": false,
+      "max_attempted_fragments": 23011764,
+      "max_dropped": 33140,
+      "max_invalid_links": 0,
+      "max_over_sort_pixels": 265558,
+      "observations": 2302,
+      "observed_partition_loss": true
+    },
+    "author": {
+      "path": "target/fireworks-f8/f8-coherent-wide-core-author-2026-10-29.rs",
+      "sha256": "f108f2f921a3e6e9caaec6f400a2ccbe24ca175c3f23965bdc847e0b67634a44"
+    },
+    "mask": {
+      "path": "target/fireworks-f8/f8-coherent-wide-core-mask-2026-10-29.wesl",
+      "sha256": "1a33552540af8d9c159d535e04d48f29e7521754fd1dfe4d92c43254072618dc"
+    }
+  },
+  "prior_uv_author": {
+    "path": "target/fireworks-f8/f8-filament-v1-author-2026-10-29.rs",
+    "sha256": "612ee90731c1bc4be38b1358a7afaeb7cbcbe69e8c2d7c54e3a223d2e60b2849"
+  },
+  "prior_uv_mask": {
+    "path": "target/fireworks-f8/f8-filament-v1-mask-2026-10-29.wesl",
+    "sha256": "ff8ead3c4605f27d20bf9da258d94d28d6146b0e612f5af692f163bc70e740ad"
+  },
+  "initial_unsupported_input_log": {
+    "path": "target/fireworks-f8/f8-coherent-pair-pilot-2026-10-29/tuned-high.log",
+    "sha256": "4c56dedc3014e17c5abc995654e2fb8bb908c2b16b7e1c6f64bb6e9b94d8e1c4"
+  },
+  "reference_video_sha256": "03c61d7af8d5a6a9ada06457184c8095cafa0dde306ddf01e8eeefdbfd5db3dd",
+  "limits": [
+    "Native high tier on one RTX4070S/Vulkan audience/near workload; not arbitrary overlap acceptance",
+    "Two independent forward captures, not exact frame-paired; no replay or optical-flow interpolation",
+    "12 Hz sampled visual playback, not a performance recording; request lag is recorded",
+    "Coarse 2D field projected from world XYZ, not volumetric simulation or physically advected density",
+    "Blue art remains unchanged; reference is qualitative, without exposure/scale matching",
+    "One sequential cost pair, not causal performance proof; no audio/finale certification"
+  ],
+  "preview": {
+    "path": "benchmarks/fireworks/reviews/f8-coherent-smoke-motion-2026-10-29/comparison-sampled-12hz.webp",
+    "sha256": "52bb79f7af1a7e53b796b15fec0108670fd7991689b195c07f25f88f5d0e116e",
+    "frames": 282,
+    "nominal_hz": 12,
+    "loop_ms": 23500,
+    "transform": "Independent frames downscaled to 512x288 per side, labeled, lossy WebP quality78. Native PNGs retained; no exposure changes or frame interpolation."
+  }
+}

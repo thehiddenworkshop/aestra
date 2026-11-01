@@ -671,6 +671,10 @@ struct EmitterV1 {
     /// Homing steering (host bindings HB7, v4 additive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     homing: Option<HomingV4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    spatial_flow: Option<aestra_core::spatial_flow::SpatialFlow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    particle_sampling: Option<aestra_core::particle_sampling::ParticleSampling>,
     /// The host binding this emitter follows (host bindings HB7b, v4 additive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     attachment: Option<AttachmentV4>,
@@ -2406,6 +2410,8 @@ impl EmitterV1 {
             max_particles: emitter.max_particles,
             simulation_class: emitter.simulation_class.into(),
             colliders: emitter.colliders.clone(),
+            spatial_flow: emitter.spatial_flow,
+            particle_sampling: emitter.particle_sampling,
             field_follow: emitter.field_follow.as_ref().map(FieldFollowV4::from),
             domain_spawn: emitter.domain_spawn.as_ref().map(DomainSpawnV4::from),
             homing: emitter
@@ -2463,6 +2469,22 @@ impl EmitterV1 {
         parameters: &InputTable<'_>,
     ) -> Result<CompiledEmitter, ArtifactError> {
         let path = format!("effect.emitters[{index}]");
+        if self.particle_sampling.is_some_and(|s| !s.is_valid()) {
+            return invalid(
+                format!("{path}.particle_sampling"),
+                "invalid particle sampling settings",
+            );
+        }
+        if self.spatial_flow.is_some_and(|flow| !flow.is_valid())
+            || (self.enabled
+                && self.spatial_flow.is_some()
+                && matches!(&self.simulation_class, SimulationClassV1::Analytic))
+        {
+            return invalid(
+                format!("{path}.spatial_flow"),
+                "invalid spatial flow settings",
+            );
+        }
         require_finite_non_negative(self.start_time, format!("{path}.start_time"))?;
         require_finite_non_negative(self.source_offset, format!("{path}.source_offset"))?;
         require_finite_positive(self.source_duration, format!("{path}.source_duration"))?;
@@ -2473,6 +2495,24 @@ impl EmitterV1 {
         let execution = self
             .execution
             .decode(parameters, &format!("{path}.execution"))?;
+        if self
+            .particle_sampling
+            .is_some_and(|s| s.directions != aestra_core::particle_sampling::SamplingMode::Legacy)
+            && execution.particle_spawn.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    aestra_runtime::Instruction::Initialize {
+                        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
+                        ..
+                    }
+                )
+            })
+        {
+            return invalid(
+                format!("{path}.particle_sampling.directions"),
+                "direction sampling requires an explicit velocity distribution",
+            );
+        }
         // The generic stage plan (extensible-stages M5) is derived from the execution plan; its
         // per-stage ids are deterministic from the emitter id + stage type, so the round trip retains
         // the same stage identities without storing them separately.
@@ -2506,6 +2546,8 @@ impl EmitterV1 {
             max_particles: self.max_particles,
             simulation_class: self.simulation_class.into(),
             colliders: self.colliders,
+            spatial_flow: self.spatial_flow,
+            particle_sampling: self.particle_sampling,
             field_follow: self.field_follow.map(FieldFollowV4::into_runtime),
             domain_spawn: self.domain_spawn.map(DomainSpawnV4::into_runtime),
             homing: self

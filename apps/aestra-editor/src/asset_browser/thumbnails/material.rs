@@ -87,6 +87,54 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
     }
 }
 
+/// The shared smoke kernel is bounded and already used by the native viewport.
+/// Recognize its exact saved source; arbitrary edited WESL keeps the existing
+/// background-preview restriction. Function identity alone is not sufficient.
+pub(super) fn shared_smoke_function(function: &MaterialFunction) -> bool {
+    function.custom_wesl.as_ref().is_some_and(|implementation| {
+        implementation.source == aestra_gpu::shader::ADVECTED_SMOKE_WESL
+            && !implementation.entry_points.is_empty()
+            && implementation
+                .entry_points
+                .values()
+                .all(|entry| entry == "billow")
+    })
+}
+
+pub(super) fn wants_shared_smoke_gpu(
+    program: &MaterialProgram,
+    functions: &BTreeMap<MaterialFunctionId, MaterialFunction>,
+) -> bool {
+    if program.domain != MaterialDomain::Sprite
+        || program.outputs.vertex_offset.is_some()
+        || program.expressions.len() > 256
+        || program.parameters.len() > 128
+    {
+        return false;
+    }
+    let mut calls = 0;
+    for expression in &program.expressions {
+        match &expression.kind {
+            MaterialExpressionKind::CustomWeslCall { .. }
+            | MaterialExpressionKind::FunctionInput(_) => return false,
+            MaterialExpressionKind::FunctionCall { function, .. } => {
+                let aestra_core::material::MaterialFunctionRef::Project(id) = function else {
+                    return false;
+                };
+                if !functions.get(id).is_some_and(shared_smoke_function) {
+                    return false;
+                }
+                calls += 1;
+                if calls > 4 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    calls > 0
+}
+
 /// Synthesizes a one-instance scene around `program` (sprite quad or unit sphere by domain),
 /// assembles it through the shared effect scaffolding, and binds a generated neutral texture for
 /// every texture the material references. Returns the same [`Prepared`] the effect `GpuJob` consumes.

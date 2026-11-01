@@ -193,6 +193,8 @@ impl ModuleMetadata {
 pub(crate) fn builtin_modules() -> Vec<ModuleMetadata> {
     use ParticleAttribute as A;
     vec![
+        spatial_flow_metadata(),
+        particle_sampling_metadata(),
         metadata(
             MODULE_EMISSION,
             "Emission",
@@ -690,4 +692,52 @@ pub(crate) fn builtin_modules() -> Vec<ModuleMetadata> {
         .with_tags(vec!["simulation", "stateful", "homing", "binding"])
         .with_cost(5),
     ]
+}
+
+fn spatial_flow_metadata() -> ModuleMetadata {
+    use ParticleAttribute as A;
+    use aestra_core::spatial_flow::{MODULE_SPATIAL_FLOW, SpatialFlow};
+    let defaults = SpatialFlow::default().values();
+    let scalar = |step, min, max| InputControl::Number {
+        step,
+        min: Some(min),
+        max: Some(max),
+    };
+    let vector = InputControl::Vector {
+        step: 0.01,
+        min: Some(-65536.0),
+        max: Some(65536.0),
+    };
+    metadata(MODULE_SPATIAL_FLOW,"Spatial Flow","Shared seeded spatial acceleration. Curl derives a vector potential; nearby particles sample the same field. Fixed-tick, opt-in simulation.","Simulation",StageKind::ParticleUpdate)
+        .with_inputs(vec![
+            input("flow_mode","Mode","noise: a vector field; curl: centered curl of a shared vector potential, without pointwise normalization.",defaults["flow_mode"].clone(),InputControl::Choice),
+            input("flow_space","Space","effect: field moves with this effect; world: field stays in the host world. World placement is forward-only input.",defaults["flow_space"].clone(),InputControl::Choice),
+            input("scale","Scale","Spatial frequency in the selected coordinate space.",defaults["scale"].clone(),scalar(0.01,0.001,64.0)),
+            input("strength","Strength","Maximum absolute acceleration per axis, before world-to-effect conversion.",defaults["strength"].clone(),scalar(0.1,0.0,1000.0)).with_unit("units/s²"),
+            input("evolution","Evolution","Translation velocity of the potential, driven by effect playback time.",defaults["evolution"].clone(),vector).with_unit("units/s"),
+            input("offset","Offset","Coordinate offset before scale.",defaults["offset"].clone(),vector),
+            input("seed","Seed","Shared field seed; independent of particle identity.",defaults["seed"].clone(),InputControl::Number{step:1.0,min:Some(0.0),max:None}),
+            input("octaves","Octaves","1–3 octaves. Curl costs twelve scalar field samples per particle and tick; noise costs three.",defaults["octaves"].clone(),scalar(1.0,1.0,3.0)),
+        ])
+        .with_flow(vec![A::Position,A::Velocity],vec![A::Velocity])
+        .with_simulation(SimulationRequirements{temporal:TemporalRequirement::PreviousState,..SimulationRequirements::ANALYTIC})
+        .with_multiplicity(ModuleMultiplicity::Single)
+        .with_tags(vec!["simulation","stateful","noise","curl","flow"])
+        .with_cost(12)
+}
+
+fn particle_sampling_metadata() -> ModuleMetadata {
+    use aestra_core::particle_sampling::{MODULE_PARTICLE_SAMPLING, ParticleSampling};
+    let defaults = ParticleSampling::default().values();
+    metadata(MODULE_PARTICLE_SAMPLING,"Particle Sampling","Opt-in area/volume and direction layouts. No rejection or change to birth counts. Speed and lifetime use Initialize's independent ranges.","Particle",StageKind::ParticleSpawn)
+        .with_inputs(vec![
+            input("position_sampling","Positions","legacy: preserve historical density; uniform: area/volume; stratified: bounded low-discrepancy layout. Linked births keep their source event's position.",defaults["position_sampling"].clone(),InputControl::Choice),
+            input("direction_sampling","Directions","Requires an explicit Initialize velocity mode. Sphere uses a seed-rotated Fibonacci layout; other modes preserve their directional support.",defaults["direction_sampling"].clone(),InputControl::Choice),
+            input("sequence_count","Sequence count","Pattern length for direct/continuous emission, not a birth cap. Linked/host bursts use requested fan-out per source, even when only a prefix fits.",defaults["sequence_count"].clone(),InputControl::Number{step:1.0,min:Some(1.0),max:Some(16777216.0)}),
+            input("jitter","Jitter","0: regular strata; 1: bounded within-stratum variation. Never rejects a birth.",defaults["jitter"].clone(),InputControl::Number{step:0.01,min:Some(0.0),max:Some(1.0)}),
+            input("seed","Seed","Independent layout seed combined with effect seed and cohort identity.",defaults["seed"].clone(),InputControl::Number{step:1.0,min:Some(0.0),max:None}),
+        ])
+        .with_multiplicity(ModuleMultiplicity::Single)
+        .with_tags(vec!["sampling","distribution","fibonacci","spawn"])
+        .with_cost(3)
 }
