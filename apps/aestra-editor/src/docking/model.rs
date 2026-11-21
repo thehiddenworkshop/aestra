@@ -468,6 +468,11 @@ impl WorkspaceLayout {
         {
             return self.dock(panel, target, DockDrop::Center);
         }
+        if panel == ToolPanel::SpriteViewer
+            && let Some(target) = self.root.node_containing(ToolPanel::Viewport)
+        {
+            return self.dock(panel, target, DockDrop::Center);
+        }
         if panel == ToolPanel::Settings {
             let Some(target) = self.root.node_containing(ToolPanel::Viewport) else {
                 return false;
@@ -482,7 +487,11 @@ impl WorkspaceLayout {
         // Panels reopen next to their default neighbours: the material graph and timeline share the
         // central stack, the utility panels the bottom strip, and the profiler sits under the
         // viewport.
-        let center_group = [ToolPanel::MaterialGraph, ToolPanel::Timeline];
+        let center_group = [
+            ToolPanel::MaterialGraph,
+            ToolPanel::Timeline,
+            ToolPanel::PaletteEditor,
+        ];
         let bottom_group = [
             ToolPanel::Curves,
             ToolPanel::Diagnostics,
@@ -768,6 +777,8 @@ pub(super) fn default_floating_size(panel: ToolPanel, available_size: [f32; 2]) 
         | ToolPanel::Properties
         | ToolPanel::ModuleStack
         | ToolPanel::AssetInspector => [420.0, 520.0],
+        ToolPanel::SpriteViewer => [640.0, 480.0],
+        ToolPanel::PaletteEditor => [680.0, 460.0],
         ToolPanel::Settings => [520.0, 620.0],
         ToolPanel::Viewport => [760.0, 540.0],
     };

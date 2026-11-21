@@ -108,6 +108,477 @@ fn builtin_noise_fields_compile_as_portable_materials_in_all_dimensions() {
 }
 
 #[test]
+fn saved_pixel_dissolve_lowers_its_pixel_nodes_to_portable_shader() {
+    use aestra_core::material::MaterialProgram;
+
+    let program = MaterialProgram::from_ron(include_str!(
+        "../../../sample-project/materials/pixel_dissolve.aestra.material.ron"
+    ))
+    .unwrap();
+    let ir = MaterialCompiler
+        .compile_with_functions(&program, &MaterialFunctionLibrary::default())
+        .unwrap();
+    assert!(
+        ir.values
+            .iter()
+            .any(|value| { matches!(value.instruction, MaterialIrInstruction::PixelSnap { .. }) })
+    );
+    assert!(
+        ir.values
+            .iter()
+            .any(|value| { matches!(value.instruction, MaterialIrInstruction::Posterize { .. }) })
+    );
+    assert!(
+        ir.values
+            .iter()
+            .any(|value| { matches!(value.instruction, MaterialIrInstruction::PixelateUv { .. }) })
+    );
+    assert!(ir.values.iter().any(|value| {
+        let MaterialIrInstruction::Threshold { threshold, .. } = value.instruction else {
+            return false;
+        };
+        matches!(
+            ir.value(threshold).map(|value| &value.instruction),
+            Some(MaterialIrInstruction::Quantize { .. })
+        )
+    }));
+    let shader = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    assert_eq!(shader.resource_layout.textures.len(), 1);
+    assert_portable_shader_targets(&shader.shader.wgsl);
+}
+
+#[test]
+fn saved_pixel_outline_uses_one_atlas_and_only_sprites_interpolate_frame_bounds() {
+    use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+    use aestra_core::material::{MaterialDomain, MaterialProgram};
+
+    let compiler = MaterialCompiler;
+    let original = MaterialProgram::from_ron(include_str!(
+        "../../../sample-project/materials/pixel_outline.aestra.material.ron"
+    ))
+    .unwrap();
+    for domain in [MaterialDomain::Sprite, MaterialDomain::Mesh] {
+        let mut program = original.clone();
+        program.domain = domain;
+        let ir = compiler.compile(&program).unwrap();
+        assert!(ir.values.iter().any(|value| {
+            matches!(
+                value.instruction,
+                MaterialIrInstruction::PixelOutline { .. }
+            )
+        }));
+        let shader = MaterialShaderCompiler
+            .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+            .unwrap();
+        assert_eq!(shader.resource_layout.textures.len(), 1);
+        assert_eq!(
+            shader
+                .varying_layout
+                .slots
+                .iter()
+                .any(|slot| { slot.varying == MaterialVarying::SpriteUvBounds }),
+            domain == MaterialDomain::Sprite,
+        );
+        assert_portable_shader_targets(&shader.shader.wgsl);
+    }
+    let base = MaterialProgram::additive_sprite("Outline from a blank graph");
+    let plan = compiler
+        .plan_graph_node_creation(
+            &base,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::PixelOutline),
+            None,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.replacement.parameters[0].value_type,
+        MaterialValueType::Texture2D(_)
+    ));
+    assert_eq!(plan.replacement.parameters[0].name, "Outline Texture");
+
+    let explicit = MaterialProgram::from_ron(include_str!(
+        "../../../sample-project/materials/sprite_outline.aestra.material.ron"
+    ))
+    .unwrap();
+    let ir = compiler.compile(&explicit).unwrap();
+    let shader = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    assert_eq!(shader.resource_layout.textures.len(), 1);
+    assert!(
+        !shader
+            .varying_layout
+            .slots
+            .iter()
+            .any(|slot| { slot.varying == MaterialVarying::SpriteUvBounds })
+    );
+    assert_portable_shader_targets(&shader.shader.wgsl);
+}
+
+#[test]
+fn sprite_distortion_compiles_from_a_reusable_graph_with_one_atlas_sample() {
+    use aestra_core::material::{MaterialFunction, MaterialProgram};
+
+    let program = MaterialProgram::from_ron(include_str!(
+        "../../../sample-project/materials/sprite_distortion.aestra.material.ron"
+    ))
+    .unwrap();
+    let wave = MaterialFunction::from_ron(include_str!(
+        "../../../sample-project/materials/sprite_wave_uv.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let ir = MaterialCompiler
+        .compile_with_functions(&program, &MaterialFunctionLibrary::new([wave]))
+        .unwrap();
+    assert_eq!(
+        ir.values
+            .iter()
+            .filter(|value| matches!(
+                value.instruction,
+                MaterialIrInstruction::SampleTexture { .. }
+            ))
+            .count(),
+        1
+    );
+    assert_eq!(
+        ir.values
+            .iter()
+            .filter(|value| matches!(value.instruction, MaterialIrInstruction::RotateUv { .. }))
+            .count(),
+        1
+    );
+    let shader = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    assert_eq!(shader.resource_layout.textures.len(), 1);
+    assert_portable_shader_targets(&shader.shader.wgsl);
+}
+
+#[test]
+fn palette_swap_creates_two_reusable_palette_bindings_and_compiles_portably() {
+    use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+    use aestra_core::material::{MaterialExpressionKind, MaterialProgram};
+    use aestra_gpu::material::MaterialMissingResourceFallback;
+
+    let compiler = MaterialCompiler;
+    let base = MaterialProgram::additive_sprite("Two-palette swap");
+    let plan = compiler
+        .plan_graph_node_creation(
+            &base,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::PaletteSwap),
+            Some(base.outputs.color),
+        )
+        .unwrap();
+    let mut program = plan.replacement;
+    program.outputs.color = plan.expression;
+    assert_eq!(program.parameters.len(), 2);
+    assert_eq!(program.parameters[0].name, "Source Palette");
+    assert_eq!(program.parameters[1].name, "Target Palette");
+    let saved = program.to_pretty_ron().unwrap();
+    let mut program = MaterialProgram::from_ron(&saved).unwrap();
+    let ir = compiler.compile(&program).unwrap();
+    let shader = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    assert_eq!(shader.resource_layout.textures.len(), 2);
+    assert!(shader.resource_layout.textures.iter().all(|texture| {
+        texture.fallback == MaterialMissingResourceFallback::PalettePassthrough
+    }));
+    assert_portable_shader_targets(&shader.shader.wgsl);
+
+    let node = program
+        .expressions
+        .iter_mut()
+        .find(|expression| expression.id == plan.expression)
+        .unwrap();
+    let MaterialExpressionKind::PaletteSwap {
+        target_palette,
+        color,
+        ..
+    } = &mut node.kind
+    else {
+        panic!("expected the authored palette swap");
+    };
+    *target_palette = *color;
+    assert!(compiler.compile(&program).is_err());
+}
+
+#[test]
+fn palette_ramp_compiles_with_an_optional_palette_and_a_float_factor() {
+    use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+    use aestra_core::material::MaterialProgram;
+    use aestra_gpu::material::MaterialMissingResourceFallback;
+
+    let compiler = MaterialCompiler;
+    let base = MaterialProgram::additive_sprite("Palette ramp");
+    let kind = MaterialGraphCreateKind::Function(MaterialGraphFunction::PaletteRamp);
+    assert!(
+        compiler
+            .plan_graph_node_creation(&base, kind, Some(base.outputs.color))
+            .is_err()
+    );
+
+    let created = compiler
+        .plan_graph_node_creation(&base, kind, Some(base.outputs.alpha))
+        .unwrap();
+    let mut program = created.replacement;
+    program.outputs.color = created.expression;
+    let ir = compiler.compile(&program).unwrap();
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    let [palette] = compiled.resource_layout.textures.as_slice() else {
+        panic!("expected one palette binding");
+    };
+    assert_eq!(palette.parameter, program.parameters[0].id);
+    assert_eq!(
+        palette.descriptor.color_space,
+        MaterialTextureColorSpace::SrgbColor
+    );
+    assert_eq!(
+        palette.fallback,
+        MaterialMissingResourceFallback::PalettePassthrough
+    );
+    assert!(
+        ir.values
+            .iter()
+            .any(|value| matches!(value.instruction, MaterialIrInstruction::PaletteRamp { .. }))
+    );
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
+fn palette_shift_accepts_a_live_step_source_and_compiles_for_portable_targets() {
+    use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+    use aestra_core::material::MaterialProgram;
+    use aestra_gpu::material::MaterialMissingResourceFallback;
+
+    let compiler = MaterialCompiler;
+    let mut base = MaterialProgram::additive_sprite("Palette shift");
+    let steps = MaterialExpressionId::new();
+    base.expressions.push(MaterialExpression {
+        id: steps,
+        kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+    });
+    let created = compiler
+        .plan_graph_node_creation(
+            &base,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::PaletteShift),
+            Some(steps),
+        )
+        .unwrap();
+    let mut program = created.replacement;
+    program.outputs.color = created.expression;
+    let ir = compiler.compile(&program).unwrap();
+    let shift = ir.source_map.values[&created.expression];
+    assert!(matches!(ir.value(shift).unwrap().instruction,
+        MaterialIrInstruction::PaletteShift { steps: input, .. } if input == ir.source_map.values[&steps]));
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    let [palette] = compiled.resource_layout.textures.as_slice() else {
+        panic!("expected one palette binding");
+    };
+    assert_eq!(
+        palette.fallback,
+        MaterialMissingResourceFallback::PalettePassthrough
+    );
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
+fn ordered_dither_lowers_in_each_supported_coordinate_space_without_textures() {
+    use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+    use aestra_core::material::{MaterialDomain, MaterialProgram};
+
+    let compiler = MaterialCompiler;
+    for domain in [
+        MaterialDomain::Sprite,
+        MaterialDomain::Mesh,
+        MaterialDomain::Ribbon,
+    ] {
+        for function in [
+            MaterialGraphFunction::BayerDither4x4,
+            MaterialGraphFunction::BlueNoiseDither,
+        ] {
+            let mut base = MaterialProgram::additive_sprite("Dither coverage");
+            base.domain = domain;
+            let created = compiler
+                .plan_graph_node_creation(
+                    &base,
+                    MaterialGraphCreateKind::Function(function),
+                    Some(base.outputs.alpha),
+                )
+                .unwrap();
+            let mut program = created.replacement;
+            program.outputs.alpha = created.expression;
+            let (MaterialExpressionKind::BayerDither4x4 { position, .. }
+            | MaterialExpressionKind::BlueNoiseDither { position, .. }) =
+                program.expressions.last().unwrap().kind
+            else {
+                panic!("expected dither node");
+            };
+            let position = program
+                .expressions
+                .iter()
+                .position(|expression| expression.id == position)
+                .unwrap();
+            assert_eq!(
+                program.expressions[position].kind,
+                MaterialExpressionKind::Input(MaterialInput::EffectPositionXY)
+            );
+            for input in [
+                MaterialInput::EffectPositionXY,
+                MaterialInput::WorldPositionXY,
+                MaterialInput::ScreenPixel,
+                MaterialInput::ParticlePositionXY,
+            ] {
+                program.expressions[position].kind = MaterialExpressionKind::Input(input);
+                let ir = compiler.compile(&program);
+                if input == MaterialInput::ParticlePositionXY && domain != MaterialDomain::Sprite {
+                    assert!(
+                        ir.is_err(),
+                        "{domain:?} must reject sprite-local coordinates"
+                    );
+                    continue;
+                }
+                let compiled = MaterialShaderCompiler
+                    .compile(
+                        &ir.unwrap(),
+                        &MaterialBackendCapabilities::portable_minimum(),
+                    )
+                    .unwrap();
+                assert!(compiled.resource_layout.textures.is_empty());
+                let reflection = &compiled.reflection;
+                assert!(
+                    reflection.required_vertex_inputs.contains(&input)
+                        || reflection.required_scene_inputs.contains(&input)
+                );
+                assert_portable_shader_targets(&compiled.shader.wgsl);
+            }
+        }
+    }
+}
+
+#[test]
+fn pattern_dither_round_trips_and_lowers_to_an_optional_texture_load() {
+    use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+    use aestra_core::material::MaterialProgram;
+    use aestra_gpu::material::MaterialMissingResourceFallback;
+
+    let base = MaterialProgram::additive_sprite("Pattern dither");
+    let compiler = MaterialCompiler;
+    let plan = compiler
+        .plan_graph_node_creation(
+            &base,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::PatternDither),
+            Some(base.outputs.alpha),
+        )
+        .unwrap();
+    let mut program = plan.replacement;
+    program.outputs.alpha = plan.expression;
+    let program = MaterialProgram::from_ron(&program.to_pretty_ron().unwrap()).unwrap();
+    let compiled = MaterialShaderCompiler
+        .compile(
+            &compiler.compile(&program).unwrap(),
+            &MaterialBackendCapabilities::portable_minimum(),
+        )
+        .unwrap();
+    let [pattern] = compiled.resource_layout.textures.as_slice() else {
+        panic!("expected one texture for the authored threshold grid");
+    };
+    assert_eq!(
+        pattern.fallback,
+        MaterialMissingResourceFallback::PatternPassthrough
+    );
+    assert!(compiled.shader.wgsl.contains("textureLoad("));
+    assert!(!compiled.shader.wgsl.contains("textureSample("));
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
+fn dither_patterns_with_identical_inputs_remain_distinct_in_ir() {
+    use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+    use aestra_core::{
+        dither::{BayerPattern, DitherPattern},
+        material::MaterialProgram,
+    };
+
+    let compiler = MaterialCompiler;
+    let mut program = MaterialProgram::additive_sprite("Dither pattern identity");
+    let alpha = MaterialExpressionId::new();
+    let position = MaterialExpressionId::new();
+    let size = MaterialExpressionId::new();
+    program.expressions.extend([
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+        MaterialExpression {
+            id: position,
+            kind: MaterialExpressionKind::Input(MaterialInput::ScreenPixel),
+        },
+        MaterialExpression {
+            id: size,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+    ]);
+    let mut output = alpha;
+    for function in [
+        MaterialGraphFunction::BayerDither2x2,
+        MaterialGraphFunction::BayerDither4x4,
+        MaterialGraphFunction::BayerDither8x8,
+        MaterialGraphFunction::BlueNoiseDither,
+    ] {
+        let created = compiler
+            .plan_graph_node_creation(
+                &program,
+                MaterialGraphCreateKind::Function(function),
+                Some(alpha),
+            )
+            .unwrap();
+        program = created.replacement;
+        let node = program.expressions.last_mut().unwrap();
+        let pattern = function.dither_pattern().unwrap();
+        assert_eq!(node.kind.dither_pattern(), Some(pattern));
+        node.kind = MaterialExpressionKind::dither(pattern, alpha, position, size);
+        let sum = MaterialExpressionId::new();
+        program.expressions.push(MaterialExpression {
+            id: sum,
+            kind: MaterialExpressionKind::Add(output, created.expression),
+        });
+        output = sum;
+    }
+    program.outputs.alpha = output;
+    let ir = compiler.compile(&program).unwrap();
+    let compiled_patterns = ir
+        .values
+        .iter()
+        .filter_map(|value| match value.instruction {
+            MaterialIrInstruction::BayerDither { pattern, .. } => {
+                Some(DitherPattern::Bayer(pattern))
+            }
+            MaterialIrInstruction::BlueNoiseDither { .. } => Some(DitherPattern::BlueNoise),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(compiled_patterns.len(), 4);
+    for pattern in [
+        DitherPattern::Bayer(BayerPattern::TwoByTwo),
+        DitherPattern::Bayer(BayerPattern::FourByFour),
+        DitherPattern::Bayer(BayerPattern::EightByEight),
+        DitherPattern::BlueNoise,
+    ] {
+        assert!(compiled_patterns.contains(&pattern));
+    }
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
 fn world_position_is_shared_by_particle_materials_without_requiring_lighting() {
     use aestra_core::material::{MaterialDomain, MaterialProgram};
     for domain in [
@@ -335,65 +806,73 @@ fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
 }
 
 #[test]
-fn normal_map_accepts_rgb_and_rgba_samples_on_portable_mesh_shaders() {
+fn normal_map_accepts_rgb_and_rgba_samples_on_portable_sprite_and_mesh_shaders() {
     use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
     use aestra_core::material::{MaterialDomain, MaterialProgram};
-    let mut program = MaterialProgram::additive_sprite("Normal Map samples");
-    // The default basis needs mesh attributes and must not be offered on a sprite.
-    assert!(
-        MaterialCompiler
+
+    for domain in [MaterialDomain::Sprite, MaterialDomain::Mesh] {
+        let mut program = MaterialProgram::additive_sprite("Normal Map samples");
+        program.domain = domain;
+        let plan = MaterialCompiler
             .plan_graph_node_creation(
                 &program,
                 MaterialGraphCreateKind::Function(MaterialGraphFunction::NormalMap),
                 None,
             )
-            .is_err()
-    );
-    program.domain = MaterialDomain::Mesh;
-    let plan = MaterialCompiler
-        .plan_graph_node_creation(
-            &program,
-            MaterialGraphCreateKind::Function(MaterialGraphFunction::NormalMap),
-            None,
-        )
-        .unwrap();
-    let mut program = plan.replacement;
-    program.outputs.color = plan.expression;
-    let MaterialExpressionKind::NormalMap { sample, .. } = program
-        .expressions
-        .iter()
-        .find(|node| node.id == plan.expression)
-        .unwrap()
-        .kind
-    else {
-        panic!("Normal Map node")
-    };
-    for value in [
-        MaterialValue::Vec3([0.5, 0.5, 1.0]),
-        MaterialValue::Vec4([0.5, 0.5, 1.0, 0.0]),
-        MaterialValue::ColorSrgb([0.5, 0.5, 1.0, 1.0]),
-    ] {
-        program
+            .unwrap();
+        let mut program = plan.replacement;
+        program.outputs.color = plan.expression;
+        let MaterialExpressionKind::NormalMap { sample, .. } = program
             .expressions
-            .iter_mut()
-            .find(|node| node.id == sample)
+            .iter()
+            .find(|node| node.id == plan.expression)
             .unwrap()
-            .kind = MaterialExpressionKind::Constant(value);
-        let compiled = compile(&program);
-        assert_portable_shader_targets(&compiled.shader.wgsl);
-        assert!(compiled.shader.wesl.contains("fn aestra_normal_map("));
-        assert!(
-            compiled
-                .reflection
-                .required_vertex_inputs
-                .contains(&MaterialInput::Tangent)
-        );
-        assert!(
-            compiled
-                .reflection
-                .required_vertex_inputs
-                .contains(&MaterialInput::Bitangent)
-        );
+            .kind
+        else {
+            panic!("Normal Map node")
+        };
+        for value in [
+            MaterialValue::Vec3([0.5, 0.5, 1.0]),
+            MaterialValue::Vec4([0.5, 0.5, 1.0, 0.0]),
+            MaterialValue::ColorSrgb([0.5, 0.5, 1.0, 1.0]),
+        ] {
+            program
+                .expressions
+                .iter_mut()
+                .find(|node| node.id == sample)
+                .unwrap()
+                .kind = MaterialExpressionKind::Constant(value);
+            let compiled = compile(&program);
+            assert_portable_shader_targets(&compiled.shader.wgsl);
+            assert!(compiled.shader.wesl.contains("fn aestra_normal_map("));
+            for input in [MaterialInput::Tangent, MaterialInput::Bitangent] {
+                assert_eq!(
+                    compiled.reflection.required_vertex_inputs.contains(&input),
+                    domain == MaterialDomain::Mesh,
+                );
+            }
+        }
+
+        if domain == MaterialDomain::Sprite {
+            let lighting = MaterialCompiler
+                .plan_graph_node_creation(
+                    &program,
+                    MaterialGraphCreateKind::Function(MaterialGraphFunction::SpritePointIrradiance),
+                    Some(plan.expression),
+                )
+                .unwrap();
+            let mut program = lighting.replacement;
+            program.outputs.color = lighting.expression;
+            let compiled = compile(&program);
+            assert!(compiled.requires_scene_lighting());
+            assert!(
+                compiled
+                    .shader
+                    .wgsl
+                    .contains("fn aestra_sprite_point_irradiance(")
+            );
+            assert_portable_shader_targets(&compiled.shader.wgsl);
+        }
     }
 }
 

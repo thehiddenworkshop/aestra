@@ -548,6 +548,7 @@ mod tests {
         let context = MaterialPreviewContext {
             uv: Vec2::ZERO,
             normal: Vec3::Z,
+            screen_pixel: Vec2::splat(0.5),
         };
 
         // With the library, the call inlines to its argument value.

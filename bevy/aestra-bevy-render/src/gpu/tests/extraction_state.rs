@@ -123,6 +123,7 @@ fn buffers(policy: PlaybackHistoryPolicy, id: u128) -> GpuEffectBuffers {
         },
         total_slots: 128,
         simulation_time: 1.5,
+        stateful_cadence: None,
         seek_quality: SeekQuality::Exact,
         history_policy: policy,
         history_epoch: 7,

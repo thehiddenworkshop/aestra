@@ -50,6 +50,7 @@ pub(crate) struct GpuEffectBuffers {
     pub(super) trail_plan: aestra_gpu::TrailScratchPlan,
     pub(super) total_slots: u32,
     pub(super) simulation_time: f32,
+    pub(super) stateful_cadence: Option<aestra_runtime::PresentationCadence>,
     /// The requested fidelity of stateful seeking this frame (hybrid roadmap M12): `Preview` bounds the
     /// per-frame reconstruction while the user scrubs; `Exact` (the default) reconstructs the
     /// authoritative state. Sourced from the player each frame.

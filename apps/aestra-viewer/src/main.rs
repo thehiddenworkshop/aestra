@@ -9,6 +9,7 @@ mod fireworks_lights;
 mod fireworks_show;
 mod fireworks_spatial_cues;
 mod fireworks_strobe;
+mod flipbook_bake;
 mod gpu_bench;
 mod particle_light_bench;
 #[cfg(test)]
@@ -75,6 +76,17 @@ fn main() {
     // Linked extensions (extensible-stages M10) register before any effect is compiled.
     aestra_example_extension::link();
     aestra_fluid::link();
+    let mut arguments = env::args_os().skip(1);
+    if arguments
+        .next()
+        .is_some_and(|argument| argument == "--bake-flipbook")
+    {
+        if let Err(error) = flipbook_bake::run(arguments) {
+            eprintln!("aestra-viewer: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency | --depth-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");

@@ -11,7 +11,7 @@ use aestra_core::{
 };
 use aestra_gpu::material::{
     CompiledMaterialProgram, MaterialBackendCapabilities, MaterialIrConstant,
-    MaterialParameterBinding, MaterialShaderCompiler,
+    MaterialMissingResourceFallback, MaterialParameterBinding, MaterialShaderCompiler,
 };
 use aestra_runtime::{EffectInstance, RuntimeValue};
 use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
@@ -387,7 +387,7 @@ impl MaterialRuntimeBinding {
                 .find(|candidate| candidate.id == slot.parameter)
                 .ok_or(MaterialBindingError::UnknownParameter(slot.parameter))?;
             let asset = match self.values.get(&slot.parameter) {
-                Some(MaterialValue::Texture2D(asset)) => *asset,
+                Some(MaterialValue::Texture2D(asset)) => Some(*asset),
                 Some(_) => {
                     return Err(MaterialBindingError::TypeMismatch {
                         parameter: slot.parameter,
@@ -395,7 +395,8 @@ impl MaterialRuntimeBinding {
                     });
                 }
                 None => match reflection.default.as_ref() {
-                    Some(MaterialIrConstant::Texture2D(asset)) => *asset,
+                    Some(MaterialIrConstant::Texture2D(asset)) => Some(*asset),
+                    _ if slot.fallback != MaterialMissingResourceFallback::Magenta => None,
                     _ => return Err(MaterialBindingError::MissingValue(slot.parameter)),
                 },
             };
@@ -624,7 +625,7 @@ fn mix_material_seed(mut value: u64) -> u64 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PreparedMaterialBinding {
     pub uniforms: Vec<u8>,
-    pub textures: Vec<(MaterialParameterId, AssetId)>,
+    pub textures: Vec<(MaterialParameterId, Option<AssetId>)>,
 }
 
 fn encode_material_value(destination: &mut [u8], value: &MaterialValue) {
@@ -831,7 +832,7 @@ mod tests {
             .unwrap();
 
         let prepared = binding.prepare().unwrap();
-        assert_eq!(prepared.textures, vec![(texture, texture_asset)]);
+        assert_eq!(prepared.textures, vec![(texture, Some(texture_asset))]);
         assert_eq!(prepared.uniforms.len(), 16);
         assert!(
             (f32::from_le_bytes(prepared.uniforms[0..4].try_into().unwrap()) - 0.214_041_14).abs()
@@ -842,6 +843,42 @@ mod tests {
                 < f32::EPSILON
         );
         assert!(binding.uses_sampled_textures());
+    }
+
+    #[test]
+    fn palette_lookup_is_optional_until_a_texture_is_bound() {
+        use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+        use aestra_core::material::MaterialProgram;
+
+        let compiler = MaterialCompiler;
+        let program = MaterialProgram::additive_sprite("Optional palette");
+        let created = compiler
+            .plan_graph_node_creation(
+                &program,
+                MaterialGraphCreateKind::Function(MaterialGraphFunction::NearestPaletteColor),
+                Some(program.outputs.color),
+            )
+            .unwrap();
+        let mut program = created.replacement;
+        program.outputs.color = created.expression;
+        let palette = program.parameters[0].id;
+        let ir = compiler.compile(&program).unwrap();
+        let compiled = Arc::new(
+            MaterialShaderCompiler
+                .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+                .unwrap(),
+        );
+        let mut binding =
+            MaterialRuntimeBinding::new(compiled, program.render_state_policy.default).unwrap();
+        assert_eq!(binding.prepare().unwrap().textures, vec![(palette, None)]);
+        let asset = AssetId::new();
+        binding
+            .set_value(palette, MaterialValue::Texture2D(asset))
+            .unwrap();
+        assert_eq!(
+            binding.prepare().unwrap().textures,
+            vec![(palette, Some(asset))]
+        );
     }
 
     #[test]

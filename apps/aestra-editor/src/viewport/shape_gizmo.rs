@@ -122,17 +122,23 @@ pub(super) fn interact_shape_gizmo(
         && canvas.0.cursor_over()
         && session.pending_change.is_none()
     {
-        cursor_position.and_then(|cursor_position| {
-            selected.and_then(|selected| {
-                hit_test_shape_gizmo(
-                    camera,
-                    camera_transform,
-                    player,
-                    selected.shape,
-                    cursor_position,
-                )
+        cursor_position
+            .filter(|&cursor| {
+                camera
+                    .logical_viewport_rect()
+                    .is_some_and(|rect| rect.contains(cursor))
             })
-        })
+            .and_then(|cursor_position| {
+                selected.and_then(|selected| {
+                    hit_test_shape_gizmo(
+                        camera,
+                        camera_transform,
+                        player,
+                        selected.shape,
+                        cursor_position,
+                    )
+                })
+            })
     } else {
         None
     };

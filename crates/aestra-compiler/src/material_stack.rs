@@ -950,7 +950,23 @@ fn modifier_property_targets(
         | MaterialExpressionKind::SampleTexture { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::SampleTextureGradient { .. }
+        | MaterialExpressionKind::NearestPaletteColor { .. }
+        | MaterialExpressionKind::PaletteRamp { .. }
+        | MaterialExpressionKind::PaletteShift { .. }
+        | MaterialExpressionKind::PaletteSwap { .. }
+        | MaterialExpressionKind::BayerDither4x4 { .. }
+        | MaterialExpressionKind::BayerDither2x2 { .. }
+        | MaterialExpressionKind::BayerDither8x8 { .. }
+        | MaterialExpressionKind::BlueNoiseDither { .. }
+        | MaterialExpressionKind::PatternDither { .. }
+        | MaterialExpressionKind::PixelOutline { .. }
+        | MaterialExpressionKind::PixelSnap { .. }
+        | MaterialExpressionKind::Posterize { .. }
+        | MaterialExpressionKind::PixelateUv { .. }
+        | MaterialExpressionKind::Quantize { .. }
+        | MaterialExpressionKind::Threshold { .. }
         | MaterialExpressionKind::NormalMap { .. }
+        | MaterialExpressionKind::SpritePointIrradiance { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => Vec::new(),
     }
 }
@@ -1198,6 +1214,11 @@ fn graph_recipe_function(
             edge_max: input("UpperEdge")?,
             value: input("Value")?,
         },
+        MaterialGraphFunction::SpritePointIrradiance => {
+            MaterialExpressionKind::SpritePointIrradiance {
+                normal: input("Normal")?,
+            }
+        }
         MaterialGraphFunction::NormalMap => MaterialExpressionKind::NormalMap {
             sample: input("Sample")?,
             strength: input("Strength")?,
@@ -1264,9 +1285,44 @@ fn graph_recipe_function(
         MaterialGraphFunction::DerivativeY => MaterialExpressionKind::DerivativeY {
             value: input("Value")?,
         },
+        MaterialGraphFunction::PixelSnap => MaterialExpressionKind::PixelSnap {
+            position: input("Position")?,
+            cell_size: input("CellSize")?,
+        },
+        MaterialGraphFunction::Posterize => MaterialExpressionKind::Posterize {
+            color: input("Color")?,
+            levels: input("Levels")?,
+        },
+        MaterialGraphFunction::PixelateUv => MaterialExpressionKind::PixelateUv {
+            uv: input("Uv")?,
+            cells: input("Cells")?,
+        },
+        MaterialGraphFunction::Quantize => MaterialExpressionKind::Quantize {
+            value: input("Value")?,
+            step: input("Step")?,
+        },
+        MaterialGraphFunction::Threshold => MaterialExpressionKind::Threshold {
+            value: input("Value")?,
+            threshold: input("Threshold")?,
+        },
+        MaterialGraphFunction::BayerDither2x2
+        | MaterialGraphFunction::BayerDither4x4
+        | MaterialGraphFunction::BayerDither8x8
+        | MaterialGraphFunction::BlueNoiseDither => MaterialExpressionKind::dither(
+            function.dither_pattern().unwrap(),
+            input("Alpha")?,
+            input("Position")?,
+            input("CellSize")?,
+        ),
         MaterialGraphFunction::SampleTexture
         | MaterialGraphFunction::SampleTextureLevel
         | MaterialGraphFunction::SampleTextureGradient
+        | MaterialGraphFunction::PatternDither
+        | MaterialGraphFunction::PixelOutline
+        | MaterialGraphFunction::NearestPaletteColor
+        | MaterialGraphFunction::PaletteRamp
+        | MaterialGraphFunction::PaletteShift
+        | MaterialGraphFunction::PaletteSwap
         | MaterialGraphFunction::ExtractComponent => {
             return None;
         }
@@ -1850,9 +1906,25 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::NormalMap { .. }
+        | MaterialExpressionKind::SpritePointIrradiance { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::SampleTextureGradient { .. }
+        | MaterialExpressionKind::NearestPaletteColor { .. }
+        | MaterialExpressionKind::PaletteRamp { .. }
+        | MaterialExpressionKind::PaletteShift { .. }
+        | MaterialExpressionKind::PaletteSwap { .. }
+        | MaterialExpressionKind::BayerDither4x4 { .. }
+        | MaterialExpressionKind::BayerDither2x2 { .. }
+        | MaterialExpressionKind::BayerDither8x8 { .. }
+        | MaterialExpressionKind::BlueNoiseDither { .. }
+        | MaterialExpressionKind::PatternDither { .. }
+        | MaterialExpressionKind::PixelOutline { .. }
+        | MaterialExpressionKind::PixelSnap { .. }
+        | MaterialExpressionKind::Posterize { .. }
+        | MaterialExpressionKind::PixelateUv { .. }
+        | MaterialExpressionKind::Quantize { .. }
+        | MaterialExpressionKind::Threshold { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => None,
     }
 }
@@ -1886,9 +1958,25 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::NormalMap { .. }
+        | MaterialExpressionKind::SpritePointIrradiance { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::SampleTextureGradient { .. }
+        | MaterialExpressionKind::NearestPaletteColor { .. }
+        | MaterialExpressionKind::PaletteRamp { .. }
+        | MaterialExpressionKind::PaletteShift { .. }
+        | MaterialExpressionKind::PaletteSwap { .. }
+        | MaterialExpressionKind::BayerDither4x4 { .. }
+        | MaterialExpressionKind::BayerDither2x2 { .. }
+        | MaterialExpressionKind::BayerDither8x8 { .. }
+        | MaterialExpressionKind::BlueNoiseDither { .. }
+        | MaterialExpressionKind::PatternDither { .. }
+        | MaterialExpressionKind::PixelOutline { .. }
+        | MaterialExpressionKind::PixelSnap { .. }
+        | MaterialExpressionKind::Posterize { .. }
+        | MaterialExpressionKind::PixelateUv { .. }
+        | MaterialExpressionKind::Quantize { .. }
+        | MaterialExpressionKind::Threshold { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return false,
     }
     true
@@ -1925,7 +2013,23 @@ fn modifier_kind(kind: &MaterialExpressionKind) -> Option<MaterialStackModifierK
         | MaterialExpressionKind::DerivativeY { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::SampleTextureGradient { .. }
+        | MaterialExpressionKind::NearestPaletteColor { .. }
+        | MaterialExpressionKind::PaletteRamp { .. }
+        | MaterialExpressionKind::PaletteShift { .. }
+        | MaterialExpressionKind::PaletteSwap { .. }
+        | MaterialExpressionKind::BayerDither4x4 { .. }
+        | MaterialExpressionKind::BayerDither2x2 { .. }
+        | MaterialExpressionKind::BayerDither8x8 { .. }
+        | MaterialExpressionKind::BlueNoiseDither { .. }
+        | MaterialExpressionKind::PatternDither { .. }
+        | MaterialExpressionKind::PixelOutline { .. }
+        | MaterialExpressionKind::PixelSnap { .. }
+        | MaterialExpressionKind::Posterize { .. }
+        | MaterialExpressionKind::PixelateUv { .. }
+        | MaterialExpressionKind::Quantize { .. }
+        | MaterialExpressionKind::Threshold { .. }
         | MaterialExpressionKind::NormalMap { .. }
+        | MaterialExpressionKind::SpritePointIrradiance { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return None,
     })
 }
@@ -1964,7 +2068,8 @@ fn collect_nearest_modifiers(
 
 fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
     match kind {
-        MaterialExpressionKind::NormalMap { .. } => kind.dependencies(),
+        MaterialExpressionKind::NormalMap { .. }
+        | MaterialExpressionKind::SpritePointIrradiance { .. } => kind.dependencies(),
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
         | MaterialExpressionKind::Parameter(_)
@@ -2051,6 +2156,55 @@ fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
             ddx,
             ddy,
         } => vec![*texture, *uv, *ddx, *ddy],
+        MaterialExpressionKind::NearestPaletteColor {
+            palette,
+            color: input,
+        }
+        | MaterialExpressionKind::PaletteRamp {
+            palette,
+            factor: input,
+        } => vec![*palette, *input],
+        MaterialExpressionKind::PaletteShift {
+            palette,
+            color,
+            steps,
+        } => vec![*palette, *color, *steps],
+        MaterialExpressionKind::PixelSnap {
+            position,
+            cell_size,
+        } => vec![*position, *cell_size],
+        MaterialExpressionKind::Posterize { color, levels } => vec![*color, *levels],
+        MaterialExpressionKind::PixelateUv { uv, cells } => vec![*uv, *cells],
+        MaterialExpressionKind::Quantize { value, step } => vec![*value, *step],
+        MaterialExpressionKind::Threshold { value, threshold } => vec![*value, *threshold],
+        MaterialExpressionKind::PixelOutline { .. }
+        | MaterialExpressionKind::PaletteSwap { .. } => kind.dependencies(),
+        MaterialExpressionKind::PatternDither {
+            texture,
+            alpha,
+            position,
+            cell_size,
+        } => vec![*texture, *alpha, *position, *cell_size],
+        MaterialExpressionKind::BayerDither2x2 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BayerDither8x8 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BlueNoiseDither {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BayerDither4x4 {
+            alpha,
+            position,
+            cell_size,
+        } => vec![*alpha, *position, *cell_size],
         MaterialExpressionKind::ExtractComponent { value, .. } => vec![*value],
     }
 }

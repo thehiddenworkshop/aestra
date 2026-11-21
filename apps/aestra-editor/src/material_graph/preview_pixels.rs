@@ -53,6 +53,7 @@ impl PreviewValue {
 pub(super) struct MaterialPreviewContext {
     pub(super) uv: Vec2,
     pub(super) normal: Vec3,
+    pub(super) screen_pixel: Vec2,
 }
 
 pub(super) struct MaterialPreviewEvaluator<'a> {
@@ -282,6 +283,9 @@ impl MaterialPreviewEvaluator<'_> {
                     3,
                 ))
             }
+            MaterialExpressionKind::SpritePointIrradiance { .. } => {
+                Some(PreviewValue::Numeric([0.0, 0.0, 0.0, 1.0], 3))
+            }
             MaterialExpressionKind::Fresnel {
                 normal,
                 view,
@@ -436,6 +440,80 @@ impl MaterialPreviewEvaluator<'_> {
                 let _ddy = preview_vec2(read(*ddy)?)?;
                 Some(preview_checker_sample(uv, 0.0))
             }
+            MaterialExpressionKind::PixelSnap {
+                position,
+                cell_size,
+            } => {
+                let position = preview_vec2(read(*position)?)?.to_array();
+                let cell_size = read(*cell_size)?.numeric()?.0[0];
+                let snapped = aestra_core::pixel_material::snap(position, cell_size);
+                Some(preview_vec2_value(Vec2::from_array(snapped)))
+            }
+            MaterialExpressionKind::Posterize { color, levels } => {
+                let color = read(*color)?.numeric()?.0;
+                let levels = read(*levels)?.numeric()?.0[0];
+                Some(PreviewValue::Numeric(
+                    aestra_core::pixel_material::posterize(color, levels),
+                    4,
+                ))
+            }
+            MaterialExpressionKind::PixelateUv { uv, cells } => {
+                let uv = preview_vec2(read(*uv)?)?.to_array();
+                let cells = preview_vec2(read(*cells)?)?.to_array();
+                let snapped = aestra_core::pixel_material::pixelate_uv(uv, cells);
+                Some(preview_vec2_value(Vec2::from_array(snapped)))
+            }
+            MaterialExpressionKind::Quantize { value, step } => {
+                let value = read(*value)?.numeric()?.0[0];
+                let step = read(*step)?.numeric()?.0[0];
+                Some(PreviewValue::scalar(aestra_core::pixel_material::quantize(
+                    value, step,
+                )))
+            }
+            MaterialExpressionKind::Threshold { value, threshold } => {
+                let value = read(*value)?.numeric()?.0[0];
+                let threshold = read(*threshold)?.numeric()?.0[0];
+                Some(PreviewValue::scalar(
+                    aestra_core::pixel_material::threshold(value, threshold),
+                ))
+            }
+            MaterialExpressionKind::NearestPaletteColor { .. }
+            | MaterialExpressionKind::PaletteRamp { .. }
+            | MaterialExpressionKind::PaletteShift { .. }
+            | MaterialExpressionKind::PaletteSwap { .. }
+            | MaterialExpressionKind::PixelOutline { .. }
+            | MaterialExpressionKind::PatternDither { .. } => None,
+            MaterialExpressionKind::BayerDither2x2 {
+                alpha,
+                position,
+                cell_size,
+            }
+            | MaterialExpressionKind::BayerDither8x8 {
+                alpha,
+                position,
+                cell_size,
+            }
+            | MaterialExpressionKind::BlueNoiseDither {
+                alpha,
+                position,
+                cell_size,
+            }
+            | MaterialExpressionKind::BayerDither4x4 {
+                alpha,
+                position,
+                cell_size,
+            } => {
+                let alpha = read(*alpha)?.numeric()?.0[0];
+                let position = preview_vec2(read(*position)?)?;
+                let cell_size = read(*cell_size)?.numeric()?.0[0];
+                Some(PreviewValue::scalar(
+                    expression_value.kind.dither_pattern().unwrap().sample(
+                        alpha,
+                        position.to_array(),
+                        cell_size,
+                    ),
+                ))
+            }
             MaterialExpressionKind::ExtractComponent { value, component } => {
                 let value = read(*value)?.numeric()?.0;
                 let index = match component {
@@ -521,6 +599,10 @@ pub(super) fn preview_input(input: MaterialInput, context: MaterialPreviewContex
         MaterialInput::Uv0 | MaterialInput::Uv1 | MaterialInput::ScreenUv => {
             preview_vec2_value(context.uv)
         }
+        MaterialInput::EffectPositionXY
+        | MaterialInput::WorldPositionXY
+        | MaterialInput::ParticlePositionXY => preview_vec2_value(context.uv * 2.0 - Vec2::ONE),
+        MaterialInput::ScreenPixel => preview_vec2_value(context.screen_pixel),
         MaterialInput::Normal | MaterialInput::CameraDirection | MaterialInput::ViewDirection => {
             PreviewValue::Numeric(
                 if input == MaterialInput::ViewDirection {
@@ -739,7 +821,11 @@ pub(super) fn render_material_preview_pixels(
             } else {
                 Vec3::Z
             };
-            let context = MaterialPreviewContext { uv, normal };
+            let context = MaterialPreviewContext {
+                uv,
+                normal,
+                screen_pixel: Vec2::new(x as f32 + 0.5, y as f32 + 0.5),
+            };
             let sample = if inside {
                 match target {
                     MaterialGraphPreviewTarget::Expression(expression) => evaluator
@@ -932,6 +1018,7 @@ pub(super) fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<Materia
             edge_max,
             value,
         } => vec![*edge_min, *edge_max, *value],
+        MaterialExpressionKind::SpritePointIrradiance { normal } => vec![*normal],
         MaterialExpressionKind::Fresnel {
             normal,
             view,
@@ -984,6 +1071,55 @@ pub(super) fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<Materia
             ddx,
             ddy,
         } => vec![*texture, *uv, *ddx, *ddy],
+        MaterialExpressionKind::NearestPaletteColor {
+            palette,
+            color: input,
+        }
+        | MaterialExpressionKind::PaletteRamp {
+            palette,
+            factor: input,
+        } => vec![*palette, *input],
+        MaterialExpressionKind::PaletteShift {
+            palette,
+            color,
+            steps,
+        } => vec![*palette, *color, *steps],
+        MaterialExpressionKind::PixelSnap {
+            position,
+            cell_size,
+        } => vec![*position, *cell_size],
+        MaterialExpressionKind::Posterize { color, levels } => vec![*color, *levels],
+        MaterialExpressionKind::PixelateUv { uv, cells } => vec![*uv, *cells],
+        MaterialExpressionKind::Quantize { value, step } => vec![*value, *step],
+        MaterialExpressionKind::Threshold { value, threshold } => vec![*value, *threshold],
+        MaterialExpressionKind::PixelOutline { .. }
+        | MaterialExpressionKind::PaletteSwap { .. } => kind.dependencies(),
+        MaterialExpressionKind::PatternDither {
+            texture,
+            alpha,
+            position,
+            cell_size,
+        } => vec![*texture, *alpha, *position, *cell_size],
+        MaterialExpressionKind::BayerDither2x2 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BayerDither8x8 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BlueNoiseDither {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BayerDither4x4 {
+            alpha,
+            position,
+            cell_size,
+        } => vec![*alpha, *position, *cell_size],
         MaterialExpressionKind::ExtractComponent { value, .. } => vec![*value],
     }
 }

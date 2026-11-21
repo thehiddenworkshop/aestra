@@ -79,8 +79,5 @@ pub(super) fn effect_dependencies(
         kernels: 0,
     };
     walk.visit(&program.expressions, 0)?;
-    if walk.calls > 0 && walk.kernels == 0 {
-        return None;
-    }
     Some(walk.used)
 }

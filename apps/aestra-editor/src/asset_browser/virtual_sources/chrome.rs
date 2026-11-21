@@ -130,6 +130,15 @@ pub(super) fn spawn(
         })
         .with_children(|host| {
             ui.toolbar = host.spawn(panel::row_node()).id();
+            if state.scope == SourceScope::CurrentDocument {
+                host.spawn((
+                    flipbook_grid::Host,
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        ..default()
+                    },
+                ));
+            }
             host.spawn(Node {
                 flex_grow: 1.0,
                 min_height: Val::Px(0.0),
@@ -253,7 +262,7 @@ pub(super) fn spawn(
         });
 }
 
-fn caption(parent: &mut ChildSpawnerCommands, text: String) -> Entity {
+pub(super) fn caption(parent: &mut ChildSpawnerCommands, text: String) -> Entity {
     parent
         .spawn((
             Text::new(text),

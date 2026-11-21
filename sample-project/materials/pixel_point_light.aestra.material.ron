@@ -1,0 +1,46 @@
+(
+    schema_version: 1,
+    id: "29ecbbb4-91a0-4772-ace7-bc058822000a",
+    name: "Pixel Point Light",
+    domain: Sprite,
+    render_state_policy: (
+        default: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+        allowed: [(blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None)],
+    ),
+    parameters: [
+        (
+            id: "29ecbbb4-91a0-4772-ace7-bc058822000b",
+            name: "Silhouette Atlas",
+            value_type: Texture2D((color_space: SrgbColor, sampler: (filter: Nearest, mip_filter: r#None, address_u: ClampToEdge, address_v: ClampToEdge))),
+            evaluation_domain: Instance,
+        ),
+        (
+            id: "29ecbbb4-91a0-4772-ace7-bc058822000c",
+            name: "UV Scale",
+            value_type: Vec2,
+            evaluation_domain: Instance,
+            default: Some(Vec2((1.0, 1.0))),
+        ),
+        (
+            id: "29ecbbb4-91a0-4772-ace7-bc058822000d",
+            name: "Ambient Color",
+            value_type: Vec3,
+            evaluation_domain: Instance,
+            default: Some(Vec3((0.035, 0.055, 0.10))),
+        ),
+    ],
+    expressions: [
+        (id: "29ecbbb4-91a0-4772-ace7-bc058822000e", kind: Parameter("29ecbbb4-91a0-4772-ace7-bc058822000b")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc058822000f", kind: Parameter("29ecbbb4-91a0-4772-ace7-bc058822000c")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220010", kind: Input(Uv0)),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220011", kind: Multiply("29ecbbb4-91a0-4772-ace7-bc0588220010", "29ecbbb4-91a0-4772-ace7-bc058822000f")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220012", kind: SampleTexture(texture: "29ecbbb4-91a0-4772-ace7-bc058822000e", uv: "29ecbbb4-91a0-4772-ace7-bc0588220011")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220013", kind: ExtractComponent(value: "29ecbbb4-91a0-4772-ace7-bc0588220012", component: W)),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220014", kind: Input(ParticleOpacity)),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220015", kind: Multiply("29ecbbb4-91a0-4772-ace7-bc0588220013", "29ecbbb4-91a0-4772-ace7-bc0588220014")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220016", kind: Parameter("29ecbbb4-91a0-4772-ace7-bc058822000d")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220017", kind: Input(ScenePointIrradiance)),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588220018", kind: Add("29ecbbb4-91a0-4772-ace7-bc0588220016", "29ecbbb4-91a0-4772-ace7-bc0588220017")),
+    ],
+    outputs: (color: "29ecbbb4-91a0-4772-ace7-bc0588220018", alpha: "29ecbbb4-91a0-4772-ace7-bc0588220015"),
+)

@@ -11,7 +11,11 @@ use crate::{
     persistence::persist_editor_settings,
     settings::{EditorSettings, SettingsPersistence},
 };
-use bevy::{gizmos::transform_gizmo::TransformGizmoSettings, prelude::*, ui_widgets::Activate};
+use bevy::{
+    gizmos::transform_gizmo::{TransformGizmoSettings, TransformGizmoState},
+    prelude::*,
+    ui_widgets::Activate,
+};
 
 pub(super) struct Control {
     pub(super) entity: Entity,
@@ -23,6 +27,17 @@ pub(super) struct Control {
 #[derive(Resource, Default)]
 pub(crate) struct PreviewDisplayState {
     pub(super) mode: PreviewDisplayMode,
+    pub(super) pixel_grid: bool,
+    pub(super) stepped_presentation: bool,
+    pub(super) lighting_2d: PreviewLighting2d,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum PreviewLighting2d {
+    #[default]
+    Off,
+    Continuous,
+    Stepped,
 }
 
 impl PreviewDisplayState {
@@ -81,6 +96,7 @@ pub(super) fn execute_viewport_action(
     mut preview_camera: ResMut<PreviewCameraController>,
     mut preview_display: ResMut<PreviewDisplayState>,
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
+    mut gizmo: Option<ResMut<TransformGizmoState>>,
     mut maximized: ResMut<crate::docking::MaximizedPanel>,
 ) {
     match *action {
@@ -96,10 +112,42 @@ pub(super) fn execute_viewport_action(
             );
         }
         ViewportAction::FramePreview => preview_camera.request_frame(),
+        ViewportAction::TogglePreviewProjection => {
+            if !gizmo.as_ref().is_some_and(|gizmo| gizmo.active) {
+                preview_camera.xy = !preview_camera.xy;
+                if let Some(gizmo) = gizmo.as_deref_mut() {
+                    gizmo.hovered_axis = None;
+                }
+            }
+        }
         ViewportAction::SetTransformGizmoMode(mode) => {
-            transform_gizmo_settings.mode = mode;
+            if !preview_camera.xy || !gizmo.is_some_and(|gizmo| gizmo.active) {
+                transform_gizmo_settings.mode = mode;
+            }
         }
         ViewportAction::SetPreviewDisplayMode(mode) => preview_display.set_mode(mode),
+        ViewportAction::TogglePixelGrid => {
+            if preview_camera.xy {
+                preview_display.pixel_grid = !preview_display.pixel_grid;
+            }
+        }
+        ViewportAction::TogglePresentationCadence => {
+            if preview_camera.xy
+                && preview_display.pixel_grid
+                && preview_display.mode == PreviewDisplayMode::Rendered
+            {
+                preview_display.stepped_presentation = !preview_display.stepped_presentation;
+            }
+        }
+        ViewportAction::CyclePreviewLighting2d => {
+            if preview_camera.xy && preview_display.mode == PreviewDisplayMode::Rendered {
+                preview_display.lighting_2d = match preview_display.lighting_2d {
+                    PreviewLighting2d::Off => PreviewLighting2d::Continuous,
+                    PreviewLighting2d::Continuous => PreviewLighting2d::Stepped,
+                    PreviewLighting2d::Stepped => PreviewLighting2d::Off,
+                };
+            }
+        }
         ViewportAction::ToggleMaximize => {
             maximized.0 = if maximized.0 == Some(ToolPanel::Viewport) {
                 None

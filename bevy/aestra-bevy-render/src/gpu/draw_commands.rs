@@ -57,6 +57,15 @@ pub(super) type DrawSemanticGpuSprites = (
     DrawGpuSpritesIndirect,
 );
 
+pub(super) type DrawLitSemanticGpuSprites2d = (
+    SetItemPipeline,
+    SetMesh2dViewBindGroup<0>,
+    SetGpuRenderBindGroup<1>,
+    SetGpuMaterialBindGroup<2>,
+    super::lighting_2d::SetLights2d<3>,
+    DrawGpuSpritesIndirect,
+);
+
 pub(super) type DrawGpuSprites3d = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,

@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 aestra-core = { path = "../aestra-core" }
 gltf = { version = "1.4.1", default-features = false }
+image.workspace = true
 naga.workspace = true
 ron.workspace = true
 roxmltree = "0.21.1"

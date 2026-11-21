@@ -48,6 +48,7 @@ mod host_motion;
 pub(crate) use gizmo_state::EmitterTransformGizmoInteraction;
 #[cfg(test)]
 use gizmo_state::*;
+mod pixel_preview;
 mod shape_gizmo;
 #[cfg(test)]
 use shape_gizmo::*;
@@ -55,6 +56,8 @@ mod scene;
 mod transform_gizmo;
 mod water;
 mod workspace;
+mod xy_authoring;
+mod xy_grid;
 pub(crate) use actions::PreviewDisplayState;
 #[cfg(test)]
 use actions::{execute_viewport_action, queue_viewport_action_activation};
@@ -685,6 +688,7 @@ mod tests {
                 current,
                 false,
                 true,
+                false,
             ),
             "MOVE X  +2.1235  \u{00b7} PRECISE"
         );
@@ -1000,6 +1004,7 @@ mod tests {
             yaw: 1.2,
             pitch: -0.8,
             frame_requested: true,
+            xy: false,
         };
         let effect_position = Vec3::new(24.0, 6.0, -2.0);
 

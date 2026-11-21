@@ -562,6 +562,8 @@ fn spawn_panel_content(
             asset_browser::spawn_assets_panel(parent, sources.browser, sources.localizer)
         }
         ToolPanel::AssetInspector => asset_browser::spawn_asset_inspector(parent),
+        ToolPanel::SpriteViewer => asset_browser::spawn_sprite_viewer(parent, sources.localizer),
+        ToolPanel::PaletteEditor => asset_browser::spawn_palette_editor(parent),
         ToolPanel::ModuleStack => {
             spawn_module_stack_panel(
                 parent,

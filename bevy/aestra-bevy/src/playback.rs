@@ -48,6 +48,7 @@ pub(crate) fn prepare_player_presentations(
         let mut presented = templates.instantiate(player.effect().clone());
         presented.instance = player.instance().clone();
         presented.set_render_mode(player.render_mode());
+        presented.set_presentation_cadence(player.presentation_cadence());
         commands.entity(entity).insert(presented);
         if let Some(start) = start {
             commands.entity(entity).insert(PlayerPresentationTiming {
@@ -69,6 +70,7 @@ pub(crate) fn sync_player_presentations(mut players: Query<(&EffectPlayer, &mut 
         presented.instance = player.instance().clone();
         presented.set_render_mode(player.render_mode());
         presented.set_seek_quality(player.seek_quality());
+        presented.set_presentation_cadence(player.presentation_cadence());
     }
 }
 
@@ -86,6 +88,7 @@ pub struct EffectPlayer {
     /// a scrub gesture so rapid scrubbing stays responsive, then restores `Exact` on release.
     seek_quality: SeekQuality,
     render_mode: EffectRenderMode,
+    presentation_cadence: Option<PresentationCadence>,
     pub(crate) choreography_events: Vec<DispatchedChoreographyEvent>,
     pub(crate) project_choreography_events: Vec<ProjectChoreographyEvent>,
     choreography_started: bool,
@@ -129,6 +132,7 @@ impl EffectPlayer {
             playing: true,
             seek_quality: SeekQuality::Exact,
             render_mode: EffectRenderMode::Rendered,
+            presentation_cadence: None,
             choreography_events: Vec::new(),
             project_choreography_events: Vec::new(),
             choreography_started: false,
@@ -184,6 +188,21 @@ impl EffectPlayer {
 
     pub fn set_render_mode(&mut self, mode: EffectRenderMode) {
         self.render_mode = mode;
+    }
+
+    /// Select a visual sample clock for native GPU sprites and flipbooks from
+    /// analytic or independent stateful effects. Gameplay uses the live clock.
+    pub fn with_presentation_cadence(mut self, cadence: PresentationCadence) -> Self {
+        self.set_presentation_cadence(Some(cadence));
+        self
+    }
+
+    pub fn set_presentation_cadence(&mut self, cadence: Option<PresentationCadence>) {
+        self.presentation_cadence = cadence;
+    }
+
+    pub fn presentation_cadence(&self) -> Option<PresentationCadence> {
+        self.presentation_cadence
     }
 
     pub fn elapsed(&self) -> f32 {

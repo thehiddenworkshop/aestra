@@ -16,6 +16,10 @@ pub enum EffectCommand {
     SetEffectName {
         name: String,
     },
+    SetEffectMetadata {
+        key: String,
+        value: Option<String>,
+    },
     SetEffectDuration {
         duration: f32,
     },

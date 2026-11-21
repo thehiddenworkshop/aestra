@@ -15,9 +15,11 @@ pub use experimental_oit::{
 mod cpu;
 pub mod execution;
 pub mod gpu;
+pub use gpu::{AestraLights2d, AestraPointLight2d, PointLightFalloff2d};
 mod host_transform;
 pub mod material;
 mod material_layout;
+pub mod pixel_view;
 mod presented_effect;
 mod project_assets;
 pub use presented_effect::{EffectRenderMode, PresentedEffect};

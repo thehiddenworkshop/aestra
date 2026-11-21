@@ -66,6 +66,7 @@ pub(super) struct GpuDrawInstance {
     pub(super) semantic_material: Option<GpuSemanticMaterialBinding>,
     pub(super) render_mode: GpuRenderMode,
     pub(super) mesh_center: Vec3,
+    pub(super) world_z: f32,
     pub(super) sampled_sprite_cull: Option<SpriteCullBounds>,
 }
 
@@ -76,8 +77,13 @@ pub(super) struct GpuSemanticMaterialBinding {
     pub(super) shader: Handle<Shader>,
     pub(super) multisampled_shader: Handle<Shader>,
     pub(super) uniforms: Arc<[u8]>,
-    pub(super) textures: Vec<Handle<Image>>,
-    pub(super) fallback_texture: Handle<Image>,
+    pub(super) textures: Vec<GpuMaterialTexture>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct GpuMaterialTexture {
+    pub(super) image: Option<Handle<Image>>,
+    pub(super) fallback: Handle<Image>,
 }
 
 impl GpuDrawInstance {
@@ -92,6 +98,9 @@ impl GpuDrawInstance {
         visibility.get().then(|| {
             let mut extracted = self.clone();
             extracted.mesh_center = gpu_draw_mesh_center(transform, bounds);
+            // Draws share the effect's propagated placement. Local particle
+            // and bounds depth must not change its layer in the host scene.
+            extracted.world_z = transform.translation().z;
             if let Some(culling) = &mut extracted.sampled_sprite_cull {
                 culling.world_from_effect = Mat4::from(transform.affine());
             }

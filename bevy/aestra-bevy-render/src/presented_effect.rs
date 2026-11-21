@@ -5,7 +5,8 @@ use crate::material::{
 use aestra_core::{AssetId, EmitterId, MaterialId, MaterialProgramId};
 use aestra_gpu::material::CompiledMaterialProgram;
 use aestra_runtime::{
-    CompiledEffect, EffectInstance, ParticleSample, PlaybackHistoryPolicy, SeekQuality,
+    CompiledEffect, EffectInstance, ParticleSample, PlaybackHistoryPolicy, PresentationCadence,
+    RendererPlanKind, SeekQuality, SimulationSeekMode,
 };
 use bevy::prelude::*;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
@@ -31,6 +32,7 @@ pub struct PresentedEffect {
     /// backend bounds its per-frame reconstruction and keeps scrubbing responsive.
     pub(crate) seek_quality: SeekQuality,
     pub(crate) render_mode: EffectRenderMode,
+    presentation_cadence: Option<PresentationCadence>,
     pub(crate) texture_overrides: BTreeMap<AssetId, Handle<Image>>,
     pub(crate) mesh_overrides: BTreeMap<AssetId, Handle<bevy::prelude::Mesh>>,
     pub(crate) material_bindings: BTreeMap<MaterialId, MaterialRuntimeBinding>,
@@ -86,6 +88,7 @@ impl PresentedEffect {
             output_identity: Arc::new(()),
             seek_quality: SeekQuality::Exact,
             render_mode: EffectRenderMode::Rendered,
+            presentation_cadence: None,
             texture_overrides: BTreeMap::new(),
             mesh_overrides: BTreeMap::new(),
             material_bindings: BTreeMap::new(),
@@ -127,6 +130,57 @@ impl PresentedEffect {
 
     pub fn simulation_time(&self) -> f32 {
         self.instance.time()
+    }
+
+    pub fn presentation_cadence(&self) -> Option<PresentationCadence> {
+        self.presentation_cadence
+    }
+
+    /// Enable a visual sample clock for native GPU sprites and flipbooks.
+    /// Supports analytic and independent stateful effects. Mixed simulations,
+    /// external particle routing, and reference/readback backends keep their
+    /// existing cadence.
+    pub fn set_presentation_cadence(&mut self, cadence: Option<PresentationCadence>) {
+        self.presentation_cadence = cadence;
+    }
+
+    pub(crate) fn native_presentation_time(&self) -> f32 {
+        let time = self.simulation_time();
+        if self.effect().seek_mode != SimulationSeekMode::StatelessDirect {
+            return time;
+        }
+        self.native_sprite_cadence()
+            .map_or(time, |cadence| cadence.sample_time(time))
+    }
+
+    pub(crate) fn native_sprite_cadence(&self) -> Option<PresentationCadence> {
+        let cadence = self.presentation_cadence?;
+        let time = self.simulation_time();
+        let effect = self.effect();
+        // An explicit kill and the endpoint of a one-shot must remain visible
+        // even when playback stops between two presentation samples.
+        if time >= self.instance.emission_cutoffs().kill_time()
+            || (!effect.playback_mode.is_looping() && time >= effect.duration)
+        {
+            return None;
+        }
+        (effect.extension_stages.is_empty()
+            && effect.event_links.is_empty()
+            && effect.event_routes.is_empty()
+            && effect
+                .emitters
+                .iter()
+                .filter(|emitter| emitter.enabled)
+                .all(|emitter| {
+                    emitter.extension_stages.is_empty()
+                        && emitter.renderers.iter().all(|renderer| {
+                            matches!(
+                                renderer.kind,
+                                RendererPlanKind::Sprite | RendererPlanKind::Flipbook { .. }
+                            )
+                        })
+                }))
+        .then_some(cadence)
     }
 
     /// The fidelity requested of stateful seeks this frame (hybrid roadmap M12).
@@ -287,6 +341,37 @@ impl PresentedEffect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cadence_keeps_the_authoritative_clock_and_an_immediate_kill_or_end() {
+        let mut asset = aestra_core::EffectAsset::new("One shot", 1.03);
+        asset.playback_mode = aestra_core::EffectPlaybackMode::Once;
+        asset
+            .emitters
+            .push(aestra_core::Emitter::basic_sprite("Pulse", 1.03));
+        let compiled = aestra_compiler::EffectCompiler::default()
+            .compile(&asset)
+            .unwrap();
+        let mut player = PresentedEffect::new(Arc::new(compiled));
+        player.set_presentation_cadence(Some(PresentationCadence::FPS_12));
+        let clock = 18.0 / 60.0;
+        player.instance.set_playback_time(clock);
+        assert_eq!(player.native_presentation_time(), 0.25);
+        assert_eq!(player.simulation_time(), clock);
+        player
+            .instance
+            .send_event(aestra_runtime::INPUT_KILL, Vec::new())
+            .unwrap();
+        let killed_at = player.instance.emission_cutoffs().kill_time();
+        assert!(PresentationCadence::FPS_12.sample_time(killed_at) < killed_at);
+        player.instance.set_playback_time(killed_at);
+        assert_eq!(player.native_presentation_time(), killed_at);
+
+        let mut fresh = player.fresh_instance();
+        fresh.set_presentation_cadence(player.presentation_cadence());
+        fresh.instance.set_playback_time(asset.duration);
+        assert_eq!(fresh.native_presentation_time(), asset.duration);
+    }
+
     #[test]
     fn fresh_instances_share_programs_but_reset_mutable_state_and_output_identity() {
         let mut compiled = aestra_compiler::EffectCompiler::default()

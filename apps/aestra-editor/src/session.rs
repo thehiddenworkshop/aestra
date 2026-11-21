@@ -2211,7 +2211,14 @@ impl EditorSession {
         }
     }
 
-    pub(crate) fn add_grid_flipbook_for_texture(&mut self, texture: aestra_core::AssetId) {
+    pub(crate) fn add_grid_flipbook_for_texture(
+        &mut self,
+        texture: aestra_core::AssetId,
+        columns: u32,
+        rows: u32,
+        frames: u32,
+        frame_rate: f32,
+    ) -> bool {
         if !self
             .effect
             .assets
@@ -2219,15 +2226,26 @@ impl EditorSession {
             .any(|asset| asset.id == texture && asset.kind == AssetKind::Texture)
         {
             self.status = "Select a registered texture before creating a flipbook".into();
-            return;
+            return false;
         }
-        let flipbook = FlipbookDefinition::grid(
+        let max = aestra_gpu::MAX_FLIPBOOK_FRAMES as u32;
+        if !(1..=max).contains(&columns)
+            || !(1..=max).contains(&rows)
+            || !(1..=max).contains(&frames)
+            || frames > columns * rows
+            || !(1.0..=120.0).contains(&frame_rate)
+        {
+            self.status = "Invalid flipbook grid or playback rate".into();
+            return false;
+        }
+        let mut flipbook = FlipbookDefinition::grid(
             format!("Flipbook {}", self.effect.flipbooks.len() + 1),
             texture,
-            4,
-            1,
-            12.0,
+            columns,
+            rows,
+            frame_rate,
         );
+        flipbook.frames.truncate(frames as usize);
         let id = flipbook.id;
         if self.execute(
             "Added grid flipbook",
@@ -2238,7 +2256,9 @@ impl EditorSession {
             true,
         ) {
             self.status = format!("Added flipbook {id}");
+            return true;
         }
+        false
     }
 
     pub fn add_flipbook_renderer(&mut self) {
@@ -3793,8 +3813,10 @@ mod tests {
             .find(|asset| asset.kind == AssetKind::Texture)
             .unwrap()
             .id;
-        session.add_grid_flipbook_for_texture(texture);
+        assert!(session.add_grid_flipbook_for_texture(texture, 3, 2, 5, 12.0));
         assert_eq!(session.effect.flipbooks.len(), 1);
+        assert_eq!(session.effect.flipbooks[0].frames.len(), 5);
+        assert_eq!(session.effect.flipbooks[0].frames[3].min, [0.0, 0.5]);
         session.add_flipbook_renderer();
         let renderer = session.effect.emitters[0].renderers.last().unwrap().id;
         assert!(matches!(

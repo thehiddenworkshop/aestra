@@ -84,6 +84,116 @@ fn material_graph_preview_raster_has_expected_size_and_visible_content() {
 }
 
 #[test]
+fn blue_noise_node_preview_samples_the_rank_tile_in_screen_space() {
+    use aestra_core::{dither::DitherPattern, material::MaterialGraphFunction};
+
+    let program = MaterialProgram::additive_sprite("Blue noise preview");
+    let plan = MaterialCompiler
+        .plan_graph_node_creation(
+            &program,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::BlueNoiseDither),
+            None,
+        )
+        .unwrap();
+    let mut program = plan.replacement;
+    let MaterialExpressionKind::BlueNoiseDither { position, .. } =
+        program.expressions.last().unwrap().kind
+    else {
+        panic!("expected blue-noise node");
+    };
+    program
+        .expressions
+        .iter_mut()
+        .find(|node| node.id == position)
+        .unwrap()
+        .kind = MaterialExpressionKind::Input(MaterialInput::ScreenPixel);
+    let functions = aestra_compiler::MaterialFunctionLibrary::default();
+    let evaluator = MaterialPreviewEvaluator {
+        program: &program,
+        instance: None,
+        functions: &functions,
+    };
+    for x in 0..32 {
+        let screen_pixel = Vec2::new(x as f32 + 0.5, 5.5);
+        let value = evaluator
+            .evaluate(
+                plan.expression,
+                MaterialPreviewContext {
+                    uv: Vec2::ZERO,
+                    normal: Vec3::Z,
+                    screen_pixel,
+                },
+            )
+            .unwrap()
+            .numeric()
+            .unwrap()
+            .0[0];
+        assert_eq!(
+            value,
+            DitherPattern::BlueNoise.sample(0.5, screen_pixel.to_array(), 1.0)
+        );
+    }
+}
+
+#[test]
+fn pixel_graph_nodes_preview_the_authored_uv_grid_and_scalar_mask() {
+    use aestra_core::material::{MaterialGraphFunction, MaterialVectorComponent};
+
+    let compiler = MaterialCompiler;
+    let mut program = MaterialProgram::additive_sprite("Pixel nodes");
+    let pixelate = compiler
+        .plan_graph_node_creation(
+            &program,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::PixelateUv),
+            None,
+        )
+        .unwrap();
+    program = pixelate.replacement;
+    let x = MaterialExpressionId::new();
+    program
+        .expressions
+        .push(aestra_core::material::MaterialExpression {
+            id: x,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: pixelate.expression,
+                component: MaterialVectorComponent::X,
+            },
+        });
+    let quantize = compiler
+        .plan_graph_node_creation(
+            &program,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::Quantize),
+            Some(x),
+        )
+        .unwrap();
+    let mask = compiler
+        .plan_graph_node_creation(
+            &quantize.replacement,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::Threshold),
+            Some(quantize.expression),
+        )
+        .unwrap();
+    let functions = aestra_compiler::MaterialFunctionLibrary::default();
+    let evaluator = MaterialPreviewEvaluator {
+        program: &mask.replacement,
+        instance: None,
+        functions: &functions,
+    };
+    let context = MaterialPreviewContext {
+        uv: Vec2::new(0.42, 0.09),
+        normal: Vec3::Z,
+        screen_pixel: Vec2::ZERO,
+    };
+    let evaluate = |expression| evaluator.evaluate(expression, context).unwrap();
+    assert_eq!(
+        preview_vec2(evaluate(pixelate.expression)),
+        Some(Vec2::new(0.40625, 0.09375))
+    );
+    assert_eq!(evaluate(quantize.expression).numeric().unwrap().0[0], 0.5);
+    assert_eq!(evaluate(mask.expression).numeric().unwrap().0[0], 1.0);
+}
+
+#[test]
 fn mesh_basis_previews_are_orthonormal_even_at_the_poles() {
     for normal in [
         Vec3::Z,
@@ -94,6 +204,7 @@ fn mesh_basis_previews_are_orthonormal_even_at_the_poles() {
         let context = MaterialPreviewContext {
             uv: Vec2::ZERO,
             normal,
+            screen_pixel: Vec2::splat(0.5),
         };
         let direction = |input| {
             let PreviewValue::Numeric(value, 3) = preview_input(input, context) else {
@@ -158,6 +269,7 @@ fn normal_map_node_preview_decodes_inline_values_in_the_mesh_basis() {
             MaterialPreviewContext {
                 uv: Vec2::ZERO,
                 normal: Vec3::Z,
+                screen_pixel: Vec2::splat(0.5),
             },
         ) else {
             panic!("Vec3 preview")

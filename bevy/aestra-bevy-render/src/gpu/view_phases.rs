@@ -24,9 +24,9 @@ pub(super) struct PhaseDraw {
 }
 
 impl PhaseDraw {
-    pub(super) fn two_d(self, renderer_order: u32) -> Transparent2d {
+    pub(super) fn two_d(self, world_z: f32) -> Transparent2d {
         Transparent2d {
-            sort_key: FloatOrd(renderer_order as f32),
+            sort_key: FloatOrd(world_z),
             entity: self.entity,
             pipeline: self.pipeline,
             draw_function: self.draw_function,
@@ -157,7 +157,7 @@ mod tests {
                 indexed,
                 ..draw(entity)
             };
-            let two = input().two_d(12);
+            let two = input().two_d(12.0);
             let three = input().three_d(Vec3::new(0.0, 0.0, -8.0), 12);
             assert_eq!(two.entity(), entity.0);
             assert_eq!(three.entity(), entity.0);
@@ -255,8 +255,8 @@ mod tests {
         phase.sort();
         assert_eq!(phase.iter_entities().collect::<Vec<_>>(), [far.0, near.0]);
         let mut two_d = SortedRenderPhase::<Transparent2d>::default();
-        two_d.add_retained(draw(near).two_d(2));
-        two_d.add_retained(draw(far).two_d(1));
+        two_d.add_retained(draw(near).two_d(2.0));
+        two_d.add_retained(draw(far).two_d(1.0));
         two_d.recalculate_sort_keys(&camera);
         two_d.sort();
         assert_eq!(two_d.iter_entities().collect::<Vec<_>>(), [far.0, near.0]);
@@ -303,14 +303,14 @@ mod tests {
         let unrelated = (world.spawn_empty().id(), world.spawn_empty().id().into());
         let mut phase = SortedRenderPhase::<Transparent2d>::default();
         for entity in [live, stale_owner] {
-            phase.add_retained(draw(entity).two_d(0));
+            phase.add_retained(draw(entity).two_d(0.0));
         }
         phase.add_retained(
             PhaseDraw {
                 draw_function: DrawFunctionId(1),
                 ..draw(unrelated)
             }
-            .two_d(0),
+            .two_d(0.0),
         );
         let mut visible = RenderVisibleEntities::default();
         visible.classes.insert(
@@ -383,7 +383,7 @@ mod tests {
                 assert_eq!(phase2d.iter_entities().count(), 0);
                 assert_eq!(phase3d.iter_entities().count(), 0);
             } else {
-                phase2d.add_retained(draw((render_entity, main_entity)).two_d(0));
+                phase2d.add_retained(draw((render_entity, main_entity)).two_d(0.0));
                 phase3d.add_retained(draw((render_entity, main_entity)).three_d(Vec3::ZERO, 0));
                 assert_eq!(phase2d.iter_entities().count(), 1);
                 assert_eq!(phase3d.iter_entities().count(), 1);

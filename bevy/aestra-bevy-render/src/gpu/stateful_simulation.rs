@@ -153,6 +153,8 @@ pub(super) struct StatefulPersistentState {
     /// A changed input history differs from this tick on, which the state already advanced past:
     /// the next advance first goes back to a checkpoint at or before it.
     pub(super) rewind: Option<u32>,
+    /// Effect-wide pose retained in the current draw buffers, stored on the first emitter.
+    pub(super) held_frame: Option<super::stateful_presentation::HeldFrame>,
     /// Used only on the effect's first emitter; one bounded scratch slot per active link.
     pub(super) event_links: Vec<Option<super::event_link_scratch::EventLinkScratch>>,
     pub(super) parameters: std::sync::Mutex<Option<super::stateful_parameters::StatefulParameters>>,
@@ -213,6 +215,7 @@ impl StatefulPersistentState {
             mixed_placement: false,
             host_events: Vec::new(),
             rewind: None,
+            held_frame: None,
             event_links: Vec::new(),
             parameters: std::sync::Mutex::new(None),
             physics: None,
@@ -886,19 +889,71 @@ pub(super) fn dispatch_stateful_effect(
     let live = rewind.is_none() && is_live_advance(persistent.last_tick, target_tick);
     let back_to = rewind.map_or(target_tick, |tick| tick.min(target_tick));
     if back_to < persistent.last_tick {
-        match persistent.restore_nearest(encoder, back_to) {
-            Some((tick, accumulator)) => {
-                persistent.last_tick = tick;
-                persistent.spawn_accumulator = accumulator;
-            }
-            None => persistent.reset_to_zero(device),
+        persistent.restore_nearest_or_reset(device, encoder, back_to);
+    }
+    let target_tick = target_tick.min(
+        persistent
+            .last_tick
+            .saturating_add(stateful_catchup_budget(seek_quality)),
+    );
+    advance_stateful_emitter(
+        device,
+        encoder,
+        (death_integrate, spawn),
+        layout,
+        persistent,
+        dispatch,
+        render,
+        target_tick,
+        live,
+    );
+    present_stateful_emitter(
+        device,
+        encoder,
+        present,
+        order_present,
+        layout,
+        persistent,
+        dispatch,
+        render,
+        simulation_time,
+    );
+}
+
+impl StatefulPersistentState {
+    pub(super) fn restore_nearest_or_reset(
+        &mut self,
+        device: &RenderDevice,
+        encoder: &mut CommandEncoder,
+        tick: u32,
+    ) {
+        if let Some((tick, accumulator)) = self.restore_nearest(encoder, tick) {
+            self.last_tick = tick;
+            self.spawn_accumulator = accumulator;
+        } else {
+            self.reset_to_zero(device);
         }
     }
+}
+
+/// Integrate forward to an already budgeted tick. The caller chooses when to
+/// publish render geometry and can split the advance at a presentation boundary.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn advance_stateful_emitter(
+    device: &RenderDevice,
+    encoder: &mut CommandEncoder,
+    (death_integrate, spawn): (&ComputePipeline, &ComputePipeline),
+    layout: &BindGroupLayout,
+    persistent: &mut StatefulPersistentState,
+    dispatch: &StatefulDispatch,
+    render: &StatefulRenderBuffers<'_>,
+    target_tick: u32,
+    live: bool,
+) {
     let workgroups = dispatch.capacity.div_ceil(WORKGROUP_SIZE);
     // Advance in cadence-aligned segments (one compute pass each), capturing a GPU-resident checkpoint
-    // at each cadence boundary reached. Bounded per frame so a large jump cannot stall the GPU.
-    let mut remaining =
-        (target_tick - persistent.last_tick).min(stateful_catchup_budget(seek_quality));
+    // at each cadence boundary reached.
+    let mut remaining = target_tick - persistent.last_tick;
     while remaining > 0 {
         let to_boundary =
             STATEFUL_CHECKPOINT_CADENCE - (persistent.last_tick % STATEFUL_CHECKPOINT_CADENCE);
@@ -947,17 +1002,6 @@ pub(super) fn dispatch_stateful_effect(
             persistent.capture(device, encoder, persistent.last_tick);
         }
     }
-    present_stateful_emitter(
-        device,
-        encoder,
-        present,
-        order_present,
-        layout,
-        persistent,
-        dispatch,
-        render,
-        simulation_time,
-    );
 }
 
 #[cfg(test)]

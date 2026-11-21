@@ -8,25 +8,35 @@ use super::{
     feedback::{apply_preview_mocks, record_preview_outputs, track_event_link_drops},
     gizmo_state::*,
     host_motion, keyboard,
-    lifecycle::{configure_transform_gizmo_overlay_camera, sync_preview_camera_viewport},
+    lifecycle::{
+        configure_transform_gizmo_overlay_camera, sync_gizmo_overlay_projection,
+        sync_preview_camera_viewport,
+    },
     navigation::{PreviewCameraController, PreviewNavigationState, navigate_preview_camera},
     photographic::{sync_photographic_overlay_composition, sync_preview_photographic_response},
+    pixel_preview,
     presentation::{
         PreviewGridMaterial, sync_preview_display_mode, sync_preview_grid,
         update_preview_display_controls, update_transform_gizmo_controls,
     },
     runtime_preview::{EditorPreviewProject, sync_project_preview, sync_rendered_preview},
-    scene::{draw_preview_mocks, setup_preview_scene},
+    scene::{
+        draw_preview_mocks, select_preview_camera, setup_preview_scene, sync_preview_lights_2d,
+    },
     shape_gizmo::{
         configure_preview_scene_gizmos, draw_preview_scene_gizmos, interact_shape_gizmo,
     },
     telemetry::update_preview,
     transform_gizmo::*,
-    workspace::update_viewport_status_label,
+    workspace::{
+        update_pixel_controls, update_preview_projection_label, update_viewport_status_label,
+    },
+    xy_authoring, xy_grid,
 };
 use aestra_bevy_render::AestraRenderSet;
 use bevy::{
     app::TransformGizmoRenderStep,
+    ecs::schedule::common_conditions::not,
     gizmos::transform_gizmo::{TransformGizmoPlugin, TransformGizmoSystems},
     prelude::*,
     ui::UiSystems,
@@ -36,7 +46,12 @@ pub(crate) struct ViewportPlugin;
 
 impl Plugin for ViewportPlugin {
     fn build(&self, app: &mut App) {
+        xy_grid::register(app);
         app.add_plugins(TransformGizmoPlugin)
+            .configure_sets(
+                PostUpdate,
+                TransformGizmoSystems.run_if(not(xy_authoring::enabled)),
+            )
             .insert_resource(preview_transform_gizmo_settings())
             .add_plugins(MaterialPlugin::<PreviewGridMaterial>::default())
             .add_plugins(aestra_bevy_render::preview::water::WaterMaterialPlugin)
@@ -52,7 +67,11 @@ impl Plugin for ViewportPlugin {
             .add_observer(execute_viewport_action)
             .add_systems(
                 Startup,
-                (setup_preview_scene, configure_preview_scene_gizmos)
+                (
+                    setup_preview_scene,
+                    pixel_preview::spawn_pixel_preview,
+                    configure_preview_scene_gizmos,
+                )
                     .chain()
                     .in_set(ViewportSet::Setup),
             )
@@ -78,9 +97,20 @@ impl Plugin for ViewportPlugin {
                     update_preview.after(AestraRenderSet::Prepare),
                     track_event_link_drops,
                     record_preview_outputs,
-                    navigate_preview_camera,
+                    (
+                        select_preview_camera,
+                        pixel_preview::configure_xy_projection,
+                        navigate_preview_camera,
+                        pixel_preview::follow_xy_camera,
+                        sync_preview_lights_2d,
+                        sync_gizmo_overlay_projection,
+                        update_preview_projection_label,
+                        update_pixel_controls,
+                    )
+                        .chain(),
                     (
                         sync_preview_grid,
+                        xy_grid::sync_xy_grid_visibility,
                         super::water::sync_water,
                         super::water::sync_reflections,
                     )
@@ -90,10 +120,14 @@ impl Plugin for ViewportPlugin {
                     sync_photographic_overlay_composition,
                     update_preview_display_controls,
                     update_transform_gizmo_controls,
-                    host_motion::pick_pose,
-                    sync_emitter_transform_proxy,
-                    interact_shape_gizmo,
-                    sync_transform_gizmo_focus,
+                    (
+                        host_motion::pick_pose,
+                        sync_emitter_transform_proxy,
+                        interact_shape_gizmo,
+                        sync_transform_gizmo_focus,
+                        xy_authoring::interact.run_if(xy_authoring::enabled),
+                    )
+                        .chain(),
                     draw_preview_scene_gizmos,
                     draw_preview_mocks,
                     update_viewport_status_label,
@@ -117,10 +151,14 @@ impl Plugin for ViewportPlugin {
                         .after(sync_preview_camera_viewport)
                         .before(TransformGizmoRenderStep),
                     apply_transform_gizmo_drag_feedback
+                        .run_if(not(xy_authoring::enabled))
                         .after(TransformGizmoRenderStep)
                         .after(update_emitter_transform_gizmo),
                     update_transform_gizmo_value_label.after(update_emitter_transform_gizmo),
                     host_motion::draw_path.after(update_emitter_transform_gizmo),
+                    xy_authoring::draw
+                        .run_if(xy_authoring::enabled)
+                        .after(update_emitter_transform_gizmo),
                 ),
             )
             .configure_sets(Update, AestraRenderSet::Prepare.after(apply_preview_mocks));

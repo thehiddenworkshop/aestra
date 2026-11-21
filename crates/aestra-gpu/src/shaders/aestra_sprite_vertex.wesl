@@ -74,6 +74,8 @@ struct SpriteVertexData {
     ribbon_direction: vec3<f32>,
     sampling_coverage: f32,
     particle_random: f32,
+    particle_position_xy: vec2<f32>,
+    uv_bounds: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -210,6 +212,7 @@ fn aestra_sprite_vertex(
         }
     }
     output.quad_position = corner;
+    output.particle_position_xy = corner * (particle.size * 0.5);
     output.softness = renderer.softness;
     output.visible = select(0u, 1u, particle_emitter(particle) == renderer.emitter_index);
     var uv_bounds = vec4<f32>(renderer.uv_min, renderer.uv_max);
@@ -220,7 +223,10 @@ fn aestra_sprite_vertex(
         }
         uv_bounds = renderer.frames[flipbook_frame(renderer, particle.normalized_age, identity)];
     }
-    output.uv = mix(uv_bounds.xy, uv_bounds.zw, corner * 0.5 + vec2<f32>(0.5));
+    // Atlas rectangles are top-left-origin, matching Bevy Sprite::rect.
+    let uv_corner = corner * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+    output.uv = mix(uv_bounds.xy, uv_bounds.zw, uv_corner);
+    output.uv_bounds = uv_bounds;
     output.textured = renderer.textured;
     output.effect_time = globals.time;
     output.particle_normalized_age = particle.normalized_age;

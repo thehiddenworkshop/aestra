@@ -166,8 +166,12 @@ impl MaterialCompiler {
 pub fn reflect_material_inputs(ir: &MaterialIrProgram) -> MaterialInputRequirements {
     let mut requirements = MaterialInputRequirements::default();
     for value in &ir.values {
-        let MaterialIrInstruction::Input(input) = value.instruction else {
-            continue;
+        let input = match value.instruction {
+            MaterialIrInstruction::Input(input) => input,
+            MaterialIrInstruction::SpritePointIrradiance { .. } => {
+                MaterialInput::ScenePointIrradiance
+            }
+            _ => continue,
         };
         let target = match input_category(input) {
             MaterialInputCategory::Vertex => &mut requirements.vertex,
@@ -199,6 +203,10 @@ fn input_category(input: MaterialInput) -> MaterialInputCategory {
         | MaterialInput::Uv1
         | MaterialInput::LocalPosition
         | MaterialInput::WorldPosition
+        | MaterialInput::EffectPositionXY
+        | MaterialInput::WorldPositionXY
+        | MaterialInput::ScreenPixel
+        | MaterialInput::ParticlePositionXY
         | MaterialInput::Normal
         | MaterialInput::Tangent
         | MaterialInput::Bitangent
@@ -304,5 +312,9 @@ fn input_rank(input: MaterialInput) -> u8 {
         MaterialInput::CameraDirection => 25,
         MaterialInput::PixelDepth => 26,
         MaterialInput::ScenePointIrradiance => 30,
+        MaterialInput::EffectPositionXY => 31,
+        MaterialInput::WorldPositionXY => 32,
+        MaterialInput::ScreenPixel => 33,
+        MaterialInput::ParticlePositionXY => 34,
     }
 }

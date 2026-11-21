@@ -1,0 +1,22 @@
+(
+    id: "29ecbbb4-91a0-4772-ace7-bc0588240070",
+    schema_version: 1,
+    name: "Linear Luminance",
+    inputs: [(id: "29ecbbb4-91a0-4772-ace7-bc0588240071", name: "Linear RGB", value_type: Vec3, default: Some(Vec3((0.0, 0.0, 0.0))))],
+    outputs: [(id: "29ecbbb4-91a0-4772-ace7-bc0588240072", name: "Luminance", value_type: Float, expression: "29ecbbb4-91a0-4772-ace7-bc058824007e")],
+    expressions: [
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240073", kind: FunctionInput("29ecbbb4-91a0-4772-ace7-bc0588240071")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240074", kind: ExtractComponent(value: "29ecbbb4-91a0-4772-ace7-bc0588240073", component: X)),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240075", kind: ExtractComponent(value: "29ecbbb4-91a0-4772-ace7-bc0588240073", component: Y)),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240076", kind: ExtractComponent(value: "29ecbbb4-91a0-4772-ace7-bc0588240073", component: Z)),
+        // Relative luminance weights for linear sRGB.
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240077", kind: Constant(Float(0.2126))),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240078", kind: Constant(Float(0.7152))),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240079", kind: Constant(Float(0.0722))),
+        (id: "29ecbbb4-91a0-4772-ace7-bc058824007a", kind: Multiply("29ecbbb4-91a0-4772-ace7-bc0588240074", "29ecbbb4-91a0-4772-ace7-bc0588240077")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc058824007b", kind: Multiply("29ecbbb4-91a0-4772-ace7-bc0588240075", "29ecbbb4-91a0-4772-ace7-bc0588240078")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc058824007c", kind: Multiply("29ecbbb4-91a0-4772-ace7-bc0588240076", "29ecbbb4-91a0-4772-ace7-bc0588240079")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc058824007d", kind: Add("29ecbbb4-91a0-4772-ace7-bc058824007a", "29ecbbb4-91a0-4772-ace7-bc058824007b")),
+        (id: "29ecbbb4-91a0-4772-ace7-bc058824007e", kind: Add("29ecbbb4-91a0-4772-ace7-bc058824007d", "29ecbbb4-91a0-4772-ace7-bc058824007c")),
+    ],
+)

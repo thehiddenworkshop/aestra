@@ -64,7 +64,13 @@ pub(crate) fn render_material_asset_preview(
                 }
                 MaterialExpressionKind::SampleTexture { .. }
                 | MaterialExpressionKind::SampleTextureLevel { .. }
-                | MaterialExpressionKind::SampleTextureGradient { .. } => {
+                | MaterialExpressionKind::SampleTextureGradient { .. }
+                | MaterialExpressionKind::PatternDither { .. }
+                | MaterialExpressionKind::PixelOutline { .. }
+                | MaterialExpressionKind::NearestPaletteColor { .. }
+                | MaterialExpressionKind::PaletteRamp { .. }
+                | MaterialExpressionKind::PaletteShift { .. }
+                | MaterialExpressionKind::PaletteSwap { .. } => {
                     return Err("Texture sampling needs a bound-texture preview".into());
                 }
                 MaterialExpressionKind::DerivativeX { .. }

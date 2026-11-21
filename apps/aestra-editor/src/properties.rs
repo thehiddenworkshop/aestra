@@ -229,6 +229,7 @@ pub(crate) use material_state::MaterialStackInspectorState;
 
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PropertiesAction {
+    SetEffectDimension(aestra_core::EffectDimension),
     OpenModulePalette(StackStage),
     CloseModulePalette,
     AddModule(usize),
@@ -526,6 +527,20 @@ fn handle_properties_actions(
                     continue;
                 }
                 match *action {
+                    PropertiesAction::SetEffectDimension(dimension) => {
+                        if session.effect.dimension() != dimension
+                            && session.execute(
+                                localizer.text("properties-effect-dimension"),
+                                EffectCommand::SetEffectMetadata {
+                                    key: aestra_core::EffectDimension::METADATA_KEY.into(),
+                                    value: Some(dimension.metadata_value().into()),
+                                },
+                                true,
+                            )
+                        {
+                            session.status = localizer.text("properties-effect-dimension-changed");
+                        }
+                    }
                     PropertiesAction::AddEventLink { trigger, target } => {
                         let target_name = session
                             .effect
@@ -1096,6 +1111,7 @@ mod tests {
             bevy::scene::ScenePlugin,
             bevy::text::TextPlugin,
         ));
+        app.init_asset::<Image>();
         let assets = app.world().resource::<AssetServer>().clone();
         let session = EditorSession::from_test_effect(aestra_core::EffectAsset::new("Empty", 4.0));
         let localizer = test_localizer();

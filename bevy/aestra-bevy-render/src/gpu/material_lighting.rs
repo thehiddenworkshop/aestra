@@ -8,7 +8,7 @@ pub(super) fn compose(wgsl: &str, enabled: bool) -> String {
 mod tests {
     use super::*;
     #[test]
-    fn portable_callback_composes_only_opt_in_and_retains_neutral_2d_branch() {
+    fn portable_callback_composes_both_native_views_and_retains_neutral_fallback() {
         let program = aestra_core::material::MaterialProgram::load_ron(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../assets/test/materials/fireworks_lit_smoke.aestra.material.ron"),
@@ -24,6 +24,8 @@ mod tests {
         let source = compose(&compiled.shader.wgsl, true);
         assert!(source.contains("@if(AESTRA_SCENE_POINT_LIGHTING)"));
         assert!(source.contains("aestra_bevy_point_irradiance(world, pixel)"));
+        assert!(source.contains("@if(AESTRA_POINT_LIGHTING_2D)"));
+        assert!(source.contains("aestra_point_irradiance_2d(world.xy)"));
         assert!(source.contains("@else { return vec3<f32>(0.0); }"));
         assert!(source.contains(
             "@if(!AESTRA_SCENE_POINT_LIGHTING)\n@group(0) @binding(0)\nvar<uniform> view: View;"

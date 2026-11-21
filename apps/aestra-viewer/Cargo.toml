@@ -14,11 +14,9 @@ aestra-bevy = { path = "../../bevy/aestra-bevy" }
 aestra-example-extension = { path = "../../extensions/aestra-example-extension" }
 aestra-fluid = { path = "../../extensions/aestra-fluid" }
 aestra-extension = { path = "../../crates/aestra-extension" }
+aestra-gpu = { path = "../../crates/aestra-gpu" }
 bevy.workspace = true
 image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-[dev-dependencies]
-aestra-gpu = { path = "../../crates/aestra-gpu" }
 tempfile.workspace = true

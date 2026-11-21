@@ -1,7 +1,9 @@
 //! Actual preview panel/toolbar construction and status-label synchronization.
 use super::{
-    PreviewDisplayMode, ViewportAction,
+    PreviewDisplayMode, PreviewDisplayState, ViewportAction,
+    actions::PreviewLighting2d,
     gizmo_state::{ShapeGizmoValueLabel, TransformGizmoValueLabel},
+    navigation::PreviewCameraController,
     presentation::{
         GizmoModeLabel, PreviewDisplayModeIcon, PreviewPresentedEffect, TransformGizmoModeIcon,
     },
@@ -27,6 +29,32 @@ const VIEWPORT_TOOL_ICON_SIZE: f32 = 20.0;
 
 #[derive(Component)]
 pub(super) struct ParticleCountLabel;
+
+#[derive(Component)]
+pub(super) struct PreviewProjectionLabel;
+
+#[derive(Component)]
+pub(super) struct PixelControlLabel(PixelOption);
+
+#[derive(Component)]
+pub(super) struct PixelControl(PixelOption);
+
+#[derive(Clone, Copy)]
+enum PixelOption {
+    Grid,
+    Cadence,
+    Lighting,
+}
+
+impl PixelOption {
+    fn visible(self, xy: bool, display: &PreviewDisplayState) -> bool {
+        xy && match self {
+            Self::Grid => true,
+            Self::Cadence => display.pixel_grid && display.mode == PreviewDisplayMode::Rendered,
+            Self::Lighting => display.mode == PreviewDisplayMode::Rendered,
+        }
+    }
+}
 
 pub(crate) fn spawn_preview(
     parent: &mut ChildSpawnerCommands,
@@ -177,6 +205,42 @@ pub(crate) fn spawn_preview(
                         .with_children(|tools| {
                             spawn_viewport_tool_button(
                                 tools,
+                                ViewportAction::TogglePreviewProjection,
+                                "viewport-projection",
+                                "viewport-projection-description",
+                                ViewportToolIcon::Projection,
+                                localizer,
+                                asset_server,
+                            );
+                            spawn_viewport_tool_button(
+                                tools,
+                                ViewportAction::TogglePixelGrid,
+                                "viewport-pixel-grid",
+                                "viewport-pixel-grid-description",
+                                ViewportToolIcon::Pixel(PixelOption::Grid),
+                                localizer,
+                                asset_server,
+                            );
+                            spawn_viewport_tool_button(
+                                tools,
+                                ViewportAction::TogglePresentationCadence,
+                                "viewport-presentation-cadence",
+                                "viewport-presentation-cadence-description",
+                                ViewportToolIcon::Pixel(PixelOption::Cadence),
+                                localizer,
+                                asset_server,
+                            );
+                            spawn_viewport_tool_button(
+                                tools,
+                                ViewportAction::CyclePreviewLighting2d,
+                                "viewport-lighting-2d",
+                                "viewport-lighting-2d-description",
+                                ViewportToolIcon::Pixel(PixelOption::Lighting),
+                                localizer,
+                                asset_server,
+                            );
+                            spawn_viewport_tool_button(
+                                tools,
                                 ViewportAction::FramePreview,
                                 "viewport-frame-effect",
                                 "viewport-frame-effect-description",
@@ -255,6 +319,23 @@ pub(crate) fn spawn_preview(
         });
 }
 
+pub(super) fn update_preview_projection_label(
+    controller: Res<PreviewCameraController>,
+    mut labels: Query<(&mut Text, &mut TextColor), With<PreviewProjectionLabel>>,
+) {
+    for (mut label, mut color) in &mut labels {
+        let (text, tint) = if controller.xy {
+            ("2D", theme::ACCENT)
+        } else {
+            ("3D", theme::TEXT)
+        };
+        if label.0 != text {
+            label.0 = text.into();
+        }
+        color.set_if_neq(TextColor(tint));
+    }
+}
+
 pub(super) fn update_viewport_status_label(
     session: Res<EditorSession>,
     preview: Res<EditorPreviewProject>,
@@ -290,8 +371,44 @@ pub(super) fn update_viewport_status_label(
     }
 }
 
+pub(super) fn update_pixel_controls(
+    controller: Res<PreviewCameraController>,
+    display: Res<PreviewDisplayState>,
+    mut buttons: Query<(&PixelControl, &mut Node)>,
+    mut labels: Query<(&PixelControlLabel, &mut TextColor, &mut Text)>,
+) {
+    for (control, node) in &mut buttons {
+        let node_display = if control.0.visible(controller.xy, &display) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        node.map_unchanged(|node| &mut node.display)
+            .set_if_neq(node_display);
+    }
+    for (label, mut color, mut text) in &mut labels {
+        let active = match label.0 {
+            PixelOption::Grid => display.pixel_grid,
+            PixelOption::Cadence => display.stepped_presentation,
+            PixelOption::Lighting => {
+                let label = match display.lighting_2d {
+                    PreviewLighting2d::Off | PreviewLighting2d::Continuous => "LGT",
+                    PreviewLighting2d::Stepped => "LGT 4",
+                };
+                if text.0 != label {
+                    text.0 = label.into();
+                }
+                display.lighting_2d != PreviewLighting2d::Off
+            }
+        };
+        color.set_if_neq(TextColor(if active { theme::ACCENT } else { theme::TEXT }));
+    }
+}
+
 #[derive(Clone, Copy)]
 enum ViewportToolIcon {
+    Projection,
+    Pixel(PixelOption),
     Frame,
     Wireframe,
     Rendered,
@@ -350,8 +467,19 @@ fn spawn_viewport_tool_button(
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
-    parent
-        .spawn_empty()
+    let mut button = parent.spawn_empty();
+    if let ViewportToolIcon::Pixel(option) = icon {
+        button.insert(PixelControl(option));
+    }
+    let width = if matches!(
+        icon,
+        ViewportToolIcon::Pixel(PixelOption::Cadence | PixelOption::Lighting)
+    ) {
+        44.0
+    } else {
+        VIEWPORT_TOOL_BUTTON_SIZE
+    };
+    button
         .apply_scene(ui_shell::feathers_tool_button())
         .insert((
             action,
@@ -359,8 +487,13 @@ fn spawn_viewport_tool_button(
             AccessibleLabel(localizer.text(label_id)),
             EditorTooltip::description(localizer.text(description_id)),
             Node {
-                width: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
-                min_width: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
+                display: if matches!(icon, ViewportToolIcon::Pixel(_)) {
+                    Display::None
+                } else {
+                    Display::Flex
+                },
+                width: Val::Px(width),
+                min_width: Val::Px(width),
                 height: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
                 padding: UiRect::ZERO,
                 align_items: AlignItems::Center,
@@ -369,6 +502,28 @@ fn spawn_viewport_tool_button(
             },
         ))
         .with_children(|button| match icon {
+            ViewportToolIcon::Projection => {
+                button.spawn((
+                    PreviewProjectionLabel,
+                    Text::new("3D"),
+                    TextFont::from_font_size(11.0),
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+            }
+            ViewportToolIcon::Pixel(option) => {
+                button.spawn((
+                    PixelControlLabel(option),
+                    Text::new(match option {
+                        PixelOption::Grid => "PX",
+                        PixelOption::Cadence => "12 FPS",
+                        PixelOption::Lighting => "LGT",
+                    }),
+                    TextFont::from_font_size(11.0),
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+            }
             ViewportToolIcon::Frame => {
                 spawn_viewport_svg_icon(button, asset_server, "icons/center-focus.svg");
             }

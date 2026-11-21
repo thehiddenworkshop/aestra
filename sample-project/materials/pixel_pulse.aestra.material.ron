@@ -1,0 +1,76 @@
+(
+    schema_version: 1,
+    id: "b0a2971e-60a3-4483-8a01-043b8f160011",
+    name: "Pixel Pulse",
+    domain: Sprite,
+    render_state_policy: (
+        default: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+        allowed: [(blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None)],
+    ),
+    parameters: [
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f160012",
+            name: "Atlas",
+            value_type: Texture2D((
+                color_space: SrgbColor,
+                sampler: (filter: Nearest, mip_filter: r#None, address_u: ClampToEdge, address_v: ClampToEdge),
+            )),
+            evaluation_domain: Instance,
+        ),
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f160020",
+            name: "Palette",
+            value_type: Texture2D((
+                color_space: SrgbColor,
+                sampler: (filter: Nearest, mip_filter: r#None, address_u: ClampToEdge, address_v: ClampToEdge),
+            )),
+            evaluation_domain: Instance,
+        ),
+        // Use the existing sprite coverage control so the atlas alone shapes the pulse.
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f160018",
+            name: "aestra.legacy.sprite_softness",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(0.0)),
+        ),
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f160024",
+            name: "Dither Coverage",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(1.0)),
+        ),
+    ],
+    expressions: [
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160013", kind: Parameter("b0a2971e-60a3-4483-8a01-043b8f160012")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160014", kind: Input(Uv0)),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160015", kind: SampleTexture(
+            texture: "b0a2971e-60a3-4483-8a01-043b8f160013",
+            uv: "b0a2971e-60a3-4483-8a01-043b8f160014",
+        )),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160016", kind: ExtractComponent(
+            value: "b0a2971e-60a3-4483-8a01-043b8f160015",
+            component: W,
+        )),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160019", kind: Parameter("b0a2971e-60a3-4483-8a01-043b8f160018")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160021", kind: Parameter("b0a2971e-60a3-4483-8a01-043b8f160020")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160022", kind: NearestPaletteColor(
+            palette: "b0a2971e-60a3-4483-8a01-043b8f160021",
+            color: "b0a2971e-60a3-4483-8a01-043b8f160015",
+        )),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160025", kind: Parameter("b0a2971e-60a3-4483-8a01-043b8f160024")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160026", kind: Input(EffectPositionXY)),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160027", kind: Constant(Float(1.0))),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160028", kind: BayerDither4x4(
+            alpha: "b0a2971e-60a3-4483-8a01-043b8f160025",
+            position: "b0a2971e-60a3-4483-8a01-043b8f160026",
+            cell_size: "b0a2971e-60a3-4483-8a01-043b8f160027",
+        )),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f160029", kind: Multiply(
+            "b0a2971e-60a3-4483-8a01-043b8f160016",
+            "b0a2971e-60a3-4483-8a01-043b8f160028",
+        )),
+    ],
+    outputs: (color: "b0a2971e-60a3-4483-8a01-043b8f160022", alpha: "b0a2971e-60a3-4483-8a01-043b8f160029"),
+)

@@ -1663,6 +1663,9 @@ pub struct ParticleSample {
 
 pub const DEFAULT_PLAYBACK_TICK_RATE: u32 = 60;
 
+mod presentation_cadence;
+pub use presentation_cadence::PresentationCadence;
+
 /// Exact timeline position shared by editor, viewer, and game playback.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaybackClock {

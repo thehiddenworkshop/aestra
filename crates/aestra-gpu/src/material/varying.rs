@@ -25,6 +25,9 @@ pub enum MaterialVarying {
     RibbonUv,
     RibbonDirection,
     ParticleRandom,
+    EffectPositionXY,
+    ParticlePositionXY,
+    SpriteUvBounds,
 }
 
 impl MaterialVarying {
@@ -50,6 +53,18 @@ impl MaterialVarying {
             Self::Normal => ("normal", "vec3<f32>", "", "mesh.normal"),
             Self::WorldPosition => ("world_position", "vec3<f32>", "", "mesh.world_position"),
             Self::LocalPosition => ("local_position", "vec3<f32>", "", "mesh.local_position"),
+            Self::EffectPositionXY => (
+                "effect_position_xy",
+                "vec2<f32>",
+                "",
+                "aestra_effect_position_xy(mesh.world_position)",
+            ),
+            Self::ParticlePositionXY => (
+                "particle_position_xy",
+                "vec2<f32>",
+                "",
+                "sprite.particle_position_xy",
+            ),
             Self::ViewDirection => ("view_direction", "vec3<f32>", "", "mesh.view_direction"),
             Self::QuadPosition => ("quad_position", "vec2<f32>", "", "sprite.quad_position"),
             Self::Softness => ("softness", "f32", "", "sprite.softness"),
@@ -57,6 +72,12 @@ impl MaterialVarying {
             Self::Visible => ("visible", "u32", "@interpolate(flat) ", "sprite.visible"),
             Self::SamplingCoverage => ("sampling_coverage", "f32", "", "sprite.sampling_coverage"),
             Self::Uv0 => ("uv0", "vec2<f32>", "", "sprite.uv"),
+            Self::SpriteUvBounds => (
+                "sprite_uv_bounds",
+                "vec4<f32>",
+                "@interpolate(flat) ",
+                "sprite.uv_bounds",
+            ),
             Self::ParticleColor => ("particle_color", "vec4<f32>", "", "sprite.color"),
             Self::ParticleOpacity => ("particle_opacity", "f32", "", "sprite.color.a"),
             Self::EffectTime => ("effect_time", "f32", "", "sprite.effect_time"),
@@ -71,8 +92,13 @@ impl MaterialVarying {
 
     pub const fn components(self) -> u32 {
         match self {
-            Self::QuadPosition | Self::Uv0 | Self::Uv1 | Self::RibbonUv => 2,
-            Self::ParticleColor => 4,
+            Self::QuadPosition
+            | Self::Uv0
+            | Self::Uv1
+            | Self::RibbonUv
+            | Self::EffectPositionXY
+            | Self::ParticlePositionXY => 2,
+            Self::ParticleColor | Self::SpriteUvBounds => 4,
             Self::Tangent
             | Self::Bitangent
             | Self::Normal
@@ -159,10 +185,37 @@ impl MaterialVaryingLayout {
             // Append so the existing authored-input locations stay stable.
             varyings.push(MaterialVarying::SamplingCoverage);
         }
-        if (reads(MaterialInput::ScenePointIrradiance) || reads(MaterialInput::WorldPosition))
+        if (reads(MaterialInput::ScenePointIrradiance)
+            || ir.values.iter().any(|value| {
+                matches!(
+                    value.instruction,
+                    MaterialIrInstruction::SpritePointIrradiance { .. }
+                )
+            })
+            || reads(MaterialInput::WorldPosition)
+            || reads(MaterialInput::WorldPositionXY))
             && !varyings.contains(&MaterialVarying::WorldPosition)
         {
             varyings.push(MaterialVarying::WorldPosition);
+        }
+        if reads(MaterialInput::EffectPositionXY) {
+            varyings.push(MaterialVarying::EffectPositionXY);
+        }
+        if reads(MaterialInput::ParticlePositionXY) {
+            varyings.push(MaterialVarying::ParticlePositionXY);
+        }
+        if ir.domain == MaterialDomain::Sprite
+            && ir.values.iter().any(|value| {
+                matches!(
+                    value.instruction,
+                    MaterialIrInstruction::PixelOutline {
+                        frame_bounds: None,
+                        ..
+                    }
+                )
+            })
+        {
+            varyings.push(MaterialVarying::SpriteUvBounds);
         }
         Self {
             domain: ir.domain,
@@ -219,6 +272,13 @@ impl MaterialVaryingLayout {
         } else {
             String::from(crate::shader::SPRITE_VERTEX_WESL)
         };
+        if self
+            .slots
+            .iter()
+            .any(|slot| slot.varying == MaterialVarying::EffectPositionXY)
+        {
+            source.push_str(include_str!("../shaders/aestra_effect_position.wesl"));
+        }
         source.push_str(
             "\nstruct MaterialVertexOutput {\n    @builtin(position) clip_position: vec4<f32>,\n",
         );
@@ -233,12 +293,14 @@ impl MaterialVaryingLayout {
         }
         for slot in &self.slots {
             let (name, _, _, expression) = slot.varying.fields();
-            let expression = if slot.varying == MaterialVarying::WorldPosition
-                && self.domain != MaterialDomain::Mesh
-            {
-                "sprite.world_position"
-            } else {
-                expression
+            let expression = match (slot.varying, self.domain) {
+                (MaterialVarying::WorldPosition, domain) if domain != MaterialDomain::Mesh => {
+                    "sprite.world_position"
+                }
+                (MaterialVarying::EffectPositionXY, domain) if domain != MaterialDomain::Mesh => {
+                    "aestra_effect_position_xy(sprite.world_position)"
+                }
+                _ => expression,
             };
             source.push_str(&format!("    output.{name} = {expression};\n"));
         }

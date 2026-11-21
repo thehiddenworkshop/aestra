@@ -11,6 +11,7 @@ use aestra_compiler::{
 };
 use aestra_core::{
     MaterialExpressionId, MaterialParameterId, MaterialProgramId,
+    dither::{BLUE_NOISE_RANKS, BLUE_NOISE_WIDTH},
     material::{
         MaterialAddressMode, MaterialDomain, MaterialEvaluationDomain, MaterialFilterMode,
         MaterialInput, MaterialMipFilterMode, MaterialRenderState, MaterialRenderStatePolicy,
@@ -20,7 +21,7 @@ use aestra_core::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt,
+    fmt::{self, Write as _},
     hash::{Hash, Hasher},
 };
 use thiserror::Error;
@@ -36,6 +37,10 @@ pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaterialMissingResourceFallback {
     Magenta,
+    /// A multi-row missing texture lets each palette operation use its own fallback.
+    PalettePassthrough,
+    /// A negative alpha threshold leaves the source coverage intact.
+    PatternPassthrough,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -385,6 +390,41 @@ impl MaterialShaderCompiler {
 }
 
 fn build_resource_layout(ir: &MaterialIrProgram) -> MaterialResourceLayout {
+    let mut palette_sources = BTreeSet::new();
+    let mut pattern_sources = BTreeSet::new();
+    let mut sampled_sources = BTreeSet::new();
+    for value in &ir.values {
+        if let MaterialIrInstruction::PaletteSwap {
+            source_palette,
+            target_palette,
+            ..
+        } = value.instruction
+        {
+            for operand in [source_palette, target_palette] {
+                if let Some(MaterialIrInstruction::Parameter(parameter)) =
+                    ir.value(operand).map(|value| &value.instruction)
+                {
+                    palette_sources.insert(*parameter);
+                }
+            }
+            continue;
+        }
+        let (source, uses) = match value.instruction {
+            MaterialIrInstruction::NearestPaletteColor { palette, .. }
+            | MaterialIrInstruction::PaletteRamp { palette, .. }
+            | MaterialIrInstruction::PaletteShift { palette, .. } => {
+                (palette, &mut palette_sources)
+            }
+            MaterialIrInstruction::SampleTexture { texture, .. } => (texture, &mut sampled_sources),
+            MaterialIrInstruction::PatternDither { texture, .. } => (texture, &mut pattern_sources),
+            _ => continue,
+        };
+        if let Some(MaterialIrInstruction::Parameter(parameter)) =
+            ir.value(source).map(|value| &value.instruction)
+        {
+            uses.insert(*parameter);
+        }
+    }
     let live_parameters = ir
         .values
         .iter()
@@ -451,7 +491,15 @@ fn build_resource_layout(ir: &MaterialIrProgram) -> MaterialResourceLayout {
             descriptor,
             binding: texture_bindings[&parameter],
             sampler_binding: sampler_bindings[&sampler_key(descriptor.sampler)],
-            fallback: MaterialMissingResourceFallback::Magenta,
+            fallback: if sampled_sources.contains(&parameter) {
+                MaterialMissingResourceFallback::Magenta
+            } else if pattern_sources.contains(&parameter) {
+                MaterialMissingResourceFallback::PatternPassthrough
+            } else if palette_sources.contains(&parameter) {
+                MaterialMissingResourceFallback::PalettePassthrough
+            } else {
+                MaterialMissingResourceFallback::Magenta
+            },
         })
         .collect();
     let slots = uniform_parameters
@@ -564,6 +612,10 @@ fn build_reflection(
             input,
             MaterialInput::Uv0
                 | MaterialInput::WorldPosition
+                | MaterialInput::EffectPositionXY
+                | MaterialInput::WorldPositionXY
+                | MaterialInput::ScreenPixel
+                | MaterialInput::ParticlePositionXY
                 | MaterialInput::RibbonUv
                 | MaterialInput::RibbonDirection
                 | MaterialInput::Normal
@@ -669,6 +721,69 @@ fn generate_wesl(
     {
         source.push_str(include_str!("shaders/aestra_normal_map.wesl"));
     }
+    if ir.values.iter().any(|value| {
+        matches!(
+            value.instruction,
+            MaterialIrInstruction::NearestPaletteColor { .. }
+                | MaterialIrInstruction::PaletteRamp { .. }
+                | MaterialIrInstruction::PaletteShift { .. }
+                | MaterialIrInstruction::PaletteSwap { .. }
+        )
+    }) {
+        source.push_str(&format!(
+            "const AESTRA_MAX_PALETTE_COLORS: u32 = {}u;\n",
+            aestra_core::MAX_PALETTE_COLORS,
+        ));
+        source.push_str(include_str!("shaders/aestra_palette.wesl"));
+    }
+    let uses_bayer = ir
+        .values
+        .iter()
+        .any(|value| matches!(value.instruction, MaterialIrInstruction::BayerDither { .. }));
+    let uses_blue_noise = ir.values.iter().any(|value| {
+        matches!(
+            value.instruction,
+            MaterialIrInstruction::BlueNoiseDither { .. }
+        )
+    });
+    let uses_pattern = ir.values.iter().any(|value| {
+        matches!(
+            value.instruction,
+            MaterialIrInstruction::PatternDither { .. }
+        )
+    });
+    if uses_bayer || uses_blue_noise || uses_pattern {
+        source.push_str(include_str!("shaders/aestra_dither.wesl"));
+    }
+    if uses_bayer {
+        source.push_str(include_str!("shaders/aestra_bayer.wesl"));
+    }
+    if uses_blue_noise {
+        append_blue_noise_shader(&mut source);
+    }
+    if uses_pattern {
+        source.push_str(include_str!("shaders/aestra_pattern_dither.wesl"));
+    }
+    if ir.values.iter().any(|value| {
+        matches!(
+            value.instruction,
+            MaterialIrInstruction::PixelOutline { .. }
+        )
+    }) {
+        source.push_str(include_str!("shaders/aestra_pixel_outline.wesl"));
+    }
+    if ir.values.iter().any(|value| {
+        matches!(
+            value.instruction,
+            MaterialIrInstruction::PixelSnap { .. }
+                | MaterialIrInstruction::Posterize { .. }
+                | MaterialIrInstruction::PixelateUv { .. }
+                | MaterialIrInstruction::Quantize { .. }
+                | MaterialIrInstruction::Threshold { .. }
+        )
+    }) {
+        source.push_str(include_str!("shaders/aestra_pixel_material.wesl"));
+    }
     source.push_str(&varyings.vertex_wesl(ir.outputs.vertex_offset.is_some()));
     source.push_str(
         "struct MaterialFragmentInput {\n    @builtin(position) fragment_position: vec4<f32>,\n",
@@ -685,6 +800,14 @@ fn generate_wesl(
         // Engine-neutral callback ABI. The backend may replace this definition, not material IR,
         // resource layouts or particle buffers. Unavailable providers are deliberately neutral.
         source.push_str("fn aestra_scene_point_irradiance(world: vec3<f32>, pixel: vec2<f32>) -> vec3<f32> {\n    return vec3<f32>(0.0);\n}\n\n");
+    }
+    if ir.values.iter().any(|value| {
+        matches!(
+            value.instruction,
+            MaterialIrInstruction::SpritePointIrradiance { .. }
+        )
+    }) {
+        source.push_str("fn aestra_sprite_point_irradiance(world: vec2<f32>, quad: vec2<f32>, normal: vec3<f32>) -> vec3<f32> {\n    return vec3<f32>(0.0);\n}\n\n");
     }
     let requires_scene_depth = reflect_material_inputs(ir)
         .scene
@@ -831,6 +954,28 @@ fn generate_wesl(
     Ok((source, lines))
 }
 
+fn append_blue_noise_shader(source: &mut String) {
+    let word_count = BLUE_NOISE_RANKS.len() / 2;
+    writeln!(
+        source,
+        "const AESTRA_BLUE_NOISE_WIDTH = {BLUE_NOISE_WIDTH}u;\n\
+         const AESTRA_BLUE_NOISE_RANKS = array<u32, {word_count}>("
+    )
+    .unwrap();
+    // Pack two ranks per word from the same tile that CPU previews read.
+    let (rows, _) = BLUE_NOISE_RANKS.as_chunks::<{ BLUE_NOISE_WIDTH as usize }>();
+    for row in rows {
+        source.push_str("    ");
+        for &[low, high] in row.as_chunks::<2>().0 {
+            let word = u32::from(low) | (u32::from(high) << 16);
+            write!(source, "0x{word:08x}u, ").unwrap();
+        }
+        source.push('\n');
+    }
+    source.push_str(");\n");
+    source.push_str(include_str!("shaders/aestra_blue_noise.wesl"));
+}
+
 fn instruction_expression(
     ir: &MaterialIrProgram,
     layout: &MaterialResourceLayout,
@@ -957,6 +1102,10 @@ fn instruction_expression(
             value_name(*tangent),
             value_name(*bitangent)
         ),
+        MaterialIrInstruction::SpritePointIrradiance { normal } => format!(
+            "aestra_sprite_point_irradiance(input.world_position.xy, input.quad_position, {})",
+            value_name(*normal)
+        ),
         MaterialIrInstruction::Fresnel {
             normal,
             view,
@@ -1023,6 +1172,42 @@ fn instruction_expression(
         MaterialIrInstruction::DerivativeY { value } => {
             format!("dpdy({})", value_name(*value))
         }
+        MaterialIrInstruction::NearestPaletteColor {
+            palette,
+            color: input,
+        }
+        | MaterialIrInstruction::PaletteRamp {
+            palette,
+            factor: input,
+        }
+        | MaterialIrInstruction::PaletteShift {
+            palette,
+            color: input,
+            ..
+        } => {
+            let texture = palette_texture_name(ir, layout, *palette)?;
+            let input = value_name(*input);
+            match value.instruction {
+                MaterialIrInstruction::PaletteRamp { .. } => {
+                    format!("aestra_palette_ramp({texture}, {input})")
+                }
+                MaterialIrInstruction::PaletteShift { steps, .. } => format!(
+                    "aestra_palette_shift({texture}, {input}, {})",
+                    value_name(steps)
+                ),
+                _ => format!("aestra_nearest_palette_color({texture}, {input})"),
+            }
+        }
+        MaterialIrInstruction::PaletteSwap {
+            source_palette,
+            target_palette,
+            color,
+        } => format!(
+            "aestra_palette_swap({}, {}, {})",
+            palette_texture_name(ir, layout, *source_palette)?,
+            palette_texture_name(ir, layout, *target_palette)?,
+            value_name(*color),
+        ),
         MaterialIrInstruction::SampleTexture {
             texture,
             uv,
@@ -1062,6 +1247,103 @@ fn instruction_expression(
                     value_name(*ddy)
                 ),
             }
+        }
+        MaterialIrInstruction::BayerDither {
+            alpha,
+            position,
+            cell_size,
+            pattern,
+        } => format!(
+            "aestra_bayer({}, {}, {}, {}u)",
+            value_name(*alpha),
+            value_name(*position),
+            value_name(*cell_size),
+            pattern.levels(),
+        ),
+        MaterialIrInstruction::BlueNoiseDither {
+            alpha,
+            position,
+            cell_size,
+        } => format!(
+            "aestra_blue_noise({}, {}, {})",
+            value_name(*alpha),
+            value_name(*position),
+            value_name(*cell_size),
+        ),
+        MaterialIrInstruction::PixelSnap {
+            position,
+            cell_size,
+        } => format!(
+            "aestra_pixel_snap({}, {})",
+            value_name(*position),
+            value_name(*cell_size),
+        ),
+        MaterialIrInstruction::Posterize { color, levels } => format!(
+            "aestra_posterize({}, {})",
+            value_name(*color),
+            value_name(*levels),
+        ),
+        MaterialIrInstruction::PixelateUv { uv, cells } => format!(
+            "aestra_pixelate_uv({}, {})",
+            value_name(*uv),
+            value_name(*cells),
+        ),
+        MaterialIrInstruction::Quantize { value, step } => format!(
+            "aestra_quantize({}, {})",
+            value_name(*value),
+            value_name(*step),
+        ),
+        MaterialIrInstruction::Threshold { value, threshold } => format!(
+            "aestra_threshold({}, {})",
+            value_name(*value),
+            value_name(*threshold),
+        ),
+        MaterialIrInstruction::PixelOutline {
+            texture,
+            uv,
+            width,
+            threshold,
+            frame_bounds,
+        } => {
+            let Some(MaterialIrInstruction::Parameter(parameter)) =
+                ir.value(*texture).map(|value| &value.instruction)
+            else {
+                return Err(MaterialGpuError::InvalidTextureSource(*texture));
+            };
+            let bounds = match frame_bounds {
+                Some(bounds) => value_name(*bounds),
+                None if varyings.domain == MaterialDomain::Sprite => {
+                    "input.sprite_uv_bounds".into()
+                }
+                None => "vec4<f32>(0.0, 0.0, 1.0, 1.0)".into(),
+            };
+            format!(
+                "aestra_pixel_outline({}, {}, {bounds}, {}, {}, {})",
+                texture_name(*parameter),
+                value_name(*uv),
+                value_name(*width),
+                value_name(*threshold),
+                frame_bounds.is_some(),
+            )
+        }
+        MaterialIrInstruction::PatternDither {
+            texture,
+            alpha,
+            position,
+            cell_size,
+        } => {
+            let Some(MaterialIrInstruction::Parameter(parameter)) =
+                ir.value(*texture).map(|value| &value.instruction)
+            else {
+                return Err(MaterialGpuError::InvalidTextureSource(*texture));
+            };
+            format!(
+                "aestra_pattern_dither({}, {}, {}, {})",
+                texture_name(*parameter),
+                value_name(*alpha),
+                value_name(*position),
+                value_name(*cell_size),
+            )
         }
         MaterialIrInstruction::ExtractComponent { value, component } => {
             format!("{}.{}", value_name(*value), component_name(*component))
@@ -1305,6 +1587,10 @@ fn input_expression(
             Some("normalize(input.view_direction)")
         }
         MaterialInput::WorldPosition => Some("input.world_position"),
+        MaterialInput::WorldPositionXY => Some("input.world_position.xy"),
+        MaterialInput::EffectPositionXY => Some("input.effect_position_xy"),
+        MaterialInput::ScreenPixel => Some("input.fragment_position.xy"),
+        MaterialInput::ParticlePositionXY => Some("input.particle_position_xy"),
         MaterialInput::LocalPosition if varyings.domain == MaterialDomain::Mesh => {
             Some("input.local_position")
         }
@@ -1406,6 +1692,26 @@ fn uniform_wgsl_type(value_type: MaterialValueType) -> &'static str {
     }
 }
 
+fn palette_texture_name(
+    ir: &MaterialIrProgram,
+    layout: &MaterialResourceLayout,
+    palette: MaterialIrValueId,
+) -> Result<String, MaterialGpuError> {
+    let Some(MaterialIrInstruction::Parameter(parameter)) =
+        ir.value(palette).map(|value| &value.instruction)
+    else {
+        return Err(MaterialGpuError::InvalidTextureSource(palette));
+    };
+    if !layout
+        .textures
+        .iter()
+        .any(|slot| slot.parameter == *parameter)
+    {
+        return Err(MaterialGpuError::MissingParameter(*parameter));
+    }
+    Ok(texture_name(*parameter))
+}
+
 fn value_name(id: MaterialIrValueId) -> String {
     format!("value_{}", id.0)
 }
@@ -1489,6 +1795,10 @@ fn hash_resource_layout(fingerprint: &mut FingerprintBuilder, layout: &MaterialR
 
 fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &MaterialIrInstruction) {
     match instruction {
+        MaterialIrInstruction::SpritePointIrradiance { normal } => {
+            fingerprint.byte(40);
+            fingerprint.u32(normal.0);
+        }
         MaterialIrInstruction::NormalMap {
             sample,
             strength,
@@ -1672,6 +1982,115 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
                 fingerprint.u32(ddx.0);
                 fingerprint.u32(ddy.0);
             }
+        }
+        MaterialIrInstruction::NearestPaletteColor { palette, color } => {
+            fingerprint.byte(26);
+            fingerprint.u32(palette.0);
+            fingerprint.u32(color.0);
+        }
+        MaterialIrInstruction::PaletteRamp { palette, factor } => {
+            fingerprint.byte(27);
+            fingerprint.u32(palette.0);
+            fingerprint.u32(factor.0);
+        }
+        MaterialIrInstruction::PaletteShift {
+            palette,
+            color,
+            steps,
+        } => {
+            fingerprint.byte(29);
+            fingerprint.u32(palette.0);
+            fingerprint.u32(color.0);
+            fingerprint.u32(steps.0);
+        }
+        MaterialIrInstruction::PaletteSwap {
+            source_palette,
+            target_palette,
+            color,
+        } => {
+            fingerprint.byte(39);
+            fingerprint.u32(source_palette.0);
+            fingerprint.u32(target_palette.0);
+            fingerprint.u32(color.0);
+        }
+        MaterialIrInstruction::BayerDither {
+            alpha,
+            position,
+            cell_size,
+            pattern,
+        } => {
+            fingerprint.byte(30);
+            fingerprint.u32(alpha.0);
+            fingerprint.u32(position.0);
+            fingerprint.u32(cell_size.0);
+            fingerprint.u32(pattern.levels());
+        }
+        MaterialIrInstruction::BlueNoiseDither {
+            alpha,
+            position,
+            cell_size,
+        } => {
+            fingerprint.byte(31);
+            fingerprint.u32(alpha.0);
+            fingerprint.u32(position.0);
+            fingerprint.u32(cell_size.0);
+        }
+        MaterialIrInstruction::PixelSnap {
+            position,
+            cell_size,
+        } => {
+            fingerprint.byte(33);
+            fingerprint.u32(position.0);
+            fingerprint.u32(cell_size.0);
+        }
+        MaterialIrInstruction::Posterize { color, levels } => {
+            fingerprint.byte(34);
+            fingerprint.u32(color.0);
+            fingerprint.u32(levels.0);
+        }
+        MaterialIrInstruction::PixelateUv { uv, cells } => {
+            fingerprint.byte(35);
+            fingerprint.u32(uv.0);
+            fingerprint.u32(cells.0);
+        }
+        MaterialIrInstruction::Quantize { value, step } => {
+            fingerprint.byte(36);
+            fingerprint.u32(value.0);
+            fingerprint.u32(step.0);
+        }
+        MaterialIrInstruction::Threshold { value, threshold } => {
+            fingerprint.byte(37);
+            fingerprint.u32(value.0);
+            fingerprint.u32(threshold.0);
+        }
+        MaterialIrInstruction::PixelOutline {
+            texture,
+            uv,
+            width,
+            threshold,
+            frame_bounds,
+        } => {
+            fingerprint.byte(38);
+            fingerprint.u32(texture.0);
+            fingerprint.u32(uv.0);
+            fingerprint.u32(width.0);
+            fingerprint.u32(threshold.0);
+            fingerprint.byte(u8::from(frame_bounds.is_some()));
+            if let Some(bounds) = frame_bounds {
+                fingerprint.u32(bounds.0);
+            }
+        }
+        MaterialIrInstruction::PatternDither {
+            texture,
+            alpha,
+            position,
+            cell_size,
+        } => {
+            fingerprint.byte(32);
+            fingerprint.u32(texture.0);
+            fingerprint.u32(alpha.0);
+            fingerprint.u32(position.0);
+            fingerprint.u32(cell_size.0);
         }
         MaterialIrInstruction::ExtractComponent { value, component } => {
             fingerprint.byte(10);
@@ -1924,6 +2343,10 @@ fn input_key(input: MaterialInput) -> u8 {
         MaterialInput::CameraDirection => 25,
         MaterialInput::PixelDepth => 26,
         MaterialInput::ScenePointIrradiance => 30,
+        MaterialInput::EffectPositionXY => 31,
+        MaterialInput::WorldPositionXY => 32,
+        MaterialInput::ScreenPixel => 33,
+        MaterialInput::ParticlePositionXY => 34,
     }
 }
 

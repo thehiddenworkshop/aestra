@@ -56,6 +56,17 @@ fn spawn_menu(
                         &localizer.text("file-new-effect"),
                         effect_action,
                     );
+                    if state.scope == SourceScope::Project {
+                        let parent = match effect_action {
+                            BrowserAction::NewEffectInFolder(parent, _) => parent,
+                            _ => state.folder_id(catalog.content()),
+                        };
+                        spawn_pointer_context_menu_item(
+                            menu,
+                            &localizer.text("browser-import-palette"),
+                            BrowserAction::ImportPalette(parent, catalog.content_revision()),
+                        );
+                    }
                 }
                 if let Some(source) = source {
                     spawn_pointer_context_menu_item(
@@ -73,6 +84,20 @@ fn spawn_menu(
                         BrowserAction::LocateSource(source, catalog.content_revision()),
                     );
                     let kind = catalog.content().source(source).map(Kind::of);
+                    if catalog.content().is_palette_source(source) {
+                        spawn_pointer_context_menu_item(
+                            menu,
+                            &localizer.text("browser-edit-palette"),
+                            BrowserAction::EditPalette(source, catalog.content_revision()),
+                        );
+                    }
+                    if kind == Some(Kind::Texture) {
+                        spawn_pointer_context_menu_item(
+                            menu,
+                            &localizer.text("browser-view-sprite"),
+                            BrowserAction::ViewSprite(source, catalog.content_revision()),
+                        );
+                    }
                     // Editor-backed documents (material programs, functions, WESL modules) open as
                     // dockable editor tabs and so can open a second view in a new tab; folders and
                     // effects only have the single focus-open action.

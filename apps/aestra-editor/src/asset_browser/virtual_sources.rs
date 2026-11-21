@@ -10,6 +10,7 @@ use crate::{
 };
 use bevy::ui_widgets::Activate;
 mod chrome;
+mod flipbook_grid;
 
 #[cfg(test)]
 #[path = "tests/virtual_sources.rs"]
@@ -52,6 +53,7 @@ struct Drag {
 }
 
 pub(super) fn register(app: &mut App) {
+    flipbook_grid::register(app);
     app.init_resource::<Selection>()
         .init_resource::<chrome::Navigation>()
         .add_observer(chrome::navigate)
@@ -347,12 +349,15 @@ fn select(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create(
     event: On<Activate>,
     buttons: Query<&Create>,
     selection: Res<Selection>,
     mut session: ResMut<EditorSession>,
     guard: crate::asset_drop::AuthoringDropGuard,
+    mut commands: Commands,
+    grid: flipbook_grid::OpenGrid,
 ) {
     let Ok(action) = buttons.get(event.entity) else {
         return;
@@ -367,7 +372,7 @@ fn create(
         Create::Material => session.add_sprite_material(),
         Create::Flipbook => {
             if let Some(VirtualAsset::Texture(texture)) = selection.asset {
-                session.add_grid_flipbook_for_texture(texture);
+                grid.open(&mut commands, &session, texture);
             }
         }
     }

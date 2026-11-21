@@ -7,7 +7,7 @@ use super::{
     storage_buffers, trail_context,
     world_sdf::AestraWorldSdf,
 };
-use crate::PresentedEffect;
+use crate::{ActiveBackend, EffectRuntimeStatus, PresentedEffect};
 use aestra_gpu::{GpuGlobals, GpuRenderGlobals, fold_seed};
 use bevy::{prelude::*, render::storage::ShaderBuffer};
 use std::sync::Arc;
@@ -47,6 +47,7 @@ type RenderTransformSync = (
     &'static mut GpuEffectBuffers,
     &'static mut GpuParticleStatistics,
     Option<&'static AestraPhysicsColliders>,
+    Option<&'static EffectRuntimeStatus>,
 );
 
 // Rendering and culling must see the same frame's propagated effect transform.
@@ -56,7 +57,7 @@ pub(super) fn sync_gpu_render_transforms(
     mut events: MessageWriter<AestraOutputEvent>,
     world_sdf: Option<Res<AestraWorldSdf>>,
 ) {
-    for (entity, player, transform, mut gpu, mut statistics, physics) in &mut players {
+    for (entity, player, transform, mut gpu, mut statistics, physics, runtime) in &mut players {
         let statistics_token = statistics.sync(&player.instance);
         gpu.statistics_token = statistics_token;
         let placement = Mat4::from(transform.affine());
@@ -248,13 +249,27 @@ pub(super) fn sync_gpu_render_transforms(
         }
         // Bevy and the engine-neutral ABI can use different glam versions.
         // Copy columns as scalars, retaining encase's storage layout below.
+        // The analytic kernel evaluates stateless visual geometry. Only its
+        // clock and the matching shader clock step. Playback and history use
+        // the authoritative time above.
+        let native = runtime.is_some_and(|runtime| runtime.active == ActiveBackend::Gpu);
+        gpu.stateful_cadence = if native && gpu.stateful_only {
+            player.native_sprite_cadence()
+        } else {
+            None
+        };
+        let presentation_time = if native {
+            player.native_presentation_time()
+        } else {
+            gpu.simulation_time
+        };
         let mut packed_world = GpuGlobals::default().world_from_effect;
         *packed_world.as_mut() = world.to_cols_array();
         if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
             storage_buffers::update(
                 &mut buffer,
                 GpuGlobals {
-                    time: player.simulation_time(),
+                    time: presentation_time,
                     total_slots: gpu.total_slots,
                     seed: fold_seed(player.instance.seed()),
                     emitter_count: player.effect().emitters.len() as u32,
@@ -273,7 +288,7 @@ pub(super) fn sync_gpu_render_transforms(
                 &mut buffer,
                 GpuRenderGlobals {
                     world_from_effect: packed_world,
-                    time: player.simulation_time(),
+                    time: presentation_time,
                     seed: fold_seed(player.instance.seed()),
                     _padding: Default::default(),
                 },

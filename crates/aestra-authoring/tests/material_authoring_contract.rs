@@ -2848,6 +2848,47 @@ fn material_create_expression_tool_builds_a_typed_downstream_node_without_rewiri
 }
 
 #[test]
+fn palette_lookup_insertion_creates_an_undoable_texture_parameter() {
+    let program = MaterialProgram::additive_sprite("Palette lookup");
+    let program_id = program.id;
+    let source = program.outputs.color;
+    let mut document = MaterialAuthoringDocument::standalone(vec![program]);
+    let before = document.clone();
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::CreateMaterialGraphNode {
+            program: program_id,
+            kind: MaterialGraphCreateKind::Function(MaterialGraphFunction::NearestPaletteColor),
+            source: Some(source),
+            target: Some(MaterialConnectionTarget::ProgramOutput(
+                MaterialOutputSocket::Color,
+            )),
+        },
+    )
+    .unwrap();
+    let lookup = plan.created_expressions[0];
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    let changed = &document.programs[0];
+    let palette = &changed.parameters[0];
+    assert_eq!(palette.name, "Palette");
+    assert!(
+        matches!(palette.value_type, MaterialValueType::Texture2D(descriptor)
+        if descriptor.color_space == MaterialTextureColorSpace::SrgbColor)
+    );
+    assert_eq!(changed.outputs.color, lookup);
+    assert!(
+        changed
+            .expressions
+            .iter()
+            .any(|expression| matches!(expression.kind,
+        MaterialExpressionKind::NearestPaletteColor { color, .. } if color == source))
+    );
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
 fn material_graph_node_tool_creates_connects_and_undoes_one_semantic_edit() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x6860);
@@ -3393,4 +3434,86 @@ fn mesh_vertex_output_connect_disconnect_and_undo_preserve_the_document() {
     assert_eq!(document, connected);
     history.undo(&mut document).unwrap().unwrap();
     assert_eq!(document, before);
+}
+
+#[test]
+fn pixel_outline_frame_bounds_can_be_connected_reset_and_undone() {
+    let mut program = MaterialProgram::from_ron(include_str!(
+        "../../../sample-project/materials/sprite_outline.aestra.material.ron"
+    ))
+    .unwrap();
+    let (outline, bounds) = program
+        .expressions
+        .iter_mut()
+        .find_map(|expression| {
+            let MaterialExpressionKind::PixelOutline { frame_bounds, .. } = &mut expression.kind
+            else {
+                return None;
+            };
+            Some((expression.id, frame_bounds.take().unwrap()))
+        })
+        .unwrap();
+    let program_id = program.id;
+    let mut document = authoring_document();
+    document.programs.push(program);
+    let original = document.clone();
+    let target = MaterialConnectionTarget::ExpressionInput {
+        expression: outline,
+        input: MaterialExpressionInput::FrameBounds,
+    };
+    let mut history = MaterialCommandHistory::default();
+    let connect = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ConnectMaterialExpression {
+            program: program_id,
+            source: bounds,
+            target,
+        },
+    )
+    .unwrap();
+    history.execute(&mut document, connect.transaction).unwrap();
+    assert!(document.programs.last().unwrap().expressions.iter().any(|node| {
+        node.id == outline && matches!(
+            node.kind,
+            MaterialExpressionKind::PixelOutline { frame_bounds: Some(id), .. } if id == bounds
+        )
+    }));
+    let connected = document.clone();
+    let disconnect = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::DisconnectMaterialConnection {
+            program: program_id,
+            target,
+        },
+    )
+    .unwrap();
+    history
+        .execute(&mut document, disconnect.transaction)
+        .unwrap();
+    assert_eq!(document, original);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, connected);
+
+    let delete = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::DeleteMaterialExpressions {
+            program: program_id,
+            expressions: vec![bounds],
+        },
+    )
+    .unwrap();
+    assert!(delete.created_expressions.is_empty());
+    history.execute(&mut document, delete.transaction).unwrap();
+    let current = document.programs.last().unwrap();
+    assert!(!current.expressions.iter().any(|node| node.id == bounds));
+    assert!(current.expressions.iter().any(|node| {
+        node.id == outline
+            && matches!(
+                node.kind,
+                MaterialExpressionKind::PixelOutline {
+                    frame_bounds: None,
+                    ..
+                }
+            )
+    }));
 }

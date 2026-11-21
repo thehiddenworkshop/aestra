@@ -685,6 +685,9 @@ fn remap_kind(
             tangent: remap(*tangent)?,
             bitangent: remap(*bitangent)?,
         },
+        E::SpritePointIrradiance { normal } => E::SpritePointIrradiance {
+            normal: remap(*normal)?,
+        },
         E::Fresnel {
             normal,
             view,
@@ -794,6 +797,107 @@ fn remap_kind(
             ddx: remap(*ddx)?,
             ddy: remap(*ddy)?,
         },
+        E::NearestPaletteColor { palette, color } => E::NearestPaletteColor {
+            palette: remap(*palette)?,
+            color: remap(*color)?,
+        },
+        E::PaletteRamp { palette, factor } => E::PaletteRamp {
+            palette: remap(*palette)?,
+            factor: remap(*factor)?,
+        },
+        E::PaletteShift {
+            palette,
+            color,
+            steps,
+        } => E::PaletteShift {
+            palette: remap(*palette)?,
+            color: remap(*color)?,
+            steps: remap(*steps)?,
+        },
+        E::PaletteSwap {
+            source_palette,
+            target_palette,
+            color,
+        } => E::PaletteSwap {
+            source_palette: remap(*source_palette)?,
+            target_palette: remap(*target_palette)?,
+            color: remap(*color)?,
+        },
+        E::PixelSnap {
+            position,
+            cell_size,
+        } => E::PixelSnap {
+            position: remap(*position)?,
+            cell_size: remap(*cell_size)?,
+        },
+        E::Posterize { color, levels } => E::Posterize {
+            color: remap(*color)?,
+            levels: remap(*levels)?,
+        },
+        E::PixelateUv { uv, cells } => E::PixelateUv {
+            uv: remap(*uv)?,
+            cells: remap(*cells)?,
+        },
+        E::Quantize { value, step } => E::Quantize {
+            value: remap(*value)?,
+            step: remap(*step)?,
+        },
+        E::Threshold { value, threshold } => E::Threshold {
+            value: remap(*value)?,
+            threshold: remap(*threshold)?,
+        },
+        E::PixelOutline {
+            texture,
+            uv,
+            width,
+            threshold,
+            frame_bounds,
+        } => E::PixelOutline {
+            texture: remap(*texture)?,
+            uv: remap(*uv)?,
+            width: remap(*width)?,
+            threshold: remap(*threshold)?,
+            frame_bounds: match frame_bounds {
+                Some(bounds) => Some(remap(*bounds)?),
+                None => None,
+            },
+        },
+        E::PatternDither {
+            texture,
+            alpha,
+            position,
+            cell_size,
+        } => E::PatternDither {
+            texture: remap(*texture)?,
+            alpha: remap(*alpha)?,
+            position: remap(*position)?,
+            cell_size: remap(*cell_size)?,
+        },
+        E::BayerDither2x2 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | E::BayerDither8x8 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | E::BlueNoiseDither {
+            alpha,
+            position,
+            cell_size,
+        }
+        | E::BayerDither4x4 {
+            alpha,
+            position,
+            cell_size,
+        } => E::dither(
+            kind.dither_pattern().unwrap(),
+            remap(*alpha)?,
+            remap(*position)?,
+            remap(*cell_size)?,
+        ),
         E::ExtractComponent { value, component } => E::ExtractComponent {
             value: remap(*value)?,
             component: *component,

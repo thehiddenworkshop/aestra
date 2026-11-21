@@ -232,6 +232,18 @@ pub enum MaterialExpressionInput {
     FlipY,
     Tangent,
     Bitangent,
+    Palette,
+    SourcePalette,
+    TargetPalette,
+    Color,
+    Steps,
+    Position,
+    CellSize,
+    Levels,
+    Cells,
+    Step,
+    Width,
+    FrameBounds,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -892,6 +904,10 @@ pub(crate) fn rewire_expression(
         ) => edge_max,
         (MaterialExpressionKind::Smoothstep { value, .. }, MaterialExpressionInput::Value) => value,
         (MaterialExpressionKind::Fresnel { normal, .. }, MaterialExpressionInput::Normal) => normal,
+        (
+            MaterialExpressionKind::SpritePointIrradiance { normal },
+            MaterialExpressionInput::Normal,
+        ) => normal,
         (MaterialExpressionKind::NormalMap { sample, .. }, MaterialExpressionInput::Sample) => {
             sample
         }
@@ -931,7 +947,9 @@ pub(crate) fn rewire_expression(
             source
         }
         (
-            MaterialExpressionKind::Dissolve { threshold, .. },
+            MaterialExpressionKind::Dissolve { threshold, .. }
+            | MaterialExpressionKind::Threshold { threshold, .. }
+            | MaterialExpressionKind::PixelOutline { threshold, .. },
             MaterialExpressionInput::Threshold,
         ) => threshold,
         (
@@ -1035,6 +1053,91 @@ pub(crate) fn rewire_expression(
             MaterialExpressionKind::ExtractComponent { value, .. },
             MaterialExpressionInput::Source,
         ) => value,
+        (
+            MaterialExpressionKind::NearestPaletteColor { palette, .. },
+            MaterialExpressionInput::Palette,
+        )
+        | (MaterialExpressionKind::PaletteRamp { palette, .. }, MaterialExpressionInput::Palette)
+        | (
+            MaterialExpressionKind::PaletteShift { palette, .. },
+            MaterialExpressionInput::Palette,
+        ) => palette,
+        (MaterialExpressionKind::PaletteRamp { factor, .. }, MaterialExpressionInput::Factor) => {
+            factor
+        }
+        (
+            MaterialExpressionKind::NearestPaletteColor { color, .. },
+            MaterialExpressionInput::Color,
+        )
+        | (MaterialExpressionKind::PaletteShift { color, .. }, MaterialExpressionInput::Color)
+        | (MaterialExpressionKind::PaletteSwap { color, .. }, MaterialExpressionInput::Color) => {
+            color
+        }
+        (
+            MaterialExpressionKind::PaletteSwap { source_palette, .. },
+            MaterialExpressionInput::SourcePalette,
+        ) => source_palette,
+        (
+            MaterialExpressionKind::PaletteSwap { target_palette, .. },
+            MaterialExpressionInput::TargetPalette,
+        ) => target_palette,
+        (MaterialExpressionKind::PaletteShift { steps, .. }, MaterialExpressionInput::Steps) => {
+            steps
+        }
+        (
+            MaterialExpressionKind::BayerDither2x2 { alpha, .. }
+            | MaterialExpressionKind::BayerDither4x4 { alpha, .. }
+            | MaterialExpressionKind::BayerDither8x8 { alpha, .. }
+            | MaterialExpressionKind::BlueNoiseDither { alpha, .. }
+            | MaterialExpressionKind::PatternDither { alpha, .. },
+            MaterialExpressionInput::SourceAlpha,
+        ) => alpha,
+        (
+            MaterialExpressionKind::BayerDither2x2 { position, .. }
+            | MaterialExpressionKind::BayerDither4x4 { position, .. }
+            | MaterialExpressionKind::BayerDither8x8 { position, .. }
+            | MaterialExpressionKind::BlueNoiseDither { position, .. }
+            | MaterialExpressionKind::PixelSnap { position, .. }
+            | MaterialExpressionKind::PatternDither { position, .. },
+            MaterialExpressionInput::Position,
+        ) => position,
+        (
+            MaterialExpressionKind::BayerDither2x2 { cell_size, .. }
+            | MaterialExpressionKind::BayerDither4x4 { cell_size, .. }
+            | MaterialExpressionKind::BayerDither8x8 { cell_size, .. }
+            | MaterialExpressionKind::BlueNoiseDither { cell_size, .. }
+            | MaterialExpressionKind::PixelSnap { cell_size, .. }
+            | MaterialExpressionKind::PatternDither { cell_size, .. },
+            MaterialExpressionInput::CellSize,
+        ) => cell_size,
+        (MaterialExpressionKind::Posterize { color, .. }, MaterialExpressionInput::Color) => color,
+        (MaterialExpressionKind::Posterize { levels, .. }, MaterialExpressionInput::Levels) => {
+            levels
+        }
+        (MaterialExpressionKind::PixelateUv { uv, .. }, MaterialExpressionInput::Uv) => uv,
+        (MaterialExpressionKind::PixelateUv { cells, .. }, MaterialExpressionInput::Cells) => cells,
+        (
+            MaterialExpressionKind::Quantize { value, .. }
+            | MaterialExpressionKind::Threshold { value, .. },
+            MaterialExpressionInput::Value,
+        ) => value,
+        (MaterialExpressionKind::Quantize { step, .. }, MaterialExpressionInput::Step) => step,
+        (MaterialExpressionKind::PixelOutline { uv, .. }, MaterialExpressionInput::Uv) => uv,
+        (MaterialExpressionKind::PixelOutline { width, .. }, MaterialExpressionInput::Width) => {
+            width
+        }
+        (
+            MaterialExpressionKind::PixelOutline { frame_bounds, .. },
+            MaterialExpressionInput::FrameBounds,
+        ) => {
+            let previous = std::mem::replace(frame_bounds, (!source.is_nil()).then_some(source));
+            return Ok(previous.unwrap_or(MaterialExpressionId::from_u128(0)));
+        }
+        (
+            MaterialExpressionKind::PatternDither { texture, .. }
+            | MaterialExpressionKind::PixelOutline { texture, .. },
+            MaterialExpressionInput::Texture,
+        ) => texture,
         (_, input) => return Err(MaterialCommandError::InvalidExpressionInput { input }),
     };
     Ok(std::mem::replace(target, source))

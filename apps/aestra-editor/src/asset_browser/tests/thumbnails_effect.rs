@@ -21,6 +21,18 @@ fn sample_time_is_deterministic_and_bounded() {
 }
 
 #[test]
+fn sprite_distortion_and_palette_lighting_prepare_their_graph_functions() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    for name in ["sprite_distortion", "pixel_palette_lighting"] {
+        let saved = fixture_project(&root, name);
+        let prepared = prepare(saved, &root, &AtomicBool::new(false))
+            .unwrap_or_else(|error| panic!("prepare {name}: {error}"));
+        assert_eq!(prepared.players.len(), 1);
+        assert!(!prepared.textures.is_empty());
+    }
+}
+
+#[test]
 fn smoke_effect_thumbnail_and_hover_prepare_keep_the_shared_function() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
     let saved = fixture_project(&root, "smoke_material_lab");
@@ -74,8 +86,9 @@ fn nested_noise_effect_thumbnails_keep_the_transitive_graph_and_reject_unbounded
     let deps =
         super::super::functions::effect_dependencies(program, &saved.material_functions).unwrap();
     assert_eq!(deps.len(), 1);
+    let dependency = deps.first().unwrap();
     let mut functions = saved.material_functions.clone();
-    let function = functions.values_mut().next().unwrap();
+    let function = functions.get_mut(dependency).unwrap();
     let call = function
         .expressions
         .iter()
@@ -89,7 +102,7 @@ fn nested_noise_effect_thumbnails_keep_the_transitive_graph_and_reject_unbounded
     }
     assert!(super::super::functions::effect_dependencies(program, &functions).is_none());
     let mut functions = saved.material_functions.clone();
-    let function = functions.values_mut().next().unwrap();
+    let function = functions.get_mut(dependency).unwrap();
     function.custom_wesl = Some(aestra_core::material::MaterialCustomWeslImplementation {
         source: "fn arbitrary() -> f32 { return 0.0; }".into(),
         entry_points: BTreeMap::new(),
@@ -379,6 +392,12 @@ fn native_gpu_prism_thumbnail_fills_the_tile() {
 
 #[test]
 #[ignore = "requires native GPU and shader compilation"]
+fn native_gpu_pixel_pulse_thumbnail_uses_project_palette() {
+    capture_fixture("pixel_pulse", false);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
 fn native_gpu_smoke_material_thumbnail_captures_pixels_and_hover_animates() {
     capture_fixture("smoke_material_lab", true);
     capture_fixture("smoke_wake_lab", true);
@@ -415,11 +434,34 @@ fn native_gpu_project_mesh_uses_project_root_without_thumbnail_overrides() {
     capture_fixture("mesh_material_lab", false);
 }
 
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
+fn native_gpu_sprite_thumbnails_capture_distortion_and_standalone_pixel_materials() {
+    capture_fixture("sprite_distortion", true);
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../sample-project")
+        .canonicalize()
+        .unwrap();
+    let program = aestra_core::material::MaterialProgram::load_ron(
+        root.join("materials/pixel_outline.aestra.material.ron"),
+    )
+    .unwrap();
+    let prepared =
+        super::super::material::prepare(program, &BTreeMap::new(), &root, &AtomicBool::new(false))
+            .unwrap();
+    capture_prepared("pixel_outline_material", root, prepared, true);
+}
+
 fn capture_fixture(name: &str, private_assets: bool) {
-    use bevy::{app::PluginsState, ecs::system::RunSystemOnce, window::ExitCondition};
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join(
-            if name.starts_with("fluid_") || name == "plugin_lab" || name.starts_with("smoke_") {
+            if name.starts_with("fluid_")
+                || name == "plugin_lab"
+                || name == "pixel_pulse"
+                || name == "sprite_distortion"
+                || name.starts_with("smoke_")
+            {
                 "../../sample-project"
             } else {
                 "../../assets/test"
@@ -427,8 +469,12 @@ fn capture_fixture(name: &str, private_assets: bool) {
         )
         .canonicalize()
         .unwrap();
-    let mut prepared =
-        prepare(fixture_project(&root, name), &root, &AtomicBool::new(false)).unwrap();
+    let prepared = prepare(fixture_project(&root, name), &root, &AtomicBool::new(false)).unwrap();
+    capture_prepared(name, root, prepared, private_assets);
+}
+
+fn capture_prepared(name: &str, root: PathBuf, mut prepared: Prepared, private_assets: bool) {
+    use bevy::{app::PluginsState, ecs::system::RunSystemOnce, window::ExitCondition};
     if !private_assets {
         prepared.meshes.clear();
         prepared.textures.clear();
@@ -452,6 +498,12 @@ fn capture_fixture(name: &str, private_assets: bool) {
     .insert_resource(aestra_bevy_render::AestraTextureRoot(Some(root.clone())))
     .init_resource::<ThumbnailCache>();
     register(&mut app);
+    if name == "pixel_pulse" {
+        app.insert_resource(ProjectEffectCatalog::scan(&root))
+            .insert_resource(crate::test_support::session_with_timing_slack())
+            .insert_resource(Localizer::new("en-US").unwrap());
+        crate::asset_browser::palette_editor::register(&mut app);
+    }
     let start = Instant::now();
     while app.plugins_state() != PluginsState::Ready {
         assert!(
@@ -517,10 +569,42 @@ fn capture_fixture(name: &str, private_assets: bool) {
             let bytes = result.unwrap();
             assert_eq!(bytes.len(), (EDGE * EDGE * 4) as usize);
             let colors: BTreeSet<_> = bytes.as_chunks::<4>().0.iter().copied().collect();
-            assert!(
-                colors.len() > 16,
-                "capture must contain visible effect shading, not just clear color"
-            );
+            if name == "pixel_pulse" {
+                assert!(
+                    colors.iter().any(|pixel| {
+                        [[240, 190, 80], [248, 70, 146]].into_iter().any(|swatch| {
+                            pixel[..3]
+                                .iter()
+                                .zip(swatch)
+                                .all(|(a, b)| a.abs_diff(b) <= 1)
+                        })
+                    }),
+                    "capture must contain an opaque swatch from the project palette: {colors:?}"
+                );
+                let image = app
+                    .world()
+                    .resource::<ThumbnailCache>()
+                    .gpu
+                    .as_ref()
+                    .unwrap()
+                    .harness
+                    .target()
+                    .clone();
+                crate::asset_browser::palette_editor::tests::verify_rendered_preview(
+                    &mut app, image, &bytes,
+                );
+            } else {
+                let required_colors =
+                    if matches!(name, "sprite_distortion" | "pixel_outline_material") {
+                        1
+                    } else {
+                        16
+                    };
+                assert!(
+                    colors.len() > required_colors,
+                    "capture must contain visible effect shading, not just clear color"
+                );
+            }
             // The result is rerendered with tighter camera framing, not a magnified tiny bitmap.
             let background = &bytes[..3];
             let mut min = UVec2::splat(EDGE);

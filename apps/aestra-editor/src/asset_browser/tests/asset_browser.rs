@@ -204,6 +204,66 @@ fn filter_scope_types_and_layout_share_one_ordered_projection() {
 }
 
 #[test]
+fn dimension_filter_uses_saved_effect_metadata_and_preserves_folder_navigation() {
+    use aestra_core::{EffectAsset, EffectDimension};
+
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("nested");
+    std::fs::create_dir(&folder).unwrap();
+    let mut session = test_support::session_with_timing_slack();
+    let command = EffectCommand::SetEffectMetadata {
+        key: EffectDimension::METADATA_KEY.into(),
+        value: Some(EffectDimension::TwoD.metadata_value().into()),
+    };
+    assert!(session.execute("Dimension", command, true));
+    assert_eq!(session.effect.dimension(), EffectDimension::TwoD);
+    assert!(session.can_undo());
+    session.undo();
+    assert_eq!(session.effect.dimension(), EffectDimension::ThreeD);
+    session.redo();
+    session
+        .effect
+        .save_ron(folder.join("opaque.aestra.ron"))
+        .unwrap();
+    EffectAsset::new("Legacy sprite effect", 1.0)
+        .save_ron(root.path().join("sprite_legacy.aestra.ron"))
+        .unwrap();
+    std::fs::write(root.path().join("note.txt"), []).unwrap();
+
+    let mut app = browser_app(root.path());
+    let entries = |app: &App| {
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        app.world()
+            .resource::<AssetBrowserState>()
+            .filtered(catalog.content())
+            .into_iter()
+            .map(|entry| entry.name.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(entries(&app).len(), 3);
+    app.world_mut()
+        .trigger(BrowserAction::Dimension(Some(EffectDimension::TwoD)));
+    app.update();
+    assert_eq!(entries(&app), ["nested"]);
+    app.world_mut().trigger(BrowserAction::Recursive);
+    app.update();
+    assert_eq!(entries(&app), ["nested", "opaque.aestra.ron"]);
+    app.world_mut()
+        .trigger(BrowserAction::Kind(Some(Kind::Effect)));
+    app.world_mut()
+        .trigger(BrowserAction::Dimension(Some(EffectDimension::ThreeD)));
+    app.update();
+    assert_eq!(entries(&app), ["nested", "sprite_legacy.aestra.ron"]);
+    app.world_mut().resource_mut::<AssetBrowserState>().query = "legacy sprite effect".into();
+    app.update();
+    assert_eq!(entries(&app), ["sprite_legacy.aestra.ron"]);
+    app.world_mut()
+        .trigger(BrowserAction::Dimension(Some(EffectDimension::TwoD)));
+    app.update();
+    assert!(entries(&app).is_empty());
+}
+
+#[test]
 fn removed_folder_falls_back_and_project_generation_clears_navigation() {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(root.path().join("a/b")).unwrap();
@@ -242,10 +302,14 @@ fn removed_folder_falls_back_and_project_generation_clears_navigation() {
 }
 
 pub(crate) fn browser_app(root: &Path) -> App {
+    browser_app_with_assets(root, AssetPlugin::default())
+}
+
+pub(super) fn browser_app_with_assets(root: &Path, assets: AssetPlugin) -> App {
     let mut app = App::new();
     app.add_plugins((
         MinimalPlugins,
-        AssetPlugin::default(),
+        assets,
         ScenePlugin,
         TextPlugin,
         InputFocusPlugin,

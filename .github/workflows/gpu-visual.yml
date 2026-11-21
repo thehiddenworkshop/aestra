@@ -25,8 +25,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install repository Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
 
       - name: Compare CPU and GPU particle semantics
         env:
@@ -66,6 +68,45 @@ jobs:
           --backend gpu
           --editor-viewport-smoke target/visual-regression/editor-viewport-smoke
           --frames 3
+
+      - name: Validate native pixel viewport and dithering
+        run: >-
+          cargo test --locked -p aestra-editor --bin aestra-editor
+          viewport::pixel_preview::tests::native_
+          -- --ignored --test-threads=1 --nocapture
+
+      - name: Validate native Pixel Pulse playback in Bevy
+        run: >-
+          cargo test --locked -p aestra-bevy --example pixel_pulse
+          -- --include-ignored --test-threads=1 --nocapture
+
+      - name: Validate native modifiers on a Bevy sprite
+        run: >-
+          cargo test --locked -p aestra-bevy --example sprite_hit_flash
+          -- --include-ignored --test-threads=1 --nocapture
+
+      - name: Validate native Camera2d point lighting
+        run: >-
+          cargo test --locked -p aestra-bevy --example pixel_lighting
+          -- --include-ignored --test-threads=1 --nocapture
+
+      - name: Validate transparent flipbook bake and native playback
+        run: >-
+          cargo test --locked -p aestra-viewer --bin aestra-viewer
+          flipbook_bake::tests::native_bake_is_repeatable_and_reimports_an_asymmetric_multirow_atlas
+          -- --ignored --exact --nocapture
+
+      - name: Validate Pixel Pulse palette thumbnails and live edits
+        run: >-
+          cargo test --locked -p aestra-editor --bin aestra-editor
+          asset_browser::thumbnails::effect::tests::native_gpu_pixel_pulse_thumbnail_uses_project_palette
+          -- --ignored --exact --nocapture
+
+      - name: Validate sprite distortion and pixel material thumbnails
+        run: >-
+          cargo test --locked -p aestra-editor --bin aestra-editor
+          asset_browser::thumbnails::effect::tests::native_gpu_sprite_thumbnails_capture_distortion_and_standalone_pixel_materials
+          -- --ignored --exact --nocapture
 
       - name: Validate fluid thumbnails and live hover previews
         run: >-

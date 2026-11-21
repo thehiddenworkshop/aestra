@@ -113,6 +113,7 @@ fn gizmo_value_readout_exposes_active_modifiers() {
             current,
             false,
             true,
+            false,
         ),
         "MOVE X  +2.1235  \u{00b7} PRECISE"
     );

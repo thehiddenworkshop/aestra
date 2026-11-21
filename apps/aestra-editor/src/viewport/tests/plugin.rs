@@ -2,9 +2,13 @@
 use super::super::{
     PreviewDisplayMode, ViewportAction,
     navigation::{EmitterTransformGizmoProxy, PreviewRenderCamera},
+    pixel_preview::{PixelPreviewPass, PixelSceneCamera, VIRTUAL_SIZE},
     presentation::{PreviewGridPlane, PreviewPresentedEffect},
+    scene::PreviewXyCamera,
     shortcuts::PreviewCanvas,
     workspace::spawn_preview,
+    xy_authoring::XyTransformFocus,
+    xy_grid::{PreviewXyGrid, XY_GRID_LAYER},
 };
 use super::*;
 use crate::{
@@ -18,10 +22,13 @@ use crate::{
     test_support,
     timeline::TimelineState,
 };
-use aestra_bevy_render::{ActiveBackend, EffectRuntimeStatus, PresentedEffect};
+use aestra_bevy_render::pixel_view::PixelGrid;
+use aestra_bevy_render::{
+    ActiveBackend, AestraLights2d, EffectRuntimeStatus, PointLightFalloff2d, PresentedEffect,
+};
 use bevy::{
     asset::AssetPlugin,
-    camera::visibility::RenderLayers,
+    camera::{ComputedCameraValues, RenderTargetInfo, visibility::RenderLayers},
     gizmos::GizmoAsset,
     gizmos::transform_gizmo::{
         TransformGizmoMeshMarker, TransformGizmoMode, TransformGizmoRoot, TransformGizmoSettings,
@@ -31,6 +38,7 @@ use bevy::{
     input::{
         ButtonState, InputPlugin,
         keyboard::{Key, KeyboardInput},
+        mouse::{MouseButtonInput, MouseMotion},
     },
     input_focus::{InputDispatchPlugin, InputFocusPlugin},
     scene::ScenePlugin,
@@ -153,6 +161,513 @@ fn panel(mut commands: Commands, localizer: Res<Localizer>, assets: Res<AssetSer
     commands
         .spawn(Node::default())
         .with_children(|p| spawn_preview(p, false, &localizer, &assets));
+}
+
+#[test]
+fn xy_view_picks_and_frames_either_emitter_and_commits_planar_drags_once() {
+    exercise_xy_authoring(false);
+}
+
+#[test]
+fn pixel_preview_keeps_planar_picking_and_drags_aligned_to_the_letterbox() {
+    exercise_xy_authoring(true);
+}
+
+fn exercise_xy_authoring(pixel_preview: bool) {
+    let mut f = Fixture::new();
+    let mut effect = test_support::effect_with_timing_slack();
+    let first = effect.emitters[0].id;
+    effect.emitters[0].transform.translation = [-16.0, 5.0, 1.0];
+    let mut second = aestra_core::Emitter::basic_sprite("Second", 2.5);
+    second.transform.translation = [18.0, -8.0, 4.25];
+    second.transform.rotation = Quat::from_rotation_x(0.25).to_array();
+    second.transform.scale = [1.0, 1.0, 2.0];
+    let original = second.transform;
+    let second_id = second.id;
+    effect.emitters.push(second);
+    f.app
+        .insert_resource(EditorSession::from_test_effect(effect));
+    f.app
+        .world_mut()
+        .resource_mut::<EditorSession>()
+        .select_emitter(first);
+    f.tick();
+    let canvas = f.single::<PreviewCanvas>();
+    let window = f.single::<PrimaryWindow>();
+    let viewport = UVec2::new(480, 320);
+    f.app.world_mut().entity_mut(canvas).insert((
+        ComputedNode {
+            size: viewport.as_vec2(),
+            ..default()
+        },
+        UiGlobalTransform::from(bevy::math::Affine2::from_translation(
+            Vec2::new(120.0, 80.0) + viewport.as_vec2() * 0.5,
+        )),
+        RelativeCursorPosition {
+            cursor_over: true,
+            normalized: Some(Vec2::splat(0.5)),
+        },
+    ));
+    f.activate(ViewportAction::TogglePreviewProjection);
+    if pixel_preview {
+        f.activate(ViewportAction::TogglePixelGrid);
+    }
+    let camera = f.single::<PreviewXyCamera>();
+    let viewport = f
+        .app
+        .world()
+        .get::<Camera>(camera)
+        .unwrap()
+        .viewport
+        .as_ref()
+        .unwrap()
+        .physical_size;
+    f.app
+        .world_mut()
+        .get_mut::<Transform>(camera)
+        .unwrap()
+        .translation
+        .x = 7.0;
+    if let Projection::Orthographic(ortho) =
+        &mut *f.app.world_mut().get_mut::<Projection>(camera).unwrap()
+    {
+        ortho.scale = 1.45;
+    }
+    apply_test_projection(&mut f, camera, viewport);
+    if pixel_preview {
+        let pixel_scene = f.single::<PixelSceneCamera>();
+        let start = f.app.world().get::<Transform>(camera).unwrap().translation;
+        for (cursor, expected) in [
+            (Vec2::new(145.0, 239.0), start), // Left letterbox.
+            (Vec2::new(360.0, 239.0), start + Vec3::new(-5.8, 2.9, 0.0)),
+        ] {
+            mouse(&mut f, window, cursor, None);
+            for state in [ButtonState::Pressed, ButtonState::Released] {
+                f.app.world_mut().write_message(MouseButtonInput {
+                    button: MouseButton::Middle,
+                    state,
+                    window,
+                });
+                if state == ButtonState::Pressed {
+                    f.app.world_mut().write_message(MouseMotion {
+                        delta: Vec2::new(8.0, 4.0),
+                    });
+                }
+                f.tick();
+            }
+            for view in [camera, pixel_scene] {
+                let pose = f.app.world().get::<Transform>(view).unwrap();
+                assert!(pose.translation.abs_diff_eq(expected, 0.001));
+            }
+        }
+    }
+
+    for (id, translation) in [
+        (second_id, original.translation),
+        (first, [-16.0, 5.0, 1.0]),
+        (second_id, original.translation),
+    ] {
+        let cursor = project(&f, camera, translation);
+        mouse(&mut f, window, cursor, Some(ButtonState::Pressed));
+        mouse(&mut f, window, cursor, Some(ButtonState::Released));
+        assert_eq!(
+            f.app.world().resource::<EditorSession>().selection.primary,
+            aestra_authoring::SemanticTarget::Emitter(id)
+        );
+    }
+    f.activate(ViewportAction::FramePreview);
+    apply_test_projection(&mut f, camera, viewport);
+    let center = project(&f, camera, original.translation);
+    assert!(center.abs_diff_eq(Vec2::new(360.0, 240.0), 0.01));
+    let expected_scale = xy_authoring::frame_scale(
+        f.app.world().resource::<EditorSession>(),
+        viewport.as_vec2(),
+        super::super::navigation::xy_world_height(
+            match f.app.world().get::<Projection>(camera).unwrap() {
+                Projection::Orthographic(projection) => projection,
+                _ => unreachable!(),
+            },
+        ),
+    )
+    .unwrap();
+    assert!(expected_scale < 1.0);
+    assert!(matches!(
+        f.app.world().get::<Projection>(camera),
+        Some(Projection::Orthographic(ortho)) if ortho.scale == expected_scale
+    ));
+    let proxy = f.single::<EmitterTransformGizmoProxy>();
+    assert!(f.app.world().get::<XyTransformFocus>(proxy).is_some());
+
+    for (mode, start, end) in [
+        (
+            TransformGizmoMode::Translate,
+            Vec2::ZERO,
+            Vec2::new(28.0, -19.0),
+        ),
+        (
+            TransformGizmoMode::Rotate,
+            Vec2::X * 43.0,
+            Vec2::NEG_Y * 43.0,
+        ),
+        (TransformGizmoMode::Scale, Vec2::Y * -45.0, Vec2::Y * -64.0),
+    ] {
+        f.activate(ViewportAction::SetTransformGizmoMode(mode));
+        mouse(&mut f, window, center + start, Some(ButtonState::Pressed));
+        mouse(&mut f, window, center + end, None);
+        assert!(
+            f.app
+                .world()
+                .resource::<EmitterTransformGizmoInteraction>()
+                .is_active()
+        );
+        assert!(!f.app.world().resource::<EditorSession>().can_undo());
+        mouse(&mut f, window, center + end, Some(ButtonState::Released));
+
+        let mut session = f.app.world_mut().resource_mut::<EditorSession>();
+        let current = session.selected_layer().unwrap().transform;
+        assert_eq!(current.translation[2], original.translation[2]);
+        assert_eq!(current.scale[2], original.scale[2]);
+        match mode {
+            TransformGizmoMode::Translate => {
+                assert!(current.translation[0] > original.translation[0]);
+                assert!(current.translation[1] > original.translation[1]);
+            }
+            TransformGizmoMode::Rotate => {
+                let expected = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)
+                    * Quat::from_array(original.rotation);
+                assert!(Quat::from_array(current.rotation).abs_diff_eq(expected, 0.001));
+            }
+            TransformGizmoMode::Scale => assert!(current.scale[1] > original.scale[1]),
+        }
+        assert!(session.can_undo());
+        session.undo();
+        assert_eq!(session.selected_layer().unwrap().transform, original);
+        assert!(!session.can_undo());
+        f.tick();
+    }
+    f.activate(ViewportAction::SetTransformGizmoMode(
+        TransformGizmoMode::Translate,
+    ));
+    mouse(&mut f, window, center, Some(ButtonState::Pressed));
+    mouse(&mut f, window, center + Vec2::splat(25.0), None);
+    f.tap(KeyCode::Escape, Key::Escape);
+    f.tick();
+    assert!(
+        !f.app
+            .world()
+            .resource::<EmitterTransformGizmoInteraction>()
+            .is_active()
+    );
+    mouse(
+        &mut f,
+        window,
+        center + Vec2::splat(25.0),
+        Some(ButtonState::Released),
+    );
+    let session = f.app.world().resource::<EditorSession>();
+    assert_eq!(session.selected_layer().unwrap().transform, original);
+    assert!(!session.can_undo());
+}
+
+fn apply_test_projection(f: &mut Fixture, camera: Entity, size: UVec2) {
+    let world = f.app.world_mut();
+    let mut projection = world.get_mut::<Projection>(camera).unwrap();
+    projection.update(size.x as f32, size.y as f32);
+    let clip_from_view = projection.get_clip_from_view();
+    world.get_mut::<Camera>(camera).unwrap().computed = ComputedCameraValues {
+        clip_from_view,
+        target_info: Some(RenderTargetInfo {
+            physical_size: UVec2::new(1000, 800),
+            scale_factor: 1.0,
+        }),
+        ..default()
+    };
+    f.tick();
+}
+
+fn project(f: &Fixture, camera: Entity, translation: [f32; 3]) -> Vec2 {
+    let world = f.app.world();
+    world
+        .get::<Camera>(camera)
+        .unwrap()
+        .world_to_viewport(
+            world.get::<GlobalTransform>(camera).unwrap(),
+            Vec3::from_array(translation),
+        )
+        .unwrap()
+}
+
+fn mouse(f: &mut Fixture, window: Entity, position: Vec2, state: Option<ButtonState>) {
+    let world = f.app.world_mut();
+    world
+        .get_mut::<Window>(window)
+        .unwrap()
+        .set_cursor_position(Some(position));
+    if let Some(state) = state {
+        world.write_message(MouseButtonInput {
+            button: MouseButton::Left,
+            state,
+            window,
+        });
+    }
+    f.tick();
+}
+
+#[test]
+fn xy_lighting_control_cycles_and_updates_both_scene_cameras() {
+    let mut f = Fixture::new();
+    f.tick();
+    let xy = f.single::<PreviewXyCamera>();
+    let pixel = f.single::<PixelSceneCamera>();
+    let action = ViewportAction::CyclePreviewLighting2d;
+    let button = f.action(action);
+    assert_eq!(
+        f.app.world().get::<Node>(button).unwrap().display,
+        Display::None
+    );
+
+    f.activate(ViewportAction::TogglePreviewProjection);
+    assert_eq!(
+        f.app.world().get::<Node>(button).unwrap().display,
+        Display::Flex
+    );
+    f.activate(action);
+    let lights =
+        |world: &World, camera| world.get::<AestraLights2d>(camera).unwrap().lights.clone();
+    let continuous = lights(f.app.world(), xy);
+    assert_eq!(continuous[0].falloff, PointLightFalloff2d::Continuous);
+    assert_eq!(continuous, lights(f.app.world(), pixel));
+
+    f.activate(ViewportAction::TogglePixelGrid);
+    f.activate(action);
+    let stepped = lights(f.app.world(), xy);
+    assert_eq!(
+        stepped[0].falloff,
+        PointLightFalloff2d::Stepped(4.try_into().unwrap())
+    );
+    assert_eq!(stepped, lights(f.app.world(), pixel));
+
+    f.app.insert_resource(TimeUpdateStrategy::ManualDuration(
+        std::time::Duration::from_millis(100),
+    ));
+    f.tick();
+    assert_ne!(
+        stepped[0].position,
+        lights(f.app.world(), pixel)[0].position
+    );
+
+    f.activate(action);
+    assert!(lights(f.app.world(), xy).is_empty());
+    assert!(lights(f.app.world(), pixel).is_empty());
+}
+
+#[test]
+fn projection_control_switches_the_scene_and_preserves_each_camera_pose() {
+    let mut f = Fixture::new();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    let path = root.join("effects/pixel_pulse.aestra.ron");
+    let effect = aestra_core::EffectAsset::load_ron(&path).unwrap();
+    let catalog = ProjectEffectCatalog::scan(&root);
+    let compiled = catalog.compile_project(&effect).unwrap();
+    f.app.insert_resource(catalog);
+    f.app
+        .world_mut()
+        .resource_mut::<EditorSession>()
+        .open_compiled_effect(path, effect, compiled.root);
+    f.tick();
+    let perspective = f.single::<PreviewRenderCamera>();
+    let xy = f.single::<PreviewXyCamera>();
+    let xy_grid = f.single::<PreviewXyGrid>();
+    let perspective_grid = f.single::<PreviewGridPlane>();
+    assert_eq!(
+        *f.app.world().get::<RenderLayers>(xy).unwrap(),
+        RenderLayers::from_layers(&[0, XY_GRID_LAYER])
+    );
+    assert_eq!(
+        f.app.world().get::<Visibility>(xy_grid),
+        Some(&Visibility::Hidden)
+    );
+    f.app.world_mut().resource_mut::<MenuState>().show_grid = true;
+    let overlay = f
+        .cameras()
+        .into_iter()
+        .find(|&id| id != perspective)
+        .unwrap();
+    let canvas = f.single::<PreviewCanvas>();
+    f.app
+        .world_mut()
+        .get_mut::<ComputedNode>(canvas)
+        .unwrap()
+        .size = Vec2::splat(360.0);
+    f.tick();
+    f.tick();
+    let original = *f.app.world().get::<Transform>(perspective).unwrap();
+    let effect = f.app.world().resource::<EditorSession>().effect.clone();
+    let player = f.single::<PreviewPresentedEffect>();
+    let control = f.action(ViewportAction::TogglePreviewProjection);
+    let pixel_control = f.action(ViewportAction::TogglePixelGrid);
+    let cadence_control = f.action(ViewportAction::TogglePresentationCadence);
+    let pixel_scene = f.single::<PixelSceneCamera>();
+    let pixel_composite = {
+        let world = f.app.world_mut();
+        world
+            .query::<(Entity, &PixelPreviewPass)>()
+            .iter(world)
+            .find_map(|(entity, pass)| {
+                matches!(pass, PixelPreviewPass::Composite).then_some(entity)
+            })
+            .unwrap()
+    };
+    assert!(f.app.world().get::<PixelGrid>(pixel_scene).is_some());
+    assert!(!f.app.world().get::<Camera>(pixel_scene).unwrap().is_active);
+    assert_eq!(
+        f.app.world().get::<Node>(pixel_control).unwrap().display,
+        Display::None
+    );
+    assert!(f.app.world().get::<PixelGrid>(xy).is_none());
+
+    f.app.world_mut().trigger(Activate { entity: control });
+    f.tick();
+    assert_eq!(f.single::<PreviewRenderCamera>(), xy);
+    assert!(f.app.world().get::<Camera2d>(xy).is_some());
+    assert!(matches!(
+        f.app.world().get::<Projection>(xy).unwrap(),
+        Projection::Orthographic(_)
+    ));
+    assert!(matches!(
+        f.app.world().get::<Projection>(overlay).unwrap(),
+        Projection::Orthographic(_)
+    ));
+    assert!(f.app.world().get::<Camera>(xy).unwrap().is_active);
+    assert!(!f.app.world().get::<Camera>(perspective).unwrap().is_active);
+    assert_eq!(
+        f.app.world().get::<Node>(pixel_control).unwrap().display,
+        Display::Flex
+    );
+    f.activate(ViewportAction::TogglePixelGrid);
+    assert_eq!(
+        f.app.world().get::<Node>(cadence_control).unwrap().display,
+        Display::Flex
+    );
+    f.activate(ViewportAction::TogglePresentationCadence);
+    assert_eq!(
+        f.app
+            .world()
+            .get::<PresentedEffect>(player)
+            .unwrap()
+            .presentation_cadence(),
+        Some(aestra_runtime::PresentationCadence::FPS_12)
+    );
+    let camera =
+        |fixture: &Fixture, entity| fixture.app.world().get::<Camera>(entity).unwrap().clone();
+    assert!(!camera(&f, xy).is_active);
+    assert!(camera(&f, pixel_scene).is_active);
+    assert!(camera(&f, pixel_scene).viewport.is_none());
+    assert!(camera(&f, pixel_composite).is_active);
+    let fitted = camera(&f, pixel_composite).viewport.unwrap();
+    assert_eq!(fitted.physical_size, VIRTUAL_SIZE);
+    assert_eq!(fitted.physical_position, UVec2::new(84, 116));
+    for view in [xy, overlay] {
+        let viewport = camera(&f, view).viewport.unwrap();
+        assert_eq!(viewport.physical_size, fitted.physical_size);
+        assert_eq!(viewport.physical_position, fitted.physical_position);
+    }
+    // A narrow dock goes back to the live XY scene and restores the pixel
+    // view automatically when there is room for a 1x presentation.
+    f.app
+        .world_mut()
+        .get_mut::<ComputedNode>(canvas)
+        .unwrap()
+        .size
+        .x = 180.0;
+    f.tick();
+    assert!(camera(&f, xy).is_active);
+    assert!(!camera(&f, pixel_composite).is_active);
+    f.app
+        .world_mut()
+        .get_mut::<ComputedNode>(canvas)
+        .unwrap()
+        .size
+        .x = 360.0;
+    f.tick();
+    assert!(!camera(&f, xy).is_active);
+    assert!(camera(&f, pixel_composite).is_active);
+    assert_eq!(
+        f.app.world().get::<Visibility>(xy_grid),
+        Some(&Visibility::Inherited)
+    );
+    assert_eq!(
+        f.app.world().get::<Visibility>(perspective_grid),
+        Some(&Visibility::Hidden)
+    );
+    let mut pan = *f.app.world().get::<Transform>(xy).unwrap();
+    pan.translation.x = 13.0;
+    pan.translation.y = 7.0;
+    *f.app.world_mut().get_mut::<Transform>(xy).unwrap() = pan;
+
+    f.app.world_mut().trigger(Activate { entity: control });
+    f.tick();
+    assert_eq!(f.single::<PreviewRenderCamera>(), perspective);
+    assert!(matches!(
+        f.app.world().get::<Projection>(overlay).unwrap(),
+        Projection::Perspective(_)
+    ));
+    assert!(f.app.world().get::<Camera>(perspective).unwrap().is_active);
+    assert_eq!(
+        f.app.world().get::<Visibility>(xy_grid),
+        Some(&Visibility::Hidden)
+    );
+    assert_eq!(
+        f.app.world().get::<Visibility>(perspective_grid),
+        Some(&Visibility::Inherited)
+    );
+    assert_eq!(
+        *f.app.world().get::<Transform>(perspective).unwrap(),
+        original
+    );
+    assert!(!f.app.world().get::<Camera>(xy).unwrap().is_active);
+    assert!(!camera(&f, pixel_scene).is_active);
+    assert!(!camera(&f, pixel_composite).is_active);
+    assert_eq!(
+        f.app
+            .world()
+            .get::<PresentedEffect>(player)
+            .unwrap()
+            .presentation_cadence(),
+        None
+    );
+
+    f.app.world_mut().trigger(Activate { entity: control });
+    f.tick();
+    assert_eq!(f.single::<PreviewRenderCamera>(), xy);
+    assert_eq!(*f.app.world().get::<Transform>(xy).unwrap(), pan);
+    assert!(camera(&f, pixel_scene).is_active);
+    assert_eq!(*f.app.world().get::<Transform>(pixel_scene).unwrap(), pan);
+    assert_eq!(
+        f.app
+            .world()
+            .get::<PresentedEffect>(player)
+            .unwrap()
+            .presentation_cadence(),
+        Some(aestra_runtime::PresentationCadence::FPS_12)
+    );
+    f.activate(ViewportAction::TogglePixelGrid);
+    assert!(!camera(&f, pixel_scene).is_active);
+    assert!(camera(&f, xy).is_active);
+    assert_eq!(
+        f.app.world().get::<Node>(cadence_control).unwrap().display,
+        Display::None
+    );
+    assert_eq!(
+        f.app
+            .world()
+            .get::<PresentedEffect>(player)
+            .unwrap()
+            .presentation_cadence(),
+        None
+    );
+    assert_eq!(f.single::<PreviewPresentedEffect>(), player);
+    assert_eq!(f.app.world().resource::<EditorSession>().effect, effect);
 }
 
 #[test]

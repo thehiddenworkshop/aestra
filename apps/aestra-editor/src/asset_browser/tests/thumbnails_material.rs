@@ -23,6 +23,24 @@ fn shared_smoke_material_routes_to_native_preview_but_modified_wesl_does_not() {
     assert!(super::material::wants_shared_smoke_gpu(
         &program, &functions
     ));
+    let lf = function
+        .custom_wesl
+        .as_ref()
+        .unwrap()
+        .source
+        .replace("\r\n", "\n");
+    for source in [lf.clone(), lf.replace('\n', "\r\n")] {
+        let mut variant = function.clone();
+        variant.custom_wesl.as_mut().unwrap().source = source;
+        assert!(super::material::shared_smoke_function(&variant));
+        variant
+            .custom_wesl
+            .as_mut()
+            .unwrap()
+            .source
+            .push_str("\n// edited source");
+        assert!(!super::material::shared_smoke_function(&variant));
+    }
     let prepared = prepare(program.clone(), &functions, &root, &AtomicBool::new(false));
     assert!(
         prepared.is_ok(),
@@ -284,4 +302,49 @@ fn neutral_images_use_the_matching_color_space_format() {
             .format,
         TextureFormat::Rgba8Unorm
     );
+}
+
+#[test]
+fn standalone_pixel_materials_preview_without_effect_instance_textures() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    let functions = aestra_project::ProjectContent::scan(&root)
+        .cached_material_functions()
+        .unwrap();
+    for name in [
+        "pixel_dissolve",
+        "pixel_normal_light",
+        "pixel_outline",
+        "pixel_palette_light",
+        "pixel_point_light",
+        "pixel_pulse",
+        "sprite_dissolve",
+        "sprite_distortion",
+        "sprite_hit_flash",
+        "sprite_outline",
+        "sprite_palette_swap",
+    ] {
+        let program =
+            MaterialProgram::load_ron(root.join(format!("materials/{name}.aestra.material.ron")))
+                .unwrap();
+        assert!(
+            wants_gpu(&program),
+            "{name} should use the textured preview"
+        );
+        let prepared = prepare(program, &functions, &root, &AtomicBool::new(false))
+            .unwrap_or_else(|error| panic!("prepare {name}: {error}"));
+        assert!(
+            prepared.textures.iter().any(|(_, image)| {
+                image.size() == UVec2::splat(8)
+                    && image
+                        .data
+                        .as_ref()
+                        .unwrap()
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .any(|pixel| pixel[3] == 0)
+            }),
+            "{name} should have a cutout preview texture"
+        );
+    }
 }

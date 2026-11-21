@@ -338,6 +338,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
             (None, Some(SemanticTarget::PointLight(*id)))
         }
         EffectCommand::SetEffectName { .. }
+        | EffectCommand::SetEffectMetadata { .. }
         | EffectCommand::SetParticleBudgets { .. }
         | EffectCommand::SetEffectDuration { .. }
         | EffectCommand::SetEffectPlaybackMode { .. }

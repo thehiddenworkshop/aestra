@@ -14,7 +14,8 @@ use bevy::{
         render_asset::RenderAssets,
         render_resource::{
             BindGroupEntries, BindGroupEntry, BindingResource, BufferInitDescriptor, BufferUsages,
-            IndexFormat, PipelineCache, PrimitiveTopology, Sampler, encase::UniformBuffer,
+            IndexFormat, PipelineCache, PrimitiveTopology, Sampler, SamplerDescriptor,
+            encase::UniformBuffer,
         },
         renderer::{RenderDevice, RenderQueue},
         storage::GpuShaderBuffer,
@@ -208,6 +209,7 @@ pub(super) fn prepare_render_bind_groups(
     compaction: Res<super::draw_resources::TrailCompaction>,
     alpha_sort: Res<super::draw_resources::AlphaSort>,
     views: Query<Entity, With<Camera3d>>,
+    mut flipbook_sampler: Local<Option<Sampler>>,
 ) {
     for (entity, effect) in &effects {
         let Some(renderers) = buffers.get(&effect.renderers) else {
@@ -234,6 +236,12 @@ pub(super) fn prepare_render_bind_groups(
         let Some(aux) = buffers.get(&effect.aux) else {
             continue;
         };
+        let sampler = if effect.renderer_kind == 1 && effect.semantic_material.is_none() {
+            flipbook_sampler
+                .get_or_insert_with(|| render_device.create_sampler(&SamplerDescriptor::default()))
+        } else {
+            &image.sampler
+        };
         let bind_group = render_device.create_bind_group(
             Some("aestra gpu sprite"),
             &pipeline_cache.get_bind_group_layout(&pipeline.effect_layout),
@@ -244,7 +252,7 @@ pub(super) fn prepare_render_bind_groups(
                 globals.buffer.as_entire_buffer_binding(),
                 params.buffer.as_entire_buffer_binding(),
                 &image.texture_view,
-                &image.sampler,
+                sampler,
                 aux.buffer.as_entire_buffer_binding(),
             )),
         );
@@ -259,7 +267,7 @@ pub(super) fn prepare_render_bind_groups(
                     globals.buffer.as_entire_buffer_binding(),
                     entry.render_params.as_entire_buffer_binding(),
                     &image.texture_view,
-                    &image.sampler,
+                    sampler,
                     aux.buffer.as_entire_buffer_binding(),
                 )),
             )
@@ -280,7 +288,7 @@ pub(super) fn prepare_render_bind_groups(
                             globals.buffer.as_entire_buffer_binding(),
                             params.as_entire_buffer_binding(),
                             &image.texture_view,
-                            &image.sampler,
+                            sampler,
                             aux.buffer.as_entire_buffer_binding(),
                         )),
                     ),
@@ -308,9 +316,11 @@ pub(super) fn prepare_render_bind_groups(
             .textures
             .iter()
             .map(|texture| {
-                images
-                    .get(texture)
-                    .or_else(|| images.get(&material.fallback_texture))
+                texture
+                    .image
+                    .as_ref()
+                    .and_then(|image| images.get(image))
+                    .or_else(|| images.get(&texture.fallback))
             })
             .collect::<Option<Vec<_>>>();
         let Some(resolved_images) = resolved_images else {

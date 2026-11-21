@@ -47,6 +47,53 @@ fn navigation_tick(app: &mut App, delta: Vec2) {
 }
 
 #[test]
+fn xy_preview_pans_and_zooms_without_orbiting_or_changing_the_3d_pose() {
+    let (mut app, _, camera) = navigation_app();
+    app.world_mut().resource_mut::<PreviewCameraController>().xy = true;
+    app.world_mut().entity_mut(camera).insert((
+        Transform::from_xyz(0.0, 0.0, DEFAULT_XY_HEIGHT),
+        Projection::Orthographic(OrthographicProjection::default_2d()),
+    ));
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .press(MouseButton::Middle);
+    navigation_tick(&mut app, Vec2::new(20.0, 12.0));
+    let panned = *app.world().get::<Transform>(camera).unwrap();
+    assert_eq!(panned.translation, Vec3::new(-5.0, 3.0, DEFAULT_XY_HEIGHT));
+
+    {
+        let mut buttons = app.world_mut().resource_mut::<ButtonInput<MouseButton>>();
+        buttons.release(MouseButton::Middle);
+        buttons.press(MouseButton::Right);
+    }
+    navigation_tick(&mut app, Vec2::splat(20.0));
+    assert_eq!(*app.world().get::<Transform>(camera).unwrap(), panned);
+    app.world_mut().write_message(MouseWheel {
+        unit: MouseScrollUnit::Line,
+        x: 0.0,
+        y: 1.0,
+        window: Entity::PLACEHOLDER,
+        phase: bevy::input::touch::TouchPhase::Moved,
+    });
+    navigation_tick(&mut app, Vec2::ZERO);
+    let transform = app.world().get::<Transform>(camera).unwrap();
+    assert_eq!(
+        transform.translation.truncate(),
+        panned.translation.truncate()
+    );
+    assert!(transform.translation.z < panned.translation.z);
+    let Projection::Orthographic(projection) = app.world().get::<Projection>(camera).unwrap()
+    else {
+        panic!("XY view must remain orthographic");
+    };
+    assert!(projection.scale < 1.0);
+    let controller = app.world().resource::<PreviewCameraController>();
+    assert_eq!(controller.focus, Vec3::ZERO);
+    assert_eq!(controller.distance, 140.0);
+    assert_eq!(controller.pitch, DEFAULT_PREVIEW_PITCH);
+}
+
+#[test]
 fn dock_tab_focus_blocks_keyboard_flight_but_preserves_explicit_pointer_orbit() {
     let (mut app, _, camera) = navigation_app();
     let strip = app
@@ -501,6 +548,7 @@ fn framing_preview_restores_default_camera_around_effect() {
         yaw: 1.2,
         pitch: -0.8,
         frame_requested: true,
+        xy: false,
     };
     let effect_position = Vec3::new(24.0, 6.0, -2.0);
 

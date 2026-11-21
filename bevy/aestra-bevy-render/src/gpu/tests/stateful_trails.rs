@@ -349,6 +349,7 @@ fn event_trail_scene_with_pool(
         trail_plan,
         total_slots: slots,
         simulation_time: 0.0,
+        stateful_cadence: None,
         seek_quality: SeekQuality::Exact,
         history_policy: PlaybackHistoryPolicy::default(),
         history_epoch: 0,

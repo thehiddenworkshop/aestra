@@ -14,6 +14,54 @@ use aestra_core::{
 use std::collections::BTreeSet;
 
 #[test]
+fn sprite_normal_map_connects_to_camera_lighting_as_a_fragment_value() {
+    let program = MaterialProgram::additive_sprite("Normal-lit sprite");
+    let kind = MaterialGraphCreateKind::Function(MaterialGraphFunction::SpritePointIrradiance);
+    assert!(
+        MaterialCompiler
+            .graph_node_catalog(&program)
+            .iter()
+            .any(|node| node.kind == kind)
+    );
+    let normal = MaterialCompiler
+        .plan_graph_node_creation(
+            &program,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::NormalMap),
+            None,
+        )
+        .unwrap();
+    let mut lighting = MaterialCompiler
+        .plan_graph_node_creation(&normal.replacement, kind, Some(normal.expression))
+        .unwrap();
+    lighting.replacement.outputs.color = lighting.expression;
+    let inputs = MaterialCompiler
+        .reflect_controls(&lighting.replacement, None)
+        .unwrap()
+        .required_inputs;
+    assert!(inputs.scene.contains(&MaterialInput::ScenePointIrradiance));
+    assert!(!inputs.vertex.contains(&MaterialInput::Tangent));
+    assert!(
+        MaterialCompiler
+            .plan_graph_node_creation(&program, kind, Some(program.outputs.alpha))
+            .is_err()
+    );
+
+    let mut mesh = program;
+    mesh.domain = aestra_core::material::MaterialDomain::Mesh;
+    assert!(
+        !MaterialCompiler
+            .graph_node_catalog(&mesh)
+            .iter()
+            .any(|node| node.kind == kind)
+    );
+    assert!(
+        MaterialCompiler
+            .plan_graph_node_creation(&mesh, kind, None)
+            .is_err()
+    );
+}
+
+#[test]
 fn function_catalog_uses_material_recipes_without_a_material_document() {
     let function = MaterialFunction::from_ron(include_str!(
         "../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"

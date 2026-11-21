@@ -96,26 +96,51 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool) -> String {
     }
     // include_str! shader bytes may use CRLF after a Windows checkout. Match
     // generated declarations independently of checkout formatting, not of ABI.
-    let wgsl = wgsl.replace("\r\n", "\n");
-    // The portable compiler owns this callback ABI. Fail loudly if its definition changes;
-    // silently leaving a neutral shader would make a newly authored lit material look broken.
-    let start = wgsl
-        .find("fn aestra_scene_point_irradiance(")
-        .expect("scene-light callback missing");
-    let body = start
-        + wgsl[start..]
-            .find('{')
-            .expect("scene-light callback body missing");
-    let end = body
-        + wgsl[body..]
-            .find('}')
-            .expect("scene-light callback end missing")
-        + 1;
+    let mut wgsl = wgsl.replace("\r\n", "\n");
+    let scene_callback = "fn aestra_scene_point_irradiance(";
+    let sprite_callback = "fn aestra_sprite_point_irradiance(";
+    let has_scene_callback = wgsl.contains(scene_callback);
+    let has_sprite_callback = wgsl.contains(sprite_callback);
+    assert!(
+        has_scene_callback || has_sprite_callback,
+        "scene-light callback missing"
+    );
+    if has_scene_callback {
+        replace_light_callback(
+            &mut wgsl,
+            scene_callback,
+            r#"{
+    @if(AESTRA_SCENE_POINT_LIGHTING) { return aestra_bevy_point_irradiance(world, pixel); }
+    @else {
+        @if(AESTRA_POINT_LIGHTING_2D) { return aestra_point_irradiance_2d(world.xy); }
+        @else { return vec3<f32>(0.0); }
+    }
+}"#,
+        );
+    }
+    if has_sprite_callback {
+        replace_light_callback(
+            &mut wgsl,
+            sprite_callback,
+            r#"{
+    @if(AESTRA_POINT_LIGHTING_2D) {
+        return aestra_normal_point_irradiance_2d(world, quad, normal);
+    }
+    @else { return vec3<f32>(0.0); }
+}"#,
+        );
+    }
     let mut source = String::with_capacity(wgsl.len() + 3000);
-    source.push_str(MATERIAL_IMPORTS);
-    source.push_str(&wgsl[..body]);
-    source.push_str("{\n    @if(AESTRA_SCENE_POINT_LIGHTING) { return aestra_bevy_point_irradiance(world, pixel); }\n    @else { return vec3<f32>(0.0); }\n}");
-    source.push_str(&wgsl[end..]);
+    if has_scene_callback {
+        source.push_str(MATERIAL_IMPORTS);
+    }
+    source.push_str(&wgsl);
+    source.push_str("\n@if(AESTRA_POINT_LIGHTING_2D) {\n");
+    source.push_str(include_str!("lighting_2d.wgsl"));
+    source.push_str("\n}\n");
+    if !has_scene_callback {
+        return source;
+    }
     source.push_str("\n@if(AESTRA_SCENE_POINT_LIGHTING) {\n");
     source.push_str(include_str!("material_lighting.wgsl"));
     source.push_str("\n}\n");
@@ -131,6 +156,44 @@ pub(crate) fn compose_material(wgsl: &str, enabled: bool) -> String {
         declaration,
         &format!("@if(!AESTRA_SCENE_POINT_LIGHTING)\n{declaration}"),
     )
+}
+
+fn replace_light_callback(source: &mut String, signature: &str, body: &str) {
+    let signature = source
+        .find(signature)
+        .expect("scene-light callback missing");
+    let start = signature
+        + source[signature..]
+            .find('{')
+            .expect("scene-light callback body missing");
+    let end = start
+        + source[start..]
+            .find('}')
+            .expect("scene-light callback end missing")
+        + 1;
+    source.replace_range(start..end, body);
+}
+
+// Insert into the shared sprite vertex body used by the legacy and material paths.
+pub(crate) fn compose_pixel_grid(wesl: &str) -> String {
+    const CLIP_POSITION: &str = "output.clip_position = view.clip_from_world * world_position;";
+    const SNAP: &str = r#"
+    @if(AESTRA_PIXEL_GRID) {
+        let viewport_size = view.main_pass_viewport.zw;
+        let center_clip = view.clip_from_world * world_center;
+        if (all(viewport_size > vec2<f32>(0.0)) && center_clip.w > 0.0) {
+            let ndc_to_pixel = vec2<f32>(0.5, -0.5);
+            let pixel = (center_clip.xy / center_clip.w * ndc_to_pixel + 0.5) * viewport_size;
+            let delta = floor(pixel + 0.5) - pixel;
+            output.clip_position = vec4<f32>(
+                output.clip_position.xy
+                    + delta / (viewport_size * ndc_to_pixel) * output.clip_position.w,
+                output.clip_position.zw,
+            );
+        }
+    }
+"#;
+    wesl.replace(CLIP_POSITION, &format!("{CLIP_POSITION}{SNAP}"))
 }
 
 /// Keep the portable compiler/ABI engine-neutral. Only the native adapter wraps

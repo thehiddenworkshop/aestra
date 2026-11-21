@@ -150,6 +150,16 @@ fn apply_command(
             let previous = std::mem::replace(&mut effect.name, name.clone());
             vec![EffectCommand::SetEffectName { name: previous }]
         }
+        EffectCommand::SetEffectMetadata { key, value } => {
+            let previous = match value {
+                Some(value) => effect.metadata.insert(key.clone(), value.clone()),
+                None => effect.metadata.remove(key),
+            };
+            vec![EffectCommand::SetEffectMetadata {
+                key: key.clone(),
+                value: previous,
+            }]
+        }
         EffectCommand::SetEffectDuration { duration } => {
             let previous = std::mem::replace(&mut effect.duration, *duration);
             vec![EffectCommand::SetEffectDuration { duration: previous }]

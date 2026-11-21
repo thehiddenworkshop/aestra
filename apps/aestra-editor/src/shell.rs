@@ -11,6 +11,19 @@ use std::collections::HashMap;
 
 pub(crate) struct EditorShellPlugin;
 
+pub(crate) fn editor_ui_camera() -> impl Bundle {
+    (
+        Camera2d,
+        Camera {
+            order: 0,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        IsDefaultUiCamera,
+        RenderLayers::layer(31),
+    )
+}
+
 mod sets;
 pub(crate) use sets::EditorSet;
 
@@ -119,16 +132,7 @@ fn setup_editor(
     mut rendered: ResMut<RenderedUiRevision>,
     mut rendered_navigation: ResMut<RenderedGlobalSourceNavigation>,
 ) {
-    commands.spawn((
-        Camera2d,
-        Camera {
-            order: 0,
-            clear_color: ClearColorConfig::None,
-            ..default()
-        },
-        IsDefaultUiCamera,
-        RenderLayers::layer(31),
-    ));
+    commands.spawn(editor_ui_camera());
     spawn_editor_ui(
         &mut commands,
         &menu,

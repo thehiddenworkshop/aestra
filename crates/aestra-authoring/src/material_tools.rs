@@ -543,6 +543,16 @@ impl MaterialToolPlanner {
             source,
             target,
         };
+        if program.parameters != created.replacement.parameters {
+            let transaction = MaterialTransaction::new(
+                format!("Create {} material graph node", graph_node_name(kind)),
+                vec![MaterialCommand::ReplaceMaterialProgram {
+                    id: program_id,
+                    program: created.replacement,
+                }],
+            );
+            return validate_plan(document, command, transaction, vec![created.expression]);
+        }
         let mut commands = append_expression_commands(program, &created.replacement);
         // A constant added directly from the palette is an explicit node request; keep it as a
         // node. Default-input constants are single-use and inline automatically.
@@ -684,6 +694,16 @@ impl MaterialToolPlanner {
                 &mut BTreeSet::new(),
             ) {
                 Some(source) => source,
+                None if matches!(
+                    target,
+                    MaterialConnectionTarget::ExpressionInput {
+                        input: MaterialExpressionInput::FrameBounds,
+                        ..
+                    }
+                ) =>
+                {
+                    MaterialExpressionId::from_u128(0)
+                }
                 None => {
                     let value = edge
                         .value_type
@@ -977,7 +997,21 @@ impl MaterialToolPlanner {
     ) -> Result<MaterialToolPlan, MaterialToolError> {
         let program = find_program(document, program_id)?;
         connection_source(program, target)?;
-        if target == MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset) {
+        if matches!(
+            target,
+            MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset)
+                | MaterialConnectionTarget::ExpressionInput {
+                    input: MaterialExpressionInput::FrameBounds,
+                    ..
+                }
+        ) {
+            let label = if target
+                == MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset)
+            {
+                "Reset Vertex Offset"
+            } else {
+                "Reset Frame Bounds"
+            };
             return validate_plan(
                 document,
                 MaterialToolCommand::DisconnectMaterialConnection {
@@ -985,12 +1019,8 @@ impl MaterialToolPlanner {
                     target,
                 },
                 MaterialTransaction::single(
-                    "Reset Vertex Offset",
-                    MaterialCommand::SetMaterialOutput {
-                        program: program_id,
-                        output: MaterialOutputSocket::VertexOffset,
-                        expression: MaterialExpressionId::from_u128(0),
-                    },
+                    label,
+                    connection_command(program_id, target, MaterialExpressionId::from_u128(0)),
                 ),
                 Vec::new(),
             );
@@ -1333,6 +1363,7 @@ pub fn remap_expression_sources(
             remap(tangent);
             remap(bitangent);
         }
+        MaterialExpressionKind::SpritePointIrradiance { normal } => remap(normal),
         MaterialExpressionKind::Fresnel {
             normal,
             view,
@@ -1433,6 +1464,108 @@ pub fn remap_expression_sources(
             remap(ddx);
             remap(ddy);
         }
+        MaterialExpressionKind::NearestPaletteColor {
+            palette,
+            color: input,
+        }
+        | MaterialExpressionKind::PaletteRamp {
+            palette,
+            factor: input,
+        } => {
+            remap(palette);
+            remap(input);
+        }
+        MaterialExpressionKind::PaletteShift {
+            palette,
+            color,
+            steps,
+        } => {
+            remap(palette);
+            remap(color);
+            remap(steps);
+        }
+        MaterialExpressionKind::PaletteSwap {
+            source_palette,
+            target_palette,
+            color,
+        } => {
+            remap(source_palette);
+            remap(target_palette);
+            remap(color);
+        }
+        MaterialExpressionKind::PixelSnap {
+            position,
+            cell_size,
+        } => {
+            remap(position);
+            remap(cell_size);
+        }
+        MaterialExpressionKind::Posterize { color, levels } => {
+            remap(color);
+            remap(levels);
+        }
+        MaterialExpressionKind::PixelateUv { uv, cells } => {
+            remap(uv);
+            remap(cells);
+        }
+        MaterialExpressionKind::Quantize { value, step } => {
+            remap(value);
+            remap(step);
+        }
+        MaterialExpressionKind::Threshold { value, threshold } => {
+            remap(value);
+            remap(threshold);
+        }
+        MaterialExpressionKind::PixelOutline {
+            texture,
+            uv,
+            width,
+            threshold,
+            frame_bounds,
+        } => {
+            remap(texture);
+            remap(uv);
+            remap(width);
+            remap(threshold);
+            if let Some(bounds) = frame_bounds {
+                remap(bounds);
+            }
+        }
+        MaterialExpressionKind::PatternDither {
+            texture,
+            alpha,
+            position,
+            cell_size,
+        } => {
+            remap(texture);
+            remap(alpha);
+            remap(position);
+            remap(cell_size);
+        }
+        MaterialExpressionKind::BayerDither2x2 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BayerDither8x8 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BlueNoiseDither {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BayerDither4x4 {
+            alpha,
+            position,
+            cell_size,
+        } => {
+            remap(alpha);
+            remap(position);
+            remap(cell_size);
+        }
         MaterialExpressionKind::ExtractComponent { value, .. } => remap(value),
     }
 }
@@ -1526,6 +1659,18 @@ fn graph_connection_target(target: &MaterialGraphEdgeTarget) -> Option<MaterialC
                 "angle" => MaterialExpressionInput::Angle,
                 "scale" => MaterialExpressionInput::Scale,
                 "texture" => MaterialExpressionInput::Texture,
+                "palette" => MaterialExpressionInput::Palette,
+                "source_palette" => MaterialExpressionInput::SourcePalette,
+                "target_palette" => MaterialExpressionInput::TargetPalette,
+                "color" => MaterialExpressionInput::Color,
+                "steps" => MaterialExpressionInput::Steps,
+                "position" => MaterialExpressionInput::Position,
+                "cell_size" => MaterialExpressionInput::CellSize,
+                "levels" => MaterialExpressionInput::Levels,
+                "cells" => MaterialExpressionInput::Cells,
+                "step" => MaterialExpressionInput::Step,
+                "width" => MaterialExpressionInput::Width,
+                "frame_bounds" => MaterialExpressionInput::FrameBounds,
                 "uv" => MaterialExpressionInput::Uv,
                 "source" => MaterialExpressionInput::Source,
                 "alpha" => MaterialExpressionInput::SourceAlpha,

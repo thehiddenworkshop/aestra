@@ -1,5 +1,6 @@
 //! Snapshot-only browsing. Source IDs are UI identities, never authored dependencies.
 use super::bookmarks::{Bookmark, BrowserCollection};
+use aestra_core::EffectDimension;
 use aestra_project::{
     ProjectContent, ProjectContentVersion, ProjectFileClassification, ProjectSourceEntry,
     ProjectSourceId, ProjectSourceKind,
@@ -34,6 +35,13 @@ pub(super) enum Sort {
     #[default]
     Name,
     Type,
+}
+
+pub(crate) fn effect_dimension_label(dimension: EffectDimension) -> &'static str {
+    match dimension {
+        EffectDimension::TwoD => "effect-dimension-2d",
+        EffectDimension::ThreeD => "effect-dimension-3d",
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -135,6 +143,7 @@ pub(crate) struct AssetBrowserState {
     pub(super) query: String,
     pub(super) recursive: bool,
     pub(super) kinds: BTreeSet<Kind>,
+    pub(super) dimension: Option<EffectDimension>,
     pub(super) selected: Option<ProjectSourceId>,
     pub(super) inspected: Option<ProjectSourceId>,
     pub(super) inspection_tab: InspectionTab,
@@ -164,6 +173,7 @@ impl Default for AssetBrowserState {
             query: String::new(),
             recursive: false,
             kinds: BTreeSet::new(),
+            dimension: None,
             selected: None,
             inspected: None,
             inspection_tab: InspectionTab::Details,
@@ -252,6 +262,7 @@ impl AssetBrowserState {
             self.expanded.clear();
             self.query.clear();
             self.kinds.clear();
+            self.dimension = None;
             self.selected = None;
             self.page = 0;
             self.tree_page = 0;
@@ -330,6 +341,7 @@ impl AssetBrowserState {
         self.navigate(content, folder);
         self.query.clear();
         self.kinds.clear();
+        self.dimension = None;
         self.recursive = false;
         self.sources_visible = true;
         let mut ancestor = content.source(folder);
@@ -399,6 +411,10 @@ impl AssetBrowserState {
                 in_scope
                     && seen.insert(entry.id)
                     && (self.kinds.is_empty() || kind == Kind::Folder || self.kinds.contains(&kind))
+                    && self.dimension.is_none_or(|dimension| {
+                        kind == Kind::Folder
+                            || content.source_effect_dimension(entry.id) == Some(dimension)
+                    })
                     && (query.is_empty()
                         || entry.name.to_string_lossy().to_lowercase().contains(&query)
                         || content.source_metadata_matches(entry.id, &query))

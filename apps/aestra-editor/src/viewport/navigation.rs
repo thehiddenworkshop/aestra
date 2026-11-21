@@ -1,15 +1,34 @@
 //! Existing preview camera navigation shared by shipping and compatibility qualification.
-use super::gizmo_state::{EmitterTransformGizmoInteraction, ShapeGizmoState};
 use super::shortcuts::PreviewCanvas;
+use super::{
+    PreviewDisplayState,
+    gizmo_state::{EmitterTransformGizmoInteraction, ShapeGizmoState},
+};
 use bevy::{
+    camera::ScalingMode,
     ecs::system::SystemParam,
     gizmos::transform_gizmo::TransformGizmoState,
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     prelude::*,
     ui::RelativeCursorPosition,
+    window::PrimaryWindow,
 };
 
 pub(super) const DEFAULT_PREVIEW_PITCH: f32 = -0.35;
+pub(super) const DEFAULT_XY_HEIGHT: f32 = 100.0;
+
+pub(super) fn xy_world_height(projection: &OrthographicProjection) -> f32 {
+    match projection.scaling_mode {
+        ScalingMode::FixedVertical { viewport_height } => viewport_height,
+        _ => DEFAULT_XY_HEIGHT,
+    }
+}
+
+type NavigationCamera = (
+    &'static mut Transform,
+    Option<&'static mut Projection>,
+    Option<&'static Camera>,
+);
 
 #[derive(Component)]
 pub(crate) struct PreviewRenderCamera;
@@ -24,6 +43,7 @@ pub(crate) struct PreviewCameraController {
     pub(super) yaw: f32,
     pub(super) pitch: f32,
     pub(super) frame_requested: bool,
+    pub(super) xy: bool,
 }
 
 impl Default for PreviewCameraController {
@@ -34,6 +54,7 @@ impl Default for PreviewCameraController {
             yaw: 0.0,
             pitch: DEFAULT_PREVIEW_PITCH,
             frame_requested: false,
+            xy: false,
         }
     }
 }
@@ -118,9 +139,12 @@ pub(super) fn navigate_preview_camera(
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
     browser: Query<&RelativeCursorPosition, With<crate::asset_browser::BrowserSurface>>,
     player: Query<&GlobalTransform, With<EmitterTransformGizmoProxy>>,
+    session: Option<Res<crate::session::EditorSession>>,
     mut navigation: ResMut<PreviewNavigationState>,
     mut controller: ResMut<PreviewCameraController>,
-    mut camera: Single<&mut Transform, With<PreviewRenderCamera>>,
+    camera: Single<NavigationCamera, With<PreviewRenderCamera>>,
+    display: Option<Res<PreviewDisplayState>>,
+    window: Query<&Window, With<PrimaryWindow>>,
 ) {
     if context.blocked() || capture.gizmo_owns_input(&buttons) || keys.just_pressed(KeyCode::Escape)
     {
@@ -131,8 +155,20 @@ pub(super) fn navigate_preview_camera(
         navigation.flight_blocked = true;
         return;
     }
-    let cursor_over =
+    let mut cursor_over =
         canvas.cursor_over() && !browser.iter().any(RelativeCursorPosition::cursor_over);
+    let (mut camera, projection, viewport) = camera.into_inner();
+    if controller.xy && display.is_some_and(|display| display.pixel_grid) {
+        cursor_over &= window
+            .single()
+            .ok()
+            .and_then(Window::cursor_position)
+            .is_some_and(|cursor| {
+                viewport
+                    .and_then(Camera::logical_viewport_rect)
+                    .is_some_and(|rect| rect.contains(cursor))
+            });
+    }
     let pointer_delta = motion
         .read()
         .fold(Vec2::ZERO, |sum, event| sum + event.delta);
@@ -148,6 +184,49 @@ pub(super) fn navigate_preview_camera(
     }
     if !buttons.pressed(MouseButton::Middle) {
         navigation.dragging = false;
+    }
+    if controller.xy {
+        navigation.looking = false;
+        let panning = navigation.dragging && pointer_delta != Vec2::ZERO;
+        let zooming = cursor_over && scroll_delta != 0.0;
+        if !(controller.frame_requested || panning || zooming) {
+            return;
+        }
+        let Some(mut projection) = projection else {
+            return;
+        };
+        let Projection::Orthographic(projection) = &mut *projection else {
+            return;
+        };
+        let world_height = xy_world_height(projection);
+        if controller.frame_requested {
+            let focus = player
+                .single()
+                .map_or(Vec3::ZERO, GlobalTransform::translation);
+            projection.scale = session
+                .as_deref()
+                .zip(viewport.and_then(Camera::logical_viewport_size))
+                .and_then(|(session, size)| {
+                    super::xy_authoring::frame_scale(session, size, world_height)
+                })
+                .unwrap_or(1.0);
+            camera.translation = focus + Vec3::Z * DEFAULT_XY_HEIGHT * projection.scale;
+            controller.frame_requested = false;
+        }
+        if panning {
+            let height = viewport
+                .and_then(Camera::physical_viewport_size)
+                .map_or(400.0, |size| size.y.max(1) as f32);
+            let units_per_pixel = world_height * projection.scale / height;
+            camera.translation +=
+                Vec3::new(-pointer_delta.x, pointer_delta.y, 0.0) * units_per_pixel;
+        }
+        if zooming {
+            let previous_scale = projection.scale;
+            projection.scale = (projection.scale * (-scroll_delta * 0.12).exp()).clamp(0.01, 40.0);
+            camera.translation.z += DEFAULT_XY_HEIGHT * (projection.scale - previous_scale);
+        }
+        return;
     }
     if buttons.just_pressed(MouseButton::Right) && cursor_over {
         navigation.looking = true;
@@ -209,7 +288,7 @@ pub(super) fn navigate_preview_camera(
         return;
     }
 
-    **camera = preview_camera_transform(
+    *camera = preview_camera_transform(
         controller.focus,
         controller.distance,
         controller.yaw,

@@ -45,8 +45,27 @@ pub(super) struct GpuSpritePipelineKey {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum GpuSpriteViewKey {
-    TwoD(Mesh2dPipelineKey),
+    TwoD {
+        mesh: Mesh2dPipelineKey,
+        pixel_grid: bool,
+    },
     ThreeD(MeshPipelineKey),
+}
+
+impl GpuSpriteViewKey {
+    pub(super) fn two_d(
+        target_format: TextureFormat,
+        samples: u32,
+        pixel_grid: bool,
+        renderer_kind: u32,
+        render_mode: GpuRenderMode,
+    ) -> Self {
+        Self::TwoD {
+            mesh: Mesh2dPipelineKey::from_msaa_samples(samples)
+                | Mesh2dPipelineKey::from_target_format(target_format),
+            pixel_grid: pixel_grid && renderer_kind <= 1 && render_mode == GpuRenderMode::Rendered,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -151,16 +170,19 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
     type Key = GpuSpritePipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        let mut shader_defs = if matches!(key.view, GpuSpriteViewKey::ThreeD(_))
-            && key
-                .material
-                .as_ref()
-                .is_some_and(|material| material.requires_scene_lighting)
-        {
-            vec!["AESTRA_SCENE_POINT_LIGHTING".into()]
-        } else {
-            vec![]
-        };
+        let lit = key
+            .material
+            .as_ref()
+            .is_some_and(|material| material.requires_scene_lighting);
+        let lit_2d = lit && matches!(key.view, GpuSpriteViewKey::TwoD { .. });
+        let mut shader_defs = Vec::new();
+        if lit {
+            shader_defs.push(if lit_2d {
+                "AESTRA_POINT_LIGHTING_2D".into()
+            } else {
+                "AESTRA_SCENE_POINT_LIGHTING".into()
+            });
+        }
         if key.fragment_list_oit {
             shader_defs.extend(["AESTRA_FRAGMENT_LIST_OIT".into(), "OIT_ENABLED".into()]);
             if matches!(key.view, GpuSpriteViewKey::ThreeD(mesh) if mesh.contains(MeshPipelineKey::DEPTH_PREPASS))
@@ -169,12 +191,17 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             }
         }
         let (view_layout, target_format, depth_format, msaa_samples) = match key.view {
-            GpuSpriteViewKey::TwoD(mesh) => (
-                self.mesh2d.view_layout.clone(),
-                mesh.target_format(),
-                CORE_2D_DEPTH_FORMAT,
-                mesh.msaa_samples(),
-            ),
+            GpuSpriteViewKey::TwoD { mesh, pixel_grid } => {
+                if pixel_grid {
+                    shader_defs.push("AESTRA_PIXEL_GRID".into());
+                }
+                (
+                    self.mesh2d.view_layout.clone(),
+                    mesh.target_format(),
+                    CORE_2D_DEPTH_FORMAT,
+                    mesh.msaa_samples(),
+                )
+            }
             GpuSpriteViewKey::ThreeD(mesh) => (
                 self.mesh3d.get_view_layout(mesh.into()).main_layout,
                 mesh.target_format(),
@@ -229,6 +256,8 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 } else {
                     self.scene_depth_layout.clone()
                 });
+            } else if lit_2d {
+                layout.push(super::lighting_2d::layout());
             }
         }
         let fragment_shader = if key.mesh_wireframe {
@@ -592,7 +621,6 @@ mod tests {
             multisampled_shader: Handle::default(),
             uniforms: std::sync::Arc::from(uniforms),
             textures: Vec::new(),
-            fallback_texture: Handle::default(),
         };
         let first = binding(&[0; 16]);
         let second = binding(&[255; 16]);

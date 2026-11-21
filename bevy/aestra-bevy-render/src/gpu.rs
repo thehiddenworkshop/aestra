@@ -37,6 +37,8 @@ mod extraction_systems;
 mod field_observations;
 mod geometry_sample;
 mod geometry_statistics;
+mod lighting_2d;
+pub use lighting_2d::{AestraLights2d, AestraPointLight2d, PointLightFalloff2d};
 #[path = "gpu/mapped_readback.rs"]
 mod mapped_readback;
 #[cfg(test)]
@@ -84,6 +86,7 @@ mod stage_inputs;
 mod stage_output_delivery;
 mod stage_runtimes;
 mod stateful_parameters;
+mod stateful_presentation;
 mod stateful_simulation;
 mod stateful_trails;
 #[path = "gpu/storage_buffers.rs"]

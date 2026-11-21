@@ -1,6 +1,7 @@
 use aestra_core::{
     AssetId, MaterialExpressionId, MaterialFunctionId, MaterialParameterId, MaterialProgramId,
     ValidationReport,
+    dither::BayerPattern,
     material::{
         MaterialDomain, MaterialEvaluationDomain, MaterialExpressionDomain, MaterialExpressionInfo,
         MaterialExpressionKind, MaterialInput, MaterialParameter, MaterialProgram,
@@ -147,6 +148,51 @@ pub enum MaterialIrInstruction {
         #[serde(default)]
         sampling: MaterialTextureSamplingMode,
     },
+    NearestPaletteColor {
+        palette: MaterialIrValueId,
+        color: MaterialIrValueId,
+    },
+    PaletteRamp {
+        palette: MaterialIrValueId,
+        factor: MaterialIrValueId,
+    },
+    PaletteShift {
+        palette: MaterialIrValueId,
+        color: MaterialIrValueId,
+        steps: MaterialIrValueId,
+    },
+    PaletteSwap {
+        source_palette: MaterialIrValueId,
+        target_palette: MaterialIrValueId,
+        color: MaterialIrValueId,
+    },
+    #[serde(alias = "BayerDither4x4")]
+    BayerDither {
+        alpha: MaterialIrValueId,
+        position: MaterialIrValueId,
+        cell_size: MaterialIrValueId,
+        #[serde(default)]
+        pattern: BayerPattern,
+    },
+    BlueNoiseDither {
+        alpha: MaterialIrValueId,
+        position: MaterialIrValueId,
+        cell_size: MaterialIrValueId,
+    },
+    PatternDither {
+        texture: MaterialIrValueId,
+        alpha: MaterialIrValueId,
+        position: MaterialIrValueId,
+        cell_size: MaterialIrValueId,
+    },
+    PixelSnap {
+        position: MaterialIrValueId,
+        cell_size: MaterialIrValueId,
+    },
+    Posterize {
+        color: MaterialIrValueId,
+        levels: MaterialIrValueId,
+    },
     ExtractComponent {
         value: MaterialIrValueId,
         component: MaterialVectorComponent,
@@ -158,6 +204,29 @@ pub enum MaterialIrInstruction {
         normal: MaterialIrValueId,
         tangent: MaterialIrValueId,
         bitangent: MaterialIrValueId,
+    },
+    PixelateUv {
+        uv: MaterialIrValueId,
+        cells: MaterialIrValueId,
+    },
+    Quantize {
+        value: MaterialIrValueId,
+        step: MaterialIrValueId,
+    },
+    Threshold {
+        value: MaterialIrValueId,
+        threshold: MaterialIrValueId,
+    },
+    PixelOutline {
+        texture: MaterialIrValueId,
+        uv: MaterialIrValueId,
+        width: MaterialIrValueId,
+        threshold: MaterialIrValueId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frame_bounds: Option<MaterialIrValueId>,
+    },
+    SpritePointIrradiance {
+        normal: MaterialIrValueId,
     },
 }
 
@@ -233,6 +302,7 @@ impl MaterialIrInstruction {
                 tangent,
                 bitangent,
             } => vec![*sample, *strength, *flip_y, *normal, *tangent, *bitangent],
+            Self::SpritePointIrradiance { normal } => vec![*normal],
             Self::Fresnel {
                 normal,
                 view,
@@ -283,6 +353,59 @@ impl MaterialIrInstruction {
                 sampling.append_operands(&mut dependencies);
                 dependencies
             }
+            Self::NearestPaletteColor {
+                palette,
+                color: input,
+            }
+            | Self::PaletteRamp {
+                palette,
+                factor: input,
+            } => vec![*palette, *input],
+            Self::PaletteShift {
+                palette,
+                color,
+                steps,
+            } => vec![*palette, *color, *steps],
+            Self::PaletteSwap {
+                source_palette,
+                target_palette,
+                color,
+            } => vec![*source_palette, *target_palette, *color],
+            Self::BayerDither {
+                alpha,
+                position,
+                cell_size,
+                ..
+            }
+            | Self::BlueNoiseDither {
+                alpha,
+                position,
+                cell_size,
+            } => vec![*alpha, *position, *cell_size],
+            Self::PatternDither {
+                texture,
+                alpha,
+                position,
+                cell_size,
+            } => vec![*texture, *alpha, *position, *cell_size],
+            Self::PixelSnap {
+                position,
+                cell_size,
+            } => vec![*position, *cell_size],
+            Self::Posterize { color, levels } => vec![*color, *levels],
+            Self::PixelateUv { uv, cells } => vec![*uv, *cells],
+            Self::Quantize { value, step } => vec![*value, *step],
+            Self::Threshold { value, threshold } => vec![*value, *threshold],
+            Self::PixelOutline {
+                texture,
+                uv,
+                width,
+                threshold,
+                frame_bounds,
+            } => [*texture, *uv, *width, *threshold]
+                .into_iter()
+                .chain(*frame_bounds)
+                .collect(),
             Self::ExtractComponent { value, .. } => vec![*value],
         }
     }
@@ -361,6 +484,7 @@ impl MaterialIrInstruction {
                 remap(tangent);
                 remap(bitangent);
             }
+            Self::SpritePointIrradiance { normal } => remap(normal),
             Self::Fresnel {
                 normal,
                 view,
@@ -458,6 +582,99 @@ impl MaterialIrInstruction {
                 if let MaterialTextureSamplingMode::ExplicitGradient { ddx, ddy } = sampling {
                     remap(ddx);
                     remap(ddy);
+                }
+            }
+            Self::NearestPaletteColor {
+                palette,
+                color: input,
+            }
+            | Self::PaletteRamp {
+                palette,
+                factor: input,
+            } => {
+                remap(palette);
+                remap(input);
+            }
+            Self::PaletteShift {
+                palette,
+                color,
+                steps,
+            } => {
+                remap(palette);
+                remap(color);
+                remap(steps);
+            }
+            Self::PaletteSwap {
+                source_palette,
+                target_palette,
+                color,
+            } => {
+                remap(source_palette);
+                remap(target_palette);
+                remap(color);
+            }
+            Self::BayerDither {
+                alpha,
+                position,
+                cell_size,
+                ..
+            }
+            | Self::BlueNoiseDither {
+                alpha,
+                position,
+                cell_size,
+            } => {
+                remap(alpha);
+                remap(position);
+                remap(cell_size);
+            }
+            Self::PatternDither {
+                texture,
+                alpha,
+                position,
+                cell_size,
+            } => {
+                remap(texture);
+                remap(alpha);
+                remap(position);
+                remap(cell_size);
+            }
+            Self::PixelSnap {
+                position,
+                cell_size,
+            } => {
+                remap(position);
+                remap(cell_size);
+            }
+            Self::Posterize { color, levels } => {
+                remap(color);
+                remap(levels);
+            }
+            Self::PixelateUv { uv, cells } => {
+                remap(uv);
+                remap(cells);
+            }
+            Self::Quantize { value, step } => {
+                remap(value);
+                remap(step);
+            }
+            Self::Threshold { value, threshold } => {
+                remap(value);
+                remap(threshold);
+            }
+            Self::PixelOutline {
+                texture,
+                uv,
+                width,
+                threshold,
+                frame_bounds,
+            } => {
+                remap(texture);
+                remap(uv);
+                remap(width);
+                remap(threshold);
+                if let Some(bounds) = frame_bounds {
+                    remap(bounds);
                 }
             }
             Self::ExtractComponent { value, .. } => remap(value),
@@ -699,6 +916,12 @@ fn semantic_feature_stats(program: &MaterialProgram) -> SemanticFeatureStats {
                     MaterialExpressionKind::SampleTexture { .. }
                         | MaterialExpressionKind::SampleTextureLevel { .. }
                         | MaterialExpressionKind::SampleTextureGradient { .. }
+                        | MaterialExpressionKind::NearestPaletteColor { .. }
+                        | MaterialExpressionKind::PaletteRamp { .. }
+                        | MaterialExpressionKind::PaletteShift { .. }
+                        | MaterialExpressionKind::PaletteSwap { .. }
+                        | MaterialExpressionKind::PatternDither { .. }
+                        | MaterialExpressionKind::PixelOutline { .. }
                 )
         })
         .count();
@@ -734,7 +957,13 @@ fn semantic_feature_stats(program: &MaterialProgram) -> SemanticFeatureStats {
             }
             MaterialExpressionKind::SampleTexture { .. }
             | MaterialExpressionKind::SampleTextureLevel { .. }
-            | MaterialExpressionKind::SampleTextureGradient { .. } => {
+            | MaterialExpressionKind::SampleTextureGradient { .. }
+            | MaterialExpressionKind::NearestPaletteColor { .. }
+            | MaterialExpressionKind::PaletteRamp { .. }
+            | MaterialExpressionKind::PaletteShift { .. }
+            | MaterialExpressionKind::PaletteSwap { .. }
+            | MaterialExpressionKind::PatternDither { .. }
+            | MaterialExpressionKind::PixelOutline { .. } => {
                 reachable_texture_samples += 1;
             }
             MaterialExpressionKind::CustomWeslCall { .. } => custom_calls += 1,
@@ -761,7 +990,13 @@ fn ir_feature_count(values: &[MaterialIrValue]) -> usize {
             MaterialIrInstruction::Parameter(parameter) => {
                 parameters.insert(*parameter);
             }
-            MaterialIrInstruction::SampleTexture { .. } => texture_samples += 1,
+            MaterialIrInstruction::SampleTexture { .. }
+            | MaterialIrInstruction::NearestPaletteColor { .. }
+            | MaterialIrInstruction::PaletteRamp { .. }
+            | MaterialIrInstruction::PaletteShift { .. }
+            | MaterialIrInstruction::PaletteSwap { .. }
+            | MaterialIrInstruction::PatternDither { .. }
+            | MaterialIrInstruction::PixelOutline { .. } => texture_samples += 1,
             MaterialIrInstruction::CustomWeslCall { .. } => custom_calls += 1,
             _ => {}
         }
@@ -776,6 +1011,12 @@ fn ir_texture_sample_count(values: &[MaterialIrValue]) -> usize {
             matches!(
                 value.instruction,
                 MaterialIrInstruction::SampleTexture { .. }
+                    | MaterialIrInstruction::NearestPaletteColor { .. }
+                    | MaterialIrInstruction::PaletteRamp { .. }
+                    | MaterialIrInstruction::PaletteShift { .. }
+                    | MaterialIrInstruction::PaletteSwap { .. }
+                    | MaterialIrInstruction::PatternDither { .. }
+                    | MaterialIrInstruction::PixelOutline { .. }
             )
         })
         .count()
@@ -985,6 +1226,11 @@ impl MaterialIrBuilder<'_> {
                 tangent: self.lower(tangent),
                 bitangent: self.lower(bitangent),
             },
+            MaterialExpressionKind::SpritePointIrradiance { normal } => {
+                MaterialIrInstruction::SpritePointIrradiance {
+                    normal: self.lower(normal),
+                }
+            }
             MaterialExpressionKind::Fresnel {
                 normal,
                 view,
@@ -1114,6 +1360,116 @@ impl MaterialIrBuilder<'_> {
                     sampling: MaterialTextureSamplingMode::ExplicitGradient { ddx, ddy },
                 }
             }
+            MaterialExpressionKind::NearestPaletteColor { palette, color } => {
+                MaterialIrInstruction::NearestPaletteColor {
+                    palette: self.lower(palette),
+                    color: self.lower(color),
+                }
+            }
+            MaterialExpressionKind::PaletteRamp { palette, factor } => {
+                MaterialIrInstruction::PaletteRamp {
+                    palette: self.lower(palette),
+                    factor: self.lower(factor),
+                }
+            }
+            MaterialExpressionKind::PaletteShift {
+                palette,
+                color,
+                steps,
+            } => MaterialIrInstruction::PaletteShift {
+                palette: self.lower(palette),
+                color: self.lower(color),
+                steps: self.lower(steps),
+            },
+            MaterialExpressionKind::PaletteSwap {
+                source_palette,
+                target_palette,
+                color,
+            } => MaterialIrInstruction::PaletteSwap {
+                source_palette: self.lower(source_palette),
+                target_palette: self.lower(target_palette),
+                color: self.lower(color),
+            },
+            MaterialExpressionKind::BayerDither2x2 {
+                alpha,
+                position,
+                cell_size,
+            }
+            | MaterialExpressionKind::BayerDither8x8 {
+                alpha,
+                position,
+                cell_size,
+            }
+            | MaterialExpressionKind::BayerDither4x4 {
+                alpha,
+                position,
+                cell_size,
+            } => MaterialIrInstruction::BayerDither {
+                alpha: self.lower(alpha),
+                position: self.lower(position),
+                cell_size: self.lower(cell_size),
+                pattern: kind.bayer_pattern().unwrap(),
+            },
+            MaterialExpressionKind::BlueNoiseDither {
+                alpha,
+                position,
+                cell_size,
+            } => MaterialIrInstruction::BlueNoiseDither {
+                alpha: self.lower(alpha),
+                position: self.lower(position),
+                cell_size: self.lower(cell_size),
+            },
+            MaterialExpressionKind::PixelSnap {
+                position,
+                cell_size,
+            } => MaterialIrInstruction::PixelSnap {
+                position: self.lower(position),
+                cell_size: self.lower(cell_size),
+            },
+            MaterialExpressionKind::Posterize { color, levels } => {
+                MaterialIrInstruction::Posterize {
+                    color: self.lower(color),
+                    levels: self.lower(levels),
+                }
+            }
+            MaterialExpressionKind::PixelateUv { uv, cells } => MaterialIrInstruction::PixelateUv {
+                uv: self.lower(uv),
+                cells: self.lower(cells),
+            },
+            MaterialExpressionKind::Quantize { value, step } => MaterialIrInstruction::Quantize {
+                value: self.lower(value),
+                step: self.lower(step),
+            },
+            MaterialExpressionKind::Threshold { value, threshold } => {
+                MaterialIrInstruction::Threshold {
+                    value: self.lower(value),
+                    threshold: self.lower(threshold),
+                }
+            }
+            MaterialExpressionKind::PixelOutline {
+                texture,
+                uv,
+                width,
+                threshold,
+                frame_bounds,
+            } => MaterialIrInstruction::PixelOutline {
+                texture: self.lower(texture),
+                uv: self.lower(uv),
+                width: self.lower(width),
+                threshold: self.lower(threshold),
+                frame_bounds: frame_bounds.map(|bounds| self.lower(bounds)),
+            },
+            MaterialExpressionKind::PatternDither {
+                texture,
+                alpha,
+                position,
+                cell_size,
+            } => MaterialIrInstruction::PatternDither {
+                texture: self.lower(texture),
+                alpha: self.lower(alpha),
+                position: self.lower(position),
+                cell_size: self.lower(cell_size),
+            },
             MaterialExpressionKind::ExtractComponent { value, component } => {
                 let value = self.lower(value);
                 if let Some(constant) = self
@@ -1535,6 +1891,93 @@ impl MaterialIrInstructionKey {
                 MaterialIrInstructionPayloadKey::TextureSampling(*sampling),
             ),
             MaterialIrInstruction::SampleTexture { .. } => return None,
+            MaterialIrInstruction::NearestPaletteColor { palette, color } => (
+                25,
+                vec![*palette, *color],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::PaletteRamp { palette, factor } => (
+                26,
+                vec![*palette, *factor],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::PaletteShift {
+                palette,
+                color,
+                steps,
+            } => (
+                27,
+                vec![*palette, *color, *steps],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::PaletteSwap { .. } => (
+                37,
+                instruction.dependencies(),
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::BayerDither {
+                alpha,
+                position,
+                cell_size,
+                pattern,
+            } => (
+                28,
+                vec![*alpha, *position, *cell_size],
+                MaterialIrInstructionPayloadKey::BayerLevels(pattern.levels()),
+            ),
+            MaterialIrInstruction::BlueNoiseDither {
+                alpha,
+                position,
+                cell_size,
+            } => (
+                29,
+                vec![*alpha, *position, *cell_size],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::PatternDither {
+                texture,
+                alpha,
+                position,
+                cell_size,
+            } => (
+                30,
+                vec![*texture, *alpha, *position, *cell_size],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::PixelSnap {
+                position,
+                cell_size,
+            } => (
+                31,
+                vec![*position, *cell_size],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Posterize { color, levels } => (
+                32,
+                vec![*color, *levels],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::PixelateUv { uv, cells } => {
+                (33, vec![*uv, *cells], MaterialIrInstructionPayloadKey::None)
+            }
+            MaterialIrInstruction::Quantize { value, step } => (
+                34,
+                vec![*value, *step],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Threshold { value, threshold } => (
+                35,
+                vec![*value, *threshold],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::PixelOutline { .. } => (
+                36,
+                instruction.dependencies(),
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::SpritePointIrradiance { normal } => {
+                (38, vec![*normal], MaterialIrInstructionPayloadKey::None)
+            }
             MaterialIrInstruction::ExtractComponent { value, component } => (
                 21,
                 vec![*value],
@@ -1559,6 +2002,7 @@ enum MaterialIrInstructionPayloadKey {
     Input(u8),
     Parameter(MaterialParameterId),
     Component(u8),
+    BayerLevels(u32),
     TextureSampling(MaterialTextureSamplingMode),
 }
 
@@ -1620,6 +2064,10 @@ const fn material_input_key(input: MaterialInput) -> u8 {
         MaterialInput::CameraDirection => 25,
         MaterialInput::PixelDepth => 26,
         MaterialInput::ScenePointIrradiance => 30,
+        MaterialInput::EffectPositionXY => 31,
+        MaterialInput::WorldPositionXY => 32,
+        MaterialInput::ScreenPixel => 33,
+        MaterialInput::ParticlePositionXY => 34,
     }
 }
 

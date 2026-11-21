@@ -1,7 +1,7 @@
 //! Main-world GPU particle allocation and live material/input preparation.
 //! Shared verbatim by shipping and engine-upgrade qualification.
 use super::draw_instance::{
-    GpuDrawInstance, GpuRenderMode, GpuSemanticMaterialBinding, HostMotionDraw,
+    GpuDrawInstance, GpuMaterialTexture, GpuRenderMode, GpuSemanticMaterialBinding, HostMotionDraw,
 };
 pub(super) use super::effect_inputs::StatefulAppearance;
 use super::effect_inputs::{GpuEffectBuffers, HostEventHistory, StatefulDispatch};
@@ -23,7 +23,7 @@ use crate::{
     PresentedEffect, ProjectAssetCache,
     material::{MaterialBindingError, MaterialRuntimeBinding},
 };
-use aestra_gpu::material::MaterialProgramFingerprint;
+use aestra_gpu::material::{MaterialMissingResourceFallback, MaterialProgramFingerprint};
 use aestra_gpu::particle_attributes::{GpuParticleAttributes, prune_particle_attributes};
 use aestra_gpu::{
     GpuArtifactError, GpuBlend, GpuEffectArtifact, GpuGlobals, GpuRenderGlobals, GpuRenderParams,
@@ -123,6 +123,7 @@ pub(crate) struct GpuReadbackOwner(pub(crate) Entity);
 pub struct GpuFallbackTextures {
     pub white: Handle<Image>,
     pub missing: Handle<Image>,
+    pattern_passthrough: Handle<Image>,
 }
 
 type UnpreparedPlayers<'w, 's> = Query<
@@ -203,7 +204,23 @@ fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Imag
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     ));
-    commands.insert_resource(GpuFallbackTextures { white, missing });
+    let pattern_passthrough = images.add(Image::new_fill(
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        // RGBA16Float. Alpha -1 marks an unassigned or pending pattern.
+        &[0, 0, 0, 0, 0, 0, 0, 0xbc],
+        TextureFormat::Rgba16Float,
+        RenderAssetUsages::RENDER_WORLD,
+    ));
+    commands.insert_resource(GpuFallbackTextures {
+        white,
+        missing,
+        pattern_passthrough,
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -697,6 +714,7 @@ pub(crate) fn prepare_gpu_effects(
                 has_ribbons,
                 has_trails,
                 simulation_time: player.simulation_time(),
+                stateful_cadence: None,
                 seek_quality: player.seek_quality(),
                 history_policy: player.history_policy(),
                 history_epoch: player.instance.history_epoch(),
@@ -824,6 +842,7 @@ pub(crate) fn prepare_gpu_effects(
                                 semantic_material,
                                 render_mode,
                                 mesh_center: Vec3::ZERO,
+                                world_z: 0.0,
                                 sampled_sprite_cull: None,
                             },
                             render_layers.cloned().unwrap_or_default(),
@@ -1143,16 +1162,27 @@ fn prepare_semantic_material(
     let textures = prepared
         .textures
         .into_iter()
-        .map(|(_, asset)| {
-            effect.texture_override(asset).cloned().unwrap_or_else(|| {
-                effect
-                    .effect()
-                    .assets
-                    .iter()
-                    .find(|candidate| candidate.source == asset)
-                    .map(|asset| texture_cache.load(asset_server, &asset.path))
-                    .unwrap_or_else(|| fallback_textures.missing.clone())
-            })
+        .zip(&program.resource_layout.textures)
+        .map(|((_, asset), slot)| {
+            let fallback = match slot.fallback {
+                MaterialMissingResourceFallback::PatternPassthrough => {
+                    &fallback_textures.pattern_passthrough
+                }
+                _ => &fallback_textures.missing,
+            };
+            GpuMaterialTexture {
+                image: asset.and_then(|asset| {
+                    effect.texture_override(asset).cloned().or_else(|| {
+                        effect
+                            .effect()
+                            .assets
+                            .iter()
+                            .find(|candidate| candidate.source == asset)
+                            .map(|asset| texture_cache.load(asset_server, &asset.path))
+                    })
+                }),
+                fallback: fallback.clone(),
+            }
         })
         .collect();
     Ok(GpuSemanticMaterialBinding {
@@ -1162,7 +1192,6 @@ fn prepare_semantic_material(
         multisampled_shader: shader_variants.multisampled,
         uniforms: prepared.uniforms.into(),
         textures,
-        fallback_texture: fallback_textures.missing.clone(),
     })
 }
 

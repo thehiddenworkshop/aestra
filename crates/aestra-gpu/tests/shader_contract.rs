@@ -74,6 +74,41 @@ fn representative_artifact_produces_naga_validated_shader_package() {
 }
 
 #[test]
+fn flipbook_limit_only_applies_to_enabled_renderer_references() {
+    use aestra_core::{AssetDefinition, FlipbookDefinition, RendererInstance};
+    use aestra_gpu::{GpuArtifactError, MAX_FLIPBOOK_FRAMES};
+
+    let mut effect = EffectAsset::new("Flipbook limit", 2.0);
+    let texture = AssetDefinition::texture("Unused atlas", "unused.png");
+    let flipbook = FlipbookDefinition::grid(
+        "Oversized",
+        texture.id,
+        MAX_FLIPBOOK_FRAMES as u32 + 1,
+        1,
+        12.0,
+    );
+    let flipbook_id = flipbook.id;
+    effect.assets.push(texture);
+    effect.flipbooks.push(flipbook);
+    effect
+        .emitters
+        .push(Emitter::basic_sprite("Emitter", effect.duration));
+    let prepare = |effect: &EffectAsset| {
+        let compiled = Arc::new(EffectCompiler::default().compile(effect).unwrap());
+        GpuEffectArtifact::dynamics_from_instance(&EffectInstance::new(compiled))
+    };
+    assert!(prepare(&effect).is_ok());
+    let renderer = RendererInstance::flipbook(effect.materials[0].id, flipbook_id);
+    effect.emitters[0].renderers.push(renderer);
+    assert!(matches!(
+        prepare(&effect),
+        Err(GpuArtifactError::FlipbookFrameLimit { .. })
+    ));
+    effect.emitters[0].enabled = false;
+    assert!(prepare(&effect).is_ok());
+}
+
+#[test]
 fn wesl_modules_resolve_package_qualified_imports() {
     // A helper module imported by an entry-point module. The importer references it by its
     // package-qualified path; the resolver serves it from the supplied imports.

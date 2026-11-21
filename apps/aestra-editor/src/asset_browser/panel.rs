@@ -9,6 +9,7 @@ use crate::{
     },
     *,
 };
+use aestra_core::EffectDimension;
 use aestra_project::{ProjectContent, ProjectSourceId};
 use bevy::{feathers::controls::FeathersTextInput, ui::Selected, ui_widgets::ActiveDescendant};
 use std::collections::{BTreeMap, BTreeSet};
@@ -740,7 +741,8 @@ pub(super) fn sync_panel(
                 let first_effect = catalog.entries().is_empty()
                     && state.collection == BrowserCollection::Folder
                     && state.query.is_empty()
-                    && state.kinds.is_empty();
+                    && state.kinds.is_empty()
+                    && state.dimension.is_none();
                 if let Some(error) = content
                     .source(state.folder_id(content))
                     .and_then(|e| e.error.as_deref())
@@ -750,7 +752,10 @@ pub(super) fn sync_panel(
                 } else if entries.is_empty() {
                     let key = if first_effect {
                         "browser-first-effect-empty"
-                    } else if state.query.is_empty() && state.kinds.is_empty() {
+                    } else if state.query.is_empty()
+                        && state.kinds.is_empty()
+                        && state.dimension.is_none()
+                    {
                         match state.collection {
                             BrowserCollection::Favorites => "browser-favorites-empty",
                             BrowserCollection::Recent => "browser-recent-empty",
@@ -996,6 +1001,7 @@ fn sync_chrome(
     }
     if previous.is_none_or(|old| {
         old.kinds != state.kinds
+            || old.dimension != state.dimension
             || old.sort != state.sort
             || old.recursive != state.recursive
             || old.collection != state.collection
@@ -1064,6 +1070,26 @@ fn sync_chrome(
                 &localizer.text("browser-types"),
                 &options,
                 112.0,
+            );
+            let dimension_label = |dimension: Option<EffectDimension>| {
+                localizer.text(dimension.map_or("browser-all-dimensions", effect_dimension_label))
+            };
+            let options = [
+                None,
+                Some(EffectDimension::TwoD),
+                Some(EffectDimension::ThreeD),
+            ]
+            .map(|dimension| ComboOption {
+                label: dimension_label(dimension),
+                selected: state.dimension == dimension,
+                action: BrowserAction::Dimension(dimension),
+            });
+            spawn_combo_control(
+                parent,
+                &dimension_label(state.dimension),
+                &localizer.text("browser-effect-dimension-filter"),
+                &options,
+                116.0,
             );
             if state.collection != BrowserCollection::Recent {
                 let options = [Sort::Name, Sort::Type].map(|sort| ComboOption {

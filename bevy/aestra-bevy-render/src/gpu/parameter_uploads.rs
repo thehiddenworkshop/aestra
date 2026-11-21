@@ -28,6 +28,16 @@ impl ParameterUploads {
         destination: &Buffer,
         bytes: &[u8],
     ) {
+        self.copy_at(device, encoder, destination, 0, bytes);
+    }
+    pub fn copy_at(
+        &mut self,
+        device: &RenderDevice,
+        encoder: &mut CommandEncoder,
+        destination: &Buffer,
+        destination_offset: u64,
+        bytes: &[u8],
+    ) {
         let _copy = super::encoding_profile::transfer(
             super::encoding_profile::Operation::ParameterCopy,
             bytes.len() as u64,
@@ -63,7 +73,13 @@ impl ParameterUploads {
         let page = &mut self.pages[self.current];
         let offset = page.bytes.len() as u64;
         page.bytes.extend_from_slice(bytes);
-        encoder.copy_buffer_to_buffer(&page.buffer, offset, destination, 0, bytes.len() as u64);
+        encoder.copy_buffer_to_buffer(
+            &page.buffer,
+            offset,
+            destination,
+            destination_offset,
+            bytes.len() as u64,
+        );
     }
     /// Must run before submitting ANY encoder that references these pages. Each copy
     /// has a distinct source range, so later ticks cannot replace earlier tick inputs.

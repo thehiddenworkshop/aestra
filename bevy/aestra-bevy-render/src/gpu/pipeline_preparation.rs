@@ -7,10 +7,11 @@ use super::{
     },
     preparation::{MaterialShaderCache, prepare_material_shaders},
 };
-use crate::PresentedEffect;
+use crate::{PresentedEffect, pixel_view::PixelGrid};
 use aestra_gpu::GpuBlend;
 use aestra_runtime::{CompiledEffectProject, RendererPlanKind};
 use bevy::{
+    core_pipeline::core_2d::Transparent2d,
     extract::{
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         sync_component::SyncComponent,
@@ -19,6 +20,8 @@ use bevy::{
     prelude::*,
     render::{
         Render, RenderApp, RenderSystems,
+        camera::TemporalJitter,
+        render_phase::ViewSortedRenderPhases,
         render_resource::{CachedPipelineState, PipelineCache, SpecializedRenderPipelines},
         view::ExtractedView,
     },
@@ -26,7 +29,7 @@ use bevy::{
 };
 use std::sync::{Arc, Mutex};
 
-/// Result for the most recently extracted active 3D view configuration.
+/// Result for the most recently extracted active view configuration.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum EffectPipelinePreparationStatus {
     #[default]
@@ -37,7 +40,7 @@ pub enum EffectPipelinePreparationStatus {
     Failed(String),
 }
 
-/// Attach to a `Camera3d` before starting playback. Prepares all supplied sprite,
+/// Attach to a `Camera2d` or `Camera3d` before playback. Prepares the supplied sprite,
 /// trail and flipbook material pipelines for that camera's actual HDR/MSAA/OIT key.
 /// No particles, clip entities, gameplay events or replay history are created.
 ///
@@ -193,7 +196,6 @@ fn descriptors(
                             multisampled_shader: variants.multisampled,
                             uniforms: Arc::from([]),
                             textures: Vec::new(),
-                            fallback_texture: default(),
                         })
                     })
                     .transpose()?;
@@ -228,10 +230,14 @@ fn descriptors(
     Ok(result)
 }
 
+#[allow(clippy::type_complexity)]
 fn queue(
     views: Query<(
         &EffectPipelinePreparation,
         &ExtractedView,
+        Option<&Msaa>,
+        Has<PixelGrid>,
+        Has<TemporalJitter>,
         Has<crate::experimental_oit::OitApproved>,
         Has<crate::preview::planar::ReflectionView>,
     )>,
@@ -239,12 +245,20 @@ fn queue(
     mut pipelines: ResMut<SpecializedRenderPipelines<GpuSpritePipeline>>,
     cache: Res<PipelineCache>,
     keys: Res<ViewKeyCache>,
+    phases_2d: Res<ViewSortedRenderPhases<Transparent2d>>,
 ) {
-    for (request, view, oit, reflection) in &views {
+    'views: for (request, view, msaa, pixel_grid, jitter, oit, reflection) in &views {
         let Some(descriptors) = &request.descriptors else {
             continue;
         };
-        let Some(&key) = keys.get(&view.retained_view_entity) else {
+        let is_2d = phases_2d.contains_key(&view.retained_view_entity);
+        let key_3d = keys.get(&view.retained_view_entity).copied();
+        let samples = if is_2d {
+            msaa.map(|msaa| msaa.samples())
+        } else {
+            key_3d.map(|key| key.msaa_samples())
+        };
+        let Some(samples) = samples else {
             request.publish(EffectPipelinePreparationStatus::Pending);
             continue;
         };
@@ -259,29 +273,57 @@ fn queue(
             {
                 continue;
             }
-            ids.insert(pipelines.specialize(
-                &cache,
-                &pipeline,
-                GpuSpritePipelineKey {
-                    fragment_list_oit: oit
-                        && key.contains(bevy::pbr::MeshPipelineKey::OIT_ENABLED)
+            let material = semantic_pipeline_key(
+                descriptor.material.as_ref(),
+                view.target_format,
+                samples,
+                if is_2d { 0 } else { 1 },
+            );
+            if is_2d
+                && material
+                    .as_ref()
+                    .is_some_and(|key| key.requires_scene_depth)
+            {
+                request.publish(EffectPipelinePreparationStatus::Failed(
+                    "Scene depth materials require a 3D camera".into(),
+                ));
+                continue 'views;
+            }
+            let (view_key, fragment_list_oit) = if is_2d {
+                (
+                    GpuSpriteViewKey::two_d(
+                        view.target_format,
+                        samples,
+                        pixel_grid && !jitter,
+                        descriptor.kind,
+                        GpuRenderMode::Rendered,
+                    ),
+                    false,
+                )
+            } else {
+                let key = key_3d.expect("a 3D view provides its pipeline key");
+                (
+                    GpuSpriteViewKey::ThreeD(key),
+                    oit && key.contains(bevy::pbr::MeshPipelineKey::OIT_ENABLED)
                         && fragment_list_eligible(
                             descriptor.kind,
                             descriptor.blend,
                             GpuRenderMode::Rendered,
                             descriptor.material.as_ref().map(|m| m.render_state),
                         ),
+                )
+            };
+            ids.insert(pipelines.specialize(
+                &cache,
+                &pipeline,
+                GpuSpritePipelineKey {
+                    fragment_list_oit,
                     mesh_wireframe: false,
                     mesh_layout: None,
-                    view: GpuSpriteViewKey::ThreeD(key),
+                    view: view_key,
                     blend: descriptor.blend,
                     render_mode: GpuRenderMode::Rendered,
-                    material: semantic_pipeline_key(
-                        descriptor.material.as_ref(),
-                        view.target_format,
-                        key.msaa_samples(),
-                        1,
-                    ),
+                    material,
                 },
             ));
         }

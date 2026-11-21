@@ -338,6 +338,14 @@ pub(super) fn run_simulation(
                     observer
                         .as_mut()
                         .map(|observer| observer as &mut dyn CoupledHistory),
+                    effect.stateful_cadence.and_then(|cadence| {
+                        buffers.get(&effect.render_globals).map(|globals| {
+                            super::stateful_presentation::SteppedPresentation {
+                                cadence,
+                                globals: &globals.buffer,
+                            }
+                        })
+                    }),
                 );
                 if stateful_work.presented && light_readiness.enabled {
                     light_readiness.owners.insert(entity);
@@ -710,6 +718,7 @@ pub(super) fn run_simulation(
                     effect.output_suppress_through,
                     false,
                     pacer.as_deref_mut(),
+                    None,
                     None,
                 );
                 fully_presented = work.presented;

@@ -1,0 +1,73 @@
+(
+    schema_version: 1,
+    id: "b0a2971e-60a3-4483-8a01-043b8f180011",
+    name: "Pixel Outline",
+    domain: Sprite,
+    render_state_policy: (
+        default: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+        allowed: [(blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None)],
+    ),
+    parameters: [
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f180012",
+            name: "Atlas",
+            value_type: Texture2D((color_space: SrgbColor, sampler: (filter: Nearest, mip_filter: r#None, address_u: ClampToEdge, address_v: ClampToEdge))),
+            evaluation_domain: Instance,
+        ),
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f180018",
+            name: "aestra.legacy.sprite_softness",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(0.0)),
+        ),
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f180020",
+            name: "Outline Width",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(1.0)),
+        ),
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f180021",
+            name: "Alpha Cutoff",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(0.5)),
+        ),
+        (
+            id: "b0a2971e-60a3-4483-8a01-043b8f180022",
+            name: "Outline Color",
+            value_type: Color,
+            evaluation_domain: Instance,
+            default: Some(ColorSrgb((0.19, 0.96, 0.76, 1.0))),
+        ),
+    ],
+    expressions: [
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180013", kind: Parameter("b0a2971e-60a3-4483-8a01-043b8f180012")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180014", kind: Input(Uv0)),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180015", kind: SampleTexture(texture: "b0a2971e-60a3-4483-8a01-043b8f180013", uv: "b0a2971e-60a3-4483-8a01-043b8f180014")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180016", kind: ExtractComponent(value: "b0a2971e-60a3-4483-8a01-043b8f180015", component: W)),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180023", kind: Parameter("b0a2971e-60a3-4483-8a01-043b8f180020")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180024", kind: Parameter("b0a2971e-60a3-4483-8a01-043b8f180021")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180025", kind: Parameter("b0a2971e-60a3-4483-8a01-043b8f180022")),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180026", kind: PixelOutline(
+            texture: "b0a2971e-60a3-4483-8a01-043b8f180013",
+            uv: "b0a2971e-60a3-4483-8a01-043b8f180014",
+            width: "b0a2971e-60a3-4483-8a01-043b8f180023",
+            threshold: "b0a2971e-60a3-4483-8a01-043b8f180024",
+        )),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180027", kind: Constant(Float(1.0))),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180028", kind: Lerp(
+            start: "b0a2971e-60a3-4483-8a01-043b8f180015",
+            end: "b0a2971e-60a3-4483-8a01-043b8f180025",
+            factor: "b0a2971e-60a3-4483-8a01-043b8f180026",
+        )),
+        (id: "b0a2971e-60a3-4483-8a01-043b8f180029", kind: Lerp(
+            start: "b0a2971e-60a3-4483-8a01-043b8f180016",
+            end: "b0a2971e-60a3-4483-8a01-043b8f180027",
+            factor: "b0a2971e-60a3-4483-8a01-043b8f180026",
+        )),
+    ],
+    outputs: (color: "b0a2971e-60a3-4483-8a01-043b8f180028", alpha: "b0a2971e-60a3-4483-8a01-043b8f180029"),
+)

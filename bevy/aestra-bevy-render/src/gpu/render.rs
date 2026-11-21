@@ -5,12 +5,14 @@ use super::draw_preparation::{
     prepare_mesh_draws, prepare_render_bind_groups, prepare_scene_depth_bind_groups,
 };
 use super::draw_resources::{PrepareAlphaSort, TrailCompactionSystems};
+use super::extraction::MainEntity;
 use super::pipeline::{
     GpuSpritePipeline, GpuSpritePipelineKey, GpuSpriteViewKey, draw_pipeline_key,
     fragment_list_eligible, fragment_list_for_view, material_for_draw,
 };
 pub(super) use super::view_phases::visible_gpu_draws;
 use super::view_phases::{PhaseDraw, reject_sampled_sprite, retire_invisible_draws};
+use crate::pixel_view::PixelGrid;
 use bevy::{
     app::SubApp,
     camera::MainPassResolutionOverride,
@@ -24,7 +26,7 @@ use bevy::{
         render_resource::{PipelineCache, SpecializedRenderPipelines},
         view::{ExtractedView, RenderVisibleEntities},
     },
-    sprite_render::{Mesh2dPipeline, Mesh2dPipelineKey, init_mesh_2d_pipeline},
+    sprite_render::{Mesh2dPipeline, init_mesh_2d_pipeline},
 };
 
 pub const WESL_RENDER_SHADER_PATH: &str =
@@ -76,9 +78,11 @@ pub(crate) fn partition_draw_check(
 }
 
 pub(super) fn install(render_app: &mut SubApp) {
+    super::lighting_2d::install(render_app);
     render_app
         .add_render_command::<Transparent2d, DrawGpuSprites>()
         .add_render_command::<Transparent2d, DrawSemanticGpuSprites>()
+        .add_render_command::<Transparent2d, DrawLitSemanticGpuSprites2d>()
         .add_render_command::<Transparent3d, DrawGpuSprites3d>()
         .add_render_command::<Transparent3d, DrawSemanticGpuSprites3d>()
         .add_render_command::<Transparent3d, DrawSemanticDepthGpuSprites3d>()
@@ -129,9 +133,11 @@ fn init_render_pipeline(
 #[allow(clippy::type_complexity)]
 fn queue_gpu_sprites(
     draw_functions: Res<DrawFunctions<Transparent2d>>,
-    pipeline: Res<GpuSpritePipeline>,
-    mut pipelines: ResMut<SpecializedRenderPipelines<GpuSpritePipeline>>,
-    pipeline_cache: Res<PipelineCache>,
+    pipeline_resources: (
+        Res<GpuSpritePipeline>,
+        ResMut<SpecializedRenderPipelines<GpuSpritePipeline>>,
+        Res<PipelineCache>,
+    ),
     effects: Query<(&GpuDrawInstance, Option<&PreparedMeshDraw>)>,
     mut phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
     views: Query<(
@@ -140,25 +146,38 @@ fn queue_gpu_sprites(
         &Msaa,
         Option<&TemporalJitter>,
         Option<&MainPassResolutionOverride>,
+        Has<PixelGrid>,
     )>,
+    mut ordered_draws: Local<Vec<(Entity, u32, Entity, MainEntity)>>,
 ) {
     let _span = bevy::log::info_span!("aestra::gpu::queue_sprites").entered();
+    let (pipeline, mut pipelines, pipeline_cache) = pipeline_resources;
     let draw_functions = draw_functions.read();
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites>();
-    for (visible_entities, view, msaa, jitter, resolution) in &views {
+    let lit_draw_function = draw_functions.id::<DrawLitSemanticGpuSprites2d>();
+    for (visible_entities, view, msaa, jitter, resolution, pixel_grid) in &views {
         let sampled_culling = super::sprite_culling::prepare(view, resolution, jitter.is_some());
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
-        retire_invisible_draws(
-            phase,
-            visible_entities,
-            &[legacy_draw_function, semantic_draw_function],
-        );
-        let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples())
-            | Mesh2dPipelineKey::from_target_format(view.target_format);
-        for (render_entity, main_entity) in visible_gpu_draws(visible_entities) {
+        // Bevy's stable phase sort compares world Z. Requeue 2D draws in
+        // renderer order each frame to preserve order within an effect at
+        // equal Z without shifting its layer relative to host sprites.
+        ordered_draws.clear();
+        ordered_draws.extend(visible_gpu_draws(visible_entities).filter_map(
+            |(render_entity, main_entity)| {
+                let (effect, _) = effects.get(render_entity).ok()?;
+                Some((
+                    effect.owner,
+                    effect.renderer_order,
+                    render_entity,
+                    main_entity,
+                ))
+            },
+        ));
+        ordered_draws.sort_unstable_by_key(|&(owner, order, _, _)| (owner, order));
+        for &(_, _, render_entity, main_entity) in ordered_draws.iter() {
             let Ok((effect, mesh)) = effects.get(render_entity) else {
                 phase.remove(render_entity, main_entity);
                 continue;
@@ -191,6 +210,11 @@ fn queue_gpu_sprites(
                 phase.remove(render_entity, main_entity);
                 continue;
             }
+            let draw_function = match &material {
+                Some(material) if material.requires_scene_lighting => lit_draw_function,
+                Some(_) => semantic_draw_function,
+                None => legacy_draw_function,
+            };
             let pipeline_id = pipelines.specialize(
                 &pipeline_cache,
                 &pipeline,
@@ -199,24 +223,26 @@ fn queue_gpu_sprites(
                     mesh_wireframe: effect.mesh.is_some()
                         && effect.render_mode == GpuRenderMode::Wireframe,
                     mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),
-                    view: GpuSpriteViewKey::TwoD(mesh_key),
+                    view: GpuSpriteViewKey::two_d(
+                        view.target_format,
+                        msaa.samples(),
+                        pixel_grid && jitter.is_none(),
+                        effect.renderer_kind,
+                        effect.render_mode,
+                    ),
                     blend: effect.blend,
                     render_mode: effect.render_mode,
                     material,
                 },
             );
-            phase.add_retained(
+            phase.add_transient(
                 PhaseDraw {
                     entity: (render_entity, main_entity),
                     pipeline: pipeline_id,
-                    draw_function: if material_for_draw(effect).is_some() {
-                        semantic_draw_function
-                    } else {
-                        legacy_draw_function
-                    },
+                    draw_function,
                     indexed: mesh.is_some_and(|mesh| mesh.index.is_some()),
                 }
-                .two_d(effect.renderer_order),
+                .two_d(effect.world_z),
             );
         }
     }

@@ -161,6 +161,23 @@ pub(super) fn spawn_effect_details(
                 &session.effect.name,
                 DocumentTextControl::Effect,
             );
+            let dimension = session.effect.dimension();
+            let options = [
+                aestra_core::EffectDimension::TwoD,
+                aestra_core::EffectDimension::ThreeD,
+            ]
+            .map(|option| ComboOption {
+                label: localizer.text(crate::asset_browser::effect_dimension_label(option)),
+                selected: option == dimension,
+                action: PropertiesAction::SetEffectDimension(option),
+            });
+            spawn_properties_combo_row(
+                card,
+                &localizer.text("properties-effect-dimension"),
+                &localizer.text(crate::asset_browser::effect_dimension_label(dimension)),
+                &options,
+                Some(&localizer.text("properties-effect-dimension-description")),
+            );
         });
     super::interface::spawn_interface(parent, session, localizer);
     super::scene_lights::spawn(parent, session, localizer);

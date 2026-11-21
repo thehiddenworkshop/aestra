@@ -10,8 +10,11 @@ use aestra_core::{
     MaterialExpressionId, MaterialFunctionInputId, MaterialFunctionOutputId, MaterialParameterId,
     MaterialProgramId, ValidationReport,
     material::{
-        MaterialExpression, MaterialExpressionDomain, MaterialExpressionKind, MaterialFunctionRef,
-        MaterialInput, MaterialProgram, MaterialValue, MaterialValueType, MaterialVectorComponent,
+        MaterialDomain, MaterialEvaluationDomain, MaterialExpression, MaterialExpressionDomain,
+        MaterialExpressionKind, MaterialFilterMode, MaterialFunctionRef, MaterialInput,
+        MaterialMipFilterMode, MaterialParameter, MaterialProgram, MaterialSamplerDescriptor,
+        MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
+        MaterialVectorComponent,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -19,14 +22,35 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 trait GraphConstruction: ExpressionSink {
+    fn uses_local_normal_basis(&self) -> bool {
+        true
+    }
     fn source_type(
         &self,
         source: MaterialExpressionId,
         functions: &MaterialFunctionLibrary,
     ) -> Option<MaterialValueType>;
     fn texture_reference(&self) -> Option<MaterialExpressionKind>;
+    fn palette_reference(&mut self) -> Option<MaterialExpressionKind>;
+    fn palette_swap_references(&mut self) -> Option<[MaterialExpressionKind; 2]>;
+    fn pattern_reference(&mut self) -> Option<MaterialExpressionKind> {
+        self.texture_reference()
+    }
+    fn outline_texture_reference(&mut self) -> Option<MaterialExpressionKind> {
+        self.texture_reference()
+    }
 }
+
+fn is_srgb_texture(value_type: MaterialValueType) -> bool {
+    matches!(value_type, MaterialValueType::Texture2D(texture)
+        if texture.color_space == MaterialTextureColorSpace::SrgbColor)
+}
+
 impl GraphConstruction for MaterialProgram {
+    fn uses_local_normal_basis(&self) -> bool {
+        self.domain == MaterialDomain::Sprite
+    }
+
     fn source_type(
         &self,
         source: MaterialExpressionId,
@@ -49,10 +73,73 @@ impl GraphConstruction for MaterialProgram {
             .find(|p| matches!(p.value_type, MaterialValueType::Texture2D(_)))
             .map(|p| MaterialExpressionKind::Parameter(p.id))
     }
+
+    fn palette_reference(&mut self) -> Option<MaterialExpressionKind> {
+        Some(append_texture_parameter(
+            self,
+            "Palette",
+            MaterialTextureColorSpace::SrgbColor,
+        ))
+    }
+
+    fn palette_swap_references(&mut self) -> Option<[MaterialExpressionKind; 2]> {
+        Some(["Source Palette", "Target Palette"].map(|label| {
+            append_texture_parameter(self, label, MaterialTextureColorSpace::SrgbColor)
+        }))
+    }
+
+    fn pattern_reference(&mut self) -> Option<MaterialExpressionKind> {
+        Some(append_texture_parameter(
+            self,
+            "Dither Pattern",
+            MaterialTextureColorSpace::LinearData,
+        ))
+    }
+    fn outline_texture_reference(&mut self) -> Option<MaterialExpressionKind> {
+        self.texture_reference().or_else(|| {
+            Some(append_texture_parameter(
+                self,
+                "Outline Texture",
+                MaterialTextureColorSpace::SrgbColor,
+            ))
+        })
+    }
+}
+
+fn append_texture_parameter(
+    program: &mut MaterialProgram,
+    label: &str,
+    color_space: MaterialTextureColorSpace,
+) -> MaterialExpressionKind {
+    let names = program
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let name = std::iter::once(label.to_owned())
+        .chain((2..).map(|index| format!("{label} {index}")))
+        .find(|name| !names.contains(name.as_str()))
+        .expect("one texture parameter name is available");
+    let id = MaterialParameterId::new();
+    program.parameters.push(MaterialParameter {
+        id,
+        name,
+        value_type: MaterialValueType::Texture2D(MaterialTextureDescriptor {
+            color_space,
+            sampler: MaterialSamplerDescriptor {
+                filter: MaterialFilterMode::Nearest,
+                mip_filter: MaterialMipFilterMode::None,
+                ..Default::default()
+            },
+        }),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: None,
+    });
+    MaterialExpressionKind::Parameter(id)
 }
 struct FunctionConstruction {
     expressions: Vec<MaterialExpression>,
-    texture: Option<MaterialExpressionKind>,
+    inputs: Vec<aestra_core::material::MaterialFunctionInput>,
 }
 impl ExpressionSink for FunctionConstruction {
     fn expressions_mut(&mut self) -> &mut Vec<MaterialExpression> {
@@ -68,7 +155,26 @@ impl GraphConstruction for FunctionConstruction {
         None
     }
     fn texture_reference(&self) -> Option<MaterialExpressionKind> {
-        self.texture.clone()
+        self.inputs
+            .iter()
+            .find(|input| matches!(input.value_type, MaterialValueType::Texture2D(_)))
+            .map(|input| MaterialExpressionKind::FunctionInput(input.id))
+    }
+    fn palette_reference(&mut self) -> Option<MaterialExpressionKind> {
+        self.inputs
+            .iter()
+            .find(|input| is_srgb_texture(input.value_type))
+            .map(|input| MaterialExpressionKind::FunctionInput(input.id))
+    }
+    fn palette_swap_references(&mut self) -> Option<[MaterialExpressionKind; 2]> {
+        let mut palettes = self
+            .inputs
+            .iter()
+            .filter(|input| is_srgb_texture(input.value_type));
+        Some([
+            MaterialExpressionKind::FunctionInput(palettes.next()?.id),
+            MaterialExpressionKind::FunctionInput(palettes.next()?.id),
+        ])
     }
 }
 
@@ -138,6 +244,8 @@ pub enum MaterialGraphNodeCreationError {
     },
     #[error("Sample Texture requires a declared Texture2D material parameter")]
     TextureParameterMissing,
+    #[error("Nearest Palette Color requires a declared sRGB Texture2D material parameter")]
+    PaletteParameterMissing,
     #[error("texture constants are resources and cannot be created as literal graph nodes")]
     TextureConstantUnsupported,
     #[error("material function {function:?} is unavailable")]
@@ -151,7 +259,7 @@ pub enum MaterialGraphNodeCreationError {
     FunctionInputDefaultUnavailable { input: String },
 }
 
-const MATERIAL_INPUTS: [MaterialInput; 31] = [
+const MATERIAL_INPUTS: [MaterialInput; 35] = [
     MaterialInput::ScenePointIrradiance,
     MaterialInput::RibbonUv,
     MaterialInput::RibbonDirection,
@@ -159,6 +267,10 @@ const MATERIAL_INPUTS: [MaterialInput; 31] = [
     MaterialInput::Uv1,
     MaterialInput::LocalPosition,
     MaterialInput::WorldPosition,
+    MaterialInput::EffectPositionXY,
+    MaterialInput::WorldPositionXY,
+    MaterialInput::ScreenPixel,
+    MaterialInput::ParticlePositionXY,
     MaterialInput::Normal,
     MaterialInput::Tangent,
     MaterialInput::Bitangent,
@@ -185,7 +297,7 @@ const MATERIAL_INPUTS: [MaterialInput; 31] = [
     MaterialInput::PixelDepth,
 ];
 
-const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 24] = [
+const MATERIAL_FUNCTIONS: &[MaterialGraphFunction] = &[
     MaterialGraphFunction::Add,
     MaterialGraphFunction::Subtract,
     MaterialGraphFunction::Multiply,
@@ -197,6 +309,7 @@ const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 24] = [
     MaterialGraphFunction::Smoothstep,
     MaterialGraphFunction::Fresnel,
     MaterialGraphFunction::NormalMap,
+    MaterialGraphFunction::SpritePointIrradiance,
     MaterialGraphFunction::RadialMask,
     MaterialGraphFunction::Dissolve,
     MaterialGraphFunction::DissolveEdge,
@@ -210,6 +323,21 @@ const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 24] = [
     MaterialGraphFunction::SampleTexture,
     MaterialGraphFunction::SampleTextureLevel,
     MaterialGraphFunction::SampleTextureGradient,
+    MaterialGraphFunction::NearestPaletteColor,
+    MaterialGraphFunction::PaletteRamp,
+    MaterialGraphFunction::PaletteShift,
+    MaterialGraphFunction::PaletteSwap,
+    MaterialGraphFunction::BayerDither2x2,
+    MaterialGraphFunction::BayerDither4x4,
+    MaterialGraphFunction::BayerDither8x8,
+    MaterialGraphFunction::BlueNoiseDither,
+    MaterialGraphFunction::PatternDither,
+    MaterialGraphFunction::PixelSnap,
+    MaterialGraphFunction::Posterize,
+    MaterialGraphFunction::PixelateUv,
+    MaterialGraphFunction::Quantize,
+    MaterialGraphFunction::Threshold,
+    MaterialGraphFunction::PixelOutline,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,7 +435,16 @@ impl MaterialCompiler {
         program: &MaterialProgram,
         functions: &MaterialFunctionLibrary,
     ) -> Vec<MaterialGraphNodeDescriptor> {
-        self.graph_catalog(&program.parameters, functions)
+        let mut nodes = self.graph_catalog(&program.parameters, functions);
+        if program.domain != MaterialDomain::Sprite {
+            nodes.retain(|node| {
+                node.kind
+                    != MaterialGraphCreateKind::Function(
+                        MaterialGraphFunction::SpritePointIrradiance,
+                    )
+            });
+        }
+        nodes
     }
 
     /// Shared catalog for function bodies. Signature inputs are supplied by the function editor.
@@ -338,11 +475,7 @@ impl MaterialCompiler {
         }
         let mut builder = FunctionConstruction {
             expressions: function.expressions.clone(),
-            texture: function
-                .inputs
-                .iter()
-                .find(|input| matches!(input.value_type, MaterialValueType::Texture2D(_)))
-                .map(|input| MaterialExpressionKind::FunctionInput(input.id)),
+            inputs: function.inputs.clone(),
         };
         let first = builder.expressions.len();
         match kind {
@@ -355,7 +488,7 @@ impl MaterialCompiler {
                 append_graph_expression(&mut builder, MaterialExpressionKind::Input(input));
             }
             MaterialGraphCreateKind::Function(operation) => {
-                append_graph_function(&mut builder, operation, None)?;
+                append_graph_function(&mut builder, operation, None, functions)?;
             }
             MaterialGraphCreateKind::ExtractComponent(component) => {
                 let value =
@@ -414,15 +547,13 @@ impl MaterialCompiler {
                     category: "Parameters".to_owned(),
                 }),
         );
-        nodes.extend(
-            MATERIAL_FUNCTIONS
-                .into_iter()
-                .map(|function| MaterialGraphNodeDescriptor {
-                    kind: MaterialGraphCreateKind::Function(function),
-                    label: function.display_name().to_owned(),
-                    category: function.category().to_owned(),
-                }),
-        );
+        nodes.extend(MATERIAL_FUNCTIONS.iter().copied().map(|function| {
+            MaterialGraphNodeDescriptor {
+                kind: MaterialGraphCreateKind::Function(function),
+                label: function.display_name().to_owned(),
+                category: function.category().to_owned(),
+            }
+        }));
         nodes.extend(
             functions
                 .iter_with_references()
@@ -520,7 +651,7 @@ impl MaterialCompiler {
                 append_graph_function_call(&mut replacement, functions, function, output, source)?
             }
             MaterialGraphCreateKind::Function(function) => {
-                append_graph_function(&mut replacement, function, source)?
+                append_graph_function(&mut replacement, function, source, functions)?
             }
             MaterialGraphCreateKind::ExtractComponent(component) => {
                 let value = source.unwrap_or_else(|| {
@@ -610,22 +741,26 @@ impl MaterialCompiler {
                         let ir_info = ir_values
                             .and_then(|values| values.get(&source))
                             .and_then(|value| ir.and_then(|ir| ir.value(*value)));
-                        let signature_type = function_input.and_then(|input| {
-                            let MaterialExpressionKind::FunctionCall { function, .. } =
-                                &expression.kind
-                            else {
-                                return None;
-                            };
-                            functions
-                                .get(*function)
-                                .and_then(|function| {
-                                    function
-                                        .inputs
-                                        .iter()
-                                        .find(|candidate| candidate.id == input)
-                                })
-                                .map(|input| input.value_type)
-                        });
+                        let signature_type = function_input
+                            .and_then(|input| {
+                                let MaterialExpressionKind::FunctionCall { function, .. } =
+                                    &expression.kind
+                                else {
+                                    return None;
+                                };
+                                functions
+                                    .get(*function)
+                                    .and_then(|function| {
+                                        function
+                                            .inputs
+                                            .iter()
+                                            .find(|candidate| candidate.id == input)
+                                    })
+                                    .map(|input| input.value_type)
+                            })
+                            .or_else(|| {
+                                (name == "frame_bounds").then_some(MaterialValueType::Vec4)
+                            });
                         MaterialGraphPort {
                             name,
                             function_input,
@@ -700,7 +835,9 @@ impl MaterialCompiler {
             .flat_map(|node| {
                 node.inputs
                     .iter()
-                    .filter(|port| !inline_constants.contains(&port.source))
+                    .filter(|port| {
+                        !port.source.is_nil() && !inline_constants.contains(&port.source)
+                    })
                     .map(|port| MaterialGraphEdge {
                         source: port.source,
                         target: port.function_input.map_or_else(
@@ -877,9 +1014,9 @@ fn append_graph_function<P: GraphConstruction>(
     program: &mut P,
     function: MaterialGraphFunction,
     source: Option<MaterialExpressionId>,
+    functions: &MaterialFunctionLibrary,
 ) -> Result<MaterialExpressionId, MaterialGraphNodeCreationError> {
-    let source_type =
-        source.and_then(|source| program.source_type(source, &MaterialFunctionLibrary::default()));
+    let source_type = source.and_then(|source| program.source_type(source, functions));
     let numeric_source = |program: &mut P| {
         source.unwrap_or_else(|| append_graph_constant(program, MaterialValue::Float(0.0)))
     };
@@ -960,18 +1097,22 @@ fn append_graph_function<P: GraphConstruction>(
             });
             let strength = append_graph_constant(program, MaterialValue::Float(1.0));
             let flip_y = append_graph_constant(program, MaterialValue::Bool(false));
-            let normal = append_graph_expression(
-                program,
-                MaterialExpressionKind::Input(MaterialInput::Normal),
-            );
-            let tangent = append_graph_expression(
-                program,
-                MaterialExpressionKind::Input(MaterialInput::Tangent),
-            );
-            let bitangent = append_graph_expression(
-                program,
-                MaterialExpressionKind::Input(MaterialInput::Bitangent),
-            );
+            let local_basis = program.uses_local_normal_basis();
+            let [normal, tangent, bitangent] = [
+                (MaterialInput::Normal, [0.0, 0.0, 1.0]),
+                (MaterialInput::Tangent, [1.0, 0.0, 0.0]),
+                (MaterialInput::Bitangent, [0.0, 1.0, 0.0]),
+            ]
+            .map(|(input, axis)| {
+                append_graph_expression(
+                    program,
+                    if local_basis {
+                        MaterialExpressionKind::Constant(MaterialValue::Vec3(axis))
+                    } else {
+                        MaterialExpressionKind::Input(input)
+                    },
+                )
+            });
             MaterialExpressionKind::NormalMap {
                 sample,
                 strength,
@@ -979,6 +1120,21 @@ fn append_graph_function<P: GraphConstruction>(
                 normal,
                 tangent,
                 bitangent,
+            }
+        }
+        MaterialGraphFunction::SpritePointIrradiance => {
+            if let Some(expression) = source
+                && source_type != Some(MaterialValueType::Vec3)
+            {
+                return Err(MaterialGraphNodeCreationError::IncompatibleSource {
+                    kind: MaterialGraphCreateKind::Function(function),
+                    expression,
+                });
+            }
+            MaterialExpressionKind::SpritePointIrradiance {
+                normal: source.unwrap_or_else(|| {
+                    append_graph_constant(program, MaterialValue::Vec3([0.0, 0.0, 1.0]))
+                }),
             }
         }
         MaterialGraphFunction::Fresnel => {
@@ -1120,6 +1276,235 @@ fn append_graph_function<P: GraphConstruction>(
                 ddy,
             }
         }
+        MaterialGraphFunction::PixelOutline => {
+            let from_texture = matches!(source_type, Some(MaterialValueType::Texture2D(_)));
+            if let Some(expression) = source
+                && !from_texture
+                && source_type != Some(MaterialValueType::Vec2)
+            {
+                return Err(MaterialGraphNodeCreationError::IncompatibleSource {
+                    kind: MaterialGraphCreateKind::Function(function),
+                    expression,
+                });
+            }
+            let texture = if from_texture {
+                source.expect("source type requires a source")
+            } else {
+                let reference = program
+                    .outline_texture_reference()
+                    .ok_or(MaterialGraphNodeCreationError::TextureParameterMissing)?;
+                append_graph_expression(program, reference)
+            };
+            let uv = if source_type == Some(MaterialValueType::Vec2) {
+                source.expect("source type requires a source")
+            } else {
+                append_graph_expression(program, MaterialExpressionKind::Input(MaterialInput::Uv0))
+            };
+            MaterialExpressionKind::PixelOutline {
+                texture,
+                uv,
+                width: append_graph_constant(program, MaterialValue::Float(1.0)),
+                threshold: append_graph_constant(program, MaterialValue::Float(0.5)),
+                frame_bounds: None,
+            }
+        }
+        MaterialGraphFunction::PixelSnap
+        | MaterialGraphFunction::Posterize
+        | MaterialGraphFunction::PixelateUv
+        | MaterialGraphFunction::Quantize
+        | MaterialGraphFunction::Threshold => {
+            use MaterialExpressionKind::{Constant, Input};
+            let (default, value_type, control) = match function {
+                MaterialGraphFunction::PixelSnap => (
+                    Input(MaterialInput::EffectPositionXY),
+                    MaterialValueType::Vec2,
+                    MaterialValue::Float(1.0),
+                ),
+                MaterialGraphFunction::Posterize => (
+                    Input(MaterialInput::ParticleColor),
+                    MaterialValueType::Color,
+                    MaterialValue::Float(4.0),
+                ),
+                MaterialGraphFunction::PixelateUv => (
+                    Input(MaterialInput::Uv0),
+                    MaterialValueType::Vec2,
+                    MaterialValue::Vec2([16.0, 16.0]),
+                ),
+                MaterialGraphFunction::Quantize => (
+                    Constant(MaterialValue::Float(0.0)),
+                    MaterialValueType::Float,
+                    MaterialValue::Float(0.25),
+                ),
+                _ => (
+                    Constant(MaterialValue::Float(0.0)),
+                    MaterialValueType::Float,
+                    MaterialValue::Float(0.5),
+                ),
+            };
+            if let Some(expression) = source
+                && source_type != Some(value_type)
+            {
+                return Err(MaterialGraphNodeCreationError::IncompatibleSource {
+                    kind: MaterialGraphCreateKind::Function(function),
+                    expression,
+                });
+            }
+            let value = source.unwrap_or_else(|| append_graph_expression(program, default));
+            let control = append_graph_constant(program, control);
+            match function {
+                MaterialGraphFunction::PixelSnap => MaterialExpressionKind::PixelSnap {
+                    position: value,
+                    cell_size: control,
+                },
+                MaterialGraphFunction::Posterize => MaterialExpressionKind::Posterize {
+                    color: value,
+                    levels: control,
+                },
+                MaterialGraphFunction::PixelateUv => MaterialExpressionKind::PixelateUv {
+                    uv: value,
+                    cells: control,
+                },
+                MaterialGraphFunction::Quantize => MaterialExpressionKind::Quantize {
+                    value,
+                    step: control,
+                },
+                _ => MaterialExpressionKind::Threshold {
+                    value,
+                    threshold: control,
+                },
+            }
+        }
+        MaterialGraphFunction::BayerDither2x2
+        | MaterialGraphFunction::BayerDither4x4
+        | MaterialGraphFunction::BayerDither8x8
+        | MaterialGraphFunction::BlueNoiseDither
+        | MaterialGraphFunction::PatternDither => {
+            let is_pattern = function == MaterialGraphFunction::PatternDither;
+            let texture_source =
+                is_pattern && matches!(source_type, Some(MaterialValueType::Texture2D(_)));
+            if let Some(expression) = source
+                && !texture_source
+                && !matches!(
+                    source_type,
+                    Some(MaterialValueType::Float | MaterialValueType::Vec2)
+                )
+            {
+                return Err(MaterialGraphNodeCreationError::IncompatibleSource {
+                    kind: MaterialGraphCreateKind::Function(function),
+                    expression,
+                });
+            }
+            let alpha = if source_type == Some(MaterialValueType::Float) {
+                source.expect("source type requires a source")
+            } else {
+                append_graph_constant(program, MaterialValue::Float(0.5))
+            };
+            let position = if source_type == Some(MaterialValueType::Vec2) {
+                source.expect("source type requires a source")
+            } else {
+                append_graph_expression(
+                    program,
+                    MaterialExpressionKind::Input(MaterialInput::EffectPositionXY),
+                )
+            };
+            let cell_size = append_graph_constant(program, MaterialValue::Float(1.0));
+            if is_pattern {
+                let texture = if texture_source {
+                    source.expect("source type requires a source")
+                } else {
+                    let reference = program
+                        .pattern_reference()
+                        .ok_or(MaterialGraphNodeCreationError::TextureParameterMissing)?;
+                    append_graph_expression(program, reference)
+                };
+                MaterialExpressionKind::PatternDither {
+                    texture,
+                    alpha,
+                    position,
+                    cell_size,
+                }
+            } else {
+                MaterialExpressionKind::dither(
+                    function.dither_pattern().unwrap(),
+                    alpha,
+                    position,
+                    cell_size,
+                )
+            }
+        }
+        MaterialGraphFunction::NearestPaletteColor
+        | MaterialGraphFunction::PaletteRamp
+        | MaterialGraphFunction::PaletteShift => {
+            let (input_type, default) = match function {
+                MaterialGraphFunction::PaletteRamp => {
+                    (MaterialValueType::Float, MaterialValue::Float(0.5))
+                }
+                _ => (MaterialValueType::Color, MaterialValue::ColorSrgb([1.0; 4])),
+            };
+            let from_steps = function == MaterialGraphFunction::PaletteShift
+                && source_type == Some(MaterialValueType::Float);
+            if let Some(expression) = source
+                && !source_type.is_some_and(|ty| ty == input_type || is_srgb_texture(ty))
+                && !from_steps
+            {
+                return Err(MaterialGraphNodeCreationError::IncompatibleSource {
+                    kind: MaterialGraphCreateKind::Function(function),
+                    expression,
+                });
+            }
+            let palette = if source_type.is_some_and(is_srgb_texture) {
+                source.expect("source type requires a source")
+            } else {
+                let reference = program
+                    .palette_reference()
+                    .ok_or(MaterialGraphNodeCreationError::PaletteParameterMissing)?;
+                append_graph_expression(program, reference)
+            };
+            let input = if source_type == Some(input_type) {
+                source.expect("source type requires a source")
+            } else {
+                append_graph_constant(program, default)
+            };
+            match function {
+                MaterialGraphFunction::PaletteRamp => MaterialExpressionKind::PaletteRamp {
+                    palette,
+                    factor: input,
+                },
+                MaterialGraphFunction::PaletteShift => MaterialExpressionKind::PaletteShift {
+                    palette,
+                    color: input,
+                    steps: if from_steps {
+                        source.expect("source type requires a source")
+                    } else {
+                        append_graph_constant(program, MaterialValue::Float(0.0))
+                    },
+                },
+                _ => MaterialExpressionKind::NearestPaletteColor {
+                    palette,
+                    color: input,
+                },
+            }
+        }
+        MaterialGraphFunction::PaletteSwap => {
+            if let Some(expression) = source
+                && source_type != Some(MaterialValueType::Color)
+            {
+                return Err(MaterialGraphNodeCreationError::IncompatibleSource {
+                    kind: MaterialGraphCreateKind::Function(function),
+                    expression,
+                });
+            }
+            let [source_palette, target_palette] = program
+                .palette_swap_references()
+                .ok_or(MaterialGraphNodeCreationError::PaletteParameterMissing)?;
+            MaterialExpressionKind::PaletteSwap {
+                source_palette: append_graph_expression(program, source_palette),
+                target_palette: append_graph_expression(program, target_palette),
+                color: source.unwrap_or_else(|| {
+                    append_graph_constant(program, MaterialValue::ColorSrgb([1.0; 4]))
+                }),
+            }
+        }
         MaterialGraphFunction::ExtractComponent => {
             let value = source.unwrap_or_else(|| {
                 append_graph_constant(program, MaterialValue::Vec4([0.0, 0.0, 0.0, 1.0]))
@@ -1164,12 +1549,28 @@ fn graph_function_modifier(function: MaterialGraphFunction) -> Option<MaterialSt
         | MaterialGraphFunction::Select
         | MaterialGraphFunction::Fresnel
         | MaterialGraphFunction::NormalMap
+        | MaterialGraphFunction::SpritePointIrradiance
         | MaterialGraphFunction::DepthFade
         | MaterialGraphFunction::DerivativeX
         | MaterialGraphFunction::DerivativeY
         | MaterialGraphFunction::SampleTexture
         | MaterialGraphFunction::SampleTextureLevel
         | MaterialGraphFunction::SampleTextureGradient
+        | MaterialGraphFunction::NearestPaletteColor
+        | MaterialGraphFunction::PaletteRamp
+        | MaterialGraphFunction::PaletteShift
+        | MaterialGraphFunction::PaletteSwap
+        | MaterialGraphFunction::BayerDither4x4
+        | MaterialGraphFunction::BayerDither2x2
+        | MaterialGraphFunction::BayerDither8x8
+        | MaterialGraphFunction::BlueNoiseDither
+        | MaterialGraphFunction::PatternDither
+        | MaterialGraphFunction::PixelSnap
+        | MaterialGraphFunction::Posterize
+        | MaterialGraphFunction::PixelateUv
+        | MaterialGraphFunction::Quantize
+        | MaterialGraphFunction::Threshold
+        | MaterialGraphFunction::PixelOutline
         | MaterialGraphFunction::ExtractComponent => return None,
     })
 }
@@ -1281,6 +1682,7 @@ fn node_kind(kind: &MaterialExpressionKind) -> MaterialGraphNodeKind {
         E::Remap { .. } => MaterialGraphFunction::Remap,
         E::Smoothstep { .. } => MaterialGraphFunction::Smoothstep,
         E::NormalMap { .. } => MaterialGraphFunction::NormalMap,
+        E::SpritePointIrradiance { .. } => MaterialGraphFunction::SpritePointIrradiance,
         E::Fresnel { .. } => MaterialGraphFunction::Fresnel,
         E::RadialMask { .. } => MaterialGraphFunction::RadialMask,
         E::Dissolve { .. } => MaterialGraphFunction::Dissolve,
@@ -1295,6 +1697,21 @@ fn node_kind(kind: &MaterialExpressionKind) -> MaterialGraphNodeKind {
         E::SampleTexture { .. } => MaterialGraphFunction::SampleTexture,
         E::SampleTextureLevel { .. } => MaterialGraphFunction::SampleTextureLevel,
         E::SampleTextureGradient { .. } => MaterialGraphFunction::SampleTextureGradient,
+        E::NearestPaletteColor { .. } => MaterialGraphFunction::NearestPaletteColor,
+        E::PaletteRamp { .. } => MaterialGraphFunction::PaletteRamp,
+        E::PaletteShift { .. } => MaterialGraphFunction::PaletteShift,
+        E::PaletteSwap { .. } => MaterialGraphFunction::PaletteSwap,
+        E::BayerDither4x4 { .. } => MaterialGraphFunction::BayerDither4x4,
+        E::BayerDither2x2 { .. } => MaterialGraphFunction::BayerDither2x2,
+        E::BayerDither8x8 { .. } => MaterialGraphFunction::BayerDither8x8,
+        E::BlueNoiseDither { .. } => MaterialGraphFunction::BlueNoiseDither,
+        E::PatternDither { .. } => MaterialGraphFunction::PatternDither,
+        E::PixelSnap { .. } => MaterialGraphFunction::PixelSnap,
+        E::Posterize { .. } => MaterialGraphFunction::Posterize,
+        E::PixelateUv { .. } => MaterialGraphFunction::PixelateUv,
+        E::Quantize { .. } => MaterialGraphFunction::Quantize,
+        E::Threshold { .. } => MaterialGraphFunction::Threshold,
+        E::PixelOutline { .. } => MaterialGraphFunction::PixelOutline,
         E::ExtractComponent { .. } => MaterialGraphFunction::ExtractComponent,
     };
     MaterialGraphNodeKind::Function(function)
@@ -1308,6 +1725,9 @@ fn node_label(
     match kind {
         MaterialExpressionKind::Constant(value) => format!("Constant · {value:?}"),
         MaterialExpressionKind::NormalMap { .. } => "Normal Map".to_owned(),
+        MaterialExpressionKind::SpritePointIrradiance { .. } => {
+            "Sprite Point Irradiance".to_owned()
+        }
         MaterialExpressionKind::Input(input) => format!("{input:?}"),
         MaterialExpressionKind::Parameter(id) => program
             .parameters
@@ -1368,6 +1788,22 @@ fn expression_ports(
     expression_inputs(kind)
         .into_iter()
         .map(|(name, source)| (name.to_owned(), source, None))
+        .chain(
+            matches!(
+                kind,
+                MaterialExpressionKind::PixelOutline {
+                    frame_bounds: None,
+                    ..
+                }
+            )
+            .then(|| {
+                (
+                    "frame_bounds".into(),
+                    MaterialExpressionId::from_u128(0),
+                    None,
+                )
+            }),
+        )
         .collect()
 }
 
@@ -1442,6 +1878,7 @@ pub(crate) fn expression_inputs(
             ("tangent", *tangent),
             ("bitangent", *bitangent),
         ],
+        E::SpritePointIrradiance { normal } => vec![("normal", *normal)],
         E::Fresnel {
             normal,
             view,
@@ -1523,6 +1960,80 @@ pub(crate) fn expression_inputs(
             ("uv", *uv),
             ("ddx", *ddx),
             ("ddy", *ddy),
+        ],
+        E::NearestPaletteColor { palette, color } => vec![("palette", *palette), ("color", *color)],
+        E::PaletteRamp { palette, factor } => vec![("palette", *palette), ("factor", *factor)],
+        E::PaletteShift {
+            palette,
+            color,
+            steps,
+        } => vec![("palette", *palette), ("color", *color), ("steps", *steps)],
+        E::PaletteSwap {
+            source_palette,
+            target_palette,
+            color,
+        } => vec![
+            ("source_palette", *source_palette),
+            ("target_palette", *target_palette),
+            ("color", *color),
+        ],
+        E::PixelSnap {
+            position,
+            cell_size,
+        } => vec![("position", *position), ("cell_size", *cell_size)],
+        E::Posterize { color, levels } => vec![("color", *color), ("levels", *levels)],
+        E::PixelateUv { uv, cells } => vec![("uv", *uv), ("cells", *cells)],
+        E::Quantize { value, step } => vec![("value", *value), ("step", *step)],
+        E::Threshold { value, threshold } => vec![("value", *value), ("threshold", *threshold)],
+        E::PixelOutline {
+            texture,
+            uv,
+            width,
+            threshold,
+            frame_bounds,
+        } => [
+            ("texture", *texture),
+            ("uv", *uv),
+            ("width", *width),
+            ("threshold", *threshold),
+        ]
+        .into_iter()
+        .chain(frame_bounds.map(|bounds| ("frame_bounds", bounds)))
+        .collect(),
+        E::PatternDither {
+            texture,
+            alpha,
+            position,
+            cell_size,
+        } => vec![
+            ("texture", *texture),
+            ("alpha", *alpha),
+            ("position", *position),
+            ("cell_size", *cell_size),
+        ],
+        E::BayerDither2x2 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | E::BayerDither8x8 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | E::BlueNoiseDither {
+            alpha,
+            position,
+            cell_size,
+        }
+        | E::BayerDither4x4 {
+            alpha,
+            position,
+            cell_size,
+        } => vec![
+            ("alpha", *alpha),
+            ("position", *position),
+            ("cell_size", *cell_size),
         ],
         E::ExtractComponent { value, .. } => vec![("value", *value)],
     }

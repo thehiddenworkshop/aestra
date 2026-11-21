@@ -123,7 +123,37 @@ pub struct EffectAsset {
     pub metadata: BTreeMap<String, String>,
 }
 
+/// The intended authoring dimension, independent of the runtime camera or renderer.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffectDimension {
+    TwoD,
+    #[default]
+    ThreeD,
+}
+
+impl EffectDimension {
+    pub const METADATA_KEY: &str = "aestra.dimension";
+
+    pub fn metadata_value(self) -> &'static str {
+        match self {
+            Self::TwoD => "2d",
+            Self::ThreeD => "3d",
+        }
+    }
+}
+
 impl EffectAsset {
+    pub fn dimension(&self) -> EffectDimension {
+        match self
+            .metadata
+            .get(EffectDimension::METADATA_KEY)
+            .map(String::as_str)
+        {
+            Some("2d") => EffectDimension::TwoD,
+            _ => EffectDimension::ThreeD,
+        }
+    }
+
     pub fn new(name: impl Into<String>, duration: f32) -> Self {
         Self {
             format_version: crate::CURRENT_FORMAT_VERSION,

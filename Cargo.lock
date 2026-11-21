@@ -332,6 +332,7 @@ version = "0.1.0"
 dependencies = [
  "aestra-core",
  "gltf",
+ "image",
  "naga",
  "ron",
  "roxmltree",

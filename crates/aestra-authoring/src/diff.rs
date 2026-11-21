@@ -49,6 +49,28 @@ impl EffectDiff {
                 &after.name,
             );
         }
+        for key in before.metadata.keys().chain(
+            after
+                .metadata
+                .keys()
+                .filter(|key| !before.metadata.contains_key(*key)),
+        ) {
+            let previous = before.metadata.get(key);
+            let current = after.metadata.get(key);
+            if previous != current {
+                changes.push(SemanticChange {
+                    kind: match (previous, current) {
+                        (None, _) => ChangeKind::Added,
+                        (_, None) => ChangeKind::Removed,
+                        _ => ChangeKind::Modified,
+                    },
+                    target: SemanticTarget::Effect(after.id),
+                    path: format!("effect.metadata.{key}"),
+                    before: previous.cloned(),
+                    after: current.cloned(),
+                });
+            }
+        }
         if before.duration != after.duration {
             modified(
                 &mut changes,

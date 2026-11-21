@@ -134,11 +134,45 @@ pub enum MaterialGraphFunction {
     SampleTexture,
     SampleTextureLevel,
     SampleTextureGradient,
+    NearestPaletteColor,
+    PaletteRamp,
+    PaletteShift,
+    PaletteSwap,
+    BayerDither2x2,
+    BayerDither4x4,
+    BayerDither8x8,
+    BlueNoiseDither,
+    PatternDither,
     ExtractComponent,
     NormalMap,
+    PixelSnap,
+    Posterize,
+    PixelateUv,
+    Quantize,
+    Threshold,
+    PixelOutline,
+    SpritePointIrradiance,
 }
 
 impl MaterialGraphFunction {
+    pub fn dither_pattern(self) -> Option<crate::dither::DitherPattern> {
+        use crate::dither::DitherPattern;
+        match self {
+            Self::BlueNoiseDither => Some(DitherPattern::BlueNoise),
+            _ => self.bayer_pattern().map(DitherPattern::Bayer),
+        }
+    }
+
+    pub const fn bayer_pattern(self) -> Option<crate::dither::BayerPattern> {
+        use crate::dither::BayerPattern;
+        match self {
+            Self::BayerDither2x2 => Some(BayerPattern::TwoByTwo),
+            Self::BayerDither4x4 => Some(BayerPattern::FourByFour),
+            Self::BayerDither8x8 => Some(BayerPattern::EightByEight),
+            _ => None,
+        }
+    }
+
     pub const fn display_name(self) -> &'static str {
         match self {
             Self::Add => "Add",
@@ -164,8 +198,24 @@ impl MaterialGraphFunction {
             Self::SampleTexture => "Sample Texture",
             Self::SampleTextureLevel => "Sample Texture Level",
             Self::SampleTextureGradient => "Sample Texture Gradient",
+            Self::NearestPaletteColor => "Nearest Palette Color",
+            Self::PaletteRamp => "Palette Ramp",
+            Self::PaletteShift => "Palette Shift",
+            Self::PaletteSwap => "Palette Swap",
+            Self::BayerDither2x2 => "Bayer Dither 2×2",
+            Self::BayerDither4x4 => "Bayer Dither 4×4",
+            Self::BayerDither8x8 => "Bayer Dither 8×8",
+            Self::BlueNoiseDither => "Blue Noise Dither",
+            Self::PatternDither => "Pattern Dither",
             Self::ExtractComponent => "Extract Component",
             Self::NormalMap => "Normal Map",
+            Self::SpritePointIrradiance => "Sprite Point Irradiance",
+            Self::PixelSnap => "Pixel Snap",
+            Self::Posterize => "Posterize",
+            Self::PixelateUv => "Pixelate UV",
+            Self::Quantize => "Quantize",
+            Self::Threshold => "Threshold",
+            Self::PixelOutline => "Pixel Outline",
         }
     }
 
@@ -179,18 +229,36 @@ impl MaterialGraphFunction {
             | Self::Clamp
             | Self::Remap
             | Self::Smoothstep
+            | Self::Quantize
+            | Self::Threshold
             | Self::DerivativeX
             | Self::DerivativeY
             | Self::ExtractComponent => "Math",
             Self::Select => "Logic",
-            Self::PanUv | Self::RotateUv | Self::ScaleUv => "UV",
-            Self::RadialMask | Self::Dissolve | Self::DissolveEdge => "Mask",
+            Self::PanUv | Self::RotateUv | Self::ScaleUv | Self::PixelSnap | Self::PixelateUv => {
+                "UV"
+            }
+            Self::RadialMask
+            | Self::Dissolve
+            | Self::DissolveEdge
+            | Self::BayerDither2x2
+            | Self::BayerDither4x4
+            | Self::BayerDither8x8
+            | Self::BlueNoiseDither
+            | Self::PatternDither
+            | Self::PixelOutline => "Mask",
             Self::DepthFade | Self::SoftParticle => "Depth",
             Self::Fresnel
             | Self::NormalMap
+            | Self::SpritePointIrradiance
             | Self::SampleTexture
             | Self::SampleTextureLevel
-            | Self::SampleTextureGradient => "Material",
+            | Self::SampleTextureGradient
+            | Self::NearestPaletteColor
+            | Self::PaletteRamp
+            | Self::PaletteShift
+            | Self::PaletteSwap
+            | Self::Posterize => "Material",
         }
     }
 
@@ -209,6 +277,7 @@ impl MaterialGraphFunction {
             ],
             Self::Smoothstep => &["LowerEdge", "UpperEdge", "Value"],
             Self::Fresnel => &["Normal", "ViewDirection", "Power"],
+            Self::SpritePointIrradiance => &["Normal"],
             Self::NormalMap => &[
                 "Sample",
                 "Strength",
@@ -234,7 +303,22 @@ impl MaterialGraphFunction {
             Self::SampleTexture => &["Texture", "Uv"],
             Self::SampleTextureLevel => &["Texture", "Uv", "Level"],
             Self::SampleTextureGradient => &["Texture", "Uv", "Ddx", "Ddy"],
+            Self::NearestPaletteColor => &["Palette", "Color"],
+            Self::PaletteRamp => &["Palette", "Factor"],
+            Self::PaletteShift => &["Palette", "Color", "Steps"],
+            Self::PaletteSwap => &["Source Palette", "Target Palette", "Color"],
+            Self::BayerDither2x2
+            | Self::BayerDither4x4
+            | Self::BayerDither8x8
+            | Self::BlueNoiseDither => &["Alpha", "Position", "CellSize"],
+            Self::PatternDither => &["Texture", "Alpha", "Position", "CellSize"],
             Self::ExtractComponent => &["Value"],
+            Self::PixelSnap => &["Position", "CellSize"],
+            Self::Posterize => &["Color", "Levels"],
+            Self::PixelateUv => &["Uv", "Cells"],
+            Self::Quantize => &["Value", "Step"],
+            Self::Threshold => &["Value", "Threshold"],
+            Self::PixelOutline => &["Texture", "Uv", "Width", "Threshold", "Frame Bounds"],
         }
     }
 }
@@ -637,6 +721,12 @@ fn validate_graph_preset(recipe: &MaterialPresetGraphRecipe) -> Result<(), Mater
                     MaterialGraphFunction::SampleTexture
                         | MaterialGraphFunction::SampleTextureLevel
                         | MaterialGraphFunction::SampleTextureGradient
+                        | MaterialGraphFunction::PatternDither
+                        | MaterialGraphFunction::PixelOutline
+                        | MaterialGraphFunction::NearestPaletteColor
+                        | MaterialGraphFunction::PaletteRamp
+                        | MaterialGraphFunction::PaletteShift
+                        | MaterialGraphFunction::PaletteSwap
                         | MaterialGraphFunction::ExtractComponent
                 ) {
                     return Err(MaterialPresetError::Validation(format!(
@@ -1177,6 +1267,17 @@ pub enum MaterialInput {
     /// Unshadowed isotropic point-light irradiance at the fragment's world position.
     /// Backends without scene lighting return zero. Opt-in: existing materials remain unlit.
     ScenePointIrradiance,
+    /// Fragment XY in the owning effect's affine coordinate space.
+    EffectPositionXY,
+    /// Fragment XY in world units, independent of the owning effect transform.
+    WorldPositionXY,
+    /// Fragment position in pixels of the render target (virtual pixels for a pixel-grid view).
+    ScreenPixel,
+    /// Fragment offset from the sprite particle's center, along its unrotated quad axes.
+    ///
+    /// Uses authored particle size, before effect scaling, screen-space sampling compensation,
+    /// and sprite/flipbook atlas coordinates.
+    ParticlePositionXY,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1323,6 +1424,56 @@ pub enum MaterialExpressionKind {
         ddx: MaterialExpressionId,
         ddy: MaterialExpressionId,
     },
+    /// Quantizes linear RGB against the swatches in a one-row sRGB texture, preserving alpha.
+    NearestPaletteColor {
+        palette: MaterialExpressionId,
+        color: MaterialExpressionId,
+    },
+    /// Maps a normalized scalar to evenly sized bands of ordered palette swatches.
+    PaletteRamp {
+        palette: MaterialExpressionId,
+        factor: MaterialExpressionId,
+    },
+    /// Starts at the nearest swatch and rotates by signed whole swatch steps, preserving alpha.
+    PaletteShift {
+        palette: MaterialExpressionId,
+        color: MaterialExpressionId,
+        steps: MaterialExpressionId,
+    },
+    /// Replace matching source swatches by index, keeping unmatched RGB and source alpha.
+    PaletteSwap {
+        source_palette: MaterialExpressionId,
+        target_palette: MaterialExpressionId,
+        color: MaterialExpressionId,
+    },
+    BayerDither2x2 {
+        alpha: MaterialExpressionId,
+        position: MaterialExpressionId,
+        cell_size: MaterialExpressionId,
+    },
+    /// Binary ordered coverage with one Bayer cell per `cell_size` coordinate units.
+    BayerDither4x4 {
+        alpha: MaterialExpressionId,
+        position: MaterialExpressionId,
+        cell_size: MaterialExpressionId,
+    },
+    BayerDither8x8 {
+        alpha: MaterialExpressionId,
+        position: MaterialExpressionId,
+        cell_size: MaterialExpressionId,
+    },
+    /// Binary coverage using a toroidal blue-noise rank tile.
+    BlueNoiseDither {
+        alpha: MaterialExpressionId,
+        position: MaterialExpressionId,
+        cell_size: MaterialExpressionId,
+    },
+    PatternDither {
+        texture: MaterialExpressionId,
+        alpha: MaterialExpressionId,
+        position: MaterialExpressionId,
+        cell_size: MaterialExpressionId,
+    },
     ExtractComponent {
         value: MaterialExpressionId,
         component: MaterialVectorComponent,
@@ -1338,6 +1489,42 @@ pub enum MaterialExpressionKind {
         tangent: MaterialExpressionId,
         bitangent: MaterialExpressionId,
     },
+    PixelSnap {
+        position: MaterialExpressionId,
+        cell_size: MaterialExpressionId,
+    },
+    Posterize {
+        color: MaterialExpressionId,
+        levels: MaterialExpressionId,
+    },
+    PixelateUv {
+        uv: MaterialExpressionId,
+        cells: MaterialExpressionId,
+    },
+    Quantize {
+        value: MaterialExpressionId,
+        step: MaterialExpressionId,
+    },
+    Threshold {
+        value: MaterialExpressionId,
+        threshold: MaterialExpressionId,
+    },
+    /// Hard exterior mask in source texels. An explicit frame permits an outline
+    /// beyond its edges, but only texels inside the frame are sampled.
+    PixelOutline {
+        texture: MaterialExpressionId,
+        uv: MaterialExpressionId,
+        width: MaterialExpressionId,
+        threshold: MaterialExpressionId,
+        /// Half-open normalized texture rectangle (min U, min V, max U, max V).
+        /// If absent, use the active sprite frame and keep the mask inside it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frame_bounds: Option<MaterialExpressionId>,
+    },
+    /// Camera-local 2D point light irradiance for a normal in sprite tangent space.
+    SpritePointIrradiance {
+        normal: MaterialExpressionId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1349,6 +1536,69 @@ pub enum MaterialVectorComponent {
 }
 
 impl MaterialExpressionKind {
+    pub fn dither(
+        pattern: crate::dither::DitherPattern,
+        alpha: MaterialExpressionId,
+        position: MaterialExpressionId,
+        cell_size: MaterialExpressionId,
+    ) -> Self {
+        use crate::dither::DitherPattern;
+        match pattern {
+            DitherPattern::Bayer(pattern) => {
+                Self::bayer_dither(pattern, alpha, position, cell_size)
+            }
+            DitherPattern::BlueNoise => Self::BlueNoiseDither {
+                alpha,
+                position,
+                cell_size,
+            },
+        }
+    }
+
+    pub fn dither_pattern(&self) -> Option<crate::dither::DitherPattern> {
+        use crate::dither::DitherPattern;
+        match self {
+            Self::BlueNoiseDither { .. } => Some(DitherPattern::BlueNoise),
+            _ => self.bayer_pattern().map(DitherPattern::Bayer),
+        }
+    }
+
+    pub fn bayer_dither(
+        pattern: crate::dither::BayerPattern,
+        alpha: MaterialExpressionId,
+        position: MaterialExpressionId,
+        cell_size: MaterialExpressionId,
+    ) -> Self {
+        use crate::dither::BayerPattern;
+        match pattern {
+            BayerPattern::TwoByTwo => Self::BayerDither2x2 {
+                alpha,
+                position,
+                cell_size,
+            },
+            BayerPattern::FourByFour => Self::BayerDither4x4 {
+                alpha,
+                position,
+                cell_size,
+            },
+            BayerPattern::EightByEight => Self::BayerDither8x8 {
+                alpha,
+                position,
+                cell_size,
+            },
+        }
+    }
+
+    pub const fn bayer_pattern(&self) -> Option<crate::dither::BayerPattern> {
+        use crate::dither::BayerPattern;
+        match self {
+            Self::BayerDither2x2 { .. } => Some(BayerPattern::TwoByTwo),
+            Self::BayerDither4x4 { .. } => Some(BayerPattern::FourByFour),
+            Self::BayerDither8x8 { .. } => Some(BayerPattern::EightByEight),
+            _ => None,
+        }
+    }
+
     /// Returns the semantic value that this operation can pass through when disabled.
     ///
     /// Operations without one unambiguous primary value are intentionally not bypassable.
@@ -1358,6 +1608,9 @@ impl MaterialExpressionKind {
             | Self::Smoothstep { value, .. }
             | Self::DerivativeX { value }
             | Self::DerivativeY { value } => Some(*value),
+            Self::NearestPaletteColor { color, .. }
+            | Self::PaletteShift { color, .. }
+            | Self::PaletteSwap { color, .. } => Some(*color),
             Self::RadialMask { uv, .. }
             | Self::PanUv { uv, .. }
             | Self::RotateUv { uv, .. }
@@ -1366,7 +1619,16 @@ impl MaterialExpressionKind {
             | Self::SampleTextureLevel { uv, .. }
             | Self::SampleTextureGradient { uv, .. } => Some(*uv),
             Self::Dissolve { source, .. } | Self::DissolveEdge { source, .. } => Some(*source),
-            Self::SoftParticle { alpha, .. } => Some(*alpha),
+            Self::SoftParticle { alpha, .. }
+            | Self::BayerDither2x2 { alpha, .. }
+            | Self::BayerDither4x4 { alpha, .. }
+            | Self::BayerDither8x8 { alpha, .. }
+            | Self::BlueNoiseDither { alpha, .. }
+            | Self::PatternDither { alpha, .. } => Some(*alpha),
+            Self::PixelSnap { position, .. } => Some(*position),
+            Self::Posterize { color, .. } => Some(*color),
+            Self::PixelateUv { uv, .. } => Some(*uv),
+            Self::Quantize { value, .. } | Self::Threshold { value, .. } => Some(*value),
             Self::Constant(_)
             | Self::Input(_)
             | Self::Parameter(_)
@@ -1382,7 +1644,10 @@ impl MaterialExpressionKind {
             | Self::Select { .. }
             | Self::Fresnel { .. }
             | Self::NormalMap { .. }
+            | Self::SpritePointIrradiance { .. }
             | Self::DepthFade { .. }
+            | Self::PaletteRamp { .. }
+            | Self::PixelOutline { .. }
             | Self::ExtractComponent { .. } => None,
         }
     }
@@ -1390,6 +1655,7 @@ impl MaterialExpressionKind {
     /// Returns every expression referenced by this expression in stable socket order.
     pub fn dependencies(&self) -> Vec<MaterialExpressionId> {
         match self {
+            Self::SpritePointIrradiance { normal } => vec![*normal],
             Self::NormalMap {
                 sample,
                 strength,
@@ -1478,6 +1744,62 @@ impl MaterialExpressionKind {
                 ddx,
                 ddy,
             } => vec![*texture, *uv, *ddx, *ddy],
+            Self::NearestPaletteColor { palette, color } => vec![*palette, *color],
+            Self::PaletteRamp { palette, factor } => vec![*palette, *factor],
+            Self::PaletteShift {
+                palette,
+                color,
+                steps,
+            } => vec![*palette, *color, *steps],
+            Self::PaletteSwap {
+                source_palette,
+                target_palette,
+                color,
+            } => vec![*source_palette, *target_palette, *color],
+            Self::BayerDither2x2 {
+                alpha,
+                position,
+                cell_size,
+            }
+            | Self::BayerDither8x8 {
+                alpha,
+                position,
+                cell_size,
+            }
+            | Self::BlueNoiseDither {
+                alpha,
+                position,
+                cell_size,
+            }
+            | Self::BayerDither4x4 {
+                alpha,
+                position,
+                cell_size,
+            } => vec![*alpha, *position, *cell_size],
+            Self::PatternDither {
+                texture,
+                alpha,
+                position,
+                cell_size,
+            } => vec![*texture, *alpha, *position, *cell_size],
+            Self::PixelSnap {
+                position,
+                cell_size,
+            } => vec![*position, *cell_size],
+            Self::Posterize { color, levels } => vec![*color, *levels],
+            Self::PixelateUv { uv, cells } => vec![*uv, *cells],
+            Self::Quantize { value, step } => vec![*value, *step],
+            Self::Threshold { value, threshold } => vec![*value, *threshold],
+            Self::PixelOutline {
+                texture,
+                uv,
+                width,
+                threshold,
+                frame_bounds,
+            } => [*texture, *uv, *width, *threshold]
+                .into_iter()
+                .chain(*frame_bounds)
+                .collect(),
             Self::ExtractComponent { value, .. } => vec![*value],
         }
     }
@@ -2581,6 +2903,16 @@ impl MaterialProgram {
                     | MaterialExpressionKind::DerivativeY { .. }
                     | MaterialExpressionKind::SampleTexture { .. }
                     | MaterialExpressionKind::SampleTextureGradient { .. }
+                    | MaterialExpressionKind::NearestPaletteColor { .. }
+                    | MaterialExpressionKind::PaletteRamp { .. }
+                    | MaterialExpressionKind::PaletteShift { .. }
+                    | MaterialExpressionKind::PaletteSwap { .. }
+                    | MaterialExpressionKind::BayerDither4x4 { .. }
+                    | MaterialExpressionKind::BayerDither2x2 { .. }
+                    | MaterialExpressionKind::BayerDither8x8 { .. }
+                    | MaterialExpressionKind::BlueNoiseDither { .. }
+                    | MaterialExpressionKind::PatternDither { .. }
+                    | MaterialExpressionKind::PixelOutline { .. }
                     | MaterialExpressionKind::CustomWeslCall { .. } => true,
                     _ => false,
                 };
@@ -2656,6 +2988,8 @@ fn infer_expression(
                         input,
                         MaterialInput::RibbonUv | MaterialInput::RibbonDirection
                     ))
+                || (program.domain != MaterialDomain::Sprite
+                    && *input == MaterialInput::ParticlePositionXY)
                 || (program.domain == MaterialDomain::Ribbon
                     && matches!(
                         input,
@@ -2908,6 +3242,23 @@ fn infer_expression(
                 ),
                 _ => None,
             }
+        }
+        MaterialExpressionKind::SpritePointIrradiance { normal } => {
+            let normal = dependency(*normal);
+            if program.domain != MaterialDomain::Sprite {
+                material_type_error(
+                    report,
+                    &path,
+                    "Sprite Point Irradiance requires the Sprite domain",
+                );
+            }
+            if normal.is_some_and(|info| info.value_type != MaterialValueType::Vec3) {
+                material_type_error(report, &path, "Sprite Point Irradiance Normal expects Vec3");
+            }
+            normal.map(|_| MaterialExpressionInfo {
+                value_type: MaterialValueType::Vec3,
+                evaluation_domain: MaterialExpressionDomain::Fragment,
+            })
         }
         MaterialExpressionKind::NormalMap {
             sample,
@@ -3396,6 +3747,292 @@ fn infer_expression(
                 }
             })
         }
+        MaterialExpressionKind::PixelSnap {
+            position: value,
+            cell_size: control,
+        }
+        | MaterialExpressionKind::Posterize {
+            color: value,
+            levels: control,
+        }
+        | MaterialExpressionKind::PixelateUv {
+            uv: value,
+            cells: control,
+        }
+        | MaterialExpressionKind::Quantize {
+            value,
+            step: control,
+        }
+        | MaterialExpressionKind::Threshold {
+            value,
+            threshold: control,
+        } => {
+            let value = dependency(*value)?;
+            let control = dependency(*control)?;
+            use MaterialValueType::{Color, Float, Vec2};
+            let (function, socket, value_type, control_socket, control_type) = match expression.kind
+            {
+                MaterialExpressionKind::PixelSnap { .. } => {
+                    ("Pixel Snap", "position", Vec2, "cell_size", Float)
+                }
+                MaterialExpressionKind::Posterize { .. } => {
+                    ("Posterize", "color", Color, "levels", Float)
+                }
+                MaterialExpressionKind::PixelateUv { .. } => {
+                    ("Pixelate UV", "uv", Vec2, "cells", Vec2)
+                }
+                MaterialExpressionKind::Quantize { .. } => {
+                    ("Quantize", "value", Float, "step", Float)
+                }
+                _ => ("Threshold", "value", Float, "threshold", Float),
+            };
+            let mut valid = true;
+            for (socket, info, expected) in [
+                (socket, value, value_type),
+                (control_socket, control, control_type),
+            ] {
+                if info.value_type != expected {
+                    material_type_error(
+                        report,
+                        format!("{path}.{socket}"),
+                        format!(
+                            "{function} {socket} expects {expected:?} but received {:?}",
+                            info.value_type
+                        ),
+                    );
+                    valid = false;
+                }
+            }
+            valid.then_some(MaterialExpressionInfo {
+                value_type,
+                evaluation_domain: value.evaluation_domain.max(control.evaluation_domain),
+            })
+        }
+        MaterialExpressionKind::BayerDither2x2 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BayerDither8x8 {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::BlueNoiseDither {
+            alpha,
+            position,
+            cell_size,
+        }
+        | MaterialExpressionKind::PatternDither {
+            alpha,
+            position,
+            cell_size,
+            ..
+        }
+        | MaterialExpressionKind::BayerDither4x4 {
+            alpha,
+            position,
+            cell_size,
+        } => {
+            let alpha = dependency(*alpha)?;
+            let position = dependency(*position)?;
+            let cell_size = dependency(*cell_size)?;
+            let mut valid = true;
+            if let MaterialExpressionKind::PatternDither { texture, .. } = expression.kind {
+                let info = dependency(texture)?;
+                if !matches!(info.value_type, MaterialValueType::Texture2D(_))
+                    || !matches!(
+                        expressions.get(&texture).map(|expression| &expression.kind),
+                        Some(MaterialExpressionKind::Parameter(parameter))
+                            if parameters.contains_key(parameter)
+                    )
+                    || info.evaluation_domain > MaterialExpressionDomain::Instance
+                {
+                    error(
+                        report,
+                        DiagnosticCode::MissingResourceDeclaration,
+                        format!("{path}.texture"),
+                        "Pattern Dither requires a declared Texture2D material parameter available by the Instance domain",
+                    );
+                    valid = false;
+                }
+            }
+            for (socket, input, expected) in [
+                ("alpha", alpha, MaterialValueType::Float),
+                ("position", position, MaterialValueType::Vec2),
+                ("cell_size", cell_size, MaterialValueType::Float),
+            ] {
+                if input.value_type != expected {
+                    material_type_error(
+                        report,
+                        format!("{path}.{socket}"),
+                        format!(
+                            "Dither {socket} expects {expected:?} but received {:?}",
+                            input.value_type,
+                        ),
+                    );
+                    valid = false;
+                }
+            }
+            valid.then_some(MaterialExpressionInfo {
+                value_type: MaterialValueType::Float,
+                evaluation_domain: MaterialExpressionDomain::Fragment,
+            })
+        }
+        MaterialExpressionKind::PixelOutline {
+            texture,
+            uv,
+            width,
+            threshold,
+            frame_bounds,
+        } => {
+            let texture_info = dependency(*texture)?;
+            let inputs = [
+                ("uv", dependency(*uv)?, MaterialValueType::Vec2),
+                ("width", dependency(*width)?, MaterialValueType::Float),
+                (
+                    "threshold",
+                    dependency(*threshold)?,
+                    MaterialValueType::Float,
+                ),
+            ];
+            let frame_input = match frame_bounds {
+                Some(bounds) => Some((
+                    "frame_bounds",
+                    dependency(*bounds)?,
+                    MaterialValueType::Vec4,
+                )),
+                None => None,
+            };
+            let mut valid = matches!(texture_info.value_type, MaterialValueType::Texture2D(_))
+                && texture_info.evaluation_domain <= MaterialExpressionDomain::Instance
+                && matches!(
+                    expressions.get(texture).map(|expression| &expression.kind),
+                    Some(MaterialExpressionKind::Parameter(parameter)) if parameters.contains_key(parameter)
+                );
+            if !valid {
+                error(
+                    report,
+                    DiagnosticCode::MissingResourceDeclaration,
+                    format!("{path}.texture"),
+                    "Pixel Outline requires a declared Texture2D material parameter available by the Instance domain",
+                );
+            }
+            for (socket, input, expected) in inputs.into_iter().chain(frame_input) {
+                if input.value_type != expected {
+                    material_type_error(
+                        report,
+                        format!("{path}.{socket}"),
+                        format!(
+                            "Pixel Outline {socket} expects {expected:?} but received {:?}",
+                            input.value_type
+                        ),
+                    );
+                    valid = false;
+                }
+            }
+            valid.then_some(MaterialExpressionInfo {
+                value_type: MaterialValueType::Float,
+                evaluation_domain: MaterialExpressionDomain::Fragment,
+            })
+        }
+        MaterialExpressionKind::NearestPaletteColor {
+            palette,
+            color: input,
+        }
+        | MaterialExpressionKind::PaletteRamp {
+            palette,
+            factor: input,
+        }
+        | MaterialExpressionKind::PaletteShift {
+            palette,
+            color: input,
+            ..
+        }
+        | MaterialExpressionKind::PaletteSwap {
+            source_palette: palette,
+            color: input,
+            ..
+        } => {
+            let palette_info = dependency(*palette)?;
+            let input = dependency(*input)?;
+            let steps = match &expression.kind {
+                MaterialExpressionKind::PaletteShift { steps, .. } => Some(dependency(*steps)?),
+                _ => None,
+            };
+            let (palette_socket, extra_palette) = match &expression.kind {
+                MaterialExpressionKind::PaletteSwap { target_palette, .. } => (
+                    "source_palette",
+                    Some((
+                        "target_palette",
+                        target_palette,
+                        dependency(*target_palette)?,
+                    )),
+                ),
+                _ => ("palette", None),
+            };
+            let (socket, expected) =
+                if matches!(expression.kind, MaterialExpressionKind::PaletteRamp { .. }) {
+                    ("factor", MaterialValueType::Float)
+                } else {
+                    ("color", MaterialValueType::Color)
+                };
+            let mut valid = true;
+            for (socket, palette, palette_info) in
+                std::iter::once((palette_socket, palette, palette_info)).chain(extra_palette)
+            {
+                if !matches!(palette_info.value_type, MaterialValueType::Texture2D(texture)
+                    if texture.color_space == MaterialTextureColorSpace::SrgbColor)
+                {
+                    material_type_error(
+                        report,
+                        format!("{path}.{socket}"),
+                        "Palette expects an sRGB Texture2D",
+                    );
+                    valid = false;
+                }
+                if palette_info.evaluation_domain > MaterialExpressionDomain::Instance
+                    || !matches!(expressions.get(palette).map(|expression| &expression.kind),
+                        Some(MaterialExpressionKind::Parameter(parameter)) if parameters.contains_key(parameter))
+                {
+                    error(
+                        report,
+                        DiagnosticCode::MissingResourceDeclaration,
+                        format!("{path}.{socket}"),
+                        "Palette must come from a declared Texture2D material parameter available at the Instance domain",
+                    );
+                    valid = false;
+                }
+            }
+            if input.value_type != expected {
+                material_type_error(
+                    report,
+                    format!("{path}.{socket}"),
+                    format!(
+                        "Palette {socket} expects {expected:?} but received {:?}",
+                        input.value_type
+                    ),
+                );
+                valid = false;
+            }
+            if let Some(steps) = steps
+                && steps.value_type != MaterialValueType::Float
+            {
+                material_type_error(
+                    report,
+                    format!("{path}.steps"),
+                    format!(
+                        "Palette steps expects Float but received {:?}",
+                        steps.value_type
+                    ),
+                );
+                valid = false;
+            }
+            valid.then_some(MaterialExpressionInfo {
+                value_type: MaterialValueType::Color,
+                evaluation_domain: MaterialExpressionDomain::Fragment.max(input.evaluation_domain),
+            })
+        }
         MaterialExpressionKind::SampleTexture { texture, uv } => {
             let texture_id = *texture;
             let texture = dependency(texture_id);
@@ -3877,6 +4514,10 @@ fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
         MaterialInput::Uv0
         | MaterialInput::Uv1
         | MaterialInput::ScreenUv
+        | MaterialInput::EffectPositionXY
+        | MaterialInput::WorldPositionXY
+        | MaterialInput::ScreenPixel
+        | MaterialInput::ParticlePositionXY
         | MaterialInput::RibbonUv => (MaterialValueType::Vec2, MaterialExpressionDomain::Fragment),
         MaterialInput::LocalPosition
         | MaterialInput::WorldPosition

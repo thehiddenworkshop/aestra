@@ -7,9 +7,8 @@
 //! it through the shared [`effect::assemble`] + `GpuJob` scaffolding.
 //!
 //! A *standalone* material has no concrete texture — the texture is an instance/effect-level
-//! input — so we bind a semantically **neutral** texture per slot (white for color, flat normal
-//! for data). That is the faithful preview of the material program in isolation; borrowing a
-//! consuming effect's texture would misrepresent one arbitrary use as the material's own.
+//! input — so we bind representative preview textures. A cutout shows how sprite materials
+//! handle opacity and edges, and a flat normal supplies neutral linear data.
 use super::effect::{self, Assembled, Prepared};
 use super::*;
 use aestra_core::{
@@ -58,6 +57,12 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
             MaterialExpressionKind::SampleTexture { .. }
             | MaterialExpressionKind::SampleTextureLevel { .. }
             | MaterialExpressionKind::SampleTextureGradient { .. }
+            | MaterialExpressionKind::PatternDither { .. }
+            | MaterialExpressionKind::PixelOutline { .. }
+            | MaterialExpressionKind::NearestPaletteColor { .. }
+            | MaterialExpressionKind::PaletteRamp { .. }
+            | MaterialExpressionKind::PaletteShift { .. }
+            | MaterialExpressionKind::PaletteSwap { .. }
             | MaterialExpressionKind::DerivativeX { .. }
             | MaterialExpressionKind::DerivativeY { .. } => gpu_scene = true,
             MaterialExpressionKind::FunctionCall { .. } => cpu_scene = true,
@@ -88,11 +93,14 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
 }
 
 /// The shared smoke kernel is bounded and already used by the native viewport.
-/// Recognize its exact saved source; arbitrary edited WESL keeps the existing
+/// Recognize its saved source independent of LF/CRLF; arbitrary edited WESL keeps the existing
 /// background-preview restriction. Function identity alone is not sufficient.
 pub(super) fn shared_smoke_function(function: &MaterialFunction) -> bool {
     function.custom_wesl.as_ref().is_some_and(|implementation| {
-        implementation.source == aestra_gpu::shader::ADVECTED_SMOKE_WESL
+        implementation
+            .source
+            .lines()
+            .eq(aestra_gpu::shader::ADVECTED_SMOKE_WESL.lines())
             && !implementation.entry_points.is_empty()
             && implementation
                 .entry_points
@@ -151,6 +159,7 @@ pub(super) fn prepare(
     ) {
         return Err("Only Sprite, Mesh, and Ribbon materials preview in the background".into());
     }
+    let sprite_domain = program.domain == MaterialDomain::Sprite;
     let (resolved, neutrals, injected_meshes) = synthesize(program, functions, root);
     let assembled: Assembled = effect::assemble(resolved, root, cancelled, &injected_meshes, true)?;
     let textures = assembled
@@ -161,7 +170,12 @@ pub(super) fn prepare(
                 .get(path)
                 .copied()
                 .unwrap_or(MaterialTextureColorSpace::SrgbColor);
-            (path.clone(), neutral_image(color_space))
+            let image = if sprite_domain && color_space == MaterialTextureColorSpace::SrgbColor {
+                sprite_preview_image()
+            } else {
+                neutral_image(color_space)
+            };
+            (path.clone(), image)
         })
         .collect();
     Ok(Prepared {
@@ -188,11 +202,22 @@ fn synthesize(
 ) {
     // Every texture the material references, by asset id, with the color space to fill it with.
     let mut texture_assets: BTreeMap<AssetId, MaterialTextureColorSpace> = BTreeMap::new();
+    let mut values = BTreeMap::new();
     for parameter in &program.parameters {
-        if let MaterialValueType::Texture2D(descriptor) = &parameter.value_type
-            && let Some(MaterialValue::Texture2D(id)) = parameter.default
-            && !id.is_nil()
-        {
+        if let MaterialValueType::Texture2D(descriptor) = &parameter.value_type {
+            let id = match parameter.default {
+                Some(MaterialValue::Texture2D(id)) if !id.is_nil() => id,
+                _ => {
+                    let id = AssetId::new();
+                    values.insert(
+                        parameter.id,
+                        aestra_core::material::MaterialParameterValue::Constant(
+                            MaterialValue::Texture2D(id),
+                        ),
+                    );
+                    id
+                }
+            };
             texture_assets.entry(id).or_insert(descriptor.color_space);
         }
     }
@@ -266,7 +291,7 @@ fn synthesize(
     let instance = MaterialInstance {
         id: instance_id,
         program: MaterialProgramRef::Project(program_id),
-        values: BTreeMap::new(),
+        values,
         render_state,
     };
     let mut effect = EffectAsset::new("Material Preview", PREVIEW_DURATION);
@@ -400,8 +425,8 @@ fn unit_sphere() -> (Mesh, f32) {
     (mesh, 1.0)
 }
 
-/// A 1×1 neutral texture: white for color maps, flat normal for linear data maps, in the
-/// matching color space so the material samples a truthful stand-in for its absent input.
+/// A neutral texture in the matching color space. Two rows keep palette lookups in passthrough
+/// when the standalone material has no effect instance supplying its swatches.
 fn neutral_image(color_space: MaterialTextureColorSpace) -> Image {
     let (rgba, format) = match color_space {
         MaterialTextureColorSpace::SrgbColor => {
@@ -411,18 +436,48 @@ fn neutral_image(color_space: MaterialTextureColorSpace) -> Image {
             ([128u8, 128, 255, 255], TextureFormat::Rgba8Unorm)
         }
     };
-    let mut image = Image::new(
+    let mut image = Image::new_fill(
         Extent3d {
             width: 1,
-            height: 1,
+            height: 2,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        rgba.to_vec(),
+        &rgba,
         format,
         RenderAssetUsages::RENDER_WORLD,
     );
     image.sampler = ImageSampler::linear();
+    image
+}
+
+fn sprite_preview_image() -> Image {
+    let mut pixels = Vec::with_capacity(8 * 8 * 4);
+    for y in 0i32..8 {
+        for x in 0i32..8 {
+            let distance = (2 * x - 7).abs() + (2 * y - 7).abs();
+            let color = if distance > 8 {
+                [0, 0, 0, 0]
+            } else if x + y >= 8 {
+                [162, 177, 222, 255]
+            } else {
+                [236, 239, 250, 255]
+            };
+            pixels.extend(color);
+        }
+    }
+    let mut image = Image::new(
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        pixels,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::nearest();
     image
 }
 

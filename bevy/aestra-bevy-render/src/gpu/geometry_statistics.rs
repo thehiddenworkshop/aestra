@@ -310,6 +310,7 @@ mod tests {
                 trail_plan: default(),
                 total_slots: 8,
                 simulation_time: 1.5,
+                stateful_cadence: None,
                 seek_quality: aestra_runtime::SeekQuality::Exact,
                 history_policy: default(),
                 history_epoch: 0,

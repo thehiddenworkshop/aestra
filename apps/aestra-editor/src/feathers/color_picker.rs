@@ -47,6 +47,7 @@ pub(crate) struct ColorPickerState {
     automatic_color: [f32; 4],
     automatic: bool,
     mode: ColorPickerMode,
+    opaque: bool,
 }
 
 #[derive(Component)]
@@ -65,6 +66,7 @@ impl ColorPickerState {
             automatic_color: color,
             automatic: false,
             mode: ColorPickerMode::Rgb,
+            opaque: false,
         }
     }
 
@@ -78,6 +80,14 @@ impl ColorPickerState {
     fn srgba(self) -> [f32; 4] {
         let color = Srgba::from(self.hsla);
         [color.red, color.green, color.blue, color.alpha]
+    }
+
+    fn hex(self) -> String {
+        let mut hex = format_hex(self.srgba());
+        if self.opaque {
+            hex.truncate(7);
+        }
+        hex
     }
 }
 
@@ -135,8 +145,29 @@ pub(crate) fn spawn_color_picker<M: Bundle>(
     labels: ColorPickerLabels,
     marker: M,
 ) -> Entity {
-    let initial = authored.unwrap_or(automatic_color);
     let state = ColorPickerState::new(authored, automatic_color);
+    spawn_picker(parent, state, labels, marker)
+}
+
+pub(crate) fn spawn_rgb_color_picker<M: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    rgb: [u8; 3],
+    labels: ColorPickerLabels,
+    marker: M,
+) -> Entity {
+    let [red, green, blue] = rgb.map(|byte| f32::from(byte) / 255.0);
+    let mut state = ColorPickerState::from_srgba([red, green, blue, 1.0]);
+    state.opaque = true;
+    spawn_picker(parent, state, labels, marker)
+}
+
+fn spawn_picker<M: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    state: ColorPickerState,
+    labels: ColorPickerLabels,
+    marker: M,
+) -> Entity {
+    let initial = state.srgba();
     let mut root = parent.spawn((
         marker,
         ColorPickerRoot,
@@ -179,16 +210,18 @@ pub(crate) fn spawn_color_picker<M: Bundle>(
                 SliderBaseColor(Color::Hsla(state.hsla)),
             ),
         );
-        spawn_color_slider_row(
-            picker,
-            labels.alpha.clone(),
-            state.hsla.alpha,
-            ColorChannel::Alpha,
-            (ColorPickerAlpha, SliderBaseColor(Color::Hsla(state.hsla))),
-        );
+        if !state.opaque {
+            spawn_color_slider_row(
+                picker,
+                labels.alpha.clone(),
+                state.hsla.alpha,
+                ColorChannel::Alpha,
+                (ColorPickerAlpha, SliderBaseColor(Color::Hsla(state.hsla))),
+            );
+        }
         spawn_color_mode_tabs(picker, &labels);
-        spawn_color_channel_panel(picker, ColorPickerMode::Rgb, &labels);
-        spawn_color_channel_panel(picker, ColorPickerMode::Hsl, &labels);
+        spawn_color_channel_panel(picker, ColorPickerMode::Rgb, &labels, state.opaque);
+        spawn_color_channel_panel(picker, ColorPickerMode::Hsl, &labels, state.opaque);
         picker
             .spawn(Node {
                 width: Val::Percent(100.0),
@@ -236,11 +269,14 @@ pub(crate) fn spawn_color_picker<M: Bundle>(
                     .with_children(|input| {
                         text_input::spawn_text_input(
                             input,
-                            &format_hex(initial),
+                            &state.hex(),
                             &labels.hex,
                             ColorPickerHexInput,
                         );
                     });
+                if state.opaque {
+                    return;
+                }
                 let mut automatic = footer.spawn_empty();
                 automatic
                     .apply_scene(scenes::feathers_plain_button())
@@ -264,7 +300,7 @@ pub(crate) fn spawn_color_picker<M: Bundle>(
                         TextColor(theme::TEXT_MUTED),
                         Pickable::IGNORE,
                     ));
-                if authored.is_none() {
+                if state.automatic {
                     automatic.insert((Selected, ButtonVariant::Primary));
                 }
             });
@@ -363,13 +399,13 @@ fn spawn_color_channel_panel(
     parent: &mut ChildSpawnerCommands,
     mode: ColorPickerMode,
     labels: &ColorPickerLabels,
+    opaque: bool,
 ) {
     let channels = match mode {
         ColorPickerMode::Rgb => [
             (ColorPickerChannelInput::Red, labels.red.clone()),
             (ColorPickerChannelInput::Green, labels.green.clone()),
             (ColorPickerChannelInput::Blue, labels.blue.clone()),
-            (ColorPickerChannelInput::Alpha, labels.alpha.clone()),
         ],
         ColorPickerMode::Hsl => [
             (ColorPickerChannelInput::Hue, labels.hue.clone()),
@@ -378,7 +414,6 @@ fn spawn_color_channel_panel(
                 labels.saturation.clone(),
             ),
             (ColorPickerChannelInput::Lightness, labels.lightness.clone()),
-            (ColorPickerChannelInput::Alpha, labels.alpha.clone()),
         ],
     };
     parent
@@ -399,6 +434,13 @@ fn spawn_color_channel_panel(
         .with_children(|panel| {
             for (channel, label) in channels {
                 spawn_color_channel_input(panel, channel, label);
+            }
+            if !opaque {
+                spawn_color_channel_input(
+                    panel,
+                    ColorPickerChannelInput::Alpha,
+                    labels.alpha.clone(),
+                );
             }
         });
 }
@@ -669,12 +711,15 @@ pub(crate) fn handle_color_hex_change(
     let Ok(mut picker) = pickers.get_mut(root) else {
         return;
     };
-    let Some(color) = parse_hex(&change.value) else {
+    let Some(mut color) = parse_hex(&change.value) else {
         if change.is_final {
-            replace_editable_text(source, format_hex(picker.srgba()), &children, &mut texts);
+            replace_editable_text(source, picker.hex(), &children, &mut texts);
         }
         return;
     };
+    if picker.opaque {
+        color[3] = 1.0;
+    }
     // Display synchronization queues TextEdit too. Only focused user edits may
     // produce live color changes; selection-only notifications are also silent.
     if !change.is_final
@@ -917,7 +962,7 @@ pub(crate) fn sync_color_picker_visuals(
                 });
             }
             if hex_inputs.contains(descendant) {
-                sync_hex_input(descendant, format_hex(srgba), &children, &mut texts, &focus);
+                sync_hex_input(descendant, picker.hex(), &children, &mut texts, &focus);
             }
             if let Ok((panel, mut node)) = panels.get_mut(descendant) {
                 node.display = if panel.0 == picker.mode {

@@ -43,6 +43,7 @@ fn noise_nodes_preview_the_shared_cpu_field_and_produce_saved_thumbnails() {
         let context = MaterialPreviewContext {
             uv: Vec2::new(0.2, 0.7),
             normal: Vec3::Z,
+            screen_pixel: Vec2::splat(0.5),
         };
         let evaluator = MaterialPreviewEvaluator {
             program: &program,

@@ -10,10 +10,12 @@ mod drag_drop;
 mod drag_preview;
 mod inspection;
 mod operations;
+mod palette_editor;
 mod panel;
 mod persistence;
 mod relocation;
 pub(crate) mod relocation_recovery;
+mod sprite_viewer;
 mod state;
 #[cfg(test)]
 #[path = "tests/asset_browser.rs"]
@@ -27,9 +29,12 @@ pub(crate) use actions::LocateInAssets;
 pub(crate) use actions::OpenFunction;
 pub(crate) use bookmarks::AssetOpened;
 pub(crate) use inspection::spawn_asset_inspector;
+pub(crate) use palette_editor::spawn_palette_editor;
 pub(crate) use panel::BrowserSurface;
 pub(crate) use panel::spawn_assets_panel;
+pub(crate) use sprite_viewer::spawn_sprite_viewer;
 pub(crate) use state::AssetBrowserState;
+pub(crate) use state::effect_dimension_label;
 
 pub(crate) struct EditorAssetBrowserPlugin;
 
@@ -38,6 +43,8 @@ impl Plugin for EditorAssetBrowserPlugin {
         virtual_sources::register(app);
         thumbnails::register(app);
         operations::register(app);
+        palette_editor::register(app);
+        sprite_viewer::register(app);
         tree::register(app);
         drag_drop::register(app);
         relocation_recovery::register(app);

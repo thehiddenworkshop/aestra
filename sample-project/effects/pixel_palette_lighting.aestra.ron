@@ -1,0 +1,151 @@
+(
+    format_version: 4,
+    metadata: {"aestra.dimension": "2d"},
+    id: "29ecbbb4-91a0-4772-ace7-bc0588240001",
+    name: "Pixel Palette Lighting",
+    duration: 4.0,
+    playback_mode: LoopRestart,
+    assets: [
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240002", name: "Pulse Silhouette Atlas", kind: Texture, path: "textures/pixel_pulse.png"),
+        (id: "29ecbbb4-91a0-4772-ace7-bc0588240060", name: "Light Ramp", kind: Texture, path: "textures/pixel_light_ramp.palette.png"),
+    ],
+    flipbooks: [
+        (
+            id: "29ecbbb4-91a0-4772-ace7-bc0588240003",
+            name: "Pulse Frames",
+            texture: "29ecbbb4-91a0-4772-ace7-bc0588240002",
+            frames: [
+                (min: (0.0, 0.0), max: (0.5, 1.0)),
+                (min: (0.5, 0.0), max: (1.0, 1.0)),
+            ],
+            frame_rate: 5.0,
+            looping: true,
+        ),
+    ],
+    material_instances: [
+        (
+            id: "29ecbbb4-91a0-4772-ace7-bc0588240004",
+            program: Project("29ecbbb4-91a0-4772-ace7-bc058824000a"),
+            values: {
+                "29ecbbb4-91a0-4772-ace7-bc058824000b": Constant(Texture2D("29ecbbb4-91a0-4772-ace7-bc0588240002")),
+                "29ecbbb4-91a0-4772-ace7-bc0588240061": Constant(Texture2D("29ecbbb4-91a0-4772-ace7-bc0588240060")),
+                "29ecbbb4-91a0-4772-ace7-bc058824000c": Constant(Vec2((0.5, 1.0))),
+            },
+            render_state: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+        ),
+        (
+            id: "29ecbbb4-91a0-4772-ace7-bc0588240005",
+            program: Project("29ecbbb4-91a0-4772-ace7-bc058824000a"),
+            values: {
+                "29ecbbb4-91a0-4772-ace7-bc058824000b": Constant(Texture2D("29ecbbb4-91a0-4772-ace7-bc0588240002")),
+                "29ecbbb4-91a0-4772-ace7-bc0588240061": Constant(Texture2D("29ecbbb4-91a0-4772-ace7-bc0588240060")),
+            },
+            render_state: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+        ),
+    ],
+    emitters: [
+        (
+            id: "29ecbbb4-91a0-4772-ace7-bc058824001e",
+            name: "Lit Sprite",
+            enabled: true,
+            transform: (
+                translation: (-36.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 4.0,
+            max_particles: 1,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (modules: [
+                    (id: "29ecbbb4-91a0-4772-ace7-bc058824001f", module_type: "aestra.emission.rate", enabled: true,
+                        parameters: Emission(spawn_rate: 0.0, burst_count: 1)),
+                ]),
+                particle_spawn: (modules: [
+                    (id: "29ecbbb4-91a0-4772-ace7-bc0588240020", module_type: "aestra.spawn.shape", enabled: true,
+                        parameters: Shape(shape: Point)),
+                    (id: "29ecbbb4-91a0-4772-ace7-bc0588240021", module_type: "aestra.spawn.initialize", enabled: true,
+                        parameters: Initialize(
+                            lifetime: (min: 4.0, max: 4.0),
+                            speed: (min: 0.0, max: 0.0),
+                            direction: (0.0, 1.0, 0.0),
+                            spread_degrees: 0.0,
+                            angular_velocity: (min: 0.0, max: 0.0),
+                        )),
+                ]),
+                particle_update: (modules: [
+                    (id: "29ecbbb4-91a0-4772-ace7-bc0588240027", module_type: "aestra.update.motion", enabled: true,
+                        parameters: Motion(gravity: (0.0, 0.0, 0.0), drag: 0.0, turbulence: 0.0)),
+                    (id: "29ecbbb4-91a0-4772-ace7-bc0588240022", module_type: "aestra.update.appearance", enabled: true,
+                        parameters: Appearance(
+                            size: (id: "29ecbbb4-91a0-4772-ace7-bc0588240023", keys: [(time: 0.0, value: 58.0)]),
+                            opacity: (id: "29ecbbb4-91a0-4772-ace7-bc0588240024", keys: [(time: 0.0, value: 1.0)]),
+                            color: (id: "29ecbbb4-91a0-4772-ace7-bc0588240025", keys: [(time: 0.0, color: (1.0, 1.0, 1.0, 1.0))]),
+                        )),
+                ]),
+            ),
+            renderers: [
+                (
+                    id: "29ecbbb4-91a0-4772-ace7-bc0588240026",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "29ecbbb4-91a0-4772-ace7-bc0588240004",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+        (
+            id: "29ecbbb4-91a0-4772-ace7-bc0588240028",
+            name: "Lit Flipbook",
+            enabled: true,
+            transform: (
+                translation: (36.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 4.0,
+            max_particles: 1,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (modules: [
+                    (id: "29ecbbb4-91a0-4772-ace7-bc0588240029", module_type: "aestra.emission.rate", enabled: true,
+                        parameters: Emission(spawn_rate: 0.0, burst_count: 1)),
+                ]),
+                particle_spawn: (modules: [
+                    (id: "29ecbbb4-91a0-4772-ace7-bc058824002a", module_type: "aestra.spawn.shape", enabled: true,
+                        parameters: Shape(shape: Point)),
+                    (id: "29ecbbb4-91a0-4772-ace7-bc058824002b", module_type: "aestra.spawn.initialize", enabled: true,
+                        parameters: Initialize(
+                            lifetime: (min: 4.0, max: 4.0),
+                            speed: (min: 0.0, max: 0.0),
+                            direction: (0.0, 1.0, 0.0),
+                            spread_degrees: 0.0,
+                            angular_velocity: (min: 0.0, max: 0.0),
+                        )),
+                ]),
+                particle_update: (modules: [
+                    (id: "29ecbbb4-91a0-4772-ace7-bc0588240031", module_type: "aestra.update.motion", enabled: true,
+                        parameters: Motion(gravity: (0.0, 0.0, 0.0), drag: 0.0, turbulence: 0.0)),
+                    (id: "29ecbbb4-91a0-4772-ace7-bc058824002c", module_type: "aestra.update.appearance", enabled: true,
+                        parameters: Appearance(
+                            size: (id: "29ecbbb4-91a0-4772-ace7-bc058824002d", keys: [(time: 0.0, value: 58.0)]),
+                            opacity: (id: "29ecbbb4-91a0-4772-ace7-bc058824002e", keys: [(time: 0.0, value: 1.0)]),
+                            color: (id: "29ecbbb4-91a0-4772-ace7-bc058824002f", keys: [(time: 0.0, color: (1.0, 1.0, 1.0, 1.0))]),
+                        )),
+                ]),
+            ),
+            renderers: [
+                (
+                    id: "29ecbbb4-91a0-4772-ace7-bc0588240030",
+                    renderer_type: "aestra.renderer.flipbook",
+                    enabled: true,
+                    material: "29ecbbb4-91a0-4772-ace7-bc0588240005",
+                    properties: Flipbook(flipbook: "29ecbbb4-91a0-4772-ace7-bc0588240003", time_source: EffectTime, playback: Forward, random_start: false),
+                ),
+            ],
+        ),
+    ],
+    choreography_order: [Emitter("29ecbbb4-91a0-4772-ace7-bc058824001e"), Emitter("29ecbbb4-91a0-4772-ace7-bc0588240028")],
+)

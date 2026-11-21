@@ -1,12 +1,15 @@
 //! Production photographic camera response and transparent overlay composition.
-use super::navigation::PreviewRenderCamera;
+use super::navigation::{PreviewCameraController, PreviewRenderCamera};
 use crate::settings::EditorSettings;
 use bevy::{camera::visibility::RenderLayers, prelude::*};
 
 pub(super) fn sync_preview_photographic_response(
     mut commands: Commands,
     settings: Res<EditorSettings>,
-    cameras: Query<(Entity, Option<&AppliedPhotographicResponse>), With<PreviewRenderCamera>>,
+    cameras: Query<
+        (Entity, Option<&AppliedPhotographicResponse>),
+        (With<PreviewRenderCamera>, Without<Camera2d>),
+    >,
 ) {
     let desired = settings
         .preview
@@ -37,6 +40,7 @@ pub(super) struct AppliedPhotographicResponse(
 pub(super) fn sync_photographic_overlay_composition(
     mut commands: Commands,
     settings: Res<EditorSettings>,
+    controller: Option<Res<PreviewCameraController>>,
     mut cameras: Query<
         (
             Entity,
@@ -48,7 +52,8 @@ pub(super) fn sync_photographic_overlay_composition(
         Without<PreviewRenderCamera>,
     >,
 ) {
-    let enabled = settings.preview.photographic_enabled;
+    let enabled = settings.preview.photographic_enabled
+        && !controller.is_some_and(|controller| controller.xy);
     for (entity, mut camera, layers, ui, applied) in &mut cameras {
         if !ui && !layers.is_some_and(|layers| layers == &RenderLayers::layer(15)) {
             continue;

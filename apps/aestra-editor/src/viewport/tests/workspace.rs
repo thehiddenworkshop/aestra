@@ -133,20 +133,28 @@ fn actual_viewport_pane_and_canvas_preserve_layout_and_clipping() {
     assert_eq!(w.get::<ChildOf>(e).unwrap().parent(), column);
 }
 #[test]
-fn panel_builds_seven_actual_classified_feathers_controls_and_svg_icons() {
+fn panel_builds_eleven_classified_feathers_controls_and_seven_svg_icons() {
     let mut f = Fixture::new("en-US", false);
     let w = f.app.world_mut();
     let actions = w
         .query::<(Entity, &ViewportAction, &Node)>()
         .iter(w)
         .collect::<Vec<_>>();
-    assert_eq!(actions.len(), 7);
-    for (e, _, node) in actions {
+    assert_eq!(actions.len(), 11);
+    for (e, action, node) in actions {
         assert!(w.get::<NativeButton>(e).is_some());
         assert!(w.get::<FeathersActionButton>(e).is_some());
         assert!(w.get::<AccessibleLabel>(e).is_some());
         assert!(w.get::<EditorTooltip>(e).is_some());
-        assert_eq!(node.width, Val::Px(28.0));
+        let width = if matches!(
+            action,
+            ViewportAction::TogglePresentationCadence | ViewportAction::CyclePreviewLighting2d
+        ) {
+            44.0
+        } else {
+            28.0
+        };
+        assert_eq!(node.width, Val::Px(width));
         assert_eq!(node.height, Val::Px(28.0));
     }
     assert_eq!(w.query::<&UiSvg>().iter(w).count(), 7);

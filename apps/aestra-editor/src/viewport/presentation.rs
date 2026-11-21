@@ -8,7 +8,9 @@ use super::{
 use crate::{feathers::icon::SvgColor, menus::MenuState, theme};
 use aestra_bevy_render::{EffectRenderMode, PresentedEffect};
 use bevy::{
-    gizmos::transform_gizmo::{TransformGizmoMode, TransformGizmoSettings, TransformGizmoSpace},
+    gizmos::transform_gizmo::{
+        TransformGizmoMode, TransformGizmoSettings, TransformGizmoSpace, TransformGizmoState,
+    },
     mesh::MeshVertexBufferLayoutRef,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
@@ -102,11 +104,13 @@ pub(super) fn sync_preview_grid(
     mut materials: ResMut<Assets<PreviewGridMaterial>>,
 ) {
     let (mut transform, mut visibility, material_handle) = grid.into_inner();
-    *visibility = if menu.show_grid && !settings.is_some_and(|s| s.preview.water_enabled) {
-        Visibility::Inherited
-    } else {
-        Visibility::Hidden
-    };
+    visibility.set_if_neq(
+        if !controller.xy && menu.show_grid && !settings.is_some_and(|s| s.preview.water_enabled) {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        },
+    );
 
     let plane_radius = (controller.distance * 24.0).clamp(200.0, 100_000.0);
     // Navigation moves the camera, not the ground reference beneath the effect.
@@ -142,14 +146,21 @@ pub(super) fn preview_grid_uniform(distance: f32, angle_fade: f32) -> PreviewGri
 
 pub(super) fn sync_preview_display_mode(
     display: Res<PreviewDisplayState>,
+    camera: Option<Res<PreviewCameraController>>,
     mut players: Query<(&mut PresentedEffect, &mut Visibility), With<PreviewPresentedEffect>>,
 ) {
     let render_mode = match display.mode {
         PreviewDisplayMode::Wireframe => EffectRenderMode::Wireframe,
         PreviewDisplayMode::Rendered => EffectRenderMode::Rendered,
     };
+    let cadence = (camera.is_some_and(|camera| camera.xy)
+        && display.pixel_grid
+        && display.stepped_presentation
+        && render_mode == EffectRenderMode::Rendered)
+        .then_some(aestra_runtime::PresentationCadence::FPS_12);
     for (mut player, mut visibility) in &mut players {
         player.set_render_mode(render_mode);
+        player.set_presentation_cadence(cadence);
         *visibility = Visibility::Inherited;
     }
 }
@@ -168,10 +179,15 @@ pub(super) fn update_transform_gizmo_controls(
     keys: Res<ButtonInput<KeyCode>>,
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
     mut settings: ResMut<TransformGizmoSettings>,
+    camera: Option<Res<PreviewCameraController>>,
+    gizmo: Option<Res<TransformGizmoState>>,
     mut labels: Query<&mut Text, With<GizmoModeLabel>>,
     mut icons: Query<(&TransformGizmoModeIcon, &mut SvgColor)>,
 ) {
-    if canvas.cursor_over() && keys.just_pressed(KeyCode::KeyX) {
+    if canvas.cursor_over()
+        && keys.just_pressed(KeyCode::KeyX)
+        && !(camera.is_some_and(|camera| camera.xy) && gizmo.is_some_and(|gizmo| gizmo.active))
+    {
         settings.space = match settings.space {
             TransformGizmoSpace::World => TransformGizmoSpace::Local,
             TransformGizmoSpace::Local => TransformGizmoSpace::World,

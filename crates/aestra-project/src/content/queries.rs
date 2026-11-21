@@ -60,6 +60,17 @@ impl ProjectRead for ProjectContent {
 }
 
 impl ProjectContent {
+    /// Returns the saved authoring dimension without reading or cloning the effect.
+    pub fn source_effect_dimension(
+        &self,
+        source: ProjectSourceId,
+    ) -> Option<aestra_core::EffectDimension> {
+        match self.documents.get(&source) {
+            Some(ProjectSourceDocument::Effect(effect)) => Some(effect.dimension()),
+            _ => None,
+        }
+    }
+
     /// Searches authored names and preset metadata in this snapshot without I/O or document clones.
     /// The caller supplies a lowercase query, as with source-name filtering.
     pub fn source_metadata_matches(&self, source: ProjectSourceId, query: &str) -> bool {

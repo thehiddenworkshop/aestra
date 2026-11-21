@@ -57,6 +57,7 @@ pub(super) enum BrowserAction {
     View(ViewMode),
     Recursive,
     Kind(Option<Kind>),
+    Dimension(Option<aestra_core::EffectDimension>),
     Sort(Sort),
     Page(bool),
     TreePage(bool),
@@ -65,6 +66,9 @@ pub(super) enum BrowserAction {
     NewFolder,
     NewEffect,
     NewEffectInFolder(ProjectSourceId, ProjectContentVersion),
+    ImportPalette(ProjectSourceId, ProjectContentVersion),
+    EditPalette(ProjectSourceId, ProjectContentVersion),
+    ViewSprite(ProjectSourceId, ProjectContentVersion),
     Duplicate(ProjectSourceId, ProjectContentVersion),
     Rename(ProjectSourceId, ProjectContentVersion),
     Delete(ProjectSourceId, ProjectContentVersion),
@@ -113,6 +117,7 @@ pub(super) fn handle_action(
             state.collection = collection;
             state.query.clear();
             state.kinds.clear();
+            state.dimension = None;
             state.page = 0;
             state.selected = None;
         }
@@ -166,6 +171,10 @@ pub(super) fn handle_action(
             } else {
                 state.kinds.clear();
             }
+            state.page = 0;
+        }
+        BrowserAction::Dimension(dimension) => {
+            state.dimension = dimension;
             state.page = 0;
         }
         BrowserAction::Sort(sort) => {
@@ -224,6 +233,53 @@ pub(super) fn handle_action(
             {
                 commands.trigger(DocumentAction::NewInFolder(parent, version));
             }
+        }
+        BrowserAction::ImportPalette(parent, version) => {
+            if version == catalog.content_revision()
+                && state.scope == SourceScope::Project
+                && state.collection == BrowserCollection::Folder
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter(localizer.text("browser-palette-filter"), &["gpl"])
+                    .pick_file()
+            {
+                let result = (|| {
+                    let source =
+                        std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+                    let palette = aestra_core::PaletteAsset::from_gpl(&source)
+                        .map_err(|error| error.to_string())?;
+                    let name = path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .unwrap_or_default();
+                    content
+                        .import_palette(parent, name, &palette)
+                        .map_err(|error| error.to_string())
+                })();
+                let mut args = FluentArgs::new();
+                session.status = match result {
+                    Ok(path) => {
+                        commands.trigger(crate::asset_actions::AssetAction::RefreshProject);
+                        args.set(
+                            "name",
+                            path.file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .into_owned(),
+                        );
+                        localizer.text_with("browser-palette-imported", &args)
+                    }
+                    Err(error) => {
+                        args.set("error", error);
+                        localizer.text_with("browser-palette-import-failed", &args)
+                    }
+                };
+            }
+        }
+        BrowserAction::EditPalette(source, version) => {
+            commands.trigger(super::palette_editor::Open(source, version));
+        }
+        BrowserAction::ViewSprite(source, version) => {
+            commands.trigger(super::sprite_viewer::Open(source, version));
         }
         BrowserAction::Duplicate(source, version) => {
             if version == catalog.content_revision() {
@@ -501,6 +557,13 @@ pub(super) fn open_source(
         .is_some_and(|entry| Kind::of(entry) == Kind::Folder)
     {
         state.navigate(content, id);
+    } else if content.is_palette_source(id) {
+        commands.trigger(super::palette_editor::Open(id, catalog.content_revision()));
+    } else if content
+        .source(id)
+        .is_some_and(|entry| Kind::of(entry) == Kind::Texture)
+    {
+        commands.trigger(super::sprite_viewer::Open(id, catalog.content_revision()));
     } else if let Some(ProjectAssetId::Effect(effect)) = content.asset_for_source(id) {
         let reference = EffectAssetRef::new(effect);
         // A duplicate/invalid source must not silently open a different file with the same ID.

@@ -1,6 +1,10 @@
 //! Actual transform selection, transactional drag previews, feedback and readout consumers.
 use super::{
-    gizmo_state::*, host_motion, navigation::EmitterTransformGizmoProxy, shortcuts::PreviewCanvas,
+    gizmo_state::*,
+    host_motion,
+    navigation::{EmitterTransformGizmoProxy, PreviewCameraController},
+    shortcuts::PreviewCanvas,
+    xy_authoring::XyTransformFocus,
 };
 use crate::{session::EditorSession, timeline::TimelineState};
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
@@ -58,7 +62,11 @@ pub(super) fn sync_transform_gizmo_focus(
     timeline: Option<Res<TimelineState>>,
     motion: Option<Res<host_motion::HostMotionViewport>>,
     interaction: Res<EmitterTransformGizmoInteraction>,
-    proxies: Query<(Entity, Has<TransformGizmoFocus>), With<EmitterTransformGizmoProxy>>,
+    camera: Option<Res<PreviewCameraController>>,
+    proxies: Query<
+        (Entity, Has<TransformGizmoFocus>, Has<XyTransformFocus>),
+        With<EmitterTransformGizmoProxy>,
+    >,
     modules: Option<Res<crate::properties::EditorModuleRegistry>>,
 ) {
     let target = selected_gizmo_transform(
@@ -90,11 +98,17 @@ pub(super) fn sync_transform_gizmo_focus(
                 PreviewTransformTarget::ModuleHandle(id, _) => SemanticTarget::Module(id),
             },
         ));
-    for (entity, has_focus) in &proxies {
-        if allowed && !has_focus {
+    let xy = camera.is_some_and(|camera| camera.xy);
+    for (entity, native_focus, xy_focus) in &proxies {
+        if allowed && !xy && !native_focus {
             commands.entity(entity).insert(TransformGizmoFocus);
-        } else if !allowed && has_focus {
+        } else if (!allowed || xy) && native_focus {
             commands.entity(entity).remove::<TransformGizmoFocus>();
+        }
+        if allowed && xy && !xy_focus {
+            commands.entity(entity).insert(XyTransformFocus);
+        } else if (!allowed || !xy) && xy_focus {
+            commands.entity(entity).remove::<XyTransformFocus>();
         }
     }
 }
@@ -132,6 +146,7 @@ pub(super) fn update_emitter_transform_gizmo(
     mut interaction: ResMut<EmitterTransformGizmoInteraction>,
     mut proxies: Query<&mut Transform, With<EmitterTransformGizmoProxy>>,
     mut session: ResMut<EditorSession>,
+    camera: Option<Res<PreviewCameraController>>,
     timeline: Option<Res<TimelineState>>,
     modules: Option<Res<crate::properties::EditorModuleRegistry>>,
 ) {
@@ -205,11 +220,18 @@ pub(super) fn update_emitter_transform_gizmo(
             },
         );
         let snapping = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-        let current = if snapping {
+        let xy = camera.is_some_and(|camera| camera.xy);
+        let mut current = if snapping && xy && settings.mode == TransformGizmoMode::Rotate {
+            snap_xy_rotation(current, precision)
+        } else if snapping {
             snap_transform_absolute(settings.mode, gizmo.axis, current, precision)
         } else {
             current
         };
+        if xy {
+            current.translation[2] = active.original.translation[2];
+            current.scale[2] = active.original.scale[2];
+        }
         *transform = bevy_transform_from_emitter(current);
         if active.current != current {
             if let Some(command) = preview_transform_command(active.target, current, &session)
@@ -245,6 +267,21 @@ pub(super) fn update_emitter_transform_gizmo(
     } else {
         session.restore_interaction_preview();
     }
+}
+
+fn snap_xy_rotation(mut transform: EmitterTransform, precision: bool) -> EmitterTransform {
+    let rotation = Quat::from_array(transform.rotation).normalize();
+    let yaw = rotation.to_euler(EulerRot::ZYX).0;
+    let step = PREVIEW_TRANSFORM_ROTATE_SNAP
+        * if precision {
+            PREVIEW_TRANSFORM_PRECISION_FACTOR
+        } else {
+            1.0
+        };
+    transform.rotation = (Quat::from_rotation_z((yaw / step).round() * step - yaw) * rotation)
+        .normalize()
+        .to_array();
+    transform
 }
 
 pub(super) fn transform_with_drag_precision(
@@ -345,6 +382,7 @@ pub(super) fn transform_gizmo_value_text(
     current: EmitterTransform,
     snapping: bool,
     precision: bool,
+    xy: bool,
 ) -> String {
     let axis_name = match axis {
         Some(TransformGizmoAxis::X) => "X",
@@ -380,6 +418,11 @@ pub(super) fn transform_gizmo_value_text(
                         format_transform_value(position.z, decimals, true)
                     )
                 }
+                Some(TransformGizmoAxis::View) | None if xy => format!(
+                    "MOVE XY  {}  {}",
+                    format_transform_value(position.x, decimals, true),
+                    format_transform_value(position.y, decimals, true),
+                ),
                 Some(TransformGizmoAxis::View) | None => format!(
                     "MOVE XYZ  {}  {}  {}",
                     format_transform_value(position.x, decimals, true),
@@ -402,6 +445,11 @@ pub(super) fn transform_gizmo_value_text(
             let angle = match axis {
                 Some(TransformGizmoAxis::X) => degrees.x,
                 Some(TransformGizmoAxis::Y) => degrees.y,
+                Some(TransformGizmoAxis::Z) if xy => Quat::from_array(current.rotation)
+                    .normalize()
+                    .to_euler(EulerRot::ZYX)
+                    .0
+                    .to_degrees(),
                 Some(TransformGizmoAxis::Z) => degrees.z,
                 Some(TransformGizmoAxis::View) | None => degrees.length(),
             };
@@ -470,6 +518,7 @@ pub(super) fn update_transform_gizmo_value_label(
     settings: Res<TransformGizmoSettings>,
     keys: Res<ButtonInput<KeyCode>>,
     interaction: Res<EmitterTransformGizmoInteraction>,
+    camera: Option<Res<PreviewCameraController>>,
     mut labels: Query<(&mut Text, &mut Node, &mut Visibility), With<TransformGizmoValueLabel>>,
 ) {
     let Some(active) = interaction.active.filter(|_| gizmo.active) else {
@@ -486,6 +535,7 @@ pub(super) fn update_transform_gizmo_value_label(
         active.current,
         snapping,
         precision,
+        camera.is_some_and(|camera| camera.xy),
     );
     let top_left = canvas.1.translation.trunc() - canvas.0.size() * 0.5;
     let local_position = window

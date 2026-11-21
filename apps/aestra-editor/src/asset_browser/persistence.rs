@@ -32,6 +32,8 @@ pub(super) struct BrowserPreferences {
     query: String,
     recursive: bool,
     kinds: BTreeSet<Kind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dimension: Option<aestra_core::EffectDimension>,
 }
 
 impl Default for BrowserPreferences {
@@ -51,6 +53,7 @@ impl Default for BrowserPreferences {
             query: String::new(),
             recursive: false,
             kinds: BTreeSet::new(),
+            dimension: None,
         }
     }
 }
@@ -81,6 +84,7 @@ impl BrowserPreferences {
             query: state.query.clone(),
             recursive: state.recursive,
             kinds: state.kinds.clone(),
+            dimension: state.dimension,
         }
     }
 
@@ -145,6 +149,7 @@ impl BrowserPreferences {
         };
         state.query = self.query.chars().take(4096).collect();
         state.recursive = self.recursive;
+        state.dimension = self.dimension;
         state.kinds = self
             .kinds
             .iter()
@@ -444,6 +449,7 @@ mod tests {
         state.sources_visible = false;
         state.sources_width = 240.0;
         state.kinds.insert(Kind::Texture);
+        state.dimension = Some(aestra_core::EffectDimension::TwoD);
         state.selected = Some(folder);
         state.inspected = Some(folder);
         state.toggle_favorite(&content, folder);

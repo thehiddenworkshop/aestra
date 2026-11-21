@@ -14,9 +14,14 @@ fn smoke_material_lab_is_discoverable_editable_and_native_without_demo_code() {
         root.join("materials/advected_smoke_density.aestra.material-function.ron"),
     )
     .unwrap();
-    assert_eq!(
-        function.custom_wesl.as_ref().unwrap().source,
-        aestra_gpu::shader::ADVECTED_SMOKE_WESL
+    assert!(
+        function
+            .custom_wesl
+            .as_ref()
+            .unwrap()
+            .source
+            .lines()
+            .eq(aestra_gpu::shader::ADVECTED_SMOKE_WESL.lines())
     );
     assert!(
         catalog

@@ -342,6 +342,8 @@ fn virtual_sources_are_not_files_and_filter_without_edits() {
 #[test]
 fn local_creation_uses_selected_texture_and_one_undo_step() {
     let (_root, mut app) = fixture(SourceScope::CurrentDocument);
+    app.init_resource::<bevy::feathers::controls::UnitsRegistry>()
+        .insert_resource(theme::feathers_theme());
     let texture = aestra_core::AssetDefinition {
         id: aestra_core::AssetId::new(),
         name: "Chosen texture".into(),
@@ -375,9 +377,45 @@ fn local_creation_uses_selected_texture_and_one_undo_step() {
     assert!(app.world().get::<InteractionDisabled>(button).is_none());
     let before = app.world().resource::<EditorSession>().effect.clone();
     app.world_mut().trigger(Activate { entity: button });
+    app.update();
+    assert_eq!(app.world().resource::<EditorSession>().effect, before);
+    for (field, value) in [
+        (flipbook_grid::Field::Columns, 3.0),
+        (flipbook_grid::Field::Rows, 2.0),
+        (flipbook_grid::Field::Frames, 5.0),
+        (flipbook_grid::Field::Fps, 15.0),
+    ] {
+        let world = app.world_mut();
+        let entity = world
+            .query::<(Entity, &flipbook_grid::Field)>()
+            .iter(world)
+            .find(|(_, candidate)| **candidate == field)
+            .unwrap()
+            .0;
+        world.trigger(crate::feathers::number_input::NumberEdit {
+            entity,
+            value: crate::feathers::number_input::NumberInputValue::F32(value),
+            phase: crate::feathers::number_input::EditPhase::Commit,
+        });
+    }
+    app.update();
+    let world = app.world_mut();
+    let confirm = world
+        .query::<(Entity, &flipbook_grid::Action)>()
+        .iter(world)
+        .find(|(_, action)| matches!(action, flipbook_grid::Action::Confirm))
+        .unwrap()
+        .0;
+    world.trigger(Activate { entity: confirm });
     let after = app.world().resource::<EditorSession>().effect.clone();
     assert_eq!(after.flipbooks.len(), before.flipbooks.len() + 1);
-    assert_eq!(after.flipbooks.last().unwrap().texture, texture_id);
+    let flipbook = after.flipbooks.last().unwrap();
+    assert_eq!(flipbook.texture, texture_id);
+    assert_eq!(flipbook.frames.len(), 5);
+    assert_eq!(flipbook.frames[3].min, [0.0, 0.5]);
+    assert_eq!(flipbook.frame_rate, 15.0);
+    let reopened = aestra_core::EffectAsset::from_ron(&after.to_pretty_ron().unwrap()).unwrap();
+    assert_eq!(reopened.flipbooks, after.flipbooks);
     {
         let mut session = app.world_mut().resource_mut::<EditorSession>();
         session.undo();

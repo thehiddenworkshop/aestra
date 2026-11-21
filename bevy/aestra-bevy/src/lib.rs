@@ -58,6 +58,7 @@ pub use playback::{AestraChoreographyEvent, AestraSet, EffectPlayer, PlayerPrese
 pub use presentation_cache::EffectPresentationCache;
 mod project;
 mod project_profile;
+mod sprite_texture;
 mod world;
 pub use aestra_runtime::{PointLightPulse, PointLightSample, TransientPointLight};
 pub use bindings::{
@@ -80,11 +81,13 @@ pub use particle_lights::{
 };
 pub use project::EffectClipInstance;
 pub use project_profile::ProjectProfiler;
+pub use sprite_texture::{SpriteTextureInput, SpriteTextureInputError};
 pub use world::sdf_from_meshes;
 
 pub use aestra_bevy_render::material::{
     MaterialBindingContext, MaterialRuntimeBinding, compile_material_program,
 };
+pub use aestra_bevy_render::pixel_view::{PixelGrid, integer_pixel_viewport, pixel_render_target};
 pub use aestra_bevy_render::preview;
 pub use aestra_bevy_render::sampling::{SpriteSampling, TrailRasterSampling};
 pub use aestra_bevy_render::{
@@ -97,6 +100,7 @@ pub use aestra_bevy_render::{
     ExperimentalOitSettings, ExperimentalOitStatistics, ExperimentalOitStatus, GpuCapabilities,
     PresentationMode, PresentedEffect, RendererCapability, TransparentOrderMode, gpu,
 };
+pub use aestra_bevy_render::{AestraLights2d, AestraPointLight2d, PointLightFalloff2d};
 // The host's world and what effects report back to gameplay (fluid F11, host bindings HB9/HB10).
 pub use aestra_bevy_render::gpu::{
     AestraEffectOutputs, AestraOutputEvent, AestraPhysicsColliders, AestraPhysicsQuery,
@@ -110,6 +114,7 @@ pub use aestra_compiler::{
 pub use aestra_core::particle_sampling::{ParticleSampling, SamplingMode};
 pub use aestra_core::spatial_flow::{FlowMode, FlowSpace, SpatialFlow};
 pub use aestra_core::*;
+pub use aestra_runtime::PresentationCadence;
 pub use aestra_runtime::{
     BindingError, BindingFrame, BindingSlot, BindingSnapshot, BindingState, BindingStatus,
     HostRequirements, SpatialBindingSnapshot,

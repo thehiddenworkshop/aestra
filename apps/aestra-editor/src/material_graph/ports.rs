@@ -75,6 +75,18 @@ pub(crate) fn input_port_presentation(name: &str) -> MaterialInputPortPresentati
         "angle" => ("Angle", "Rotation angle applied to the coordinates."),
         "scale" => ("Scale", "Scale applied to the coordinates."),
         "texture" => ("Texture", "Texture sampled by this node."),
+        "source_palette" => (
+            "Source Palette",
+            "One row of sRGB swatches to match against the input color.",
+        ),
+        "target_palette" => (
+            "Target Palette",
+            "Replacement swatches in source order. Match the source palette's width.",
+        ),
+        "frame_bounds" => (
+            "Frame Bounds",
+            "Optional atlas rectangle in min U, min V, max U, max V order. Connect it to sample only that rectangle and allow the outline to extend past its edges.",
+        ),
         "uv" => (
             "UV coordinates",
             "Texture coordinates evaluated by this node.",

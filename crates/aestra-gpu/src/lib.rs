@@ -2341,7 +2341,17 @@ impl GpuEffectArtifact {
     pub fn dynamics_from_instance(
         instance: &EffectInstance,
     ) -> Result<GpuEffectDynamics, GpuArtifactError> {
-        for flipbook in &instance.effect().flipbooks {
+        let effect = instance.effect();
+        for flipbook in effect
+            .emitters
+            .iter()
+            .filter(|emitter| emitter.enabled)
+            .flat_map(|emitter| &emitter.renderers)
+            .filter_map(|renderer| match renderer.kind {
+                RendererPlanKind::Flipbook { flipbook, .. } => effect.flipbook(flipbook),
+                _ => None,
+            })
+        {
             if flipbook.frames.len() > MAX_FLIPBOOK_FRAMES {
                 return Err(GpuArtifactError::FlipbookFrameLimit {
                     name: flipbook.name.clone(),

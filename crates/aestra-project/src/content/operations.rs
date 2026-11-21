@@ -3,6 +3,7 @@ mod duplicate;
 mod effect_create;
 mod material_create;
 mod move_journal;
+mod palette_import;
 mod rename;
 mod transaction;
 use super::{ProjectContent, ProjectSourceKind, ProjectSourceTree};
@@ -11,6 +12,7 @@ use crate::ProjectSourceId;
 pub use duplicate::{DuplicatePlan, DuplicateResult};
 pub use effect_create::EffectCreatePlan;
 pub use material_create::MaterialCreatePlan;
+pub use palette_import::PaletteSource;
 pub use rename::{RenamePlan, RenameResult};
 pub use transaction::{
     AssetMoveBatchPlan, AssetMoveBatchResult, DeletePlan, DeletedSource, PendingAssetMoveBatch,

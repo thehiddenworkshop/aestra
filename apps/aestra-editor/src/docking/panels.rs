@@ -18,10 +18,12 @@ pub(crate) enum ToolPanel {
     MaterialGraph,
     Profiler,
     Settings,
+    SpriteViewer,
+    PaletteEditor,
 }
 
 impl ToolPanel {
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::Viewport,
         Self::Assets,
         Self::AssetInspector,
@@ -34,6 +36,8 @@ impl ToolPanel {
         Self::MaterialGraph,
         Self::Profiler,
         Self::Settings,
+        Self::SpriteViewer,
+        Self::PaletteEditor,
     ];
 
     pub(crate) fn message_id(self) -> &'static str {
@@ -50,6 +54,8 @@ impl ToolPanel {
             Self::MaterialGraph => "panel-material-graph",
             Self::Profiler => "panel-profiler",
             Self::Settings => "panel-settings",
+            Self::SpriteViewer => "panel-sprite-viewer",
+            Self::PaletteEditor => "panel-palette-editor",
         }
     }
 

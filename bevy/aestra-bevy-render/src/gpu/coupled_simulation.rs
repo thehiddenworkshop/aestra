@@ -3,6 +3,7 @@ use super::phase_timing::{self, GpuSimulationPhase};
 use super::{
     catchup_pacing::{CatchupPacer, stateful_catchup_budget},
     effect_inputs::{RouteWiring, StatefulDispatch, event_link_counter_base},
+    stateful_presentation::{SteppedPresentation, run_stepped_stateful},
     stateful_simulation::*,
 };
 use aestra_gpu::WORKGROUP_SIZE;
@@ -606,6 +607,7 @@ pub(super) fn run_stateful_dispatches(
     owns_shared_reset: bool,
     pacer: Option<&mut CatchupPacer>,
     trails: Option<&mut dyn CoupledHistory>,
+    stepped: Option<SteppedPresentation<'_>>,
 ) -> StatefulDispatchResult {
     // Link-only coupling is valid for events/trails, but not a substitute for
     // a required domain. Preparation may omit a timeline or fail its resource
@@ -636,10 +638,6 @@ pub(super) fn run_stateful_dispatches(
             work: None,
         };
     }
-    if owns_shared_reset {
-        // Clear the shared live counter once, before any emitter's present bumps it.
-        encoder.clear_buffer(render.counters, 0, Some(4));
-    }
     // Emitters following a domain's field (fluid F2b) or born from it (fluid F10) advance in lockstep
     // with it; so do emitters joined by event links (host bindings HB9b), with one another, and
     // those of an effect with event routes (event system E3, `routes` is then given).
@@ -650,64 +648,91 @@ pub(super) fn run_stateful_dispatches(
         || dispatches
             .iter()
             .any(|dispatch| dispatch.field_follow.is_some() || dispatch.domain_spawn.is_some());
-    let ticks = match coupling.filter(|_| coupled) {
-        Some(coupling) => {
-            // A coupled domain's ticks are fluid ticks: paced by frame time, not a fixed count.
-            let budget = pacer.as_ref().map_or_else(
-                || stateful_catchup_budget(seek_quality),
-                |pacer| pacer.budget(seek_quality),
-            );
-            let (ticks, checkpoint_capture_bytes) = run_coupled_stateful(
+    let held = stepped
+        .filter(|_| owns_shared_reset && !coupled)
+        .and_then(|request| {
+            run_stepped_stateful(
                 device,
                 encoder,
                 pipelines,
                 layout,
                 persistent_states,
                 dispatches,
-                coupling,
-                links,
-                &routes.unwrap_or(RouteWiring {
-                    output_epoch: history_epoch,
-                    output_suppress_through,
-                    ..Default::default()
-                }),
                 render,
+                request,
                 simulation_time,
-                budget,
-                trails,
-            );
-            if let Some(pacer) = pacer {
-                pacer.spent(ticks, budget);
-            }
-            Some((ticks, checkpoint_capture_bytes))
+                seek_quality,
+            )
+        });
+    let ticks = if held.is_some() {
+        None
+    } else {
+        if let Some(state) = persistent_states.first_mut() {
+            state.held_frame = None;
         }
-        None if has_trails => {
-            // Never silently use the independent path: it cannot observe every
-            // emitter at a shared tick or restore histories with particles.
-            warn!("stateful trail simulation is waiting for lockstep pipelines");
-            return StatefulDispatchResult {
-                presented: false,
-                work: None,
-            };
+        if owns_shared_reset {
+            // Clear the shared live counter once, before any emitter's present bumps it.
+            encoder.clear_buffer(render.counters, 0, Some(4));
         }
-        None => {
-            for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
-                dispatch_stateful_effect(
+        match coupling.filter(|_| coupled) {
+            Some(coupling) => {
+                // A coupled domain's ticks are fluid ticks: paced by frame time, not a fixed count.
+                let budget = pacer.as_ref().map_or_else(
+                    || stateful_catchup_budget(seek_quality),
+                    |pacer| pacer.budget(seek_quality),
+                );
+                let (ticks, checkpoint_capture_bytes) = run_coupled_stateful(
                     device,
                     encoder,
-                    pipelines.0,
-                    pipelines.1,
-                    pipelines.2,
-                    pipelines.3,
+                    pipelines,
                     layout,
-                    persistent,
-                    dispatch,
+                    persistent_states,
+                    dispatches,
+                    coupling,
+                    links,
+                    &routes.unwrap_or(RouteWiring {
+                        output_epoch: history_epoch,
+                        output_suppress_through,
+                        ..Default::default()
+                    }),
                     render,
                     simulation_time,
-                    seek_quality,
+                    budget,
+                    trails,
                 );
+                if let Some(pacer) = pacer {
+                    pacer.spent(ticks, budget);
+                }
+                Some((ticks, checkpoint_capture_bytes))
             }
-            None
+            None if has_trails => {
+                // Never silently use the independent path: it cannot observe every
+                // emitter at a shared tick or restore histories with particles.
+                warn!("stateful trail simulation is waiting for lockstep pipelines");
+                return StatefulDispatchResult {
+                    presented: false,
+                    work: None,
+                };
+            }
+            None => {
+                for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
+                    dispatch_stateful_effect(
+                        device,
+                        encoder,
+                        pipelines.0,
+                        pipelines.1,
+                        pipelines.2,
+                        pipelines.3,
+                        layout,
+                        persistent,
+                        dispatch,
+                        render,
+                        simulation_time,
+                        seek_quality,
+                    );
+                }
+                None
+            }
         }
     };
     // Event overflow counts (host bindings HB9b), for the host to read back and report; after each
@@ -742,7 +767,7 @@ pub(super) fn run_stateful_dispatches(
             first.emitter_count,
             statistics_token,
             history_epoch,
-            simulation_time,
+            held.unwrap_or(simulation_time),
         );
     }
     StatefulDispatchResult {

@@ -1,8 +1,8 @@
 //! Lifecycle contracts for native render-world extraction.
 use super::super::{
     draw_instance::{
-        GpuDrawInstance, GpuRenderMode, GpuSemanticMaterialBinding, SpriteCullBounds,
-        WireframeGeometry,
+        GpuDrawInstance, GpuMaterialTexture, GpuRenderMode, GpuSemanticMaterialBinding,
+        SpriteCullBounds, WireframeGeometry,
     },
     mesh_inputs::MeshInputs,
     world_sdf::AestraWorldSdf,
@@ -91,11 +91,20 @@ pub(super) fn draw(owner: Entity) -> GpuDrawInstance {
             shader: handle(13),
             multisampled_shader: handle(14),
             uniforms: Arc::from([1, 2, 3, 4]),
-            textures: vec![handle(15), handle(16)],
-            fallback_texture: handle(17),
+            textures: vec![
+                GpuMaterialTexture {
+                    image: Some(handle(15)),
+                    fallback: handle(17),
+                },
+                GpuMaterialTexture {
+                    image: Some(handle(16)),
+                    fallback: handle(18),
+                },
+            ],
         }),
         render_mode: GpuRenderMode::Wireframe,
         mesh_center: Vec3::splat(-100.0),
+        world_z: -100.0,
         sampled_sprite_cull: Some(SpriteCullBounds {
             half_extents: Vec3::new(2.0, 3.0, 4.0),
             maximum_size: 5.0,
@@ -163,7 +172,6 @@ fn assert_payload(source: &GpuDrawInstance, extracted: &GpuDrawInstance) {
     assert_eq!(original.shader, copied.shader);
     assert_eq!(original.multisampled_shader, copied.multisampled_shader);
     assert_eq!(original.textures, copied.textures);
-    assert_eq!(original.fallback_texture, copied.fallback_texture);
     let original = source.sampled_sprite_cull.unwrap();
     let copied = extracted.sampled_sprite_cull.unwrap();
     assert_eq!(original.half_extents, copied.half_extents);
@@ -192,6 +200,7 @@ fn actual_payload_and_shared_allocations_arrive_before_render_preparation() {
     let copied = extracted(&app, entity).unwrap();
     assert_payload(app.world().get(entity).unwrap(), copied);
     assert_eq!(copied.mesh_center, Vec3::new(11.0, 22.0, 33.0));
+    assert_eq!(copied.world_z, 30.0);
     assert_eq!(
         copied.sampled_sprite_cull.unwrap().world_from_effect,
         Mat4::from_translation(Vec3::new(10.0, 20.0, 30.0))

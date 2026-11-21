@@ -1,4 +1,5 @@
 //! Optional host environment, using exactly the demo's shared receiver shader.
+use super::{navigation::PreviewRenderCamera, scene::PreviewPerspectiveCamera};
 use crate::{session::EditorSession, settings::EditorSettings};
 use aestra_bevy_render::preview::water::{self, SeaState, WaterMaterial};
 use bevy::{camera::visibility::RenderLayers, prelude::*};
@@ -15,16 +16,20 @@ pub(super) fn sync_reflections(
         (
             Entity,
             Option<&aestra_bevy_render::preview::planar::PlanarReflection>,
+            Has<PreviewRenderCamera>,
         ),
-        With<super::navigation::PreviewRenderCamera>,
+        (
+            Or<(With<PreviewRenderCamera>, With<PreviewPerspectiveCamera>)>,
+            Without<Camera2d>,
+        ),
     >,
 ) {
     use aestra_bevy_render::preview::planar::PlanarReflection;
     let receiver = settings
         .filter(|s| s.preview.water_enabled && s.preview.water_reflections)
         .and_then(|_| water.single().ok());
-    for (entity, current) in &cameras {
-        if let Some(receiver) = receiver {
+    for (entity, current, selected) in &cameras {
+        if let Some(receiver) = receiver.filter(|_| selected) {
             if current.is_none_or(|c| c.receiver != receiver) {
                 commands
                     .entity(entity)

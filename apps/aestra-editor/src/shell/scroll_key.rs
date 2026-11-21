@@ -6,6 +6,8 @@ pub(crate) enum ScrollMemoryKey {
     AssetBrowserItems,
     AssetBrowserBuiltIns,
     AssetBrowserDocument,
+    PaletteEditor,
+    PaletteEditorSwatches,
     Properties,
     PropertiesInspector,
     CompilerInspector,
