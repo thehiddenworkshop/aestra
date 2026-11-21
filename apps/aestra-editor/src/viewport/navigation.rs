@@ -137,7 +137,13 @@ pub(super) fn navigate_preview_camera(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
-    browser: Query<&RelativeCursorPosition, With<crate::asset_browser::BrowserSurface>>,
+    panels: Query<
+        &RelativeCursorPosition,
+        Or<(
+            With<crate::asset_browser::BrowserSurface>,
+            With<super::sort_preview::SortOverlay>,
+        )>,
+    >,
     player: Query<&GlobalTransform, With<EmitterTransformGizmoProxy>>,
     session: Option<Res<crate::session::EditorSession>>,
     mut navigation: ResMut<PreviewNavigationState>,
@@ -156,7 +162,7 @@ pub(super) fn navigate_preview_camera(
         return;
     }
     let mut cursor_over =
-        canvas.cursor_over() && !browser.iter().any(RelativeCursorPosition::cursor_over);
+        canvas.cursor_over() && !panels.iter().any(RelativeCursorPosition::cursor_over);
     let (mut camera, projection, viewport) = camera.into_inner();
     if controller.xy && display.is_some_and(|display| display.pixel_grid) {
         cursor_over &= window

@@ -260,7 +260,8 @@ mod tests {
             semantic_material: None,
             render_mode: GpuRenderMode::Wireframe,
             mesh_center: Vec3::ZERO,
-            world_z: 0.0,
+            sort_2d: default(),
+            sort_key_2d: 0.0,
             sampled_sprite_cull: None,
         };
         let first = app.world_mut().spawn(draw.clone()).id();

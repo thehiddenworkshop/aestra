@@ -78,6 +78,7 @@ impl Fixture {
                 update_viewport_status_label,
                 update_preview_display_controls,
                 update_transform_gizmo_controls,
+                super::super::sort_preview::sync_controls,
             )
                 .chain(),
         );
@@ -133,18 +134,26 @@ fn actual_viewport_pane_and_canvas_preserve_layout_and_clipping() {
     assert_eq!(w.get::<ChildOf>(e).unwrap().parent(), column);
 }
 #[test]
-fn panel_builds_eleven_classified_feathers_controls_and_seven_svg_icons() {
+fn panel_classifies_toolbar_and_sort_overlay_controls() {
     let mut f = Fixture::new("en-US", false);
     let w = f.app.world_mut();
     let actions = w
         .query::<(Entity, &ViewportAction, &Node)>()
         .iter(w)
         .collect::<Vec<_>>();
-    assert_eq!(actions.len(), 11);
+    assert_eq!(actions.len(), 13);
+    let mut sort_actions = 0;
     for (e, action, node) in actions {
         assert!(w.get::<NativeButton>(e).is_some());
         assert!(w.get::<FeathersActionButton>(e).is_some());
         assert!(w.get::<AccessibleLabel>(e).is_some());
+        if matches!(
+            action,
+            ViewportAction::ToggleSortOrder | ViewportAction::ToggleYSortPreview
+        ) {
+            sort_actions += 1;
+            continue;
+        }
         assert!(w.get::<EditorTooltip>(e).is_some());
         let width = if matches!(
             action,
@@ -157,7 +166,42 @@ fn panel_builds_eleven_classified_feathers_controls_and_seven_svg_icons() {
         assert_eq!(node.width, Val::Px(width));
         assert_eq!(node.height, Val::Px(28.0));
     }
+    assert_eq!(sort_actions, 2);
     assert_eq!(w.query::<&UiSvg>().iter(w).count(), 7);
+
+    let overlay = {
+        let world = f.app.world_mut();
+        world
+            .query_filtered::<Entity, With<super::super::sort_preview::SortOverlay>>()
+            .single(world)
+            .unwrap()
+    };
+    assert_eq!(
+        f.app.world().get::<Node>(overlay).unwrap().display,
+        Display::None
+    );
+    f.activate(ViewportAction::TogglePreviewProjection);
+    assert_eq!(
+        f.app.world().get::<Node>(overlay).unwrap().display,
+        Display::Flex
+    );
+    f.activate(ViewportAction::ToggleSortOrder);
+    f.activate(ViewportAction::ToggleYSortPreview);
+    let y_sort = f.action(ViewportAction::ToggleYSortPreview);
+    assert!(f.app.world().get::<bevy::ui::Selected>(y_sort).is_some());
+    assert_eq!(
+        f.app
+            .world()
+            .get::<bevy::feathers::controls::ButtonVariant>(y_sort),
+        Some(&bevy::feathers::controls::ButtonVariant::Primary),
+    );
+    f.activate(ViewportAction::SetPreviewDisplayMode(
+        PreviewDisplayMode::Wireframe,
+    ));
+    assert_eq!(
+        f.app.world().get::<Node>(overlay).unwrap().display,
+        Display::None
+    );
 }
 #[test]
 fn localized_gizmo_tooltips_keep_titles_descriptions_and_shortcuts() {

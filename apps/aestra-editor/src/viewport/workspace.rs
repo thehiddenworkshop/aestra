@@ -306,6 +306,7 @@ pub(crate) fn spawn_preview(
                                 asset_server,
                             );
                         });
+                    super::sort_preview::spawn_controls(canvas, localizer);
                 });
             column.spawn((
                 Text::new("0 LIVE PARTICLES  |  60 FPS"),

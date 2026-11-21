@@ -38,6 +38,9 @@ mod volume_native;
 mod volume_shader;
 use pipeline_native::composition as shader_composition;
 pub use render_settings::{AestraRenderSettings, PresentationMode, TransparentOrderMode};
+#[path = "../../../bevy/aestra-bevy-render/src/sort_2d.rs"]
+mod sort_2d;
+pub use sort_2d::AestraSort2d;
 #[path = "../../../bevy/aestra-bevy-render/src/capabilities.rs"]
 mod capabilities;
 pub use capabilities::{AestraRuntimeStatus, GpuCapabilities};

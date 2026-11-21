@@ -60,14 +60,7 @@ pub(super) fn sync_gpu_render_transforms(
     for (entity, player, transform, mut gpu, mut statistics, physics, runtime) in &mut players {
         let statistics_token = statistics.sync(&player.instance);
         gpu.statistics_token = statistics_token;
-        let placement = Mat4::from(transform.affine());
-        let world = placement
-            * Mat4::from_cols_array(
-                &player
-                    .instance
-                    .host_transform_context()
-                    .matrix_at(player.simulation_time()),
-            );
+        let world = player.world_from_effect(transform);
         gpu.simulation_time = player.simulation_time();
         gpu.seek_quality = player.seek_quality();
         gpu.history_policy = player.history_policy();

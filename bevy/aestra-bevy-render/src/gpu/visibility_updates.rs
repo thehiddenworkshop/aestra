@@ -55,13 +55,7 @@ fn sync_host_motion_draw_globals(
 ) {
     for (parent, mut global) in &mut draws {
         if let Ok((player, placement)) = players.get(parent.parent()) {
-            let matrix = Mat4::from(placement.affine())
-                * Mat4::from_cols_array(
-                    &player
-                        .instance
-                        .host_transform_context()
-                        .matrix_at(player.simulation_time()),
-                );
+            let matrix = player.world_from_effect(placement);
             global.set_if_neq(GlobalTransform::from(matrix));
         }
     }

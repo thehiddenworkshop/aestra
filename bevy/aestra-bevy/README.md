@@ -600,7 +600,7 @@ production-finale certification remain open.
 | I want… | Read |
 |---|---|
 | The minimal load-and-play host | [`examples/minimal_player.rs`](examples/minimal_player.rs) |
-| A palette-constrained, nearest-filtered flipbook layered with Bevy sprites on a virtual pixel grid | [`examples/pixel_pulse.rs`](examples/pixel_pulse.rs) |
+| A palette-constrained flipbook that demonstrates world-Z and Y sorting with Bevy sprites on a virtual pixel grid | [`examples/pixel_pulse.rs`](examples/pixel_pulse.rs) |
 | A moving `Camera2d` point light on an Aestra sprite and flipbook, with stepped falloff, `--normals`, and `--palette` options | [`examples/pixel_lighting.rs`](examples/pixel_lighting.rs) |
 | Host-triggered hit flash, outline, dissolve, palette swap, and distortion on a Bevy atlas sprite | [`examples/sprite_hit_flash.rs`](examples/sprite_hit_flash.rs) |
 | The public API surface + rationale | crate docs (`cargo doc -p aestra-bevy --open`) |

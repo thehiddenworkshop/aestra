@@ -144,6 +144,65 @@ fn stateful_pulse_holds_geometry_while_gpu_ticks_advance() {
 
 #[test]
 #[ignore = "native GPU image test; run explicitly"]
+fn host_sort_policy_changes_overlap_without_changing_effect_z() {
+    let mut app = capture_app(compile_pulse(false));
+    let world = app.world_mut();
+    let target = world
+        .query_filtered::<&RenderTarget, With<PixelCamera>>()
+        .single(world)
+        .unwrap()
+        .as_image()
+        .unwrap()
+        .clone();
+    let owner = world
+        .query_filtered::<Entity, With<MovablePulse>>()
+        .single(world)
+        .unwrap();
+    let behind_z = BACKGROUND_Z - 1.0;
+    let mut players = world.query::<(&mut EffectPlayer, &mut Transform)>();
+    for (mut player, mut transform) in players.iter_mut(world) {
+        player.playing = false;
+        player.seek(0.125);
+        transform.translation = Vec3::new(0.0, 0.0, behind_z);
+    }
+    let pixel = |app: &mut App| {
+        capture(app, &target)
+            .try_into_dynamic()
+            .unwrap()
+            .to_rgb8()
+            .get_pixel(108, 64)
+            .0
+    };
+    let hidden = pixel(&mut app);
+    assert!(hidden[1] > hidden[0] && hidden[1] > hidden[2]);
+
+    app.world_mut()
+        .entity_mut(owner)
+        .insert(AestraSort2d::Custom(FOREGROUND_Z + 1.0));
+    let in_front = pixel(&mut app);
+    assert!(matches_swatch(in_front, ROSE_SWATCH), "got {in_front:?}");
+
+    app.world_mut()
+        .entity_mut(owner)
+        .insert(AestraSort2d::WorldY { units_per_y: 16.0 });
+    assert_eq!(pixel(&mut app), hidden);
+    app.world_mut()
+        .get_mut::<Transform>(owner)
+        .unwrap()
+        .translation
+        .y = -1.0;
+    assert_eq!(pixel(&mut app), in_front);
+
+    app.world_mut().entity_mut(owner).remove::<AestraSort2d>();
+    assert_eq!(pixel(&mut app), hidden);
+    assert_eq!(
+        app.world().get::<Transform>(owner).unwrap().translation.z,
+        behind_z
+    );
+}
+
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
 fn overlapping_pulses_follow_host_sprite_z_and_preserve_nearest_texels() {
     let mut app = capture_app(compile_pulse(false));
     let world = app.world_mut();

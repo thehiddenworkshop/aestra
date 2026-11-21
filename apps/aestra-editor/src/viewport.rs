@@ -53,6 +53,7 @@ mod shape_gizmo;
 #[cfg(test)]
 use shape_gizmo::*;
 mod scene;
+mod sort_preview;
 mod transform_gizmo;
 mod water;
 mod workspace;

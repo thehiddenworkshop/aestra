@@ -24,9 +24,9 @@ pub(super) struct PhaseDraw {
 }
 
 impl PhaseDraw {
-    pub(super) fn two_d(self, world_z: f32) -> Transparent2d {
+    pub(super) fn two_d(self, sort_key: f32) -> Transparent2d {
         Transparent2d {
-            sort_key: FloatOrd(world_z),
+            sort_key: FloatOrd(sort_key),
             entity: self.entity,
             pipeline: self.pipeline,
             draw_function: self.draw_function,

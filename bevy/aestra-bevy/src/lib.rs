@@ -100,7 +100,9 @@ pub use aestra_bevy_render::{
     ExperimentalOitSettings, ExperimentalOitStatistics, ExperimentalOitStatus, GpuCapabilities,
     PresentationMode, PresentedEffect, RendererCapability, TransparentOrderMode, gpu,
 };
-pub use aestra_bevy_render::{AestraLights2d, AestraPointLight2d, PointLightFalloff2d};
+pub use aestra_bevy_render::{
+    AestraLights2d, AestraPointLight2d, AestraSort2d, PointLightFalloff2d,
+};
 // The host's world and what effects report back to gameplay (fluid F11, host bindings HB9/HB10).
 pub use aestra_bevy_render::gpu::{
     AestraEffectOutputs, AestraOutputEvent, AestraPhysicsColliders, AestraPhysicsQuery,

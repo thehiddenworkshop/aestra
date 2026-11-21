@@ -161,9 +161,9 @@ fn queue_gpu_sprites(
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
-        // Bevy's stable phase sort compares world Z. Requeue 2D draws in
+        // Bevy's stable phase sort compares each draw's key. Requeue 2D draws in
         // renderer order each frame to preserve order within an effect at
-        // equal Z without shifting its layer relative to host sprites.
+        // equal keys without shifting their order relative to host sprites.
         ordered_draws.clear();
         ordered_draws.extend(visible_gpu_draws(visible_entities).filter_map(
             |(render_entity, main_entity)| {
@@ -242,7 +242,7 @@ fn queue_gpu_sprites(
                     draw_function,
                     indexed: mesh.is_some_and(|mesh| mesh.index.is_some()),
                 }
-                .two_d(effect.world_z),
+                .two_d(effect.sort_key_2d),
             );
         }
     }

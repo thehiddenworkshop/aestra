@@ -104,7 +104,8 @@ pub(super) fn draw(owner: Entity) -> GpuDrawInstance {
         }),
         render_mode: GpuRenderMode::Wireframe,
         mesh_center: Vec3::splat(-100.0),
-        world_z: -100.0,
+        sort_2d: default(),
+        sort_key_2d: -100.0,
         sampled_sprite_cull: Some(SpriteCullBounds {
             half_extents: Vec3::new(2.0, 3.0, 4.0),
             maximum_size: 5.0,
@@ -200,7 +201,7 @@ fn actual_payload_and_shared_allocations_arrive_before_render_preparation() {
     let copied = extracted(&app, entity).unwrap();
     assert_payload(app.world().get(entity).unwrap(), copied);
     assert_eq!(copied.mesh_center, Vec3::new(11.0, 22.0, 33.0));
-    assert_eq!(copied.world_z, 30.0);
+    assert_eq!(copied.sort_key_2d, 30.0);
     assert_eq!(
         copied.sampled_sprite_cull.unwrap().world_from_effect,
         Mat4::from_translation(Vec3::new(10.0, 20.0, 30.0))

@@ -104,6 +104,18 @@ impl PresentedEffect {
         self.instance.effect()
     }
 
+    /// The presentation placement used for draw visibility and 2D sort keys.
+    /// Includes authored and inherited host motion at the current simulation time.
+    pub fn world_from_effect(&self, placement: &GlobalTransform) -> Mat4 {
+        Mat4::from(placement.affine())
+            * Mat4::from_cols_array(
+                &self
+                    .instance
+                    .host_transform_context()
+                    .matrix_at(self.simulation_time()),
+            )
+    }
+
     /// Supplies an instance-owned image instead of loading its registry path. Configure before
     /// spawning/preparing the player. Useful for isolated previews without replacing shared assets.
     pub fn with_texture_overrides(mut self, textures: BTreeMap<AssetId, Handle<Image>>) -> Self {

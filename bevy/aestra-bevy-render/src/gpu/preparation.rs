@@ -18,7 +18,7 @@ use super::{
     storage_buffers,
 };
 use crate::{
-    ActiveBackend, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
+    ActiveBackend, AestraSort2d, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
     EffectRenderMode, EffectRuntimeStatus, GpuCapabilities, GpuPresentationPrepared,
     PresentedEffect, ProjectAssetCache,
     material::{MaterialBindingError, MaterialRuntimeBinding},
@@ -134,6 +134,7 @@ type UnpreparedPlayers<'w, 's> = Query<
         &'static mut PresentedEffect,
         &'static EffectRuntimeStatus,
         Option<&'static RenderLayers>,
+        Option<&'static AestraSort2d>,
     ),
     (Without<GpuEffectBuffers>, Without<GpuPresentationPrepared>),
 >;
@@ -146,6 +147,7 @@ type PreparedGpuPlayers<'w, 's> = Query<
         &'static mut GpuEffectBuffers,
         &'static EffectRuntimeStatus,
         Option<&'static RenderLayers>,
+        Option<&'static AestraSort2d>,
         Option<&'static Children>,
     ),
     Without<GpuDrawInstance>,
@@ -236,7 +238,7 @@ pub(crate) fn prepare_gpu_effects(
     playback_diagnostics: Option<Res<super::playback_diagnostics::GpuPlaybackDiagnostics>>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::prepare_instance").entered();
-    for (entity, mut player, runtime, render_layers) in &mut players {
+    for (entity, mut player, runtime, render_layers, sort_2d) in &mut players {
         let activation_start = playback_diagnostics
             .as_ref()
             .is_some_and(|d| d.profiling_enabled())
@@ -842,7 +844,8 @@ pub(crate) fn prepare_gpu_effects(
                                 semantic_material,
                                 render_mode,
                                 mesh_center: Vec3::ZERO,
-                                world_z: 0.0,
+                                sort_2d: sort_2d.copied().unwrap_or_default(),
+                                sort_key_2d: 0.0,
                                 sampled_sprite_cull: None,
                             },
                             render_layers.cloned().unwrap_or_default(),
@@ -953,7 +956,7 @@ fn update_gpu_inputs(
     mut draw_instances: PreparedDraws,
 ) {
     let _span = tracing::info_span!("aestra::gpu::artifact_update").entered();
-    for (mut player, mut gpu, runtime, render_layers, children) in &mut players {
+    for (mut player, mut gpu, runtime, render_layers, sort_2d, children) in &mut players {
         player.refresh_automatic_material_bindings();
         // A transform-only edit (a gizmo drag) swaps the effect in place: re-place future spawns.
         // Attached emitters are placed from their binding instead (see `sync_gpu_render_transforms`).
@@ -974,6 +977,7 @@ fn update_gpu_inputs(
         // here (its cost scales with capacity, not with what actually changed).
         if let Some(children) = children {
             let render_mode = gpu_render_mode(player.render_mode());
+            let sort_2d = sort_2d.copied().unwrap_or_default();
             for child in children.iter() {
                 if let Ok((mut draw, mut draw_layers, mesh_bounds, ribbon_bounds)) =
                     draw_instances.get_mut(child)
@@ -987,6 +991,7 @@ fn update_gpu_inputs(
                         mesh_bounds.motion = None;
                     }
                     draw.render_mode = render_mode;
+                    draw.sort_2d = sort_2d;
                     let emitter = player
                         .effect()
                         .emitters

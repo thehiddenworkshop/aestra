@@ -1115,7 +1115,7 @@ Custom dither plugin
 
 Open **Pixel Pulse** in the bundled sample project and use the viewport's **3D** button to switch to the orthographic XY view. Middle-drag pans, the wheel zooms, and Frame Effect centers the view. The preview choice belongs to the editor session.
 
-`cargo run --locked -p aestra-bevy --example pixel_pulse` opens the same saved effect in a Bevy `Camera2d` scene. Two effect instances share the existing alpha flipbook material with nearest filtering. **Up** raises the left pulse above the foreground sprite, **Down** lowers it behind the background sprite, and **R** resets its Z.
+`cargo run --locked -p aestra-bevy --example pixel_pulse` opens the same saved effect in a Bevy `Camera2d` scene. Two effect instances share the existing alpha flipbook material with nearest filtering. **Up** raises the left pulse above the foreground sprite and **Down** lowers it behind the background sprite. Press **Y** to sort by world Y, then use **Up** and **Down** to move the pulse across the scene. **R** resets its position and sort policy.
 
 This slice covers native GPU sprite and flipbook playback. Pixel snapping, integer scaling, and the effect-local compositing surface have separate acceptance criteria below.
 
@@ -1183,20 +1183,30 @@ Acceptance:
 
 ## M3 — 2D sorting and layers — P0
 
-The first slice uses the effect's propagated world Z for native 2D draws, with authored renderer order within each effect. The Bevy adapter submits that Z in the same phase as ordinary sprites. Use distinct Z values when the host requires explicit ordering between entities.
+Native 2D effects default to their propagated world Z. A host can insert `AestraSort2d` on the
+effect entity and change or remove it during playback. `WorldY { units_per_y }` uses
+`world_z - world_y * units_per_y`, so a positive scale draws lower effects in front.
+`Custom(key)` accepts a host-computed value. The Bevy adapter submits the resolved key in the
+same phase as ordinary sprites, where larger keys draw later. Use distinct keys when the host
+needs explicit ordering between entities. Authored renderer order breaks ties within one effect.
 
-Tasks:
+Use the host's `RenderLayers` component on the effect entity to select cameras. Its sort key
+controls compositing within each selected camera. Sort policy and layer selection belong to
+the host instance. The effect asset and core model remain engine-neutral.
 
-- layer;
-- Z;
-- Y-sort;
-- custom sort key;
-- editor visualization.
+In the rendered XY viewport, **Sort Order** lists active effect instances front to back,
+with their resolved key, policy, and camera layers. The readout uses the same placement as
+the renderer, including authored and inherited host motion. Enable **World Y** to preview
+the Y policy at one sort unit per world unit. Closing the overlay or leaving the rendered
+XY view restores the previous policies. This works with the regular and pixel preview
+cameras and does not edit or save the effect.
 
 Acceptance:
 
-- [ ] Effects integrate correctly with common 2D scene ordering.
-- [ ] Ordering semantics remain engine-neutral.
+- [x] Pixel Pulse overlaps native Bevy sprites using world Z, world Y, and custom keys.
+  The native capture checks live policy changes and removal while holding world Z fixed.
+- [x] Ordering semantics remain engine-neutral.
+- [x] The editor shows 2D sort placement and camera layers and can preview World Y ordering.
 
 ---
 

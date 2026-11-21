@@ -1,5 +1,6 @@
 //! Actual draw extraction payload, shared by the shipping and migration adapters.
 use super::mesh_inputs::MeshInputs;
+use crate::AestraSort2d;
 use aestra_core::MaterialId;
 use aestra_gpu::{GpuBlend, material::CompiledMaterialProgram};
 use bevy::{
@@ -66,7 +67,8 @@ pub(super) struct GpuDrawInstance {
     pub(super) semantic_material: Option<GpuSemanticMaterialBinding>,
     pub(super) render_mode: GpuRenderMode,
     pub(super) mesh_center: Vec3,
-    pub(super) world_z: f32,
+    pub(super) sort_2d: AestraSort2d,
+    pub(super) sort_key_2d: f32,
     pub(super) sampled_sprite_cull: Option<SpriteCullBounds>,
 }
 
@@ -98,9 +100,9 @@ impl GpuDrawInstance {
         visibility.get().then(|| {
             let mut extracted = self.clone();
             extracted.mesh_center = gpu_draw_mesh_center(transform, bounds);
-            // Draws share the effect's propagated placement. Local particle
-            // and bounds depth must not change its layer in the host scene.
-            extracted.world_z = transform.translation().z;
+            // Draws share the effect's propagated placement independently of
+            // bounds, which can change as particles move.
+            extracted.sort_key_2d = self.sort_2d.sort_key(transform.translation());
             if let Some(culling) = &mut extracted.sampled_sprite_cull {
                 culling.world_from_effect = Mat4::from(transform.affine());
             }

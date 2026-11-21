@@ -88,6 +88,40 @@ impl Fixture {
 }
 
 #[test]
+fn sort_preview_actions_are_gated_to_the_rendered_xy_view_and_leave_the_document_clean() {
+    let mut f = Fixture::new("en-US");
+    let toggle = f.button(ViewportAction::ToggleSortOrder);
+    let axis = f.button(ViewportAction::ToggleYSortPreview);
+    f.activate(toggle);
+    f.app.update();
+    assert!(
+        !f.app
+            .world()
+            .resource::<PreviewDisplayState>()
+            .show_sort_order
+    );
+
+    f.app
+        .world_mut()
+        .trigger(ViewportAction::TogglePreviewProjection);
+    f.activate(axis);
+    f.app.update();
+    assert!(
+        !f.app
+            .world()
+            .resource::<PreviewDisplayState>()
+            .preview_y_sort
+    );
+    f.activate(toggle);
+    f.app.update();
+    f.activate(axis);
+    f.app.update();
+    let display = f.app.world().resource::<PreviewDisplayState>();
+    assert!(display.show_sort_order && display.preview_y_sort);
+    f.unchanged_document();
+}
+
+#[test]
 fn grid_action_persists_the_complete_settings_and_localized_success_in_both_locales() {
     for locale in ["en-US", "fr-FR"] {
         let mut f = Fixture::new(locale);

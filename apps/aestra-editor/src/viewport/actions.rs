@@ -30,6 +30,8 @@ pub(crate) struct PreviewDisplayState {
     pub(super) pixel_grid: bool,
     pub(super) stepped_presentation: bool,
     pub(super) lighting_2d: PreviewLighting2d,
+    pub(super) show_sort_order: bool,
+    pub(super) preview_y_sort: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -43,6 +45,10 @@ pub(super) enum PreviewLighting2d {
 impl PreviewDisplayState {
     pub(crate) fn set_mode(&mut self, mode: PreviewDisplayMode) {
         self.mode = mode;
+    }
+
+    pub(super) fn sort_order_available(&self, xy: bool) -> bool {
+        xy && self.mode == PreviewDisplayMode::Rendered
     }
 }
 
@@ -137,6 +143,18 @@ pub(super) fn execute_viewport_action(
                 && preview_display.mode == PreviewDisplayMode::Rendered
             {
                 preview_display.stepped_presentation = !preview_display.stepped_presentation;
+            }
+        }
+        ViewportAction::ToggleSortOrder => {
+            if preview_display.sort_order_available(preview_camera.xy) {
+                preview_display.show_sort_order = !preview_display.show_sort_order;
+            }
+        }
+        ViewportAction::ToggleYSortPreview => {
+            if preview_display.sort_order_available(preview_camera.xy)
+                && preview_display.show_sort_order
+            {
+                preview_display.preview_y_sort = !preview_display.preview_y_sort;
             }
         }
         ViewportAction::CyclePreviewLighting2d => {

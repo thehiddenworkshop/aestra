@@ -63,7 +63,13 @@ pub(super) fn interact(
     window: Single<&Window, With<PrimaryWindow>>,
     canvases: Query<&RelativeCursorPosition, With<PreviewCanvas>>,
     controls: Query<(Option<&Hovered>, Has<Pressed>), With<super::ViewportAction>>,
-    browser: Query<&RelativeCursorPosition, With<crate::asset_browser::BrowserSurface>>,
+    panels: Query<
+        &RelativeCursorPosition,
+        Or<(
+            With<crate::asset_browser::BrowserSurface>,
+            With<super::sort_preview::SortOverlay>,
+        )>,
+    >,
     view: XyInteractionView,
     mut proxy: Single<
         (Entity, &mut Transform, Has<XyTransformFocus>),
@@ -116,7 +122,7 @@ pub(super) fn interact(
         || controls
             .iter()
             .any(|(hovered, pressed)| hovered.is_some_and(Hovered::get) || pressed)
-        || browser.iter().any(RelativeCursorPosition::cursor_over)
+        || panels.iter().any(RelativeCursorPosition::cursor_over)
         || !canvases.iter().any(RelativeCursorPosition::cursor_over)
     {
         return;

@@ -17,6 +17,8 @@ pub(crate) enum ViewportAction {
     TogglePixelGrid,
     TogglePresentationCadence,
     CyclePreviewLighting2d,
+    ToggleSortOrder,
+    ToggleYSortPreview,
     SetTransformGizmoMode(TransformGizmoMode),
     SetPreviewDisplayMode(PreviewDisplayMode),
     /// Enlarge the viewport to fill the whole editor, or restore it to its docked place.

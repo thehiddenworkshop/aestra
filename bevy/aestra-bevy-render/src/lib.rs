@@ -31,6 +31,8 @@ mod render_settings;
 pub use render_set::AestraRenderSet;
 pub mod sampling;
 pub use render_settings::{AestraRenderSettings, PresentationMode, TransparentOrderMode};
+mod sort_2d;
+pub use sort_2d::AestraSort2d;
 
 pub use aestra_runtime::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,

@@ -3,13 +3,14 @@
 //! Pass `-- --stateful` to use the persistent solver with the same authored look.
 //! Pass `-- --dither` for Bayer coverage or `-- --blue-noise` for blue-noise coverage.
 //! Up/Down changes the left pulse's Z layer. Left/Right pans by quarter pixels.
-//! T toggles 12 FPS presentation. R resets the layer and pan.
+//! Y switches to sorting by world Y, where Up/Down moves the pulse across the scene.
+//! T toggles 12 FPS presentation. R resets the sort policy, position, and pan.
 
 use std::{path::PathBuf, sync::Arc};
 
 use aestra_bevy::{
-    AestraPlugin, AestraSettings, CompiledEffectProject, EffectAsset, EffectCompiler, EffectPlayer,
-    PixelGrid, PlaybackHistoryPolicy, PresentationCadence, PresentationMode,
+    AestraPlugin, AestraSettings, AestraSort2d, CompiledEffectProject, EffectAsset, EffectCompiler,
+    EffectPlayer, PixelGrid, PlaybackHistoryPolicy, PresentationCadence, PresentationMode,
     integer_pixel_viewport, pixel_render_target,
 };
 use aestra_core::{
@@ -252,6 +253,7 @@ fn spawn_layers(mut commands: Commands, project: Res<PulseProject>) {
     commands.spawn((
         pulse(),
         MovablePulse,
+        AestraSort2d::WorldZ,
         Transform::from_xyz(-12.0, 0.0, PULSE_Z),
     ));
     let mut offset = pulse();
@@ -262,14 +264,33 @@ fn spawn_layers(mut commands: Commands, project: Res<PulseProject>) {
 fn move_effect(
     keys: Res<ButtonInput<KeyCode>>,
     mut players: Query<&mut EffectPlayer>,
-    mut pulse: Single<&mut Transform, With<MovablePulse>>,
+    pulse: Single<(&mut Transform, &mut AestraSort2d), With<MovablePulse>>,
     mut camera: Single<&mut Transform, (With<PixelCamera>, Without<MovablePulse>)>,
 ) {
-    if keys.just_pressed(KeyCode::ArrowUp) {
-        pulse.translation.z = FOREGROUND_Z + 1.0;
+    let (mut pulse, mut sort) = pulse.into_inner();
+    if keys.just_pressed(KeyCode::KeyY) {
+        *sort = if matches!(*sort, AestraSort2d::WorldY { .. }) {
+            AestraSort2d::WorldZ
+        } else {
+            AestraSort2d::WorldY { units_per_y: 3.0 }
+        };
+        pulse.translation.y = 0.0;
+        pulse.translation.z = PULSE_Z;
     }
-    if keys.just_pressed(KeyCode::ArrowDown) {
-        pulse.translation.z = BACKGROUND_Z - 1.0;
+    if matches!(*sort, AestraSort2d::WorldY { .. }) {
+        if keys.just_pressed(KeyCode::ArrowUp) {
+            pulse.translation.y += 2.0;
+        }
+        if keys.just_pressed(KeyCode::ArrowDown) {
+            pulse.translation.y -= 2.0;
+        }
+    } else {
+        if keys.just_pressed(KeyCode::ArrowUp) {
+            pulse.translation.z = FOREGROUND_Z + 1.0;
+        }
+        if keys.just_pressed(KeyCode::ArrowDown) {
+            pulse.translation.z = BACKGROUND_Z - 1.0;
+        }
     }
     if keys.just_pressed(KeyCode::ArrowLeft) {
         camera.translation.x -= 0.25;
@@ -278,6 +299,8 @@ fn move_effect(
         camera.translation.x += 0.25;
     }
     if keys.just_pressed(KeyCode::KeyR) {
+        *sort = AestraSort2d::WorldZ;
+        pulse.translation.y = 0.0;
         pulse.translation.z = PULSE_Z;
         camera.translation.x = 0.0;
     }

@@ -26,6 +26,7 @@ use super::{
     shape_gizmo::{
         configure_preview_scene_gizmos, draw_preview_scene_gizmos, interact_shape_gizmo,
     },
+    sort_preview,
     telemetry::update_preview,
     transform_gizmo::*,
     workspace::{
@@ -93,6 +94,7 @@ impl Plugin for ViewportPlugin {
                 (
                     sync_project_preview,
                     sync_rendered_preview,
+                    sort_preview::sync_preview_sort_policy,
                     apply_preview_mocks,
                     update_preview.after(AestraRenderSet::Prepare),
                     track_event_link_drops,
@@ -106,6 +108,7 @@ impl Plugin for ViewportPlugin {
                         sync_gizmo_overlay_projection,
                         update_preview_projection_label,
                         update_pixel_controls,
+                        sort_preview::sync_controls,
                     )
                         .chain(),
                     (
@@ -155,6 +158,7 @@ impl Plugin for ViewportPlugin {
                         .after(TransformGizmoRenderStep)
                         .after(update_emitter_transform_gizmo),
                     update_transform_gizmo_value_label.after(update_emitter_transform_gizmo),
+                    sort_preview::update_rows.after(sync_preview_camera_viewport),
                     host_motion::draw_path.after(update_emitter_transform_gizmo),
                     xy_authoring::draw
                         .run_if(xy_authoring::enabled)
