@@ -119,7 +119,13 @@ fn flipbook_frame(renderer: Renderer, normalized_age: f32, particle_index: u32) 
         max(globals.time, 0.0),
         effect_time,
     );
-    var frame = u32(floor(seconds * renderer.frame_rate));
+    let frame_time = seconds * renderer.frame_rate;
+    let frame_floor = floor(frame_time);
+    var frame = u32(frame_floor);
+    if effect_time && frame_time > frame_floor {
+        // Match f32::next_up for non-negative frame times in the CPU sampler.
+        frame = u32(bitcast<f32>(bitcast<u32>(frame_time) + 1u));
+    }
     if random_start {
         frame += u32(hash01(particle_index, 9u) * f32(count));
     }
@@ -147,6 +153,7 @@ fn aestra_sprite_vertex(
 ) -> SpriteVertexData {
     if renderers[params.renderer_index].renderer_kind == 3u { return aestra_ribbon_vertex(vertex_index, instance_index); }
     if renderers[params.renderer_index].renderer_kind == 4u { return aestra_trail_vertex(vertex_index, instance_index); }
+    if renderers[params.renderer_index].renderer_kind == 5u { return aestra_beam_vertex(vertex_index, instance_index); }
     // Four-vertex triangle strip (BL, BR, TL, TR): two triangles, CCW/front-facing,
     // so the GPU runs one vertex invocation per corner instead of six per quad —
     // cutting the scattered per-vertex particle gathers that bound the sprite pass.

@@ -7,7 +7,10 @@ use super::{
     },
     preparation::{MaterialShaderCache, prepare_material_shaders},
 };
-use crate::{PresentedEffect, pixel_view::PixelGrid};
+use crate::{
+    PresentedEffect,
+    pixel_view::{PixelGrid, PixelTrailGrid},
+};
 use aestra_gpu::GpuBlend;
 use aestra_runtime::{CompiledEffectProject, RendererPlanKind};
 use bevy::{
@@ -175,10 +178,11 @@ fn descriptors(
                 let kind =
                     match renderer.kind {
                         RendererPlanKind::Sprite => 0,
-                        RendererPlanKind::Trail { .. } => 1,
-                        RendererPlanKind::Flipbook { .. } => 4,
+                        RendererPlanKind::Flipbook { .. } => 1,
+                        RendererPlanKind::Trail { .. } => 4,
+                        RendererPlanKind::Beam { .. } => 5,
                         _ => return Err(
-                            "Pipeline preparation currently supports sprites, trails and flipbooks"
+                            "Pipeline preparation currently supports sprites, flipbooks, trails and beams"
                                 .into(),
                         ),
                     };
@@ -237,6 +241,7 @@ fn queue(
         &ExtractedView,
         Option<&Msaa>,
         Has<PixelGrid>,
+        Has<PixelTrailGrid>,
         Has<TemporalJitter>,
         Has<crate::experimental_oit::OitApproved>,
         Has<crate::preview::planar::ReflectionView>,
@@ -247,7 +252,7 @@ fn queue(
     keys: Res<ViewKeyCache>,
     phases_2d: Res<ViewSortedRenderPhases<Transparent2d>>,
 ) {
-    'views: for (request, view, msaa, pixel_grid, jitter, oit, reflection) in &views {
+    'views: for (request, view, msaa, pixel_grid, pixel_trails, jitter, oit, reflection) in &views {
         let Some(descriptors) = &request.descriptors else {
             continue;
         };
@@ -295,6 +300,7 @@ fn queue(
                         view.target_format,
                         samples,
                         pixel_grid && !jitter,
+                        pixel_trails && !jitter,
                         descriptor.kind,
                         GpuRenderMode::Rendered,
                     ),
@@ -317,6 +323,7 @@ fn queue(
                 &cache,
                 &pipeline,
                 GpuSpritePipelineKey {
+                    capture_opacity: false,
                     fragment_list_oit,
                     mesh_wireframe: false,
                     mesh_layout: None,

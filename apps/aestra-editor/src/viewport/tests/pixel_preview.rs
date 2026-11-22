@@ -274,6 +274,141 @@ fn native_dither_anchors_match_editor_viewport_coordinates() {
 
 #[test]
 #[ignore = "requires native GPU and shader compilation"]
+fn native_pixel_lightning_uses_trail_grid_in_the_editor_camera() {
+    assert_pixel_strip_grid("pixel_lightning.aestra.ron", 0.45, true);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
+fn native_pixel_ribbon_uses_trail_grid_in_the_editor_camera() {
+    assert_pixel_strip_grid("pixel_ribbon.aestra.ron", 0.95, false);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
+fn native_pixel_beam_snaps_endpoints_in_the_editor_camera() {
+    assert_pixel_strip_grid("pixel_beam.aestra.ron", 0.4, false);
+}
+
+fn assert_pixel_strip_grid(file_name: &str, time: f32, warm_trail_history: bool) {
+    use aestra_bevy_render::{PresentedEffect, gpu::GpuTrailStatistics};
+
+    let PreviewFixture {
+        mut app, root, xy, ..
+    } = preview_fixture();
+    let effect = aestra_core::EffectAsset::load_ron(root.join("effects").join(file_name)).unwrap();
+    let compiled = crate::ProjectEffectCatalog::scan(&root)
+        .compile_project(&effect)
+        .unwrap();
+    let world = app.world_mut();
+    let (camera, target) = world
+        .query_filtered::<(Entity, &RenderTarget), With<PixelSceneCamera>>()
+        .single(world)
+        .map(|(entity, target)| (entity, target.as_image().unwrap().clone()))
+        .unwrap();
+    assert!(world.get::<PixelTrailGrid>(camera).is_some());
+    assert!(world.get::<PixelTrailGrid>(xy).is_none());
+    let owner = world.spawn(PresentedEffect::new(compiled.root)).id();
+    if warm_trail_history {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            app.update();
+            let world = app.world();
+            let instance = &world.get::<PresentedEffect>(owner).unwrap().instance;
+            if world
+                .get::<GpuTrailStatistics>(owner)
+                .and_then(|stats| stats.usage(instance))
+                .is_some_and(|usage| usage.occupied == 1)
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "lightning head did not initialize"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    app.world_mut()
+        .get_mut::<PresentedEffect>(owner)
+        .unwrap()
+        .instance
+        .seek(time);
+    let pixels = |app: &mut App| {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let image = capture(app, &target).try_into_dynamic().unwrap().to_rgb8();
+            let visible = image
+                .pixels()
+                .filter(|pixel| i16::from(pixel[2]) - i16::from(pixel[0]) > 48)
+                .count();
+            if visible > 70 {
+                break image;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "expected a visible strip in {file_name}, got {visible} pixels"
+            );
+        }
+    };
+    let snapped = pixels(&mut app);
+    app.world_mut()
+        .entity_mut(camera)
+        .remove::<PixelTrailGrid>();
+    assert_ne!(pixels(&mut app), snapped);
+    app.world_mut().entity_mut(camera).insert(PixelTrailGrid);
+    assert_eq!(pixels(&mut app), snapped);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
+fn native_pixel_stamp_trail_renders_distance_events_in_the_editor_camera() {
+    use aestra_bevy_render::PresentedEffect;
+
+    let PreviewFixture { mut app, root, .. } = preview_fixture();
+    let effect =
+        aestra_core::EffectAsset::load_ron(root.join("effects/pixel_stamp_trail.aestra.ron"))
+            .unwrap();
+    let compiled = crate::ProjectEffectCatalog::scan(&root)
+        .compile_project(&effect)
+        .unwrap();
+    let world = app.world_mut();
+    let (camera, target) = world
+        .query_filtered::<(Entity, &RenderTarget), With<PixelSceneCamera>>()
+        .single(world)
+        .map(|(entity, target)| (entity, target.as_image().unwrap().clone()))
+        .unwrap();
+    assert!(world.get::<PixelGrid>(camera).is_some());
+    let mut player = PresentedEffect::new(compiled.root);
+    player.instance.seek(0.9);
+    world.spawn(player);
+    let stamps = |app: &mut App| {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let image = capture(app, &target).try_into_dynamic().unwrap().to_rgb8();
+            if image
+                .pixels()
+                .filter(|pixel| pixel.0 == [248, 70, 146])
+                .count()
+                > 80
+            {
+                break image;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "distance events did not produce visible stamps"
+            );
+        }
+    };
+    let snapped = stamps(&mut app);
+    app.world_mut().entity_mut(camera).remove::<PixelGrid>();
+    assert_ne!(stamps(&mut app), snapped);
+    app.world_mut().entity_mut(camera).insert(PixelGrid);
+    assert_eq!(stamps(&mut app), snapped);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
 fn native_pixel_dissolve_animates_whole_cells_and_posterizes_color() {
     let PreviewFixture { mut app, root, .. } = preview_fixture();
     let catalog = crate::ProjectEffectCatalog::scan(&root);

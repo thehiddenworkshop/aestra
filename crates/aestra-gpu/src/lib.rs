@@ -219,7 +219,8 @@ pub struct GpuRenderer {
     /// x: omitted particle reads; y: strip width or sprite pixel floor (f32 bits);
     /// z: trail history offset. Sprite floor is native-host presentation policy, default 0.
     pub attribute_flags: UVec3,
-    /// Flipbook rectangles; Trail uses frames[0].x for world-space tile length and
+    /// Flipbook rectangles; Beam stores effect-space start/width and end in the first two
+    /// entries. Trail uses frames[0].x for world-space tile length and
     /// frames[63].w for an opt-in additive presentation pixel floor (default 0).
     pub frames: [Vec4; MAX_FLIPBOOK_FRAMES],
 }
@@ -2464,6 +2465,10 @@ impl GpuEffectArtifact {
                 EmitterShape::Cylinder { radius, depth } => (6, radius, depth, 0.0),
                 EmitterShape::Cone { radius, depth } => (7, radius, depth, 0.0),
             };
+            let rotation = Quat::from_array(emitter.transform.rotation).normalize();
+            let scale = Vec3::from_array(emitter.transform.scale);
+            let emitter_linear = glam::Mat3::from_quat(rotation) * glam::Mat3::from_diagonal(scale);
+            let mut beam_extent = Vec3::ZERO;
             if emitter.enabled {
                 renderers.extend(emitter.renderers.iter().map(|renderer| {
                     // Semantic material instances are bound by the concrete render adapter. The
@@ -2507,6 +2512,14 @@ impl GpuEffectArtifact {
                         texture,
                     ) = match &renderer.kind {
                         RendererPlanKind::Sprite => (0, 1, 0, 0, 0.0, material_texture),
+                        RendererPlanKind::Beam { start, end, width } => {
+                            let start = emitter_linear * Vec2::from_array(*start).extend(0.0);
+                            let end = emitter_linear * Vec2::from_array(*end).extend(0.0);
+                            frames[0] = start.extend(*width);
+                            frames[1] = end.extend(0.0);
+                            beam_extent = beam_extent.max(start.abs()).max(end.abs());
+                            (5, 1, 0, 0, 0.0, material_texture)
+                        }
                         RendererPlanKind::Ribbon { .. } => (3, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Trail {
                             max_points,
@@ -2638,8 +2651,6 @@ impl GpuEffectArtifact {
                     emitter.transform.scale,
                 ) + flow_padding,
             );
-            let rotation = Quat::from_array(emitter.transform.rotation).normalize();
-            let scale = Vec3::from_array(emitter.transform.scale);
             let particle_bounds = mesh_bounds::MeshParticleBounds {
                 position_half_extents: transformed_emitter_bounds(
                     emitter_bounds(
@@ -2654,20 +2665,20 @@ impl GpuEffectArtifact {
                     emitter.transform.rotation,
                     emitter.transform.scale,
                 ) + flow_padding,
-                linear_from_local: glam::Mat3::from_quat(rotation)
-                    * glam::Mat3::from_diagonal(scale),
+                linear_from_local: emitter_linear,
                 maximum_size: maximum_absolute_curve(appearance.size),
             };
             let maximum_width = emitter
                 .renderers
                 .iter()
                 .map(|r| match r.kind {
-                    RendererPlanKind::Ribbon { width, .. } => width,
+                    RendererPlanKind::Ribbon { width, .. }
+                    | RendererPlanKind::Beam { width, .. } => width,
                     _ => 0.0,
                 })
                 .fold(0.0_f32, f32::max);
             let ribbon = ribbon_bounds::RibbonParticleBounds {
-                position_half_extents: particle_bounds.position_half_extents,
+                position_half_extents: particle_bounds.position_half_extents + beam_extent,
                 maximum_half_width: particle_bounds.maximum_size
                     * scale.abs().max_element()
                     * maximum_width

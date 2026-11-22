@@ -17,6 +17,15 @@ use bevy::{
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct PixelGrid;
 
+/// Snap native GPU Ribbon and Trail joints, Trail cap centers, and Beam endpoints in `Camera2d`.
+///
+/// Both segments at a joint use the same viewport-pixel offset to keep the strip joined.
+/// Width, simulation, and material coordinates keep their smooth-path values. Use a
+/// nearest-filtered low-resolution target for pixel art. Cameras with temporal jitter use
+/// smooth placement.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct PixelTrailGrid;
+
 /// Creates a nearest-filtered sRGB image for a 2D or 3D camera's image target.
 ///
 /// Use a transparent camera clear for isolated effects. Standard source-over rendering

@@ -15,11 +15,12 @@ use aestra_core::{
 };
 use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CompiledEffect, EffectInstance,
-    PlaybackDriver, SeekOrigin, SeekPlan, SimulationSeekMode,
+    PlaybackClock, PlaybackDriver, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 use bevy::prelude::Resource;
 use std::{
     collections::BTreeMap,
+    ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -39,6 +40,12 @@ pub(crate) struct PendingChange {
     pub preview: TransactionPreview,
     pub diagnostics: ValidationReport,
     pub can_apply: bool,
+}
+
+#[derive(Clone, Default)]
+struct PreviewLoop {
+    frames: Option<Range<u64>>,
+    enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +78,7 @@ pub(crate) struct EditorSession {
     pub preview_seed: u64,
     pub solo_emitter: Option<EmitterId>,
     pub playing: bool,
+    preview_loop: PreviewLoop,
     pub speed: f32,
     pub dirty: bool,
     pub(crate) material_drafts: crate::material_drafts::MaterialDrafts,
@@ -129,6 +137,7 @@ impl EditorSession {
             preview_seed: self.preview_seed,
             solo_emitter: self.solo_emitter,
             playing: self.playing,
+            preview_loop: self.preview_loop.clone(),
             speed: self.speed,
             dirty: self.dirty,
             material_drafts: self.material_drafts.clone(),
@@ -205,6 +214,7 @@ impl EditorSession {
             preview_seed,
             solo_emitter: None,
             playing: true,
+            preview_loop: PreviewLoop::default(),
             speed: 1.0,
             dirty: false,
             material_drafts: Default::default(),
@@ -263,6 +273,14 @@ impl EditorSession {
         self.preview_valid = true;
     }
 
+    fn set_edited_preview(&mut self, mut instance: EffectInstance) {
+        let time = self.simulation_time();
+        if instance.time() != time {
+            instance.set_playback_time(time);
+        }
+        self.set_preview(instance);
+    }
+
     /// Installs a compiled preview when `Some`, or marks the current instance stale when `None`.
     /// The stale instance is retained (the driver owns one) but hidden behind [`Self::preview`].
     fn set_preview_opt(&mut self, instance: Option<EffectInstance>) {
@@ -280,25 +298,31 @@ impl EditorSession {
     }
 
     pub fn restart(&mut self) {
-        self.restart_playhead();
-        self.last_seek = SeekPlan {
-            target_frame: 0,
-            origin: SeekOrigin::Restart,
-            replay_ticks: 0,
-        };
+        self.reset_transport_position();
         self.playing = true;
         self.status = "Choreography restarted".into();
     }
 
     pub fn stop(&mut self) {
+        self.reset_transport_position();
+        self.playing = false;
+        self.status = "Choreography stopped".into();
+    }
+
+    fn reset_transport_position(&mut self) {
+        if self.preview_loop.enabled
+            && let Some(frames) = self.preview_loop_frames()
+            && frames.start != 0
+        {
+            self.restore_preview_frame(frames.start);
+            return;
+        }
         self.restart_playhead();
         self.last_seek = SeekPlan {
             target_frame: 0,
             origin: SeekOrigin::Restart,
             replay_ticks: 0,
         };
-        self.playing = false;
-        self.status = "Choreography stopped".into();
     }
 
     pub fn time(&self) -> f32 {
@@ -330,6 +354,79 @@ impl EditorSession {
             .map_or(self.effect.duration, |pending| {
                 pending.preview.candidate().duration
             })
+    }
+
+    fn preview_loop_frames(&self) -> Option<Range<u64>> {
+        let mut frames = self.preview_loop.frames.clone()?;
+        frames.end = frames
+            .end
+            .min(self.driver.clock.maximum_frame(self.playback_duration()));
+        (!frames.is_empty()).then_some(frames)
+    }
+
+    pub fn preview_loop_range(&self) -> Option<Range<f32>> {
+        let frames = self.preview_loop_frames()?;
+        let duration = self.playback_duration();
+        Some(
+            self.driver.clock.time_for_frame(frames.start, duration)
+                ..self.driver.clock.time_for_frame(frames.end, duration),
+        )
+    }
+
+    pub fn preview_loop_active(&self) -> bool {
+        self.preview_loop.enabled && self.preview_loop_frames().is_some()
+    }
+
+    pub fn jump_across_preview_loop_seam(&mut self) -> Option<u64> {
+        let range = self.preview_loop_frames()?;
+        let last = range.end - 1;
+        let target = if self.frame() == last {
+            range.start
+        } else {
+            last
+        };
+        self.playing = false;
+        self.restore_preview_frame(target);
+        Some(target)
+    }
+
+    pub fn set_preview_loop_boundary(&mut self, start: bool) -> bool {
+        let maximum = self.driver.clock.maximum_frame(self.playback_duration());
+        let mut frames = self.preview_loop_frames().unwrap_or(0..maximum);
+        if start {
+            frames.start = self.frame().min(maximum);
+        } else {
+            frames.end = self.frame().min(maximum);
+        }
+        if frames.is_empty() {
+            return false;
+        }
+        self.preview_loop.frames = Some(frames);
+        self.ui_revision += 1;
+        true
+    }
+
+    pub fn toggle_preview_loop(&mut self) {
+        if self.preview_loop_active() {
+            self.preview_loop.enabled = false;
+        } else {
+            let maximum = self.driver.clock.maximum_frame(self.playback_duration());
+            if maximum == 0 {
+                return;
+            }
+            if self.preview_loop_frames().is_none() {
+                self.preview_loop.frames = Some(0..maximum);
+            }
+            self.preview_loop.enabled = true;
+        }
+        self.ui_revision += 1;
+    }
+
+    pub fn clear_preview_loop(&mut self) {
+        if self.preview_loop.frames.is_some() {
+            self.preview_loop = PreviewLoop::default();
+            self.ui_revision += 1;
+        }
     }
 
     fn playback_mode(&self) -> EffectPlaybackMode {
@@ -425,37 +522,64 @@ impl EditorSession {
             return;
         }
         let duration = self.playback_duration();
-        let playback_mode = self.playback_mode();
         let previous_clock = self.driver.clock;
-        let result = self.driver.clock.advance(
-            delta_seconds,
-            self.speed,
-            duration,
-            playback_mode.is_looping(),
-        );
+        if self.preview_loop.enabled
+            && let Some(range) = self.preview_loop_frames()
+        {
+            let mut clock = previous_clock;
+            if clock.advance_in_loop(delta_seconds, self.speed, range) {
+                // A whole number of cycles can land on the same pose. Keep
+                // that reconstruction in flight, particularly for one-frame loops.
+                if clock.frame() != previous_clock.frame()
+                    || clock.elapsed_time() != previous_clock.elapsed_time()
+                {
+                    self.restore_preview_frame(clock.frame());
+                }
+            } else {
+                self.advance_preview_ticks(
+                    previous_clock,
+                    clock.frame() - previous_clock.frame(),
+                    duration,
+                    false,
+                );
+            }
+            self.driver.clock = clock;
+            return;
+        }
+        let looping = self.playback_mode().is_looping();
+        let result = self
+            .driver
+            .clock
+            .advance(delta_seconds, self.speed, duration, looping);
+        let ticks = if looping {
+            result.ticks
+        } else {
+            self.frame().saturating_sub(previous_clock.frame())
+        };
+        self.advance_preview_ticks(previous_clock, ticks, duration, looping);
+        if result.reached_end {
+            self.playing = false;
+        }
+    }
+
+    fn advance_preview_ticks(
+        &mut self,
+        mut tick_clock: PlaybackClock,
+        ticks: u64,
+        duration: f32,
+        looping: bool,
+    ) {
         // Live playback intentionally advances the instance without recording checkpoints;
         // the editor only checkpoints during scrub-replay. (Seek/scrub delegates to the
         // driver; this advance loop stays host-specific — M-CR2.)
         if self.seek_mode() != SimulationSeekMode::StatelessDirect && self.preview_valid {
-            let ticks = if playback_mode.is_looping() {
-                result.ticks
-            } else {
-                self.driver
-                    .clock
-                    .frame()
-                    .saturating_sub(previous_clock.frame())
-            };
-            let mut tick_clock = previous_clock;
             for _ in 0..ticks {
                 let previous_tick = tick_clock;
-                tick_clock.advance_ticks(1, duration, playback_mode.is_looping());
+                tick_clock.advance_ticks(1, duration, looping);
                 self.driver
                     .instance
                     .advance_clock(previous_tick, tick_clock);
             }
-        }
-        if result.reached_end {
-            self.playing = false;
         }
     }
 
@@ -611,6 +735,7 @@ impl EditorSession {
         self.interaction_source = None;
         self.saved_source_bytes = None;
         self.effect = blank_effect();
+        self.preview_loop = PreviewLoop::default();
         self.unsaved_starter = Some(self.effect.clone());
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
@@ -682,7 +807,7 @@ impl EditorSession {
             )?
         };
         self.invalidate_effect_checkpoints();
-        self.set_preview(preview);
+        self.set_edited_preview(preview);
         self.samples.clear();
         self.diagnostics = self.effect.validation_report();
         Ok(())
@@ -725,6 +850,7 @@ impl EditorSession {
         self.unsaved_starter = None;
         let migration = migrate_plugin_payloads(&mut effect);
         self.effect = effect;
+        self.preview_loop = PreviewLoop::default();
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
         self.set_preview(preview);
@@ -767,6 +893,7 @@ impl EditorSession {
                 saved
             });
         self.effect = effect;
+        self.preview_loop = PreviewLoop::default();
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
         self.set_preview_opt(preview);
@@ -879,7 +1006,17 @@ impl EditorSession {
                 }
                 self.last_diff = diff;
                 self.invalidate_effect_checkpoints();
-                self.refresh_preview();
+                if !discarded_preview
+                    && self.preview_valid
+                    && self.interaction_source.as_ref() == Some(&self.effect)
+                {
+                    // Releasing a live edit should keep the already displayed instance and its
+                    // history when the committed source matches that preview exactly.
+                    self.interaction_source = None;
+                    self.diagnostics = self.effect.validation_report();
+                } else {
+                    self.refresh_preview();
+                }
                 self.selection.repair(&self.effect);
                 self.repair_emitter_region_selection();
                 self.clamp_clock();
@@ -1016,7 +1153,7 @@ impl EditorSession {
         ) else {
             return false;
         };
-        self.set_preview(runtime_preview);
+        self.set_edited_preview(runtime_preview);
         self.interaction_source = Some(preview.candidate().clone());
         self.samples.clear();
         self.driver.clear_checkpoints();
@@ -2211,6 +2348,54 @@ impl EditorSession {
         }
     }
 
+    pub fn add_beam_renderer(&mut self) {
+        let Some(emitter) = self.selected_layer() else {
+            return;
+        };
+        let mut commands = Vec::new();
+        let material = emitter
+            .renderers
+            .iter()
+            .find(|renderer| {
+                matches!(
+                    renderer.properties,
+                    aestra_core::RendererProperties::Beam { .. }
+                        | aestra_core::RendererProperties::Ribbon { .. }
+                        | aestra_core::RendererProperties::Trail { .. }
+                )
+            })
+            .map(|renderer| renderer.material)
+            .unwrap_or_else(|| {
+                let material =
+                    MaterialDefinition::sprite("Beam Material", BlendMode::Additive, 0.1);
+                let id = material.id;
+                commands.push(EffectCommand::AddMaterial {
+                    material,
+                    index: self.effect.materials.len(),
+                });
+                id
+            });
+        let mut renderer = RendererInstance::sprite(material);
+        renderer.renderer_type = aestra_core::RendererTypeId::new(aestra_core::RENDERER_BEAM);
+        renderer.properties = aestra_core::RendererProperties::Beam {
+            start: [-24.0, 0.0],
+            end: [24.0, 0.0],
+            width: 0.5,
+        };
+        let id = renderer.id;
+        commands.push(EffectCommand::AddRenderer {
+            emitter: emitter.id,
+            renderer,
+            index: emitter.renderers.len(),
+        });
+        if self.execute_transaction(
+            EffectTransaction::new("Added beam renderer", commands),
+            true,
+        ) {
+            self.selection.primary = aestra_authoring::SemanticTarget::Renderer(id);
+        }
+    }
+
     pub(crate) fn add_grid_flipbook_for_texture(
         &mut self,
         texture: aestra_core::AssetId,
@@ -2720,7 +2905,7 @@ impl EditorSession {
             &material_programs,
         ) {
             Ok(preview) => {
-                self.set_preview(preview);
+                self.set_edited_preview(preview);
                 self.diagnostics = self.effect.validation_report();
             }
             Err(error) => {
@@ -3748,6 +3933,44 @@ mod tests {
             session.seek_time(18.0);
             assert_eq!(session.driver.instance.time(), 18.0);
         }
+    }
+
+    #[test]
+    fn preview_loop_reconstructs_particle_state_at_the_wrapped_frame() {
+        let mut effect = EffectAsset::new("Stateful loop preview", 2.0);
+        effect.playback_mode = EffectPlaybackMode::LoopContinuous;
+        let mut emitter = Emitter::basic_sprite("Persistent", 2.0);
+        emitter.modules.push(ModuleInstance::persistent());
+        effect.emitters.push(emitter);
+        let mut session = EditorSession::from_test_effect(effect.clone());
+        assert_ne!(session.seek_mode(), SimulationSeekMode::StatelessDirect);
+        session.seek_time(0.5);
+        assert!(session.set_preview_loop_boundary(true));
+        session.seek_time(1.0);
+        assert!(session.set_preview_loop_boundary(false));
+        session.toggle_preview_loop();
+        session.seek_time(0.75);
+        let mut samples = Vec::new();
+        session.evaluate_preview(&mut samples);
+        let history_epoch = session.preview().unwrap().history_epoch();
+        session.playing = true;
+        session.advance_playback(0.3);
+        assert_eq!(session.frame(), 33);
+        assert!(session.playing);
+        assert_ne!(session.preview().unwrap().history_epoch(), history_epoch);
+
+        let mut reference = EditorSession::from_test_effect(effect.clone());
+        reference.seek_time(0.55);
+        let mut expected = Vec::new();
+        reference.evaluate_preview(&mut expected);
+        assert!(!expected.is_empty());
+        assert_eq!(session.preview().unwrap().time(), reference.time());
+        session.evaluate_preview(&mut samples);
+        assert_eq!(samples, expected);
+        assert_eq!(session.effect, effect);
+        assert!(!session.dirty && !session.can_undo());
+        session.new_effect();
+        assert!(session.preview_loop_range().is_none());
     }
 
     #[test]

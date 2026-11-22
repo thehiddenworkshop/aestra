@@ -39,6 +39,10 @@ fn sample_project_resolves_the_nearest_filtered_flipbook() {
 struct Capture(Option<Image>);
 
 fn capture_app(project: Arc<CompiledEffectProject>) -> App {
+    capture_app_with_sample(project, false)
+}
+
+fn capture_app_with_sample(project: Arc<CompiledEffectProject>, path: bool) -> App {
     let mut app = App::new();
     app.insert_resource(PulseProject(project))
         .insert_resource(settings())
@@ -51,17 +55,21 @@ fn capture_app(project: Arc<CompiledEffectProject>) -> App {
                     exit_condition: ExitCondition::DontExit,
                     ..default()
                 })
-                .disable::<bevy::winit::WinitPlugin>()
-                .disable::<bevy::log::LogPlugin>(),
+                .disable::<bevy::log::LogPlugin>()
+                .disable::<bevy::winit::WinitPlugin>(),
         )
         .add_plugins(AestraPlugin)
-        .add_systems(Startup, (spawn_cameras, spawn_layers))
         .add_systems(
             PostUpdate,
             fit_output
                 .after(CameraUpdateSystems)
                 .before(TransformSystems::Propagate),
         );
+    if path {
+        app.add_systems(Startup, (spawn_cameras, spawn_path_effect).chain());
+    } else {
+        app.add_systems(Startup, (spawn_cameras, spawn_layers));
+    }
     let start = Instant::now();
     while app.plugins_state() != bevy::app::PluginsState::Ready {
         bevy::tasks::tick_global_task_pools_on_main_thread();
@@ -73,6 +81,219 @@ fn capture_app(project: Arc<CompiledEffectProject>) -> App {
 
     app.update();
     app
+}
+
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
+fn pixel_lightning_switches_trail_placement_at_the_same_playback_frame() {
+    let mut app = capture_app_with_sample(compile_path_sample("pixel_lightning.aestra.ron"), true);
+    let world = app.world_mut();
+    let (camera, target) = world
+        .query_filtered::<(Entity, &RenderTarget), With<PixelCamera>>()
+        .single(world)
+        .map(|(camera, target)| (camera, target.as_image().unwrap().clone()))
+        .unwrap();
+    let owner = world
+        .query_filtered::<Entity, With<EffectPlayer>>()
+        .single(world)
+        .unwrap();
+    world.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+        Duration::from_secs_f64(1.0 / 60.0),
+    ));
+    world.get_mut::<EffectPlayer>(owner).unwrap().playing = false;
+    // Keep the initial head alive while the compute pipelines load. The manual clock
+    // otherwise plays almost the entire burst before the render world has compiled them.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        app.update();
+        let world = app.world();
+        let instance = &world.get::<PresentedEffect>(owner).unwrap().instance;
+        if world
+            .get::<aestra_bevy_render::gpu::GpuTrailStatistics>(owner)
+            .and_then(|stats| stats.usage(instance))
+            .is_some_and(|usage| usage.occupied == 1)
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "lightning head did not initialize"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    app.world_mut()
+        .get_mut::<EffectPlayer>(owner)
+        .unwrap()
+        .playing = true;
+    for _ in 0..60 {
+        if app.world().get::<EffectPlayer>(owner).unwrap().frame() >= 27 {
+            break;
+        }
+        app.update();
+    }
+    let mut player = app.world_mut().get_mut::<EffectPlayer>(owner).unwrap();
+    assert_eq!(player.frame(), 27);
+    player.playing = false;
+    let image = |app: &mut App| {
+        let image = capture(app, &target).try_into_dynamic().unwrap().to_rgb8();
+        let visible = image
+            .pixels()
+            .filter(|pixel| i16::from(pixel[2]) - i16::from(pixel[0]) > 48)
+            .count();
+        assert!(
+            visible > 70,
+            "expected a visible lightning trail, got {visible} pixels"
+        );
+        image
+    };
+    let snapped = image(&mut app);
+    let history_epoch = app
+        .world()
+        .get::<PresentedEffect>(owner)
+        .unwrap()
+        .instance
+        .history_epoch();
+
+    app.world_mut()
+        .entity_mut(camera)
+        .remove::<PixelTrailGrid>();
+    let smooth = image(&mut app);
+    assert_ne!(smooth, snapped);
+    app.world_mut().entity_mut(camera).insert(PixelTrailGrid);
+    assert_eq!(image(&mut app), snapped);
+    assert_eq!(app.world().get::<EffectPlayer>(owner).unwrap().frame(), 27);
+    assert_eq!(
+        app.world()
+            .get::<PresentedEffect>(owner)
+            .unwrap()
+            .instance
+            .history_epoch(),
+        history_epoch
+    );
+}
+
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
+fn pixel_ribbon_keeps_segments_joined_when_the_camera_grid_changes() {
+    assert_strip_grid("pixel_ribbon.aestra.ron", 57, 65..145);
+}
+
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
+fn pixel_beam_spans_its_endpoints_in_both_camera_modes() {
+    assert_strip_grid("pixel_beam.aestra.ron", 24, 37..155);
+}
+
+fn assert_strip_grid(file_name: &str, playback_frame: u64, columns: std::ops::Range<u32>) {
+    let mut app = capture_app_with_sample(compile_path_sample(file_name), true);
+    let world = app.world_mut();
+    let (camera, target) = world
+        .query_filtered::<(Entity, &RenderTarget), With<PixelCamera>>()
+        .single(world)
+        .map(|(camera, target)| (camera, target.as_image().unwrap().clone()))
+        .unwrap();
+    let owner = world
+        .query_filtered::<Entity, With<EffectPlayer>>()
+        .single(world)
+        .unwrap();
+    let mut player = world.get_mut::<EffectPlayer>(owner).unwrap();
+    player.playing = false;
+    player.seek_frame(playback_frame);
+
+    let image = |app: &mut App| {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let image = capture(app, &target).try_into_dynamic().unwrap().to_rgb8();
+            if image
+                .pixels()
+                .any(|pixel| pixel[2].saturating_sub(pixel[0]) > 48)
+            {
+                for x in columns.clone() {
+                    assert!(
+                        (0..image.height()).any(|y| {
+                            let pixel = image.get_pixel(x, y);
+                            pixel[2].saturating_sub(pixel[0]) > 48
+                        }),
+                        "gap in {file_name} at column {x}"
+                    );
+                }
+                break image;
+            }
+            assert!(Instant::now() < deadline, "{file_name} did not render");
+        }
+    };
+    let snapped = image(&mut app);
+    app.world_mut()
+        .entity_mut(camera)
+        .remove::<PixelTrailGrid>();
+    assert_ne!(image(&mut app), snapped);
+    app.world_mut().entity_mut(camera).insert(PixelTrailGrid);
+    assert_eq!(image(&mut app), snapped);
+    assert_eq!(
+        app.world().get::<EffectPlayer>(owner).unwrap().frame(),
+        playback_frame
+    );
+}
+
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
+fn pixel_stamp_trail_deposits_discrete_stationary_sprites() {
+    let mut app =
+        capture_app_with_sample(compile_path_sample("pixel_stamp_trail.aestra.ron"), true);
+    let world = app.world_mut();
+    let (camera, target) = world
+        .query_filtered::<(Entity, &RenderTarget), With<PixelCamera>>()
+        .single(world)
+        .map(|(camera, target)| (camera, target.as_image().unwrap().clone()))
+        .unwrap();
+    let owner = world
+        .query_filtered::<Entity, With<EffectPlayer>>()
+        .single(world)
+        .unwrap();
+    let mut player = world.get_mut::<EffectPlayer>(owner).unwrap();
+    player.playing = false;
+    player.set_playback_time(0.9);
+    let frame = |app: &mut App| {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let image = capture(app, &target).try_into_dynamic().unwrap().to_rgb8();
+            let columns = (0..image.width()).map(|x| {
+                (0..image.height()).any(|y| matches_swatch(image.get_pixel(x, y).0, ROSE_SWATCH))
+            });
+            let runs = std::iter::once(false)
+                .chain(columns.clone())
+                .zip(columns)
+                .filter(|&(before, after)| !before && after)
+                .count();
+            if runs >= 8 {
+                break image;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "expected separate stamps, got {runs} visible runs"
+            );
+        }
+    };
+    let snapped = frame(&mut app);
+    app.world_mut().entity_mut(camera).remove::<PixelGrid>();
+    assert_ne!(frame(&mut app), snapped);
+    app.world_mut().entity_mut(camera).insert(PixelGrid);
+    assert_eq!(frame(&mut app), snapped);
+
+    app.world_mut()
+        .get_mut::<EffectPlayer>(owner)
+        .unwrap()
+        .set_playback_time(1.1);
+    let later = frame(&mut app);
+    for x in 75..115 {
+        for y in 0..snapped.height() {
+            assert_eq!(
+                snapped.get_pixel(x, y),
+                later.get_pixel(x, y),
+                "stamps moved with the head"
+            );
+        }
+    }
 }
 
 #[test]
@@ -577,7 +798,7 @@ fn assert_dither_anchor(anchor: MaterialInput, pattern: DitherPattern) {
             *direction = [1.0, 0.0, 0.0];
         }
     }
-    let mut project = compile_pulse_effect(&effect);
+    let mut project = compile_sample_effect(&effect);
     enable_dither(&mut project, pattern, COVERAGE, anchor);
     let mut app = capture_app(project);
     let world = app.world_mut();

@@ -1262,7 +1262,9 @@ Acceptance:
 
 ## M6 — Temporal presentation — P1
 
-`PresentationCadence` applies to native GPU sprites and flipbooks in analytic and independent stateful effects. **12 FPS** in the editor's **PX** preview and **T** in the Pixel Pulse host use the same effect-relative sample clock. The host's `--stateful` option exercises the persistent solver. Stateful emitters publish the latest due pose into their existing draw buffers and continue integrating through the live tick. Enabling during playback shows the current pose until the next boundary. A backward seek reconstructs both the held frame and live state. The sampler is independent of export cadence. Coupled and mixed simulations, trails, and the baker remain follow-up work.
+`PresentationCadence` applies to native GPU sprites and flipbooks in analytic and independent stateful effects. **12 FPS** in the editor's **PX** preview and **T** in the Pixel Pulse host use the same effect-relative sample clock. The host's `--stateful` option exercises the persistent solver. Stateful emitters publish the latest due pose into their existing draw buffers and continue integrating through the live tick. Enabling during playback shows the current pose until the next boundary. A backward seek reconstructs both the held frame and live state. Coupled and mixed live simulation and trails still need stepped presentation support.
+
+Export chooses its own FPS and uses the same clock. Analytic sprites sample the presentation frame's time. Stateful sprites sample the first simulation tick at or after that time. On a 60 Hz simulation, a 24 FPS export samples ticks 0, 3, 5, 8, 10, and so on.
 
 Tasks:
 
@@ -1274,7 +1276,7 @@ Tasks:
 Acceptance:
 
 - [x] A 60 Hz playhead can present analytic and independent stateful sprites and flipbooks at 12 FPS.
-- [ ] Runtime and baker share timing semantics.
+- [x] Native sprite presentation and baking share effect-relative frame timing. The baker checks the exclusive end tick and exports the selected FPS to the playback asset.
 
 ---
 
@@ -1550,17 +1552,52 @@ the ramp.
 
 ## M12 — Pixel trails and beams — P1
 
-Tasks:
+**Pixel Lightning** in the sample project uses editable Host Motion keys to trace a zigzag.
+The Trail renderer samples those positions. In the editor's rendered XY view, **PX** snaps
+the projected joints and cap centers to virtual pixels. The regular XY view shows the smooth path.
 
-- segmented ribbons;
-- pixel-stepped paths;
-- sprite-stamped paths;
-- quantized beam coordinates.
+**Pixel Ribbon** uses live particles as the joints of a curved strip. The emission rate
+controls segment spacing and the size curve shapes the width. The shared **Ribbon Lab**
+material shades the strip using particle color, opacity, and UVs. **PX** moves both sides
+of each joint together. The same camera policy applies in Bevy. Press **P** to toggle
+`PixelTrailGrid` while the effect keeps playing.
+
+**Pixel Stamp Trail** uses an **Over distance** link from the moving head to the stamp
+emitter. Each sample spawns a sprite at its recorded position with zero inherited velocity.
+The stamps reuse the nearest-filtered Pixel Pulse atlas. Edit **Spacing** and **Samples per
+tick** on the event link, and use the stamp emitter's **Size** and **Lifetime** to shape the
+trail. Distance routes from the same source share these settings. **PX** in the editor and
+**P** in Bevy toggle pixel snapping for the stamps.
+
+**Pixel Beam** uses one live particle to render a strip between two saved endpoints.
+Add **Beam Renderer** from the Render palette, edit **Start X/Y**, **End X/Y**, and
+**Width multiplier**, and assign a Ribbon material for shading along the strip. The
+endpoints are offsets in emitter-local XY and follow emitter and host transforms. The
+size curve animates width. **PX** in the editor and **P** in Bevy snap both endpoints
+while keeping the simulation time and the material UVs on the same path.
+
+```powershell
+cargo run --locked -p aestra-bevy --example pixel_pulse -- --lightning
+cargo run --locked -p aestra-bevy --example pixel_pulse -- --ribbon
+cargo run --locked -p aestra-bevy --example pixel_pulse -- --stamps
+cargo run --locked -p aestra-bevy --example pixel_pulse -- --beam
+```
+
+The camera policy changes projected positions. Both modes share the same simulation,
+widths, fades, and material coordinates. Live endpoint bindings and viewport endpoint
+handles remain future authoring work.
 
 Acceptance:
 
-- [ ] Pixel lightning can be authored without baked sprites.
-- [ ] Smooth and pixel-stepped presentation are interchangeable.
+- [x] Pixel lightning can be authored without baked sprites.
+- [x] Smooth and pixel-stepped Trail presentation are interchangeable. Native GPU captures
+  verify both modes on the same frame in the editor and the Bevy host.
+- [x] Segmented ribbons support the same camera policy. Native GPU captures verify both
+  modes in the editor and Bevy, and the Bevy capture checks that adjacent segments stay joined.
+- [x] A moving source deposits separate sprites at distance intervals. Native captures verify
+  snapping in the editor and Bevy, and the Bevy capture checks that deposited stamps stay in place.
+- [x] A Beam renderer spans two authored endpoints. The endpoints round-trip in compiled
+  artifacts, and native captures verify smooth and snapped placement at the same playback frame.
 
 ---
 
@@ -1591,8 +1628,9 @@ Acceptance:
 
 Begin with self-contained unlit effects. A reproducible bake fixes the timestep, seed, camera, backend, and inputs. Specify alpha compositing and additive playback before extending to effects that consume captured host or scene inputs.
 
-The headless bake captures an analytic alpha sprite effect at 12 FPS. It defaults to a
-transparent 64×64 XY target centered at the effect origin with one world unit per pixel.
+The headless bake captures sprite and flipbook effects at 12 FPS by default. Set
+`--fps` to an integer from 1 through the 60 Hz simulation rate. The default target
+is a transparent 64×64 XY view centered at the effect origin with one world unit per pixel.
 The output is a new directory containing `textures/atlas.png`
 and `effects/flipbook.aestra.ron`. Open the output directory in Aestra and load
 the generated effect to preview the baked playback.
@@ -1603,14 +1641,51 @@ cargo run --locked -p aestra-viewer -- --bake-flipbook sample-project/effects/pi
 
 Use `--size` to set the side length in pixels, `--span` to set the view width and height
 in world units, and `--center X,Y,Z` to move the frame. Add `--eye X,Y,Z` to render
-from an orthographic 3D camera looking at that center. The exported sprite places
-the image center at its local origin and spans the selected world width.
+from an orthographic 3D camera looking at that center. The capture center is the pivot
+of the generated 2D effect.
+
+Add `--crop` to trim the frames to a shared square around all nontransparent pixels.
+The exported emitter records the crop offset and keeps the original world units per
+pixel, so reimporting the smaller frames preserves their position relative to the pivot.
+Use `--padding N` for `N` transparent pixels on each side of every atlas tile. Frame UVs
+exclude the gutters, and transparent animation frames keep their original timing.
+
+```powershell
+cargo run --locked -p aestra-viewer -- --bake-flipbook sample-project/effects/pixel_outline.aestra.ron target/pixel-outline-tight --span 128 --crop --padding 2
+```
 
 The bake captures the range from zero up to the effect duration and preserves the
 source's restart or one-shot playback mode. The exported atlas uses straight alpha.
 The bake supports up to 64 frames and checks the packed atlas against the render
-device's texture limit. Cropping, padding, additive playback, and stateful effects
-remain follow-up work.
+device's texture limit.
+
+The baker infers alpha or additive playback from the enabled renderers. For an additive
+effect it stores the accumulated light in the 8-bit sRGB atlas and exports an additive
+material, so playback adds that light to the new background. Emissive pixels can use
+additional encoded alpha when needed to carry the captured RGB.
+
+```powershell
+cargo run --locked -p aestra-viewer -- --bake-flipbook assets/test/effects/ember_sigil.aestra.ron target/ember-sigil-bake --span 128 --crop --padding 2
+```
+
+For a mix of alpha and additive sprites, the baker captures the full draw order
+and records background opacity separately from accumulated light. The output
+plays two flipbooks on one emitter using the same frame times and crop pivot.
+`textures/atlas.png` supplies the alpha layer, and `textures/atlas_additive.png`
+supplies the remaining light on top. The 8-bit capture can clip bright overlaps,
+and the two layers share one sort position relative to other scene elements.
+
+For self-contained stateful particle effects, the baker advances the native solver
+through every 60 Hz tick in playback-only mode, with the same fixed seed each run.
+It waits for the renderer to encode each tick and reads back an atlas frame
+when the selected presentation rate calls for one. This preserves distance-triggered
+particle links between samples.
+Continuous loops, extension stages, nested effects, and effects that require host
+or scene inputs are outside this bake path.
+
+```powershell
+cargo run --locked -p aestra-viewer -- --bake-flipbook sample-project/effects/pixel_stamp_trail.aestra.ron target/pixel-stamp-bake --fps 24 --size 192 --crop --padding 2
+```
 
 Tasks:
 
@@ -1628,22 +1703,57 @@ Acceptance:
 - [x] A self-contained analytic alpha effect can be baked and imported as a flipbook.
 - [x] Repeated native captures under the same bake configuration match on the same adapter.
 - [x] The asymmetric multi-row round-trip test checks frame order, orientation, timing, and alpha playback.
+- [x] A shared crop preserves the capture pivot on reimport. Padded frame UVs exclude the transparent gutters.
+- [x] Additive flipbooks reproduce accumulated sprite lighting over transparent and colored backgrounds in native GPU captures.
+- [x] A stateful distance-linked sprite effect bakes repeatably on the same adapter. The cropped atlas reimports with the same visible stamp placement and frame order.
+- [x] A mixed alpha and additive effect bakes into synchronized flipbooks. The native round-trip test checks that a translucent layer dims the glow behind it and that the result composites over different backgrounds.
 
 ---
 
 ## M15 — Loop authoring — P1
 
+The Timeline's **Preview loop** menu sets loop in and loop out at the playhead.
+The ruler shows the range and highlights it when **Loop the preview range** is
+enabled. Playback includes the in frame and wraps before the out frame. Stop and
+Restart return to the in frame. Scrubbing and frame stepping can inspect either
+side of the range while paused.
+
+The range lives in the current editor session. Stateful preview restores the
+effect's original state at the destination tick after a wrap, including any
+particles emitted before loop in. Fixed-tick overshoot is carried into the next
+cycle so the preview stays at the selected playback speed.
+
+Choose **Jump across loop seam** to pause and jump between the last included
+frame and loop in. From elsewhere on the timeline, the action goes to the last
+included frame first.
+
+For a rendered comparison of a saved, self-contained sprite or flipbook effect,
+pass the same fixed-tick in and out frames to the viewer. The out frame is exclusive.
+
+```powershell
+cargo run --locked -p aestra-viewer -- --inspect-loop sample-project/effects/pixel_stamp_trail.aestra.ron target/pixel-stamp-seam 15 61 --size 192
+```
+
+`seam.png` shows the last included frame, loop in, and the amplified RGB difference
+from left to right. `seam-report.json` measures the wrap and the adjacent forward
+steps inside the range, so the seam can be judged against ordinary motion. It
+uses a fixed camera, dark background, and seed zero. The GPU capture starts at
+the effect origin and preserves built-in stateful particle links. The values
+describe rendered differences under that framing. A nonzero change can be part
+of a smooth loop.
+
 Tasks:
 
-- loop range;
-- loop preview;
-- seam diagnostics;
-- periodic-noise helpers;
-- seamless bake.
+- [x] Frame-aligned loop range and ruler marker.
+- [x] Editor transport preview, including stateful reconstruction.
+- [x] Viewport seam stepping and native sprite frame comparison report.
+- [ ] Periodic-noise helpers.
+- [ ] Seamless range bake.
 
 Acceptance:
 
-- [ ] Loop seams can be inspected and validated.
+- [x] A temporary range can be previewed without editing the effect or its history.
+- [x] Loop seams can be stepped in the viewport and compared against neighboring animation frames in a rendered report.
 
 ---
 

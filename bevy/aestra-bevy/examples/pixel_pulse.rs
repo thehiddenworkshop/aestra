@@ -2,16 +2,20 @@
 //! Run with `cargo run --locked -p aestra-bevy --example pixel_pulse`.
 //! Pass `-- --stateful` to use the persistent solver with the same authored look.
 //! Pass `-- --dither` for Bayer coverage or `-- --blue-noise` for blue-noise coverage.
+//! Pass `-- --lightning`, `-- --ribbon`, `-- --stamps`, or `-- --beam` to play an authored path.
+//! P toggles snapping for the path.
 //! Up/Down changes the left pulse's Z layer. Left/Right pans by quarter pixels.
 //! Y switches to sorting by world Y, where Up/Down moves the pulse across the scene.
 //! T toggles 12 FPS presentation. R resets the sort policy, position, and pan.
 
 use std::{path::PathBuf, sync::Arc};
 
+#[cfg(test)]
+use aestra_bevy::PresentedEffect;
 use aestra_bevy::{
     AestraPlugin, AestraSettings, AestraSort2d, CompiledEffectProject, EffectAsset, EffectCompiler,
-    EffectPlayer, PixelGrid, PlaybackHistoryPolicy, PresentationCadence, PresentationMode,
-    integer_pixel_viewport, pixel_render_target,
+    EffectPlayer, PixelGrid, PixelTrailGrid, PlaybackHistoryPolicy, PresentationCadence,
+    PresentationMode, integer_pixel_viewport, pixel_render_target,
 };
 use aestra_core::{
     dither::{BayerPattern, DitherPattern},
@@ -60,18 +64,24 @@ fn compile_pulse(stateful: bool) -> Arc<CompiledEffectProject> {
             .modules
             .push(aestra_bevy::ModuleInstance::persistent());
     }
-    compile_pulse_effect(&effect)
+    compile_sample_effect(&effect)
 }
 
-fn compile_pulse_effect(effect: &EffectAsset) -> Arc<CompiledEffectProject> {
+fn compile_sample_effect(effect: &EffectAsset) -> Arc<CompiledEffectProject> {
     let project = ProjectAssetIndex::scan(asset_root())
         .resolve_effect_project(effect)
-        .expect("resolve the pulse's material, atlas and palette");
+        .expect("resolve the sample project's effect assets");
     Arc::new(
         EffectCompiler::default()
             .compile_resolved_project(&project)
-            .expect("compile Pixel Pulse"),
+            .expect("compile the sample effect"),
     )
+}
+
+fn compile_path_sample(file_name: &str) -> Arc<CompiledEffectProject> {
+    let effect = EffectAsset::load_ron(asset_root().join("effects").join(file_name))
+        .expect("load the sample project's path effect");
+    compile_sample_effect(&effect)
 }
 
 fn enable_dither(
@@ -133,15 +143,41 @@ fn settings() -> AestraSettings {
 
 fn main() {
     let stateful = std::env::args_os().any(|arg| arg == "--stateful");
-    let mut project = compile_pulse(stateful);
-    if std::env::args_os().any(|arg| arg == "--blue-noise") {
+    let path_sample = if std::env::args_os().any(|arg| arg == "--beam") {
+        Some((
+            "pixel_beam.aestra.ron",
+            "Aestra Pixel Beam | P toggles endpoint snapping",
+        ))
+    } else if std::env::args_os().any(|arg| arg == "--stamps") {
+        Some((
+            "pixel_stamp_trail.aestra.ron",
+            "Aestra Pixel Stamp Trail | P toggles stamp snapping",
+        ))
+    } else if std::env::args_os().any(|arg| arg == "--ribbon") {
+        Some((
+            "pixel_ribbon.aestra.ron",
+            "Aestra Pixel Ribbon | P toggles joint snapping",
+        ))
+    } else if std::env::args_os().any(|arg| arg == "--lightning") {
+        Some((
+            "pixel_lightning.aestra.ron",
+            "Aestra Pixel Lightning | P toggles joint snapping",
+        ))
+    } else {
+        None
+    };
+    let mut project = path_sample.map_or_else(
+        || compile_pulse(stateful),
+        |(file_name, _)| compile_path_sample(file_name),
+    );
+    if path_sample.is_none() && std::env::args_os().any(|arg| arg == "--blue-noise") {
         enable_dither(
             &mut project,
             DitherPattern::BlueNoise,
             0.5,
             MaterialInput::EffectPositionXY,
         );
-    } else if std::env::args_os().any(|arg| arg == "--dither") {
+    } else if path_sample.is_none() && std::env::args_os().any(|arg| arg == "--dither") {
         enable_dither(
             &mut project,
             DitherPattern::Bayer(BayerPattern::FourByFour),
@@ -149,13 +185,18 @@ fn main() {
             MaterialInput::EffectPositionXY,
         );
     }
-    App::new()
-        .insert_resource(PulseProject(project))
+    let mut app = App::new();
+    app.insert_resource(PulseProject(project))
         .insert_resource(settings())
         .add_plugins((
             DefaultPlugins.set(asset_plugin()).set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: "Aestra Pixel Pulse | ↑/↓ layer · ←/→ pan · T cadence · R reset".into(),
+                    title: path_sample
+                        .map_or(
+                            "Aestra Pixel Pulse | ↑/↓ layer · ←/→ pan · T cadence · R reset",
+                            |(_, title)| title,
+                        )
+                        .into(),
                     resolution: (768, 512).into(),
                     ..default()
                 }),
@@ -163,15 +204,20 @@ fn main() {
             }),
             AestraPlugin,
         ))
-        .add_systems(Startup, (spawn_cameras, spawn_layers))
-        .add_systems(Update, move_effect)
         .add_systems(
             PostUpdate,
             fit_output
                 .after(CameraUpdateSystems)
                 .before(TransformSystems::Propagate),
-        )
-        .run();
+        );
+    if path_sample.is_some() {
+        app.add_systems(Startup, (spawn_cameras, spawn_path_effect).chain())
+            .add_systems(Update, toggle_path_grid);
+    } else {
+        app.add_systems(Startup, (spawn_cameras, spawn_layers))
+            .add_systems(Update, move_effect);
+    }
+    app.run();
 }
 
 fn virtual_image() -> Image {
@@ -259,6 +305,35 @@ fn spawn_layers(mut commands: Commands, project: Res<PulseProject>) {
     let mut offset = pulse();
     offset.seek(0.25);
     commands.spawn((offset, Transform::from_xyz(18.0, 0.0, 1.0)));
+}
+
+fn spawn_path_effect(
+    mut commands: Commands,
+    project: Res<PulseProject>,
+    camera: Single<Entity, With<PixelCamera>>,
+) {
+    commands.entity(*camera).insert(PixelTrailGrid);
+    commands.spawn(
+        EffectPlayer::from_project(project.0.clone())
+            .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly),
+    );
+}
+
+fn toggle_path_grid(
+    mut commands: Commands,
+    keys: Res<ButtonInput<KeyCode>>,
+    camera: Single<(Entity, Has<PixelTrailGrid>), With<PixelCamera>>,
+) {
+    if keys.just_pressed(KeyCode::KeyP) {
+        let (entity, snapped) = *camera;
+        if snapped {
+            commands
+                .entity(entity)
+                .remove::<(PixelGrid, PixelTrailGrid)>();
+        } else {
+            commands.entity(entity).insert((PixelGrid, PixelTrailGrid));
+        }
+    }
 }
 
 fn move_effect(

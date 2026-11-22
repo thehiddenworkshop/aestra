@@ -601,6 +601,10 @@ production-finale certification remain open.
 |---|---|
 | The minimal load-and-play host | [`examples/minimal_player.rs`](examples/minimal_player.rs) |
 | A palette-constrained flipbook that demonstrates world-Z and Y sorting with Bevy sprites on a virtual pixel grid | [`examples/pixel_pulse.rs`](examples/pixel_pulse.rs) |
+| The editor-authored Pixel Lightning Trail in smooth and pixel-stepped modes | [`examples/pixel_pulse.rs`](examples/pixel_pulse.rs) with `-- --lightning` |
+| The editor-authored Pixel Ribbon with live segments and optional joint snapping | [`examples/pixel_pulse.rs`](examples/pixel_pulse.rs) with `-- --ribbon` |
+| Pixel Stamp Trail with distance-triggered sprites and optional pixel snapping | [`examples/pixel_pulse.rs`](examples/pixel_pulse.rs) with `-- --stamps` |
+| Pixel Beam with authored endpoints and optional endpoint snapping | [`examples/pixel_pulse.rs`](examples/pixel_pulse.rs) with `-- --beam` |
 | A moving `Camera2d` point light on an Aestra sprite and flipbook, with stepped falloff, `--normals`, and `--palette` options | [`examples/pixel_lighting.rs`](examples/pixel_lighting.rs) |
 | Host-triggered hit flash, outline, dissolve, palette swap, and distortion on a Bevy atlas sprite | [`examples/sprite_hit_flash.rs`](examples/sprite_hit_flash.rs) |
 | The public API surface + rationale | crate docs (`cargo doc -p aestra-bevy --open`) |

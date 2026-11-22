@@ -327,7 +327,9 @@ pub(crate) fn prepare_gpu_effects(
                     .flatten();
                 let texture = match &plan.kind {
                     RendererPlanKind::Mesh { .. } => None,
-                    RendererPlanKind::Ribbon { .. } | RendererPlanKind::Trail { .. } => {
+                    RendererPlanKind::Ribbon { .. }
+                    | RendererPlanKind::Trail { .. }
+                    | RendererPlanKind::Beam { .. } => {
                         material.and_then(|material| material.texture)
                     }
                     RendererPlanKind::Sprite => material.and_then(|material| material.texture),
@@ -583,12 +585,7 @@ pub(crate) fn prepare_gpu_effects(
         );
         let sort_capacities: Vec<_> = artifact.emitters.iter().map(|e| e.max_particles).collect();
         let emitters = buffers.add(storage_buffers::new(artifact.emitters));
-        let ribbon_renderers = artifact
-            .renderers
-            .iter()
-            .enumerate()
-            .filter_map(|(index, r)| (r.renderer_kind == 3).then_some(index as u32))
-            .collect::<Vec<_>>();
+        let has_ribbons = artifact.renderers.iter().any(|r| r.renderer_kind == 3);
         let trail_renderers: BTreeMap<_, _> = artifact
             .renderers
             .iter()
@@ -597,7 +594,6 @@ pub(crate) fn prepare_gpu_effects(
             .map(|(index, r)| (index as u32, aestra_gpu::trail_draw_instances(r)))
             .collect();
         let has_trails = !trail_renderers.is_empty();
-        let has_ribbons = !ribbon_renderers.is_empty();
         let ribbon_workgroups = player
             .effect()
             .emitters
@@ -865,7 +861,7 @@ pub(crate) fn prepare_gpu_effects(
                             draw.insert((mesh_bounds, visibility::NoFrustumCulling));
                         }
                         // Enable culling only once motion and the propagated transform resolve.
-                        if ribbon_renderers.contains(&renderer_index) {
+                        if matches!(renderer_kinds[renderer_index as usize], 3 | 5) {
                             draw.insert((
                                 ribbon_bounds::RibbonBoundsSource::default(),
                                 visibility::NoFrustumCulling,

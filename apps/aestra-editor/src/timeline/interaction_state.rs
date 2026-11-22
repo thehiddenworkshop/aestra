@@ -365,6 +365,9 @@ pub(super) struct TimelineEffectClip {
 pub(super) struct TimelineRulerTick(pub(super) usize);
 
 #[derive(Component)]
+pub(super) struct TimelinePreviewLoop;
+
+#[derive(Component)]
 pub(super) struct TimelineSnapGuide;
 
 #[derive(Component)]

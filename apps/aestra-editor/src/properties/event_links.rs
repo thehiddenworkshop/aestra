@@ -13,24 +13,49 @@ pub(super) enum EventLinkAction {
     SetTarget(EventId, EmitterId),
 }
 
-/// A numeric link field: the spawn count, or the inherited velocity in percent.
+/// An integer field in the link inspector.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EventLinkNumberControl {
     Count(EventId),
     InheritPercent(EventId),
+    DistanceLimit(EventId),
 }
+
+#[derive(Component)]
+struct DistanceSpacingControl(EventId);
 
 pub(super) fn register(app: &mut App) {
     app.add_observer(activate)
         .add_observer(change_number)
+        .add_observer(change_distance_spacing)
         .add_systems(Update, sync_number_inputs.in_set(PropertiesSet::Sync));
 }
 
-const TRIGGERS: [EventTrigger; 3] = [
-    EventTrigger::OnSpawn,
-    EventTrigger::OnDeath,
-    EventTrigger::OnCollision,
-];
+fn link_triggers(effect: &EffectAsset, source: EmitterId) -> [EventTrigger; 4] {
+    let distance = effect
+        .events
+        .iter()
+        .filter(|link| link.source == source)
+        .map(|link| link.trigger)
+        .chain(
+            effect
+                .particle_outputs
+                .iter()
+                .filter(|route| route.source == source)
+                .map(|route| route.trigger),
+        )
+        .find(|trigger| trigger.distance_settings().is_some())
+        .unwrap_or(EventTrigger::OnDistance {
+            spacing: 1.0,
+            max_per_tick: 8,
+        });
+    [
+        EventTrigger::OnSpawn,
+        EventTrigger::OnDeath,
+        EventTrigger::OnCollision,
+        distance,
+    ]
+}
 
 /// Whether a module does not run on an emitter that spawns only from its event links: its rate and
 /// bursts, and its spawn shape (a child starts where its event happened).
@@ -245,13 +270,14 @@ pub(super) fn spawn_event_links(
     }
 
     let mut options = Vec::new();
+    let triggers = link_triggers(&session.effect, source);
     for target in session
         .effect
         .emitters
         .iter()
         .filter(|emitter| emitter.id != source)
     {
-        for trigger in TRIGGERS {
+        for trigger in triggers {
             if session.effect.events.iter().any(|event| {
                 event.source == source && event.target == target.id && event.trigger == trigger
             }) {
@@ -377,7 +403,7 @@ pub(super) fn spawn_event_link_inspector(
     link: &EventLink,
     localizer: &Localizer,
 ) {
-    let trigger_options = TRIGGERS.map(|trigger| ComboOption {
+    let trigger_options = link_triggers(&session.effect, link.source).map(|trigger| ComboOption {
         label: localized_event_trigger(localizer, trigger),
         selected: trigger == link.trigger,
         action: EventLinkAction::SetTrigger(link.id, trigger),
@@ -461,6 +487,37 @@ pub(super) fn spawn_event_link_inspector(
                     );
                 },
             );
+            if let Some((spacing, _)) = link.trigger.distance_settings() {
+                let title = localizer.text("properties-event-link-distance-spacing");
+                row(
+                    card,
+                    title.clone(),
+                    localizer.text("properties-event-link-distance-spacing-description"),
+                    &mut |controls| {
+                        crate::feathers::number_input::spawn_scalar_input(
+                            controls,
+                            spacing,
+                            &title,
+                            DistanceSpacingControl(link.id),
+                        );
+                    },
+                );
+                let title = localizer.text("properties-event-link-distance-limit");
+                row(
+                    card,
+                    title.clone(),
+                    localizer.text("properties-event-link-distance-limit-description"),
+                    &mut |controls| {
+                        controls
+                            .spawn_empty()
+                            .apply_scene(ui_shell::feathers_integer_input())
+                            .insert((
+                                EventLinkNumberControl::DistanceLimit(link.id),
+                                AccessibleLabel(title.clone()),
+                            ));
+                    },
+                );
+            }
             let target_title = localizer.text("properties-event-link-target");
             row(
                 card,
@@ -588,8 +645,81 @@ fn change_number(
         EventLinkNumberControl::InheritPercent(id) => {
             session.set_event_link(id, |link| link.inherit_velocity = value as f32 / 100.0)
         }
+        EventLinkNumberControl::DistanceLimit(id) => {
+            edit_distance_sampling(&mut session, id, |_, limit| {
+                *limit = value.clamp(1, 64) as u32
+            })
+        }
     };
     report(&mut session, &localizer, result);
+}
+
+fn change_distance_spacing(
+    change: On<ValueChange<f32>>,
+    controls: Query<&DistanceSpacingControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(&DistanceSpacingControl(id)) = controls.get(change.source) else {
+        return;
+    };
+    let result = edit_distance_sampling(&mut session, id, |spacing, _| {
+        *spacing = change.value.max(0.001);
+    });
+    report(&mut session, &localizer, result);
+}
+
+fn edit_distance_sampling(
+    session: &mut EditorSession,
+    id: EventId,
+    edit: impl FnOnce(&mut f32, &mut u32),
+) -> Result<bool, EventLinkError> {
+    let Some(link) = session.effect.events.iter().find(|link| link.id == id) else {
+        return Err(EventLinkError::TargetMissing);
+    };
+    let Some((mut spacing, mut max_per_tick)) = link.trigger.distance_settings() else {
+        return Ok(false);
+    };
+    edit(&mut spacing, &mut max_per_tick);
+    let trigger = EventTrigger::OnDistance {
+        spacing,
+        max_per_tick,
+    };
+    if trigger == link.trigger {
+        return Ok(false);
+    }
+    let source = link.source;
+    // Distance sampling belongs to the source. Edit every consumer in one validated transaction.
+    let links = session
+        .effect
+        .events
+        .iter()
+        .filter(|event| event.source == source && event.trigger.distance_settings().is_some())
+        .map(|event| EffectCommand::SetEvent {
+            id: event.id,
+            event: EventLink {
+                trigger,
+                ..event.clone()
+            },
+        });
+    let outputs = session
+        .effect
+        .particle_outputs
+        .iter()
+        .filter(|route| route.source == source && route.trigger.distance_settings().is_some())
+        .map(|route| EffectCommand::SetParticleOutput {
+            id: route.id,
+            route: aestra_core::ParticleOutputRoute {
+                trigger,
+                ..route.clone()
+            },
+        });
+    let transaction =
+        EffectTransaction::new("Edited distance sampling", links.chain(outputs).collect());
+    Ok(session.execute_transaction(transaction, true))
 }
 
 fn sync_number_inputs(
@@ -598,8 +728,9 @@ fn sync_number_inputs(
     controls: Query<(Entity, &EventLinkNumberControl), Added<EventLinkNumberControl>>,
 ) {
     for (entity, control) in &controls {
-        let (EventLinkNumberControl::Count(id) | EventLinkNumberControl::InheritPercent(id)) =
-            *control;
+        let (EventLinkNumberControl::Count(id)
+        | EventLinkNumberControl::InheritPercent(id)
+        | EventLinkNumberControl::DistanceLimit(id)) = *control;
         let Some(link) = session.effect.events.iter().find(|event| event.id == id) else {
             continue;
         };
@@ -607,6 +738,12 @@ fn sync_number_inputs(
             EventLinkNumberControl::Count(_) => link.count as i32,
             EventLinkNumberControl::InheritPercent(_) => {
                 (link.inherit_velocity * 100.0).round() as i32
+            }
+            EventLinkNumberControl::DistanceLimit(_) => {
+                let Some((_, limit)) = link.trigger.distance_settings() else {
+                    continue;
+                };
+                limit as i32
             }
         };
         commands.trigger(UpdateNumberInput {
@@ -675,6 +812,57 @@ mod tests {
             Err(EventLinkError::Duplicate)
         );
         assert_eq!(session.effect.events[0].trigger, EventTrigger::OnDeath);
+    }
+
+    #[test]
+    fn distance_sampling_edits_all_consumers_of_the_source_in_one_undo_step() {
+        let (mut session, id, rocket, _) = session_with_link();
+        let trigger = EventTrigger::OnDistance {
+            spacing: 10.5,
+            max_per_tick: 2,
+        };
+        assert_eq!(
+            session.set_event_link(id, |link| link.trigger = trigger),
+            Ok(true)
+        );
+        session.duplicate_selected_layer();
+        let other_target = session.selected_layer().unwrap().id;
+        session.selection.primary = SemanticTarget::Emitter(rocket);
+        let new_trigger = link_triggers(&session.effect, rocket)[3];
+        assert_eq!(new_trigger, trigger);
+        session.add_event_link(new_trigger, other_target).unwrap();
+        let output = aestra_core::EventDefinition::new("Path Sample");
+        session
+            .effect
+            .particle_outputs
+            .push(aestra_core::ParticleOutputRoute::new(
+                rocket, trigger, output.id,
+            ));
+        session.effect.event_outputs.push(output);
+        let before = session.effect.clone();
+
+        assert_eq!(
+            edit_distance_sampling(&mut session, id, |spacing, limit| {
+                *spacing = 4.25;
+                *limit = 6;
+            }),
+            Ok(true)
+        );
+        let edited = EventTrigger::OnDistance {
+            spacing: 4.25,
+            max_per_tick: 6,
+        };
+        assert!(
+            session
+                .effect
+                .events
+                .iter()
+                .all(|event| event.trigger == edited)
+        );
+        assert_eq!(session.effect.particle_outputs[0].trigger, edited);
+        assert!(session.preview().is_some());
+        session.undo();
+        assert_eq!(session.effect, before);
     }
 
     #[test]

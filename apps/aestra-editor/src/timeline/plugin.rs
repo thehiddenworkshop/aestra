@@ -46,7 +46,7 @@ impl Plugin for TimelinePlugin {
                 Update,
                 (
                     update_timeline_time_label,
-                    update_timeline_visuals,
+                    (update_timeline_visuals, update_preview_loop_visuals).chain(),
                     update_timeline_marker_visuals,
                     update_choreography_event_visuals,
                     update_effect_clip_visuals,
@@ -175,6 +175,7 @@ mod tests {
             assert!(index!(motion_execution::cancel_drag) < index!(update_timeline_visuals));
             assert!(index!(update_timeline_visuals) < index!(motion_gestures::update_keys));
             assert!(index!(update_timeline_time_label) < index!(update_timeline_visuals));
+            assert!(index!(update_timeline_visuals) < index!(update_preview_loop_visuals));
             index!(inspector_composition::initialize_numbers);
             index!(host_composition::buttons);
         });

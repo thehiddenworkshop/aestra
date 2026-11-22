@@ -12,7 +12,7 @@ use super::pipeline::{
 };
 pub(super) use super::view_phases::visible_gpu_draws;
 use super::view_phases::{PhaseDraw, reject_sampled_sprite, retire_invisible_draws};
-use crate::pixel_view::PixelGrid;
+use crate::pixel_view::{PixelGrid, PixelTrailGrid};
 use bevy::{
     app::SubApp,
     camera::MainPassResolutionOverride,
@@ -33,6 +33,11 @@ pub const WESL_RENDER_SHADER_PATH: &str =
     "embedded://aestra_bevy_render/shaders/aestra_sprite_render.wesl";
 pub const WESL_MESH_WIREFRAME_SHADER_PATH: &str =
     "embedded://aestra_bevy_render/shaders/aestra_mesh_wireframe.wesl";
+
+/// Keep native additive draws from changing the alpha channel of this camera's target.
+/// With a transparent clear, alpha then records opacity while RGB contains the full composite.
+#[derive(Component, Clone)]
+pub struct AestraCaptureOpacity;
 
 /// Audit actual queued command identities and dynamic render state. A foreign
 /// transparent draw cannot be repeated or silently omitted by partitioning.
@@ -147,6 +152,8 @@ fn queue_gpu_sprites(
         Option<&TemporalJitter>,
         Option<&MainPassResolutionOverride>,
         Has<PixelGrid>,
+        Has<PixelTrailGrid>,
+        Has<AestraCaptureOpacity>,
     )>,
     mut ordered_draws: Local<Vec<(Entity, u32, Entity, MainEntity)>>,
 ) {
@@ -156,7 +163,17 @@ fn queue_gpu_sprites(
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites>();
     let lit_draw_function = draw_functions.id::<DrawLitSemanticGpuSprites2d>();
-    for (visible_entities, view, msaa, jitter, resolution, pixel_grid) in &views {
+    for (
+        visible_entities,
+        view,
+        msaa,
+        jitter,
+        resolution,
+        pixel_grid,
+        pixel_trails,
+        capture_opacity,
+    ) in &views
+    {
         let sampled_culling = super::sprite_culling::prepare(view, resolution, jitter.is_some());
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
@@ -220,6 +237,7 @@ fn queue_gpu_sprites(
                 &pipeline,
                 GpuSpritePipelineKey {
                     fragment_list_oit: false,
+                    capture_opacity,
                     mesh_wireframe: effect.mesh.is_some()
                         && effect.render_mode == GpuRenderMode::Wireframe,
                     mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),
@@ -227,6 +245,7 @@ fn queue_gpu_sprites(
                         view.target_format,
                         msaa.samples(),
                         pixel_grid && jitter.is_none(),
+                        pixel_trails && jitter.is_none(),
                         effect.renderer_kind,
                         effect.render_mode,
                     ),
@@ -266,6 +285,7 @@ fn queue_gpu_sprites_3d(
         Option<&MainPassResolutionOverride>,
         Has<crate::experimental_oit::OitApproved>,
         Has<crate::preview::planar::ReflectionView>,
+        Has<AestraCaptureOpacity>,
     )>,
 ) {
     let (pipeline, mut pipelines, pipeline_cache, view_key_cache) = pipeline_resources;
@@ -273,7 +293,7 @@ fn queue_gpu_sprites_3d(
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites3d>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites3d>();
     let semantic_depth_draw_function = draw_functions.id::<DrawSemanticDepthGpuSprites3d>();
-    for (visible_entities, view, jitter, resolution, oit, reflection) in &views {
+    for (visible_entities, view, jitter, resolution, oit, reflection, capture_opacity) in &views {
         let sampled_culling = super::sprite_culling::prepare(view, resolution, jitter.is_some());
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
@@ -326,6 +346,7 @@ fn queue_gpu_sprites_3d(
                 &pipeline,
                 GpuSpritePipelineKey {
                     fragment_list_oit: fragment_list_for_view(effect, oit, mesh_key),
+                    capture_opacity,
                     mesh_wireframe: effect.mesh.is_some()
                         && effect.render_mode == GpuRenderMode::Wireframe,
                     mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),

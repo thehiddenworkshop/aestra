@@ -1,0 +1,165 @@
+(
+    format_version: 4,
+    id: "a3574a00-0000-4000-8000-00000000f801",
+    name: "Pixel Lightning",
+    duration: 1.1,
+    playback_mode: LoopRestart,
+    host_transform_track: Some((
+        keys: [
+            (time: 0.0, transform: (
+                translation: (-62.2, -15.3, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.05, transform: (
+                translation: (-49.3, -6.1, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.1, transform: (
+                translation: (-35.7, -12.4, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.15, transform: (
+                translation: (-20.2, 0.8, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.2, transform: (
+                translation: (-10.5, -3.6, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.25, transform: (
+                translation: (3.2, 13.6, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.3, transform: (
+                translation: (17.3, 7.9, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.35, transform: (
+                translation: (31.8, 23.3, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.4, transform: (
+                translation: (44.2, 16.6, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+            (time: 0.45, transform: (
+                translation: (62.0, 25.2, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            )),
+        ],
+        repeat: false,
+    )),
+    materials: [(
+        id: "a3574a00-0000-4000-8000-00000000f802",
+        name: "Lightning Core",
+        blend: Additive,
+        properties: Sprite(softness: Constant(0.02), color: ParticleColor),
+    )],
+    emitters: [(
+        id: "a3574a00-0000-4000-8000-00000000f803",
+        name: "Bolt",
+        enabled: true,
+        transform: (
+            translation: (0.0, 0.0, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+        ),
+        start_time: 0.0,
+        duration: 1.1,
+        max_particles: 1,
+        domain: "aestra.domain.particles",
+        lifecycle: (
+            emitter_update: (
+                modules: [(
+                    id: "a3574a00-0000-4000-8000-00000000f810",
+                    module_type: "aestra.emission.rate",
+                    enabled: true,
+                    parameters: Emission(spawn_rate: 0.0, burst_count: 1),
+                )],
+            ),
+            particle_spawn: (
+                modules: [
+                    (
+                        id: "a3574a00-0000-4000-8000-00000000f813",
+                        module_type: "aestra.spawn.shape",
+                        enabled: true,
+                        parameters: Shape(shape: Sphere(radius: 0.0)),
+                    ),
+                    (
+                        id: "a3574a00-0000-4000-8000-00000000f811",
+                        module_type: "aestra.spawn.initialize",
+                        enabled: true,
+                        parameters: Initialize(
+                            lifetime: (min: 0.5, max: 0.5),
+                            speed: (min: 0.0, max: 0.0),
+                            direction: (1.0, 0.0, 0.0),
+                            spread_degrees: 0.0,
+                            angular_velocity: (min: 0.0, max: 0.0),
+                        ),
+                    ),
+                ],
+            ),
+            particle_update: (
+                modules: [
+                    (
+                        id: "a3574a00-0000-4000-8000-00000000f814",
+                        module_type: "aestra.update.motion",
+                        enabled: true,
+                        parameters: Motion(gravity: (0.0, 0.0, 0.0), drag: 0.0, turbulence: 0.0),
+                    ),
+                    (
+                        id: "a3574a00-0000-4000-8000-00000000f812",
+                        module_type: "aestra.update.appearance",
+                        enabled: true,
+                        parameters: Appearance(
+                            size: (
+                                id: "a3574a00-0000-4000-8000-00000000f820",
+                                keys: [(time: 0.0, value: 1.0), (time: 1.0, value: 1.0)],
+                            ),
+                            opacity: (
+                                id: "a3574a00-0000-4000-8000-00000000f821",
+                                keys: [(time: 0.0, value: 1.0), (time: 1.0, value: 1.0)],
+                            ),
+                            color: (
+                                id: "a3574a00-0000-4000-8000-00000000f822",
+                                keys: [
+                                    (time: 0.0, color: (0.08, 0.5, 1.0, 1.0)),
+                                    (time: 0.7, color: (0.25, 0.78, 1.0, 1.0)),
+                                    (time: 1.0, color: (0.82, 0.96, 1.0, 1.0)),
+                                ],
+                            ),
+                        ),
+                    ),
+                ],
+            ),
+        ),
+        renderers: [(
+            id: "a3574a00-0000-4000-8000-00000000f830",
+            renderer_type: "aestra.renderer.trail",
+            enabled: true,
+            material: "a3574a00-0000-4000-8000-00000000f802",
+            properties: Trail(
+                width: 3.0,
+                sample_interval: 0.025,
+                lifetime: 0.58,
+                max_points: 64,
+                max_trails: 1,
+                sampling: Distance,
+                sample_distance: 2.75,
+                curve_tolerance: 0.01,
+                end_cap: Rounded,
+            ),
+        )],
+    )],
+    metadata: {"aestra.dimension": "2d"},
+)

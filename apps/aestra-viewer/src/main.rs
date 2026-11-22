@@ -77,11 +77,17 @@ fn main() {
     aestra_example_extension::link();
     aestra_fluid::link();
     let mut arguments = env::args_os().skip(1);
-    if arguments
+    let offline_result = match arguments
         .next()
-        .is_some_and(|argument| argument == "--bake-flipbook")
+        .as_deref()
+        .and_then(|argument| argument.to_str())
     {
-        if let Err(error) = flipbook_bake::run(arguments) {
+        Some("--bake-flipbook") => Some(flipbook_bake::run(arguments)),
+        Some("--inspect-loop") => Some(flipbook_bake::loop_seam::run(arguments)),
+        _ => None,
+    };
+    if let Some(result) = offline_result {
+        if let Err(error) = result {
             eprintln!("aestra-viewer: {error}");
             std::process::exit(1);
         }
@@ -101,6 +107,7 @@ fn main() {
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
         eprintln!("Native GPU additive trails: --trail-min-pixels 0..8 (default 0; try 2). Presentation width only; not history sampling or HDR.");
+        eprintln!("Loop seam report: --inspect-loop INPUT NEW_OUTPUT_DIRECTORY IN_FRAME OUT_FRAME [--size PIXELS] [--span UNITS] [--center X,Y,Z] [--eye X,Y,Z]. Out is exclusive.");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.

@@ -174,26 +174,59 @@ fn replace_light_callback(source: &mut String, signature: &str, body: &str) {
     source.replace_range(start..end, body);
 }
 
-// Insert into the shared sprite vertex body used by the legacy and material paths.
+// Both native material paths use the shared sprite and strip vertex bodies.
 pub(crate) fn compose_pixel_grid(wesl: &str) -> String {
-    const CLIP_POSITION: &str = "output.clip_position = view.clip_from_world * world_position;";
-    const SNAP: &str = r#"
+    const SPRITE: &str = "output.clip_position = view.clip_from_world * world_position;";
+    const RIBBON: &str = "output.sampling_coverage = 1.0;";
+    const BEAM: &str = "output.clip_position = beam_clip_position;";
+    const TRAIL: &str = "output.sampling_coverage = sampling.y * select(1.0, sampling.y, cap);";
+    const SPRITE_SNAP: &str = r#"
     @if(AESTRA_PIXEL_GRID) {
-        let viewport_size = view.main_pass_viewport.zw;
-        let center_clip = view.clip_from_world * world_center;
-        if (all(viewport_size > vec2<f32>(0.0)) && center_clip.w > 0.0) {
-            let ndc_to_pixel = vec2<f32>(0.5, -0.5);
-            let pixel = (center_clip.xy / center_clip.w * ndc_to_pixel + 0.5) * viewport_size;
-            let delta = floor(pixel + 0.5) - pixel;
-            output.clip_position = vec4<f32>(
-                output.clip_position.xy
-                    + delta / (viewport_size * ndc_to_pixel) * output.clip_position.w,
-                output.clip_position.zw,
-            );
-        }
+        output.clip_position = aestra_snap_projected_center(
+            output.clip_position, view.clip_from_world * world_center, view.main_pass_viewport.zw);
     }
 "#;
-    wesl.replace(CLIP_POSITION, &format!("{CLIP_POSITION}{SNAP}"))
+    const RIBBON_SNAP: &str = r#"
+    @if(AESTRA_PIXEL_TRAIL_GRID) {
+        let joint_clip = view.clip_from_world * vec4<f32>(ribbon_world(slot), 1.0);
+        output.clip_position = aestra_snap_projected_center(
+            output.clip_position, joint_clip, view.main_pass_viewport.zw);
+    }
+"#;
+    const TRAIL_SNAP: &str = r#"
+    @if(AESTRA_PIXEL_TRAIL_GRID) {
+        let joint_clip = view.clip_from_world * vec4<f32>(particles[slot].position, 1.0);
+        output.clip_position = aestra_snap_projected_center(
+            output.clip_position, joint_clip, view.main_pass_viewport.zw);
+    }
+"#;
+    const BEAM_SNAP: &str = r#"
+    @if(AESTRA_PIXEL_TRAIL_GRID) {
+        let endpoint_clip = view.clip_from_world * vec4<f32>(endpoint, 1.0);
+        output.clip_position = aestra_snap_projected_center(
+            output.clip_position, endpoint_clip, view.main_pass_viewport.zw);
+    }
+"#;
+    const SNAP_FUNCTION: &str = r#"
+fn aestra_snap_projected_center(
+    clip: vec4<f32>, center_clip: vec4<f32>, viewport_size: vec2<f32>,
+) -> vec4<f32> {
+    if all(viewport_size > vec2<f32>(0.0)) && center_clip.w > 0.0 {
+        let ndc_to_pixel = vec2<f32>(0.5, -0.5);
+        let pixel = (center_clip.xy / center_clip.w * ndc_to_pixel + 0.5) * viewport_size;
+        let delta = floor(pixel + 0.5) - pixel;
+        return vec4<f32>(clip.xy + delta / (viewport_size * ndc_to_pixel) * clip.w, clip.zw);
+    }
+    return clip;
+}
+"#;
+    let mut source = wesl
+        .replace(SPRITE, &format!("{SPRITE}{SPRITE_SNAP}"))
+        .replace(RIBBON, &format!("{RIBBON}{RIBBON_SNAP}"))
+        .replace(BEAM, &format!("{BEAM}{BEAM_SNAP}"))
+        .replace(TRAIL, &format!("{TRAIL}{TRAIL_SNAP}"));
+    source.push_str(SNAP_FUNCTION);
+    source
 }
 
 /// Keep the portable compiler/ABI engine-neutral. Only the native adapter wraps

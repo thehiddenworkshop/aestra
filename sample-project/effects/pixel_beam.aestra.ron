@@ -1,0 +1,99 @@
+(
+    format_version: 4,
+    id: "a3574a00-0000-4000-8000-00000000fb01",
+    name: "Pixel Beam",
+    duration: 1.8,
+    playback_mode: LoopRestart,
+    metadata: {"aestra.dimension": "2d"},
+    material_instances: [(
+        id: "a3574a00-0000-4000-8000-00000000fb02",
+        program: Project("a3574a00-0000-4000-8000-00000000b201"),
+        values: {},
+        render_state: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+    )],
+    emitters: [(
+        id: "a3574a00-0000-4000-8000-00000000fb03",
+        name: "Beam Anchor",
+        enabled: true,
+        transform: (
+            translation: (0.0, 0.0, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+        ),
+        start_time: 0.0,
+        duration: 1.8,
+        max_particles: 1,
+        domain: "aestra.domain.particles",
+        lifecycle: (
+            emitter_update: (
+                modules: [(
+                    id: "a3574a00-0000-4000-8000-00000000fb10",
+                    module_type: "aestra.emission.rate",
+                    enabled: true,
+                    parameters: Emission(spawn_rate: 0.0, burst_count: 1),
+                )],
+            ),
+            particle_spawn: (
+                modules: [
+                    (
+                        id: "a3574a00-0000-4000-8000-00000000fb11",
+                        module_type: "aestra.spawn.shape",
+                        enabled: true,
+                        parameters: Shape(shape: Point),
+                    ),
+                    (
+                        id: "a3574a00-0000-4000-8000-00000000fb12",
+                        module_type: "aestra.spawn.initialize",
+                        enabled: true,
+                        parameters: Initialize(
+                            lifetime: (min: 1.8, max: 1.8),
+                            speed: (min: 0.0, max: 0.0),
+                            direction: (1.0, 0.0, 0.0),
+                            spread_degrees: 0.0,
+                            angular_velocity: (min: 0.0, max: 0.0),
+                        ),
+                    ),
+                ],
+            ),
+            particle_update: (
+                modules: [
+                    (
+                        id: "a3574a00-0000-4000-8000-00000000fb13",
+                        module_type: "aestra.update.motion",
+                        enabled: true,
+                        parameters: Motion(gravity: (0.0, 0.0, 0.0), drag: 0.0, turbulence: 0.0),
+                    ),
+                    (
+                        id: "a3574a00-0000-4000-8000-00000000fb14",
+                        module_type: "aestra.update.appearance",
+                        enabled: true,
+                        parameters: Appearance(
+                            size: (
+                                id: "a3574a00-0000-4000-8000-00000000fb20",
+                                keys: [(time: 0.0, value: 0.65), (time: 0.16, value: 1.0), (time: 0.72, value: 0.85), (time: 1.0, value: 0.15)],
+                            ),
+                            opacity: (
+                                id: "a3574a00-0000-4000-8000-00000000fb21",
+                                keys: [(time: 0.0, value: 0.8), (time: 0.12, value: 1.0), (time: 0.72, value: 1.0), (time: 1.0, value: 0.0)],
+                            ),
+                            color: (
+                                id: "a3574a00-0000-4000-8000-00000000fb22",
+                                keys: [
+                                    (time: 0.0, color: (0.07, 0.64, 1.0, 1.0)),
+                                    (time: 1.0, color: (0.14, 0.32, 1.0, 1.0)),
+                                ],
+                            ),
+                        ),
+                    ),
+                ],
+            ),
+        ),
+        renderers: [(
+            id: "a3574a00-0000-4000-8000-00000000fb30",
+            renderer_type: "aestra.renderer.beam",
+            enabled: true,
+            material: "a3574a00-0000-4000-8000-00000000fb02",
+            properties: Beam(start: (-62.15, -29.55), end: (61.15, 28.19), width: 5.5),
+        )],
+    )],
+)

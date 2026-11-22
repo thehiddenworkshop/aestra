@@ -35,6 +35,7 @@ use bevy::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct GpuSpritePipelineKey {
     pub(super) fragment_list_oit: bool,
+    pub(super) capture_opacity: bool,
     pub(super) mesh_wireframe: bool,
     pub(super) mesh_layout: Option<MeshVertexBufferLayoutRef>,
     pub(super) view: GpuSpriteViewKey,
@@ -48,6 +49,7 @@ pub(super) enum GpuSpriteViewKey {
     TwoD {
         mesh: Mesh2dPipelineKey,
         pixel_grid: bool,
+        pixel_trails: bool,
     },
     ThreeD(MeshPipelineKey),
 }
@@ -57,6 +59,7 @@ impl GpuSpriteViewKey {
         target_format: TextureFormat,
         samples: u32,
         pixel_grid: bool,
+        pixel_trails: bool,
         renderer_kind: u32,
         render_mode: GpuRenderMode,
     ) -> Self {
@@ -64,6 +67,9 @@ impl GpuSpriteViewKey {
             mesh: Mesh2dPipelineKey::from_msaa_samples(samples)
                 | Mesh2dPipelineKey::from_target_format(target_format),
             pixel_grid: pixel_grid && renderer_kind <= 1 && render_mode == GpuRenderMode::Rendered,
+            pixel_trails: pixel_trails
+                && matches!(renderer_kind, 3..=5)
+                && render_mode == GpuRenderMode::Rendered,
         }
     }
 }
@@ -191,9 +197,16 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             }
         }
         let (view_layout, target_format, depth_format, msaa_samples) = match key.view {
-            GpuSpriteViewKey::TwoD { mesh, pixel_grid } => {
+            GpuSpriteViewKey::TwoD {
+                mesh,
+                pixel_grid,
+                pixel_trails,
+            } => {
                 if pixel_grid {
                     shader_defs.push("AESTRA_PIXEL_GRID".into());
+                }
+                if pixel_trails {
+                    shader_defs.push("AESTRA_PIXEL_TRAIL_GRID".into());
                 }
                 (
                     self.mesh2d.view_layout.clone(),
@@ -232,7 +245,11 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                         operation: BlendOperation::Add,
                     },
                     alpha: BlendComponent {
-                        src_factor: BlendFactor::One,
+                        src_factor: if key.capture_opacity {
+                            BlendFactor::Zero
+                        } else {
+                            BlendFactor::One
+                        },
                         dst_factor: BlendFactor::One,
                         operation: BlendOperation::Add,
                     },

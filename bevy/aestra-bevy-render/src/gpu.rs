@@ -71,6 +71,7 @@ mod preparation_observation;
 mod preparation_timing;
 mod presentation_readiness;
 mod render;
+pub use render::AestraCaptureOpacity;
 pub(crate) use render::partition_draw_check;
 mod ribbon_bounds;
 #[path = "gpu/scene_depth.rs"]

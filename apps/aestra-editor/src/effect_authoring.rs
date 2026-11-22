@@ -552,6 +552,7 @@ fn remap_emitter_resources(
             }
             RendererProperties::Sprite
             | RendererProperties::Ribbon { .. }
+            | RendererProperties::Beam { .. }
             | RendererProperties::Trail { .. } => {}
         }
     }

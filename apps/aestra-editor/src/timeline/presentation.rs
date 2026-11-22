@@ -180,6 +180,32 @@ pub(super) fn update_timeline_marker_visuals(
     }
 }
 
+pub(super) fn update_preview_loop_visuals(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    mut bars: Query<(&mut Node, &mut BackgroundColor), With<TimelinePreviewLoop>>,
+) {
+    let range = session.preview_loop_range();
+    let color = theme::ACCENT.with_alpha(if session.preview_loop_active() {
+        1.0
+    } else {
+        0.45
+    });
+    for (mut node, mut background) in &mut bars {
+        if let Some(range) = &range {
+            apply_timeline_bar_geometry(
+                &mut node,
+                range.start,
+                range.end - range.start,
+                state.view,
+            );
+            background.0 = color;
+        } else {
+            node.display = Display::None;
+        }
+    }
+}
+
 pub(super) fn update_choreography_event_visuals(
     session: Res<EditorSession>,
     state: Res<TimelineState>,

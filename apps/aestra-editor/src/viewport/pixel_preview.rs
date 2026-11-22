@@ -4,7 +4,7 @@ use super::{
     xy_grid::XY_GRID_LAYER,
 };
 use crate::theme;
-use aestra_bevy_render::pixel_view::{PixelGrid, pixel_render_target};
+use aestra_bevy_render::pixel_view::{PixelGrid, PixelTrailGrid, pixel_render_target};
 #[cfg(test)]
 use bevy::render::render_resource::TextureFormat;
 use bevy::{
@@ -38,6 +38,7 @@ pub(super) fn spawn_pixel_preview(mut commands: Commands, mut images: ResMut<Ass
         Msaa::Off,
         RenderLayers::from_layers(&[0, XY_GRID_LAYER]),
         PixelGrid,
+        PixelTrailGrid,
         PixelPreviewPass::Scene,
         PixelSceneCamera,
         aestra_bevy_render::AestraLights2d::default(),

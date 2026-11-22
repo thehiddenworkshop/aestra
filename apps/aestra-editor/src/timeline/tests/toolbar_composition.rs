@@ -293,9 +293,13 @@ fn snap_combo_contains_all_real_modes_in_native_listbox_with_one_selected_row() 
 fn snap_trigger_uses_real_menu_button_and_localized_description() {
     let mut f = Fixture::configured("fr-FR", |_| {});
     let w = f.app.world_mut();
+    let description = w
+        .resource::<Localizer>()
+        .text("timeline-snapping-description");
     let e = w
-        .query_filtered::<Entity, With<MenuButton>>()
-        .single(w)
+        .query_filtered::<(Entity, &AccessibleLabel), With<MenuButton>>()
+        .iter(w)
+        .find_map(|(entity, label)| (label.0 == description).then_some(entity))
         .unwrap();
     assert_eq!(
         w.get::<AccessibleLabel>(e).unwrap().0,
@@ -307,6 +311,72 @@ fn snap_trigger_uses_real_menu_button_and_localized_description() {
         w.get::<Text>(label).unwrap().0,
         w.resource::<Localizer>()
             .text(TimelineSnapMode::Smart.message_id())
+    );
+    f.clean();
+}
+
+#[test]
+fn preview_loop_actions_draw_a_frame_aligned_range_without_editing_the_effect() {
+    let mut f = Fixture::new();
+    let world = f.app.world_mut();
+    let label = world.resource::<Localizer>().text("timeline-preview-loop");
+    assert!(
+        world
+            .query_filtered::<&AccessibleLabel, With<MenuButton>>()
+            .iter(world)
+            .any(|item| item.0 == label)
+    );
+    let bar = world
+        .spawn((
+            TimelinePreviewLoop,
+            Node::default(),
+            BackgroundColor::default(),
+        ))
+        .id();
+    let set_in = f.control(TimelineAction::SetPreviewLoopIn);
+    let set_out = f.control(TimelineAction::SetPreviewLoopOut);
+    let toggle = f.control(TimelineAction::TogglePreviewLoop);
+    let seam = f.control(TimelineAction::JumpAcrossPreviewLoopSeam);
+    let clear = f.control(TimelineAction::ClearPreviewLoop);
+    f.activate(set_in);
+    f.app
+        .world_mut()
+        .resource_mut::<EditorSession>()
+        .seek_time(3.0);
+    f.activate(set_out);
+    f.activate(toggle);
+    f.app
+        .world_mut()
+        .run_system_once(presentation::update_preview_loop_visuals)
+        .unwrap();
+    let bar_node = f.app.world().get::<Node>(bar).unwrap();
+    assert_eq!(bar_node.display, Display::Flex);
+    assert_eq!(bar_node.left, Val::Percent(18.75));
+    assert_eq!(bar_node.width, Val::Percent(18.75));
+    {
+        let mut session = f.app.world_mut().resource_mut::<EditorSession>();
+        session.seek_time(1.0);
+    }
+    f.activate(set_out);
+    let session = f.app.world().resource::<EditorSession>();
+    assert_eq!(session.preview_loop_range(), Some(1.5..3.0));
+    assert!(session.preview_loop_active());
+    f.activate(seam);
+    let session = f.app.world().resource::<EditorSession>();
+    assert_eq!(session.frame(), 179);
+    assert!(!session.playing);
+    f.activate(seam);
+    assert_eq!(f.app.world().resource::<EditorSession>().frame(), 90);
+    f.activate(clear);
+    f.activate(seam);
+    assert_eq!(f.app.world().resource::<EditorSession>().frame(), 90);
+    f.app
+        .world_mut()
+        .run_system_once(presentation::update_preview_loop_visuals)
+        .unwrap();
+    assert_eq!(
+        f.app.world().get::<Node>(bar).unwrap().display,
+        Display::None
     );
     f.clean();
 }

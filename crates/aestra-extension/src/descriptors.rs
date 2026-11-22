@@ -464,6 +464,7 @@ impl RendererRegistry {
             (RENDERER_FLIPBOOK, "Flipbook"),
             (RENDERER_RIBBON, "Ribbon"),
             (RENDERER_TRAIL, "Trail"),
+            (RENDERER_BEAM, "Beam"),
             (RENDERER_MESH, "Mesh"),
         ] {
             let descriptor = RendererDescriptor::builtin(type_id, name);

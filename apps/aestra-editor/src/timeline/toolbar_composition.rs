@@ -4,7 +4,7 @@ use super::{TimelineAction, TimelineSnapMode, TimelineState};
 use crate::feathers::{
     action_activation::FeathersActionButton,
     button::spawn_tool_button as mini_button,
-    combo_box::{ComboOption, spawn_combo_control},
+    combo_box::{ComboOption, spawn_combo_control, spawn_icon_action_menu},
     icon::{SvgColor, UiSvg, load_svg_icon},
     scenes as ui_shell,
     tooltip::EditorTooltip,
@@ -49,6 +49,50 @@ pub(super) fn spawn_timeline_toolbar(
             describe_timeline_control(header, previous, localizer.text("timeline-previous-frame"));
             let next = mini_button(header, ">", TransportAction::StepFrame(1));
             describe_timeline_control(header, next, localizer.text("timeline-next-frame"));
+            let loop_label = localizer.text("timeline-preview-loop");
+            let loop_tooltip = if let Some(range) = session.preview_loop_range() {
+                let mut args = FluentArgs::new();
+                args.set("start", format!("{:.3}", range.start));
+                args.set("end", format!("{:.3}", range.end));
+                localizer.text_with("timeline-preview-loop-range", &args)
+            } else {
+                loop_label.clone()
+            };
+            let loop_options = [
+                ComboOption {
+                    label: localizer.text("timeline-preview-loop-toggle"),
+                    selected: session.preview_loop_active(),
+                    action: TimelineAction::TogglePreviewLoop,
+                },
+                ComboOption {
+                    label: localizer.text("timeline-preview-loop-in"),
+                    selected: false,
+                    action: TimelineAction::SetPreviewLoopIn,
+                },
+                ComboOption {
+                    label: localizer.text("timeline-preview-loop-out"),
+                    selected: false,
+                    action: TimelineAction::SetPreviewLoopOut,
+                },
+                ComboOption {
+                    label: localizer.text("timeline-preview-loop-seam"),
+                    selected: false,
+                    action: TimelineAction::JumpAcrossPreviewLoopSeam,
+                },
+                ComboOption {
+                    label: localizer.text("timeline-preview-loop-clear"),
+                    selected: false,
+                    action: TimelineAction::ClearPreviewLoop,
+                },
+            ];
+            spawn_icon_action_menu(
+                header,
+                asset_server,
+                "icons/loop.svg",
+                &loop_label,
+                &loop_tooltip,
+                &loop_options,
+            );
             timeline_icon_button(
                 header,
                 asset_server,

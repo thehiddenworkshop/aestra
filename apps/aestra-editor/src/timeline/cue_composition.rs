@@ -35,6 +35,18 @@ pub(super) fn spawn_ruler(
     session: &EditorSession,
     localizer: &Localizer,
 ) {
+    parent.spawn((
+        TimelinePreviewLoop,
+        Node {
+            position_type: PositionType::Absolute,
+            display: Display::None,
+            top: Val::Px(21.0),
+            height: Val::Px(3.0),
+            ..default()
+        },
+        BackgroundColor(theme::ACCENT),
+        Pickable::IGNORE,
+    ));
     for index in 0..32 {
         parent
             .spawn((

@@ -1029,6 +1029,11 @@ pub struct RendererPlan {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RendererPlanKind {
+    Beam {
+        start: [f32; 2],
+        end: [f32; 2],
+        width: f32,
+    },
     Trail {
         width: f32,
         sample_interval: f32,
@@ -1775,18 +1780,51 @@ impl PlaybackClock {
         duration: f32,
         looping: bool,
     ) -> ClockAdvance {
+        let ticks = self.accumulate_ticks(delta_seconds, speed);
+        self.advance_ticks(ticks, duration, looping)
+    }
+
+    /// Advance within an effect-relative loop. The end frame is exclusive.
+    /// Returns true when entering, rebasing to the first cycle, or wrapping the range.
+    /// The caller can reconstruct state at the new position on these discontinuities.
+    pub fn advance_in_loop(
+        &mut self,
+        delta_seconds: f32,
+        speed: f32,
+        range: std::ops::Range<u64>,
+    ) -> bool {
+        if range.is_empty() {
+            return false;
+        }
+        let entering = !range.contains(&self.frame);
+        let rebasing = self.elapsed_frame != self.frame;
+        if entering {
+            self.frame = range.start;
+        }
+        let ticks = self.accumulate_ticks(delta_seconds, speed);
+        let until_end = range.end - self.frame;
+        let wrapped = ticks >= until_end;
+        self.frame = if wrapped {
+            range.start + (ticks - until_end) % (range.end - range.start)
+        } else {
+            self.frame + ticks
+        };
+        self.elapsed_frame = self.frame;
+        entering || rebasing || wrapped
+    }
+
+    fn accumulate_ticks(&mut self, delta_seconds: f32, speed: f32) -> u64 {
         let scaled_delta = f64::from(delta_seconds.max(0.0)) * f64::from(speed.max(0.0));
         if !scaled_delta.is_finite() || scaled_delta == 0.0 {
-            return ClockAdvance::default();
+            return 0;
         }
         let tick_duration = 1.0 / f64::from(self.tick_rate);
         self.accumulator += scaled_delta;
         let ticks = ((self.accumulator + tick_duration * 1.0e-9) / tick_duration).floor() as u64;
-        if ticks == 0 {
-            return ClockAdvance::default();
+        if ticks != 0 {
+            self.accumulator = (self.accumulator - ticks as f64 * tick_duration).max(0.0);
         }
-        self.accumulator = (self.accumulator - ticks as f64 * tick_duration).max(0.0);
-        self.advance_ticks(ticks, duration, looping)
+        ticks
     }
 
     /// Advance an exact number of playback ticks without rounding a seconds delta.
@@ -2630,7 +2668,16 @@ pub fn flipbook_frame_index(flipbook: &CompiledFlipbook, context: FlipbookFrameC
         }
         FlipbookTimeSource::EffectTime => context.effect_time.max(0.0),
     };
-    let mut frame = (seconds * flipbook.frame_rate).floor() as usize;
+    let frame_time = seconds * flipbook.frame_rate;
+    let frame_floor = frame_time.floor();
+    let mut frame =
+        if context.time_source == FlipbookTimeSource::EffectTime && frame_time > frame_floor {
+            // A published f32 boundary can round down by one representable value
+            // when converted back into frame units. Match the native shader.
+            frame_time.next_up() as usize
+        } else {
+            frame_floor as usize
+        };
     if context.random_start {
         frame = frame.wrapping_add(
             (hash01(context.particle_index, 9, context.seed) * count as f32) as usize,
@@ -3120,6 +3167,25 @@ mod tests {
     }
 
     #[test]
+    fn preview_loop_range_preserves_tick_remainder_and_rebases_elapsed_time() {
+        let mut clock = PlaybackClock::new(8);
+        clock.seek_frame(9, 2.0);
+        assert!(clock.advance_in_loop(0.1875, 1.0, 6..10));
+        assert_eq!(clock.frame(), 6);
+        assert!(!clock.advance_in_loop(0.0625, 1.0, 6..10));
+        assert_eq!(clock.frame(), 7);
+        assert!(clock.advance_in_loop(1.125, 1.0, 6..10));
+        assert_eq!(clock.frame(), 8);
+
+        clock.seek_elapsed_seconds(1.375, 1.0);
+        assert_eq!(clock.frame(), 3);
+        assert!(clock.advance_in_loop(0.0, 1.0, 3..5));
+        assert_eq!(clock.elapsed_time(), 0.375);
+        assert!(clock.advance_in_loop(0.0, 1.0, 6..10));
+        assert_eq!(clock.frame(), 6);
+    }
+
+    #[test]
     fn exact_playback_ticks_preserve_fractional_time_and_loop_elapsed_frames() {
         let mut clock = PlaybackClock::default();
         clock.advance(1.0 / 120.0, 1.0, 0.31, true);
@@ -3204,6 +3270,33 @@ mod tests {
             });
             assert_eq!(actual, expected, "unexpected {playback:?} frame sequence");
         }
+
+        let high_rate = CompiledFlipbook {
+            frame_rate: 60.0,
+            frames: vec![UvRect::FULL; 64],
+            ..flipbook
+        };
+        let boundary = PlaybackClock::default().time_for_frame(63, 2.0);
+        let context = FlipbookFrameContext {
+            time_source: FlipbookTimeSource::EffectTime,
+            playback: FlipbookPlaybackMode::Forward,
+            random_start: false,
+            effect_time: boundary,
+            normalized_age: 0.0,
+            particle_index: 0,
+            seed: 0,
+        };
+        assert_eq!(flipbook_frame_index(&high_rate, context), 63);
+        assert_eq!(
+            flipbook_frame_index(
+                &high_rate,
+                FlipbookFrameContext {
+                    effect_time: PlaybackClock::default().time_for_frame(62, 2.0),
+                    ..context
+                }
+            ),
+            62
+        );
     }
 
     #[test]

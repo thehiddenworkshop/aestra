@@ -290,6 +290,7 @@ pub(super) fn assemble(
             return Err("Preview limit: four seconds of local simulation history".into());
         }
         let mut width = 0.0f32;
+        let mut beam_extent = 0.0f32;
         let mut geometry_radius = 1.0f32;
         let mut has_renderer = false;
         for emitter in instance.effect.emitters.iter().filter(|e| e.enabled) {
@@ -311,6 +312,18 @@ pub(super) fn assemble(
                             });
                     }
                     RendererPlanKind::Ribbon { width: w, .. } => width = width.max(w),
+                    RendererPlanKind::Beam { start, end, width } => {
+                        let scale = Vec3::from_array(emitter.transform.scale)
+                            .abs()
+                            .max_element();
+                        beam_extent = beam_extent.max(
+                            Vec2::from_array(start)
+                                .length()
+                                .max(Vec2::from_array(end).length())
+                                * scale,
+                        );
+                        geometry_radius = geometry_radius.max(width * 0.5);
+                    }
                     RendererPlanKind::Mesh { asset } => {
                         let asset = instance
                             .effect
@@ -417,8 +430,9 @@ pub(super) fn assemble(
                 .max(matrix.z_axis.truncate().length());
             for sample in &samples {
                 let p = matrix.transform_point3(Vec3::from_array(sample.position));
-                let extent =
-                    Vec3::splat((sample.size.abs() * geometry_radius + width.abs()) * scale);
+                let extent = Vec3::splat(
+                    (sample.size.abs() * geometry_radius + width.abs() + beam_extent) * scale,
+                );
                 if !p.is_finite() || !extent.is_finite() {
                     return Err("Non-finite particle bounds".into());
                 }

@@ -30,9 +30,9 @@ use aestra_core::{
     Emitter, EmitterId, Gradient, MODULE_APPEARANCE, MODULE_COLLISION, MODULE_EMISSION,
     MODULE_FOLLOW_FIELD, MODULE_HOMING, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT,
     MODULE_SHAPE, MODULE_SPAWN_FROM_DOMAIN, MaterialInput, MaterialProgramId, MaterialProperties,
-    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH,
-    RENDERER_RIBBON, RENDERER_SPRITE, RENDERER_TRAIL, RendererProperties, ScalarRange,
-    SpriteColorSource, StageKind, ValidationReport, Value,
+    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_BEAM, RENDERER_FLIPBOOK,
+    RENDERER_MESH, RENDERER_RIBBON, RENDERER_SPRITE, RENDERER_TRAIL, RendererProperties,
+    ScalarRange, SpriteColorSource, StageKind, ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -660,7 +660,9 @@ impl EffectCompiler {
                 {
                     let expected = if matches!(
                         renderer.properties,
-                        RendererProperties::Ribbon { .. } | RendererProperties::Trail { .. }
+                        RendererProperties::Ribbon { .. }
+                            | RendererProperties::Trail { .. }
+                            | RendererProperties::Beam { .. }
                     ) {
                         aestra_core::material::MaterialDomain::Ribbon
                     } else if matches!(renderer.properties, RendererProperties::Mesh { .. }) {
@@ -936,6 +938,15 @@ impl EffectCompiler {
                             kind: RendererPlanKind::Ribbon {
                                 width: *width,
                                 strand_count: *strand_count,
+                            },
+                        },
+                        RendererProperties::Beam { start, end, width } => RendererPlan {
+                            source: renderer.id,
+                            material: renderer.material,
+                            kind: RendererPlanKind::Beam {
+                                start: *start,
+                                end: *end,
+                                width: *width,
                             },
                         },
                         RendererProperties::Trail {
@@ -2104,6 +2115,7 @@ impl EffectCompiler {
                         | (RendererProperties::Flipbook { .. }, RENDERER_FLIPBOOK)
                         | (RendererProperties::Mesh { .. }, RENDERER_MESH)
                         | (RendererProperties::Trail { .. }, RENDERER_TRAIL)
+                        | (RendererProperties::Beam { .. }, RENDERER_BEAM)
                         | (RendererProperties::Ribbon { .. }, RENDERER_RIBBON)
                 );
                 // Extensible-stages M8: a registered plugin renderer (a Custom payload whose type id is
@@ -2444,9 +2456,9 @@ fn derive_effect_requirements(emitters: &[CompiledEmitter]) -> EffectRequirement
         renderers.insert(match renderer.kind {
             RendererPlanKind::Sprite => RendererCapability::SpriteParticles,
             RendererPlanKind::Mesh { .. } => RendererCapability::MeshParticles,
-            RendererPlanKind::Ribbon { .. } | RendererPlanKind::Trail { .. } => {
-                RendererCapability::RibbonParticles
-            }
+            RendererPlanKind::Ribbon { .. }
+            | RendererPlanKind::Trail { .. }
+            | RendererPlanKind::Beam { .. } => RendererCapability::RibbonParticles,
             RendererPlanKind::Flipbook { .. } => RendererCapability::FlipbookParticles,
         });
     }

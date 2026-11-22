@@ -20,13 +20,22 @@ impl PresentationCadence {
         self.0
     }
 
+    /// The first simulation tick at or after the start of a presentation frame.
+    pub fn tick_for_frame(self, frame: u32, ticks_per_second: NonZeroU32) -> u64 {
+        self.frame_start_tick(u64::from(frame), u64::from(ticks_per_second.get()))
+    }
+
+    fn frame_start_tick(self, frame: u64, tick_rate: u64) -> u64 {
+        (frame * tick_rate).div_ceil(u64::from(self.0.get()))
+    }
+
     /// The fixed simulation tick to show at `tick`. When a presentation frame
     /// starts between two ticks, use the first tick at or after that boundary.
     pub fn sample_tick(self, tick: u32, ticks_per_second: NonZeroU32) -> u32 {
         let fps = u64::from(self.0.get());
         let tick_rate = u64::from(ticks_per_second.get());
         let frame = u64::from(tick) * fps / tick_rate;
-        (frame * tick_rate).div_ceil(fps) as u32
+        self.frame_start_tick(frame, tick_rate) as u32
     }
 
     /// The start of the frame containing `seconds`, in effect-local seconds.
@@ -77,6 +86,12 @@ mod tests {
     fn fixed_samples_follow_non_divisor_and_fast_rates_without_future_ticks() {
         let rate = NonZeroU32::new(60).unwrap();
         let cadence = PresentationCadence::new(NonZeroU32::new(24).unwrap());
+        assert_eq!(
+            (0..=4)
+                .map(|frame| cadence.tick_for_frame(frame, rate))
+                .collect::<Vec<_>>(),
+            [0, 3, 5, 8, 10],
+        );
         assert_eq!(
             (0..=10)
                 .map(|tick| cadence.sample_tick(tick, rate))

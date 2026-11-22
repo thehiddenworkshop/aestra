@@ -87,7 +87,9 @@ pub use world::sdf_from_meshes;
 pub use aestra_bevy_render::material::{
     MaterialBindingContext, MaterialRuntimeBinding, compile_material_program,
 };
-pub use aestra_bevy_render::pixel_view::{PixelGrid, integer_pixel_viewport, pixel_render_target};
+pub use aestra_bevy_render::pixel_view::{
+    PixelGrid, PixelTrailGrid, integer_pixel_viewport, pixel_render_target,
+};
 pub use aestra_bevy_render::preview;
 pub use aestra_bevy_render::sampling::{SpriteSampling, TrailRasterSampling};
 pub use aestra_bevy_render::{

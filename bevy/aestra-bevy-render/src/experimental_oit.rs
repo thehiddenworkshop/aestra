@@ -76,6 +76,7 @@ impl ExperimentalOitSettings {
             RendererPlanKind::Mesh { .. } => 2,
             RendererPlanKind::Ribbon { .. } => 3,
             RendererPlanKind::Flipbook { .. } => 4,
+            RendererPlanKind::Beam { .. } => 5,
         };
         eligible(
             kind,

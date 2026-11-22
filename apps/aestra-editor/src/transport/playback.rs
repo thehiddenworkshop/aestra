@@ -42,7 +42,7 @@ pub(super) fn execute_transport_action(
         TransportAction::TogglePlayback => {
             if session.playing {
                 session.playing = false;
-            } else if session.effect.playback_mode.is_looping() {
+            } else if session.preview_loop_active() || session.effect.playback_mode.is_looping() {
                 session.playing = true;
             } else {
                 session.restart();

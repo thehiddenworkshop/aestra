@@ -38,6 +38,7 @@ pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
 pub const RENDERER_FLIPBOOK: &str = "aestra.renderer.flipbook";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
 pub const RENDERER_TRAIL: &str = "aestra.renderer.trail";
+pub const RENDERER_BEAM: &str = "aestra.renderer.beam";
 pub const RENDERER_MESH: &str = "aestra.renderer.mesh";
 pub const DEFAULT_SPRITE_MATERIAL_ID: MaterialId =
     MaterialId::from_u128(0xa357_4a00_0000_4000_8000_0000_0000_0001);
@@ -396,7 +397,9 @@ impl EffectAsset {
                         if matches!(
                             (&renderer.properties, &material.properties),
                             (
-                                RendererProperties::Sprite | RendererProperties::Trail { .. },
+                                RendererProperties::Sprite
+                                    | RendererProperties::Trail { .. }
+                                    | RendererProperties::Beam { .. },
                                 MaterialProperties::Sprite { .. }
                             ) | (
                                 RendererProperties::Flipbook { .. },
@@ -3480,6 +3483,16 @@ impl RendererInstance {
                 }
                 Some(RENDERER_FLIPBOOK)
             }
+            RendererProperties::Beam { start, end, width } => {
+                let length = (end[0] - start[0]).hypot(end[1] - start[1]);
+                if !length.is_finite() || length <= 0.0 {
+                    invalid_value(report, path, "beam endpoints must be finite and distinct");
+                }
+                if !width.is_finite() || *width <= 0.0 {
+                    invalid_value(report, path, "beam width must be positive and finite");
+                }
+                Some(RENDERER_BEAM)
+            }
             RendererProperties::Ribbon {
                 width,
                 strand_count,
@@ -3602,6 +3615,13 @@ pub enum RendererProperties {
         tile_length: f32,
         #[serde(default)]
         end_cap: TrailEndCap,
+    },
+    /// A two-point strip. Each live particle anchors offsets in emitter-local XY.
+    Beam {
+        start: [f32; 2],
+        end: [f32; 2],
+        /// Cross-section multiplier applied to particle size.
+        width: f32,
     },
 }
 

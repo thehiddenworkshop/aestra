@@ -4,10 +4,14 @@ use super::{
     effect_inputs::GpuEffectBuffers,
     particle_light_inputs::{AestraParticleLightSettings, Inputs, ParticleLightMode},
     particle_light_transport::{ParticleLightReadbackFrame, ParticleLightReadbackSettings},
+    render::AestraCaptureOpacity,
     stage_inputs::ExtractedStages,
 };
 use super::{draw_instance::GpuDrawInstance, extraction_cleanup, world_sdf::AestraWorldSdf};
-use crate::{pixel_view::PixelGrid, render_settings::AestraRenderSettings};
+use crate::{
+    pixel_view::{PixelGrid, PixelTrailGrid},
+    render_settings::AestraRenderSettings,
+};
 pub(super) use bevy::extract::{Extract, MainWorld, sync_world::MainEntity};
 use bevy::{
     camera::primitives::Aabb,
@@ -75,12 +79,24 @@ clone_component!(
     SyncComponent<RenderApp>,
     ExtractComponent<RenderApp>
 );
+clone_component!(
+    PixelTrailGrid,
+    SyncComponent<RenderApp>,
+    ExtractComponent<RenderApp>
+);
+clone_component!(
+    AestraCaptureOpacity,
+    SyncComponent<RenderApp>,
+    ExtractComponent<RenderApp>
+);
 
 pub(super) fn install(app: &mut App) {
     app.add_plugins((
         ExtractComponentPlugin::<GpuDrawInstance, RenderApp>::default(),
         ExtractComponentPlugin::<GpuEffectBuffers, RenderApp>::default(),
         ExtractComponentPlugin::<PixelGrid, RenderApp>::default(),
+        ExtractComponentPlugin::<PixelTrailGrid, RenderApp>::default(),
+        ExtractComponentPlugin::<AestraCaptureOpacity, RenderApp>::default(),
         ExtractComponentPlugin::<super::lighting_2d::AestraLights2d, RenderApp>::default(),
         ExtractComponentPlugin::<ExtractedStages, RenderApp>::default(),
         ExtractResourcePlugin::<AestraWorldSdf, RenderApp>::default(),

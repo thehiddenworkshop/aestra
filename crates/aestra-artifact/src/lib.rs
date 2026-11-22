@@ -642,6 +642,11 @@ enum RendererPlanKindV1 {
         #[serde(default)]
         end_cap: aestra_core::TrailEndCap,
     },
+    Beam {
+        start: [f32; 2],
+        end: [f32; 2],
+        width: f32,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2289,6 +2294,9 @@ impl From<&RendererPlan> for RendererPlanV1 {
             material: renderer.material,
             kind: match renderer.kind {
                 RendererPlanKind::Sprite => RendererPlanKindV1::Sprite,
+                RendererPlanKind::Beam { start, end, width } => {
+                    RendererPlanKindV1::Beam { start, end, width }
+                }
                 RendererPlanKind::Mesh { asset } => RendererPlanKindV1::Mesh { asset },
                 RendererPlanKind::Ribbon {
                     width,
@@ -2345,6 +2353,9 @@ impl From<RendererPlanV1> for RendererPlan {
             material: renderer.material,
             kind: match renderer.kind {
                 RendererPlanKindV1::Sprite => RendererPlanKind::Sprite,
+                RendererPlanKindV1::Beam { start, end, width } => {
+                    RendererPlanKind::Beam { start, end, width }
+                }
                 RendererPlanKindV1::Mesh { asset } => RendererPlanKind::Mesh { asset },
                 RendererPlanKindV1::Ribbon {
                     width,

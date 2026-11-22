@@ -11,8 +11,51 @@ pub(super) enum RendererNumberControl {
     RibbonWidth(RendererId),
     RibbonStrands(RendererId),
     Trail(RendererId, TrailField),
+    Beam(RendererId, BeamField),
     Uv(RendererId, u8),
     FlipbookFrameRate(RendererId),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum BeamField {
+    StartX,
+    StartY,
+    EndX,
+    EndY,
+    Width,
+}
+
+impl BeamField {
+    fn bounds(self) -> (f32, f32) {
+        (
+            if matches!(self, Self::Width) {
+                0.001
+            } else {
+                -f32::MAX
+            },
+            f32::MAX,
+        )
+    }
+
+    pub(super) fn clamp(self, value: f32) -> f32 {
+        let (min, max) = self.bounds();
+        value.clamp(min, max)
+    }
+
+    fn component<'a>(
+        self,
+        start: &'a mut [f32; 2],
+        end: &'a mut [f32; 2],
+        width: &'a mut f32,
+    ) -> &'a mut f32 {
+        match self {
+            Self::StartX => &mut start[0],
+            Self::StartY => &mut start[1],
+            Self::EndX => &mut end[0],
+            Self::EndY => &mut end[1],
+            Self::Width => width,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,6 +158,10 @@ pub(super) fn handle_renderer_action(
     match action {
         PropertiesAction::AddTrailRenderer => {
             session.add_trail_renderer();
+            palette.open = false;
+        }
+        PropertiesAction::AddBeamRenderer => {
+            session.add_beam_renderer();
             palette.open = false;
         }
         PropertiesAction::AddSpriteRenderer => {
@@ -768,6 +815,7 @@ pub(super) fn renderer_number_input_value(
         | RendererNumberControl::RibbonWidth(renderer)
         | RendererNumberControl::RibbonStrands(renderer)
         | RendererNumberControl::Trail(renderer, _)
+        | RendererNumberControl::Beam(renderer, _)
         | RendererNumberControl::Uv(renderer, _)
         | RendererNumberControl::FlipbookFrameRate(renderer) => renderer,
     };
@@ -777,6 +825,14 @@ pub(super) fn renderer_number_input_value(
         .iter()
         .find(|renderer| renderer.id == renderer_id)?;
     match control {
+        RendererNumberControl::Beam(_, field) => match renderer.properties {
+            RendererProperties::Beam {
+                mut start,
+                mut end,
+                mut width,
+            } => Some(*field.component(&mut start, &mut end, &mut width)),
+            _ => None,
+        },
         RendererNumberControl::Trail(_, field) => match renderer.properties {
             RendererProperties::Trail {
                 width,
@@ -858,7 +914,9 @@ pub(super) fn renderer_number_input_value(
 pub(super) fn renderer_number_step(control: RendererNumberControl) -> f32 {
     match control {
         RendererNumberControl::Trail(_, field) => field.step(),
-        RendererNumberControl::Softness(_) | RendererNumberControl::RibbonWidth(_) => 0.1,
+        RendererNumberControl::Softness(_)
+        | RendererNumberControl::RibbonWidth(_)
+        | RendererNumberControl::Beam(_, _) => 0.1,
         RendererNumberControl::Uv(_, _) => 0.05,
         RendererNumberControl::FlipbookFrameRate(_) | RendererNumberControl::RibbonStrands(_) => {
             1.0
@@ -975,6 +1033,7 @@ pub(super) fn renderer_numeric_scrub_command(
         | RendererNumberControl::RibbonWidth(id)
         | RendererNumberControl::RibbonStrands(id)
         | RendererNumberControl::Trail(id, _)
+        | RendererNumberControl::Beam(id, _)
         | RendererNumberControl::Uv(id, _)
         | RendererNumberControl::FlipbookFrameRate(id) => id,
     };
@@ -984,6 +1043,21 @@ pub(super) fn renderer_numeric_scrub_command(
         .iter()
         .find(|renderer| renderer.id == renderer_id)?;
     match control {
+        RendererNumberControl::Beam(_, field) => {
+            if !value.is_finite() {
+                return None;
+            }
+            let mut properties = renderer.properties.clone();
+            let RendererProperties::Beam { start, end, width } = &mut properties else {
+                return None;
+            };
+            *field.component(start, end, width) = field.clamp(value);
+            Some(EffectCommand::SetRendererProperties {
+                emitter: session.selected_layer()?.id,
+                renderer: renderer.id,
+                properties,
+            })
+        }
         RendererNumberControl::Trail(_, field) => {
             if !value.is_finite() {
                 return None;
@@ -1073,6 +1147,7 @@ pub(super) fn renderer_numeric_scrub_command(
                 },
                 RendererNumberControl::FlipbookFrameRate(_)
                 | RendererNumberControl::Trail(_, _)
+                | RendererNumberControl::Beam(_, _)
                 | RendererNumberControl::RibbonWidth(_)
                 | RendererNumberControl::RibbonStrands(_) => unreachable!(),
             }
@@ -1157,7 +1232,8 @@ pub(super) fn handle_renderer_scalar_change(
     match *control {
         RendererNumberControl::RibbonWidth(_)
         | RendererNumberControl::RibbonStrands(_)
-        | RendererNumberControl::Trail(_, _) => {
+        | RendererNumberControl::Trail(_, _)
+        | RendererNumberControl::Beam(_, _) => {
             if let Some(command) = renderer_numeric_scrub_command(&session, *control, change.value)
             {
                 session.execute_transaction(
@@ -1240,6 +1316,7 @@ pub(super) fn properties_renderer_key(renderer: &aestra_core::RendererInstance) 
     match renderer.properties {
         RendererProperties::Ribbon { .. } => "renderer/ribbon",
         RendererProperties::Trail { .. } => "renderer/trail",
+        RendererProperties::Beam { .. } => "renderer/beam",
         RendererProperties::Sprite => "renderer/sprite",
         RendererProperties::Flipbook { .. } => "renderer/flipbook",
         RendererProperties::Mesh { .. } => "renderer/mesh",
@@ -1263,7 +1340,8 @@ fn spawn_renderer_scalar_control(
             RendererNumberControl::Softness(_)
             | RendererNumberControl::RibbonWidth(_)
             | RendererNumberControl::RibbonStrands(_)
-            | RendererNumberControl::Trail(_, _) => {
+            | RendererNumberControl::Trail(_, _)
+            | RendererNumberControl::Beam(_, _) => {
                 return None;
             }
         };
@@ -1326,6 +1404,8 @@ fn renderer_scrubbable_number(
 
     let value = renderer_number_input_value(session, control).unwrap_or(match control {
         RendererNumberControl::Trail(_, field) => field.bounds().0,
+        RendererNumberControl::Beam(_, BeamField::Width) => 1.0,
+        RendererNumberControl::Beam(_, _) => 0.0,
         RendererNumberControl::FlipbookFrameRate(_)
         | RendererNumberControl::RibbonWidth(_)
         | RendererNumberControl::RibbonStrands(_) => 1.0,
@@ -1339,6 +1419,7 @@ fn renderer_scrubbable_number(
             u32::MAX as f32,
         ),
         RendererNumberControl::Trail(_, field) => field.bounds(),
+        RendererNumberControl::Beam(_, field) => field.bounds(),
         RendererNumberControl::Softness(_) => (0.0, f32::MAX),
         RendererNumberControl::RibbonWidth(_) => (0.001, f32::MAX),
         RendererNumberControl::RibbonStrands(_) => (1.0, 256.0),
@@ -2557,6 +2638,7 @@ fn renderer_display_name(renderer: &aestra_core::RendererInstance) -> &'static s
     match renderer.properties {
         RendererProperties::Ribbon { .. } => "Ribbon Renderer",
         RendererProperties::Trail { .. } => "Trail Renderer",
+        RendererProperties::Beam { .. } => "Beam Renderer",
         RendererProperties::Sprite => "Sprite Renderer",
         RendererProperties::Flipbook { .. } => "Flipbook Renderer",
         RendererProperties::Mesh { .. } => "Mesh Renderer",
@@ -2860,6 +2942,23 @@ pub(super) fn spawn_renderer_card(
                     session,
                 );
             }
+            if matches!(renderer.properties, RendererProperties::Beam { .. }) {
+                for (label, field) in [
+                    ("properties-beam-start-x", BeamField::StartX),
+                    ("properties-beam-start-y", BeamField::StartY),
+                    ("properties-beam-end-x", BeamField::EndX),
+                    ("properties-beam-end-y", BeamField::EndY),
+                    ("properties-beam-width", BeamField::Width),
+                ] {
+                    spawn_renderer_scalar_control(
+                        card,
+                        &localizer.text(label),
+                        None,
+                        RendererNumberControl::Beam(renderer.id, field),
+                        session,
+                    );
+                }
+            }
             super::mesh_drop::spawn_input(card, session, renderer);
             match spawn_semantic_material_controls(
                 card,
@@ -3114,6 +3213,28 @@ mod tests {
             renderer_number_step(RendererNumberControl::FlipbookFrameRate(id)),
             1.0
         );
+    }
+
+    #[test]
+    fn beam_renderer_endpoint_edits_are_undoable_without_moving_playback() {
+        let mut session = test_support::session_with_timing_slack();
+        let before = session.effect.clone();
+        session.add_beam_renderer();
+        let SemanticTarget::Renderer(id) = session.selection.primary else {
+            panic!("the added beam should be selected: {}", session.status);
+        };
+        let control = RendererNumberControl::Beam(id, BeamField::EndY);
+        session.seek_time(0.5);
+        assert_eq!(renderer_number_input_value(&session, control), Some(0.0));
+        let command = renderer_numeric_scrub_command(&session, control, 18.25).unwrap();
+        assert!(session.execute("Moved beam endpoint", command, false));
+        assert_eq!(renderer_number_input_value(&session, control), Some(18.25));
+        assert_eq!(session.preview().unwrap().time(), 0.5);
+        assert_eq!(session.time(), 0.5);
+        session.undo();
+        assert_eq!(renderer_number_input_value(&session, control), Some(0.0));
+        session.undo();
+        assert_eq!(session.effect, before);
     }
 
     #[test]

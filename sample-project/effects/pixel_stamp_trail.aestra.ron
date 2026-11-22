@@ -1,0 +1,207 @@
+(
+    format_version: 4,
+    id: "a3574a00-0000-4000-8000-00000000fa01",
+    name: "Pixel Stamp Trail",
+    duration: 2.4,
+    playback_mode: LoopRestart,
+    metadata: {"aestra.dimension": "2d"},
+    assets: [
+        (id: "a3574a00-0000-4000-8000-00000000fa02", name: "Pulse Atlas", kind: Texture, path: "textures/pixel_pulse.png"),
+        (id: "a3574a00-0000-4000-8000-00000000fa03", name: "Pulse Palette", kind: Texture, path: "textures/pixel_pulse.palette.png"),
+    ],
+    flipbooks: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000fa04",
+            name: "Head",
+            texture: "a3574a00-0000-4000-8000-00000000fa02",
+            frames: [(min: (0.5, 0.0), max: (1.0, 1.0))],
+            frame_rate: 1.0,
+            looping: false,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000fa05",
+            name: "Stamp",
+            texture: "a3574a00-0000-4000-8000-00000000fa02",
+            frames: [(min: (0.0, 0.0), max: (0.5, 1.0))],
+            frame_rate: 1.0,
+            looping: false,
+        ),
+    ],
+    material_instances: [(
+        id: "a3574a00-0000-4000-8000-00000000fa06",
+        program: Project("b0a2971e-60a3-4483-8a01-043b8f160011"),
+        values: {
+            "b0a2971e-60a3-4483-8a01-043b8f160012": Constant(Texture2D("a3574a00-0000-4000-8000-00000000fa02")),
+            "b0a2971e-60a3-4483-8a01-043b8f160020": Constant(Texture2D("a3574a00-0000-4000-8000-00000000fa03")),
+        },
+        render_state: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+    )],
+    emitters: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000fa10",
+            name: "Moving head",
+            enabled: true,
+            transform: (
+                translation: (-60.35, -18.65, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 2.4,
+            max_particles: 1,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [(
+                        id: "a3574a00-0000-4000-8000-00000000fa11",
+                        module_type: "aestra.emission.rate",
+                        enabled: true,
+                        parameters: Emission(spawn_rate: 0.0, burst_count: 1),
+                    )],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000fa12",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(shape: Point),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000fa13",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (min: 1.03, max: 1.03),
+                                speed: (min: 155.0, max: 155.0),
+                                direction: (0.75, 0.6614378, 0.0),
+                                spread_degrees: 0.0,
+                                angular_velocity: (min: 0.0, max: 0.0),
+                                velocity_distribution: Constant,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000fa14",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(gravity: (0.0, -178.0, 0.0), drag: 0.0, turbulence: 0.0),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000fa15",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (id: "a3574a00-0000-4000-8000-00000000fa16", keys: [(time: 0.0, value: 12.0)]),
+                                opacity: (id: "a3574a00-0000-4000-8000-00000000fa17", keys: [(time: 0.0, value: 1.0)]),
+                                color: (id: "a3574a00-0000-4000-8000-00000000fa18", keys: [(time: 0.0, color: (1.0, 1.0, 1.0, 1.0))]),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [(
+                id: "a3574a00-0000-4000-8000-00000000fa19",
+                renderer_type: "aestra.renderer.flipbook",
+                enabled: true,
+                material: "a3574a00-0000-4000-8000-00000000fa06",
+                properties: Flipbook(
+                    flipbook: "a3574a00-0000-4000-8000-00000000fa04",
+                    time_source: ParticleAge,
+                    playback: Forward,
+                    random_start: false,
+                ),
+            )],
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000fa20",
+            name: "Stamps",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 2.4,
+            max_particles: 24,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [(
+                        id: "a3574a00-0000-4000-8000-00000000fa21",
+                        module_type: "aestra.emission.rate",
+                        enabled: true,
+                        parameters: Emission(spawn_rate: 0.0, burst_count: 0),
+                    )],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000fa22",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(shape: Point),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000fa23",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (min: 1.15, max: 1.15),
+                                speed: (min: 0.0, max: 0.0),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 0.0,
+                                angular_velocity: (min: 0.0, max: 0.0),
+                                velocity_distribution: Constant,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000fa24",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(gravity: (0.0, 0.0, 0.0), drag: 0.0, turbulence: 0.0),
+                        ),
+                        (
+                            id: "a3574a00-0000-4000-8000-00000000fa25",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (id: "a3574a00-0000-4000-8000-00000000fa26", keys: [(time: 0.0, value: 8.0), (time: 0.74, value: 8.0), (time: 1.0, value: 2.0)]),
+                                opacity: (id: "a3574a00-0000-4000-8000-00000000fa27", keys: [(time: 0.0, value: 1.0)]),
+                                color: (id: "a3574a00-0000-4000-8000-00000000fa28", keys: [(time: 0.0, color: (1.0, 1.0, 1.0, 1.0))]),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [(
+                id: "a3574a00-0000-4000-8000-00000000fa29",
+                renderer_type: "aestra.renderer.flipbook",
+                enabled: true,
+                material: "a3574a00-0000-4000-8000-00000000fa06",
+                properties: Flipbook(
+                    flipbook: "a3574a00-0000-4000-8000-00000000fa05",
+                    time_source: ParticleAge,
+                    playback: Forward,
+                    random_start: false,
+                ),
+            )],
+        ),
+    ],
+    events: [(
+        id: "a3574a00-0000-4000-8000-00000000fa30",
+        source: "a3574a00-0000-4000-8000-00000000fa10",
+        trigger: OnDistance(spacing: 10.5, max_per_tick: 2),
+        target: "a3574a00-0000-4000-8000-00000000fa20",
+        count: 1,
+        inherit_velocity: 0.0,
+    )],
+)

@@ -236,6 +236,7 @@ pub(crate) enum PropertiesAction {
     AddSpriteRenderer,
     AddMeshRenderer,
     AddTrailRenderer,
+    AddBeamRenderer,
     AddFlipbookRenderer,
     MoveModule(ModuleId, i8),
     DuplicateModule(ModuleId),
@@ -862,6 +863,7 @@ fn handle_properties_actions(
                     PropertiesAction::AddSpriteRenderer
                     | PropertiesAction::AddMeshRenderer
                     | PropertiesAction::AddTrailRenderer
+                    | PropertiesAction::AddBeamRenderer
                     | PropertiesAction::AddFlipbookRenderer
                     | PropertiesAction::SetRendererBlend(_, _)
                     | PropertiesAction::SetRendererFlipbook(_, _)
@@ -5919,6 +5921,7 @@ fn clamp_native_numeric_value(
             value.round().clamp(1.0, 256.0)
         }
         NumericScrubTarget::Renderer(RendererNumberControl::Trail(_, field)) => field.clamp(value),
+        NumericScrubTarget::Renderer(RendererNumberControl::Beam(_, field)) => field.clamp(value),
         NumericScrubTarget::Renderer(RendererNumberControl::Uv(renderer, component)) => {
             normalize_renderer_uv_scrub_value(session, renderer, component, value)
         }
@@ -6076,7 +6079,8 @@ fn commit_numeric_scrub(
         NumericScrubTarget::Renderer(
             RendererNumberControl::RibbonWidth(_)
             | RendererNumberControl::RibbonStrands(_)
-            | RendererNumberControl::Trail(_, _),
+            | RendererNumberControl::Trail(_, _)
+            | RendererNumberControl::Beam(_, _),
         ) => {
             if let Some(command) = numeric_scrub_command(session, target, value) {
                 session.execute("Changed strip renderer", command, false);
@@ -6141,6 +6145,9 @@ fn commit_bounded_slider(
         }
         NumericScrubTarget::Renderer(RendererNumberControl::Trail(_, _)) => {
             "Changed trail renderer".into()
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::Beam(_, _)) => {
+            "Changed beam renderer".into()
         }
         NumericScrubTarget::Emitter(_) => "Changed emitter value".into(),
         NumericScrubTarget::EffectClip(_) => "Changed effect clip transform".into(),
@@ -8829,6 +8836,17 @@ fn spawn_module_palette(
                     "Trail Renderer",
                     "Render · GPU particle position history",
                     PropertiesAction::AddTrailRenderer,
+                );
+                results += 1;
+            }
+            if palette.stage == StackStage::Render
+                && (query.is_empty() || "beam renderer endpoint strip".contains(&query))
+            {
+                palette_result(
+                    popup,
+                    "Beam Renderer",
+                    "Render · strip between two local XY endpoints",
+                    PropertiesAction::AddBeamRenderer,
                 );
                 results += 1;
             }

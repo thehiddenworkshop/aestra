@@ -17,6 +17,7 @@ use crate::{
 use aestra_authoring::{EffectCommand, EffectTransaction};
 use aestra_core::EmitterId;
 use bevy::prelude::*;
+use fluent_bundle::FluentArgs;
 
 pub(super) fn execute_timeline_action(
     action: On<TimelineAction>,
@@ -34,6 +35,31 @@ pub(super) fn execute_timeline_action(
             }
         }
         TimelineAction::FrameAll => state.frame_all(motion_execution::timeline_duration(&session)),
+        TimelineAction::SetPreviewLoopIn | TimelineAction::SetPreviewLoopOut => {
+            if !session.set_preview_loop_boundary(*action == TimelineAction::SetPreviewLoopIn) {
+                session.status = localizer.as_deref().map_or_else(
+                    || "Loop out must follow loop in by at least one frame".into(),
+                    |localizer| localizer.text("timeline-preview-loop-invalid"),
+                );
+            }
+        }
+        TimelineAction::TogglePreviewLoop => session.toggle_preview_loop(),
+        TimelineAction::JumpAcrossPreviewLoopSeam => {
+            session.status = match (
+                session.jump_across_preview_loop_seam(),
+                localizer.as_deref(),
+            ) {
+                (Some(frame), Some(localizer)) => {
+                    let mut args = FluentArgs::new();
+                    args.set("frame", format!("{frame:05}"));
+                    localizer.text_with("timeline-preview-loop-seam-frame", &args)
+                }
+                (Some(frame), None) => format!("Loop seam · Frame {frame:05}"),
+                (None, Some(localizer)) => localizer.text("timeline-preview-loop-seam-no-range"),
+                (None, None) => "Set a preview range to inspect its seam".into(),
+            };
+        }
+        TimelineAction::ClearPreviewLoop => session.clear_preview_loop(),
         TimelineAction::AddMarker => {
             state.clear_emitter_selection();
             document_actions::apply(*action, &mut session, localizer.as_deref());

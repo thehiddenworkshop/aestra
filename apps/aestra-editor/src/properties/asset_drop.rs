@@ -95,9 +95,9 @@ pub(super) fn renderer_domain(properties: &RendererProperties) -> Option<Materia
         RendererProperties::Sprite | RendererProperties::Flipbook { .. } => {
             Some(MaterialDomain::Sprite)
         }
-        RendererProperties::Ribbon { .. } | RendererProperties::Trail { .. } => {
-            Some(MaterialDomain::Ribbon)
-        }
+        RendererProperties::Ribbon { .. }
+        | RendererProperties::Trail { .. }
+        | RendererProperties::Beam { .. } => Some(MaterialDomain::Ribbon),
         RendererProperties::Mesh { .. } => Some(MaterialDomain::Mesh),
         RendererProperties::Custom(_) => None,
     }
@@ -250,6 +250,7 @@ pub(super) fn plan_local_material(
             RendererProperties::Sprite
                 | RendererProperties::Flipbook { .. }
                 | RendererProperties::Trail { .. }
+                | RendererProperties::Beam { .. }
         )
     } else {
         session

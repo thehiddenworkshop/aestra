@@ -42,6 +42,8 @@ pub const SPRITE_VERTEX_WESL: &str = concat!(
     "\n",
     include_str!("shaders/aestra_ribbon_vertex.wesl"),
     "\n",
+    include_str!("shaders/aestra_beam_vertex.wesl"),
+    "\n",
     include_str!("shaders/aestra_trail_vertex.wesl")
 );
 pub const SPRITE_RENDER_WESL: &str = concat!(
@@ -52,6 +54,8 @@ pub const SPRITE_RENDER_WESL: &str = concat!(
     include_str!("shaders/aestra_sprite_vertex.wesl"),
     "\n",
     include_str!("shaders/aestra_ribbon_vertex.wesl"),
+    "\n",
+    include_str!("shaders/aestra_beam_vertex.wesl"),
     "\n",
     include_str!("shaders/aestra_trail_vertex.wesl"),
     "\n",

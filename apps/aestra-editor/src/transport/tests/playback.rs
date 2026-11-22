@@ -55,6 +55,37 @@ fn transport_actions_own_playback_mutations() {
 }
 
 #[test]
+fn transport_resumes_and_stops_at_the_preview_range_for_a_one_shot() {
+    let mut session = sample_session_with_playback_mode(EffectPlaybackMode::Once);
+    session.seek_time(0.25);
+    assert!(session.set_preview_loop_boundary(true));
+    session.seek_time(0.75);
+    assert!(session.set_preview_loop_boundary(false));
+    session.toggle_preview_loop();
+    session.seek_time(0.5);
+
+    let mut app = App::new();
+    app.insert_resource(session)
+        .add_observer(execute_transport_action);
+    app.world_mut().trigger(TransportAction::TogglePlayback);
+    {
+        let mut session = app.world_mut().resource_mut::<EditorSession>();
+        assert!(session.playing);
+        assert_eq!(session.frame(), 30);
+        session.advance_playback(0.25);
+        assert_eq!(session.frame(), 15);
+        session.advance_playback(0.125);
+        assert!(session.frame() > 15);
+    }
+    app.world_mut().trigger(TransportAction::Stop);
+    let session = app.world().resource::<EditorSession>();
+    assert!(!session.playing);
+    assert_eq!(session.frame(), 15);
+    assert_eq!(session.effect.playback_mode, EffectPlaybackMode::Once);
+    assert!(!session.dirty);
+}
+
+#[test]
 fn changing_playback_mode_preserves_playback_position_and_running_state() {
     let mut app = App::new();
     let mut session = sample_session_with_playback_mode(EffectPlaybackMode::LoopRestart);

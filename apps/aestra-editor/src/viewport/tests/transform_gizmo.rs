@@ -311,7 +311,10 @@ fn selecting_shape_module_keeps_root_transform_gizmo_available() {
 
 #[test]
 fn emitter_gizmo_previews_then_commits_one_undoable_transform() {
-    let session = test_support::session_with_timing_slack();
+    let mut session = test_support::session_with_timing_slack();
+    session.seek_time(0.75);
+    session.playing = true;
+    let frame = session.frame();
     let gizmo = TransformGizmoState {
         active: true,
         ..default()
@@ -341,6 +344,8 @@ fn emitter_gizmo_previews_then_commits_one_undoable_transform() {
         [4.0, 5.0, 6.0],
         "drag preview must update the compiled effect before release"
     );
+    assert_eq!(session.preview().unwrap().time(), session.simulation_time());
+    let dragged = session.preview().unwrap().effect().clone();
 
     app.world_mut().resource_mut::<TransformGizmoState>().active = false;
     app.update();
@@ -349,6 +354,13 @@ fn emitter_gizmo_previews_then_commits_one_undoable_transform() {
         session.selected_layer().unwrap().transform.translation,
         [4.0, 5.0, 6.0]
     );
+    assert_eq!(session.frame(), frame);
+    assert!(session.playing);
+    assert_eq!(session.preview().unwrap().time(), session.simulation_time());
+    assert!(std::sync::Arc::ptr_eq(
+        session.preview().unwrap().effect(),
+        &dragged
+    ));
 
     app.world_mut().resource_mut::<EditorSession>().undo();
     assert_eq!(

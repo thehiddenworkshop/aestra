@@ -236,6 +236,54 @@ fn ribbon_renderer_material_inputs_and_width_survive_artifact_round_trip() {
 }
 
 #[test]
+fn beam_renderer_survives_artifact_round_trip_and_packs_its_local_endpoints() {
+    let mut effect = EffectAsset::from_ron(include_str!(
+        "../../../sample-project/effects/pixel_beam.aestra.ron"
+    ))
+    .unwrap();
+    let program = MaterialProgram::from_ron(include_str!(
+        "../../../sample-project/materials/ribbon_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    let programs = std::collections::BTreeMap::from([(program.id, program)]);
+    effect.emitters[0].transform.rotation = [0.0, 0.0, 1.0, 0.0];
+    let compiler = EffectCompiler::default();
+    let compiled = compiler
+        .compile_with_material_programs(&effect, &programs)
+        .unwrap();
+    let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(restored, compiled);
+    let RendererPlanKind::Beam { start, end, width } = restored.emitters[0].renderers[0].kind
+    else {
+        panic!("expected beam geometry");
+    };
+    let gpu = GpuEffectArtifact::from_instance(&EffectInstance::new(std::sync::Arc::new(restored)))
+        .unwrap();
+    assert_eq!(gpu.renderers[0].renderer_kind, 5);
+    assert_eq!(
+        gpu.renderers[0].frames[0].to_array(),
+        [-start[0], -start[1], 0.0, width]
+    );
+    assert_eq!(
+        gpu.renderers[0].frames[1].to_array(),
+        [-end[0], -end[1], 0.0, 0.0]
+    );
+    assert!(gpu.bounds_half_extents.x > 62.0);
+    assert!(gpu.bounds_half_extents.y > 29.0);
+
+    effect.emitters[0].renderers[0].properties = aestra_core::RendererProperties::Beam {
+        start,
+        end: start,
+        width,
+    };
+    assert!(
+        compiler
+            .compile_with_material_programs(&effect, &programs)
+            .is_err()
+    );
+}
+
+#[test]
 fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
     let mut compiled = compiled_fixture();
     compiled.optimizations.material_function_calls_authored = 9;
