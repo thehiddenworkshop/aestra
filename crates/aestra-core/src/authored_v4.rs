@@ -38,6 +38,8 @@ pub const AESTRA_STAGE_SIMULATION: &str = "aestra.stage.simulation";
 
 /// The registered domain identities for the built-in `SimulationDomain`s (extensible-stages M3, §10).
 pub const AESTRA_DOMAIN_PARTICLES: &str = "aestra.domain.particles";
+/// The domain of effect-space XY grids declared by simulation stages.
+pub const AESTRA_DOMAIN_GRID_2D: &str = "aestra.domain.grid_2d";
 pub const AESTRA_DOMAIN_STRIP: &str = "aestra.domain.strip";
 
 /// Why a flat asset cannot be expressed in the v4 document shape (or vice versa).

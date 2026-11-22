@@ -807,6 +807,126 @@ fn timeline_state(gpu: &Gpu, timeline: &StageTimeline) -> (Vec<u8>, Vec<u8>) {
 }
 
 #[test]
+fn grid_2d_runs_in_the_normal_stage_executor_and_matches_cpu_diffusion() {
+    use aestra_fluid::{RESOURCE_GRID_2D_DENSITY, grid_2d_diffusion_effect};
+    use aestra_runtime::{PlaybackHistoryPolicy, diffuse_2d};
+
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let effect = grid_2d_diffusion_effect(&registry);
+    let compiled = EffectCompiler::with_extensions(registry.clone())
+        .compile(&effect)
+        .unwrap();
+    let block = &compiled.extension_stages[0].block;
+    let stage = StageExecutor::new(&gpu.device, &gpu.queue, block, &registry.programs, 0).unwrap();
+    let mut timeline = StageTimeline::new(stage, TimelinePolicy::default(), SEED);
+    timeline.set_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+    let read = |timeline: &StageTimeline| -> Vec<f32> {
+        timeline
+            .executor()
+            .read_resource(&gpu.device, &gpu.queue, RESOURCE_GRID_2D_DENSITY)
+            .unwrap()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .copied()
+            .map(f32::from_le_bytes)
+            .collect()
+    };
+    assert_eq!(advance(&gpu, &mut timeline, 1, 1), 1);
+    let seeded = read(&timeline);
+    let [w, h, 1] = block.fields[0].dims else {
+        panic!("expected one XY layer")
+    };
+    assert_eq!(seeded.len(), (w * h) as usize);
+    assert!(seeded[(w * (h / 2) + w / 2) as usize] > 0.9);
+    assert_eq!(seeded[0], 0.0);
+
+    assert_eq!(advance(&gpu, &mut timeline, 30, 29), 29);
+    let actual = read(&timeline);
+    let expected = diffuse_2d(&seeded, w as usize, h as usize, 0.2, 29);
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "GPU {actual}, CPU {expected}"
+        );
+    }
+    assert!(timeline.checkpoint_ticks().is_empty());
+
+    // Oversized authored grids report the actual device limit before creating GPU objects.
+    let mut oversized = block.clone();
+    let aestra_runtime::ExecutionOp::Compute(compute) = &mut oversized.ops[0] else {
+        unreachable!()
+    };
+    compute.dispatch.x = gpu.device.limits().max_compute_workgroups_per_dimension + 1;
+    let error = StageExecutor::new(&gpu.device, &gpu.queue, &oversized, &registry.programs, 0)
+        .err()
+        .expect("oversized dispatch must be rejected");
+    assert!(error.contains("workgroups per axis"), "{error}");
+}
+
+#[test]
+fn grid_2d_smoke_bilinearly_advects_density_with_decay_injection_and_open_edges() {
+    use aestra_fluid::{
+        MODULE_GRID_2D_SMOKE, RESOURCE_GRID_2D_DENSITY, RESOURCE_GRID_2D_VELOCITY,
+        grid_2d_smoke_effect,
+    };
+    use aestra_runtime::PlaybackHistoryPolicy;
+
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut effect = grid_2d_smoke_effect(&registry);
+    for (key, value) in [
+        ("resolution", Value::U32(8)),
+        ("extent", Value::Scalar(8.0)),
+        ("airflow", Value::Vec2([30.0, 30.0])),
+        ("turbulence", Value::Scalar(0.0)),
+        ("dissipation", Value::Scalar(std::f32::consts::LN_2 / DT)),
+        ("source_position", Value::Vec2([0.5, 0.5])),
+        ("source_radius", Value::Scalar(0.49)),
+        ("density_rate", Value::Scalar(12.0)),
+    ] {
+        set_input(&mut effect, MODULE_GRID_2D_SMOKE, key, value);
+    }
+    let compiled = EffectCompiler::with_extensions(registry.clone())
+        .compile(&effect)
+        .unwrap();
+    let block = &compiled.extension_stages[0].block;
+    let stage = StageExecutor::new(&gpu.device, &gpu.queue, block, &registry.programs, 0).unwrap();
+    let at = |x: usize, y: usize| y * 8 + x;
+    let mut initial = [0.0f32; 64];
+    initial[at(2, 2)] = 1.0;
+    initial[at(7, 7)] = 1.0;
+    gpu.queue.write_buffer(
+        stage.buffer(RESOURCE_GRID_2D_DENSITY).unwrap(),
+        0,
+        &initial
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>(),
+    );
+    let mut timeline = StageTimeline::new(stage, TimelinePolicy::default(), SEED);
+    timeline.set_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+    assert_eq!(advance(&gpu, &mut timeline, 1, 1), 1);
+    let read = |id| read_floats(&gpu, timeline.executor().buffer(id).unwrap());
+    let actual = read(RESOURCE_GRID_2D_DENSITY);
+    let mut expected = [0.0; 64];
+    for (x, y) in [(2, 2), (2, 3), (3, 2), (3, 3), (7, 7)] {
+        expected[at(x, y)] = 0.125;
+    }
+    expected[at(4, 4)] = 0.2;
+    assert_eq!(actual.len(), expected.len());
+    for (cell, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "cell {cell}: {actual} != {expected}"
+        );
+    }
+    assert_eq!(read(RESOURCE_GRID_2D_VELOCITY), vec![30.0; 2 * 64]);
+    assert!(timeline.checkpoint_ticks().is_empty());
+}
+
+#[test]
 fn consecutive_dispatches_share_passes_without_changing_the_result() {
     let Some(gpu) = gpu() else { return };
     let registry = registry();
@@ -990,6 +1110,83 @@ fn particle_slots(positions: &[[f32; 3]], dead: usize) -> Vec<f32> {
         state.extend(slot);
     }
     state
+}
+
+#[test]
+fn particles_bilinearly_sample_grid_2d_edges_and_keep_their_z_velocity() {
+    use aestra_runtime::{CompiledFieldFollow, Grid2dChannels, Grid2dLayout};
+    use wgpu::util::DeviceExt;
+
+    let Some(gpu) = gpu() else { return };
+    let layout = Grid2dLayout::new([3, 2], [-1.0, 2.0], 2.0).unwrap().field(
+        aestra_core::ResourceTypeId::new("velocity"),
+        Grid2dChannels::Vector2,
+    );
+    let follow = CompiledFieldFollow {
+        stage: 0,
+        field: layout,
+        strength: 30.0,
+    };
+    let initial_velocity = [5.0, 10.0, 13.0];
+    let mut slots = particle_slots(
+        &[
+            [1.5, 4.5, 200.0],
+            [-100.0, 100.0, 0.0],
+            [100.0, -100.0, 0.0],
+            [1.5, 4.5, 0.0],
+        ],
+        3,
+    );
+    for slot in slots.as_chunks_mut::<STATE_STRIDE>().0 {
+        slot[3..6].copy_from_slice(&initial_velocity);
+    }
+    let upload = |values: &[f32]| {
+        gpu.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: &values
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<_>>(),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            })
+    };
+    let state = upload(&slots);
+    let field = upload(&[
+        10.0, -5.0, 14.0, -3.0, 18.0, -1.0, 18.0, -11.0, 22.0, -9.0, 26.0, -7.0,
+    ]);
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    FieldFollowPipeline::new(&gpu.device).encode(
+        &gpu.device,
+        &mut encoder,
+        &state,
+        4,
+        aestra_bevy_render::execution::FieldBuffers {
+            field: &field,
+            table: None,
+        },
+        &follow,
+        DT,
+    );
+    gpu.queue.submit([encoder.finish()]);
+    let output = read_floats(&gpu, &state);
+    for (index, expected) in [
+        [12.0, 1.0, 13.0],
+        [11.5, -0.5, 13.0],
+        [11.5, 4.5, 13.0],
+        initial_velocity,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let base = index * STATE_STRIDE;
+        assert_eq!(output[base + 3..base + 6], expected);
+        assert_eq!(
+            output[base..base + 3],
+            slots[base..base + 3],
+            "position integrates on the next tick"
+        );
+    }
 }
 
 /// Particles up the plume's axis — slot 1 dead — each velocity pulled all the way to `fluid`'s

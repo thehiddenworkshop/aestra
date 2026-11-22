@@ -1,0 +1,192 @@
+(
+    format_version: 4,
+    id: "9433f0c5-b89c-4e59-8b82-e31665c5c54b",
+    name: "Grid2D Flow",
+    duration: 8.0,
+    playback_mode: LoopRestart,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    simulation_stages: [
+        (
+            id: "d6702a13-a556-a475-03c8-a4ae5f0fef5e",
+            name: "Grid2D Flow",
+            stage_type: "org.example.aestra-fluid::stage/grid_2d_flow",
+            modules: [
+                (
+                    id: "54de851c-e2d8-45dd-ab7a-0811e734f5e2",
+                    module_type: "org.example.aestra-fluid::module/grid_2d_flow",
+                    enabled: true,
+                    parameters: Custom({
+                        "cell_size": Scalar(2.0),
+                        "height": U32(28),
+                        "speed": Scalar(42.0),
+                        "width": U32(40),
+                    }),
+                ),
+            ],
+        ),
+    ],
+    emitters: [
+        (
+            id: "9ad0e031-8365-4b22-9c60-70e572995d3c",
+            name: "Flow Tracers",
+            enabled: true,
+            transform: (
+                translation: (15.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 8.0,
+            max_particles: 512,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "e8ace5ed-a2c8-4384-afed-02cbb805b484",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 85.0,
+                                burst_count: 12,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "71c336a3-9647-40ca-8f3d-0db030c84566",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Sphere(
+                                    radius: 2.5,
+                                ),
+                            ),
+                        ),
+                        (
+                            id: "6732171a-251f-4241-be48-fb3a4dcf4f6f",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 2.5,
+                                    max: 4.0,
+                                ),
+                                speed: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 0.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "df8b0609-b80d-4f94-a9b4-5017f11e37ae",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.0, 0.0, 0.0),
+                                drag: 0.0,
+                                turbulence: 0.0,
+                            ),
+                        ),
+                        (
+                            id: "77563b8c-d573-4412-81e0-f4b148a6823b",
+                            module_type: "aestra.update.follow_field",
+                            enabled: true,
+                            parameters: FollowField(
+                                domain: "Grid2D Flow",
+                                field: "org.example.aestra-fluid::resource/grid_2d_velocity",
+                                strength: 24.0,
+                            ),
+                        ),
+                        (
+                            id: "cebcfc33-9626-47cb-a5cf-78500f1f232a",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "24495a83-aa3d-4087-a81c-2c15929025ea",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 1.7,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "5a68a2e8-3717-495b-9868-a8bc54715633",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.85,
+                                        ),
+                                        (
+                                            time: 0.7,
+                                            value: 0.7,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "4b429624-6200-4bdd-af23-78d58de75847",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (0.38, 0.9, 1.0, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.65, 0.25, 1.0, 1.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "8dc0ee86-2afa-422c-a264-e7d22c03b356",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000000001",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+    extensions: [
+        (
+            plugin: "org.example.aestra-fluid",
+            version: "^0.1.0",
+        ),
+    ],
+    metadata: {
+        "aestra.dimension": "2d",
+    },
+)

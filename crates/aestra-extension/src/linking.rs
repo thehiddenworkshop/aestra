@@ -109,7 +109,7 @@ pub struct DomainDescriptor {
     pub display_name: String,
 }
 
-/// The registered domains (§10): built-in particles and strips, plus plugin domains.
+/// The registered domains (§10): built-in particles, strips, XY grids and plugin domains.
 #[derive(Debug, Clone, Default)]
 pub struct DomainRegistry {
     domains: BTreeMap<DomainTypeId, DomainDescriptor>,
@@ -121,6 +121,7 @@ impl DomainRegistry {
         for (type_id, name) in [
             (aestra_core::AESTRA_DOMAIN_PARTICLES, "Particles"),
             (aestra_core::AESTRA_DOMAIN_STRIP, "Strip"),
+            (aestra_core::AESTRA_DOMAIN_GRID_2D, "Grid2D"),
             (aestra_runtime::AESTRA_DOMAIN_HOST_INPUT, "Host Input"),
         ] {
             let descriptor = DomainDescriptor {

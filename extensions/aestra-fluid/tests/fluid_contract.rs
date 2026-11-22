@@ -1103,6 +1103,62 @@ fn a_follower_without_a_domain_is_an_invalid_reference() {
     }));
 }
 
+#[test]
+fn grid_2d_follow_resolves_vector_fields_and_round_trips_the_compiled_artifact() {
+    use aestra_core::ModuleParameters;
+    use aestra_fluid::{RESOURCE_GRID_2D_VELOCITY, grid_2d_diffusion_effect, grid_2d_flow_effect};
+
+    let registry = fluid_registry();
+    let compiler = EffectCompiler::with_extensions(registry.clone());
+    let mut source = grid_2d_flow_effect(&registry);
+    // The first stage has only scalar density. The default must find the later XY velocity.
+    source.simulation_stages.insert(
+        0,
+        grid_2d_diffusion_effect(&registry)
+            .simulation_stages
+            .remove(0),
+    );
+    source.extensions = registry.derive_requirements(&source);
+    let index = source.emitters[0]
+        .modules
+        .iter()
+        .position(|module| matches!(module.parameters, ModuleParameters::FollowField { .. }))
+        .unwrap();
+
+    let named = compiler.compile(&source).unwrap();
+    let follow = named.emitters[0].field_follow.as_ref().unwrap();
+    assert_eq!(follow.stage, 1);
+    assert_eq!(follow.field.components, 2);
+    assert_eq!(follow.field.resource.as_str(), RESOURCE_GRID_2D_VELOCITY);
+    assert!(named.requirements.gpu_fields);
+    assert_eq!(
+        named.emitters[0].simulation_class,
+        aestra_runtime::SimulationClass::Stateful
+    );
+
+    source.emitters[0].modules[index].parameters = ModuleParameters::FollowField {
+        domain: String::new(),
+        field: String::new(),
+        strength: follow.strength,
+    };
+    let auto = compiler.compile(&source).unwrap();
+    assert_eq!(auto.emitters[0].field_follow.as_ref(), Some(follow));
+    let decoded =
+        aestra_artifact::decode_effect(&aestra_artifact::encode_effect(&auto).unwrap()).unwrap();
+    assert_eq!(decoded.emitters[0].field_follow.as_ref(), Some(follow));
+
+    source.simulation_stages.remove(1);
+    source.extensions = registry.derive_requirements(&source);
+    let error = compiler.compile(&source).unwrap_err();
+    assert!(
+        error
+            .report()
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DiagnosticCode::InvalidReference)
+    );
+}
+
 /// The smoke effect on a sparse 512³ grid of `budget` bricks (fluid F7).
 fn sparse_smoke(registry: &ExtensionRegistry, budget: u32) -> EffectAsset {
     let mut effect = smoke_effect(registry);
@@ -1563,6 +1619,34 @@ fn compile_tier(
         .with_tier(tier)
         .compile(effect)
         .expect("compiles at every tier")
+}
+
+#[test]
+fn grid_2d_smoke_quality_tiers_keep_effect_space_bounds_and_reuse_grid_fields() {
+    use aestra_fluid::{RESOURCE_GRID_2D_DENSITY, RESOURCE_GRID_2D_VELOCITY, grid_2d_smoke_effect};
+    use aestra_runtime::QualityTier;
+
+    let registry = fluid_registry();
+    let source = grid_2d_smoke_effect(&registry);
+    for (tier, cells) in QualityTier::presets().into_iter().zip([96, 72, 48]) {
+        let compiled = compile_tier(&registry, &source, tier);
+        let block = &compiled.extension_stages[0].block;
+        check_program_block(block, &registry.programs).unwrap();
+        for (id, components) in [
+            (RESOURCE_GRID_2D_DENSITY, 1),
+            (RESOURCE_GRID_2D_VELOCITY, 2),
+        ] {
+            let field = block.field(&ResourceTypeId::new(id)).unwrap();
+            assert_eq!(field.dims, [cells, cells, 1]);
+            assert_eq!(field.origin[..2], [-48.0; 2]);
+            assert!((field.cell_size * cells as f32 - 96.0).abs() < 1e-5);
+            assert_eq!(field.components, components);
+        }
+        let decoded =
+            aestra_artifact::decode_effect(&aestra_artifact::encode_effect(&compiled).unwrap())
+                .unwrap();
+        assert_eq!(decoded.extension_stages, compiled.extension_stages);
+    }
 }
 
 #[test]

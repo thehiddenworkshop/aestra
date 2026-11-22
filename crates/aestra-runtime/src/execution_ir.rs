@@ -248,6 +248,8 @@ pub enum ExecutionOp {
 /// tools and renderers use it to interpret the bytes (debug slices now; field sampling and volume
 /// rendering later) without knowing what the field means.
 ///
+/// A dense Grid2D field uses one Z layer with its cell centers on the XY plane.
+///
 /// A **staggered** vector field (fluid F4, a MAC grid) stores component `c` of cell `i` on the cell's
 /// minimum face along axis `c` — at `origin + (i + 0.5 - 0.5·e_c)·cell_size` — rather than at its
 /// centre; samplers offset each component accordingly.
@@ -288,6 +290,15 @@ impl BrickLayout {
 }
 
 impl FieldLayout {
+    /// Whether Follow Field can sample this as planar XY or spatial XYZ velocity.
+    pub fn supports_particle_follow(&self) -> bool {
+        matches!(self.components, 3 | 4)
+            || (self.components == 2
+                && self.dims[2] == 1
+                && !self.staggered
+                && self.bricks.is_none())
+    }
+
     /// Cells in the grid.
     pub fn cells(&self) -> u64 {
         self.dims.iter().map(|&dim| u64::from(dim)).product()

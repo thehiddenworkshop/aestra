@@ -1,0 +1,52 @@
+(
+    format_version: 4,
+    id: "9c8d86e1-4c48-441f-96eb-91c3541a320e",
+    name: "Grid2D Smoke",
+    duration: 8.0,
+    playback_mode: LoopRestart,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    simulation_stages: [
+        (
+            id: "3dbe662b-5ed8-1646-01b1-1f1eef30cabb",
+            name: "Grid2D Smoke",
+            stage_type: "org.example.aestra-fluid::stage/grid_2d_smoke",
+            modules: [
+                (
+                    id: "4383e38f-9934-428b-a211-ded5e15ec429",
+                    module_type: "org.example.aestra-fluid::module/grid_2d_smoke",
+                    enabled: true,
+                    parameters: Custom({
+                        "airflow": Vec2((2.0, 15.0)),
+                        "density_rate": Scalar(3.2),
+                        "dissipation": Scalar(0.36),
+                        "extent": Scalar(96.0),
+                        "resolution": U32(96),
+                        "source_position": Vec2((0.0, -28.0)),
+                        "source_radius": Scalar(6.0),
+                        "turbulence": Scalar(9.0),
+                    }),
+                ),
+            ],
+        ),
+    ],
+    emitters: [],
+    extensions: [
+        (
+            plugin: "org.example.aestra-fluid",
+            version: "^0.1.0",
+        ),
+    ],
+    metadata: {
+        "aestra.dimension": "2d",
+    },
+)

@@ -2871,6 +2871,7 @@ pub enum ModuleParameters {
     /// `domain`/`field` pick the effect's first domain stage declaring a vector field, and its first
     /// such field. Requires previous-tick state, so it promotes the emitter to a stateful class; the
     /// field lives on the GPU, so the module is GPU-only.
+    /// Following a dense two-channel Grid2D field changes only XY velocity.
     FollowField {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         domain: String,

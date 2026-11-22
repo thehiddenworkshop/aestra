@@ -37,7 +37,7 @@ use aestra_runtime::{
     AESTRA_RESOURCE_WORLD_SDF, ExecutionBlock, ExecutionOp, FieldLayout, FrameConstants,
     RepeatPolicy, ResourceLifetime, StagedDispatch,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::mpsc;
 use std::time::Duration;
 use wgpu::util::DeviceExt;
@@ -289,11 +289,18 @@ impl StageExecutor {
         block.validate().map_err(|error| error.to_string())?;
         check_program_block_cached(block, programs, &mut cache.interfaces)?;
 
-        let mut counts = Vec::new();
-        indirect_sources(&block.ops, &mut counts);
+        let limits = device.limits();
+        let mut storage = BTreeSet::new();
+        let mut counts = BTreeSet::new();
+        check_device_ops(
+            &block.ops,
+            limits.max_compute_workgroups_per_dimension,
+            &mut storage,
+            &mut counts,
+        )?;
         let mut buffers = Vec::with_capacity(block.resources.len());
         for resource in &block.resources {
-            let indirect = if counts.contains(&&resource.id) {
+            let indirect = if counts.contains(&resource.id) {
                 wgpu::BufferUsages::INDIRECT
             } else {
                 wgpu::BufferUsages::empty()
@@ -310,9 +317,25 @@ impl StageExecutor {
                     resource.id.as_str()
                 ));
             }
+            let max_bytes = if storage.contains(&resource.id) {
+                limits
+                    .max_buffer_size
+                    .min(limits.max_storage_buffer_binding_size)
+            } else {
+                limits.max_buffer_size
+            };
+            let size = bytes
+                .checked_next_multiple_of(4)
+                .filter(|&size| size <= max_bytes)
+                .ok_or_else(|| {
+                    format!(
+                        "resource '{}' requires {bytes} bytes but the device allows {max_bytes}",
+                        resource.id.as_str(),
+                    )
+                })?;
             buffers.push(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(resource.id.as_str()),
-                size: bytes.next_multiple_of(4),
+                size,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST
@@ -2130,19 +2153,38 @@ fn retain_every_other<T>(items: &mut Vec<T>) {
     });
 }
 
-/// The resources indirect compute ops read their counts from.
-fn indirect_sources<'a>(ops: &'a [ExecutionOp], sources: &mut Vec<&'a ResourceTypeId>) {
+/// Collects buffer usage and checks dispatch bounds before allocating a stage.
+fn check_device_ops<'a>(
+    ops: &'a [ExecutionOp],
+    max_workgroups: u32,
+    storage: &mut BTreeSet<&'a ResourceTypeId>,
+    sources: &mut BTreeSet<&'a ResourceTypeId>,
+) -> Result<(), String> {
     for op in ops {
         match op {
             ExecutionOp::Compute(compute) => {
+                let dispatch = compute.dispatch;
+                if dispatch.x.max(dispatch.y).max(dispatch.z) > max_workgroups {
+                    return Err(format!(
+                        "dispatch '{}' exceeds the device limit of {max_workgroups} workgroups per axis",
+                        compute.name,
+                    ));
+                }
+                storage.extend(compute.accesses.iter().map(|access| &access.resource));
                 if let Some(counts) = &compute.indirect {
-                    sources.push(&counts.resource);
+                    sources.insert(&counts.resource);
                 }
             }
-            ExecutionOp::Repeat { body, .. } => indirect_sources(body, sources),
+            ExecutionOp::Repeat { policy, body } => {
+                if let RepeatPolicy::UntilConverged { residual, .. } = policy {
+                    storage.insert(residual);
+                }
+                check_device_ops(body, max_workgroups, storage, sources)?;
+            }
             ExecutionOp::Barrier | ExecutionOp::Copy(_) => {}
         }
     }
+    Ok(())
 }
 
 /// Reads a buffer back (blocking).

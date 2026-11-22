@@ -1301,6 +1301,12 @@ impl TryFrom<EffectV1> for CompiledEffect {
                     "followed field is not declared by that domain",
                 );
             }
+            if !follow.field.supports_particle_follow() {
+                return invalid(
+                    format!("effect.emitters[{index}].field_follow"),
+                    "Follow Field needs a dense, cell-centered XY field or an XYZ vector field",
+                );
+            }
         }
         // Likewise a spawned-from emission list (fluid F10).
         for (index, emitter) in emitters.iter().enumerate() {

@@ -64,7 +64,13 @@ use aestra_runtime::{
 };
 use std::sync::Arc;
 
+mod grid_2d;
 mod liquid;
+pub use grid_2d::{
+    MODULE_GRID_2D_DIFFUSION, MODULE_GRID_2D_FLOW, MODULE_GRID_2D_SMOKE, RESOURCE_GRID_2D_DENSITY,
+    RESOURCE_GRID_2D_VELOCITY, STAGE_GRID_2D_DIFFUSION, STAGE_GRID_2D_FLOW, STAGE_GRID_2D_SMOKE,
+    grid_2d_diffusion_effect, grid_2d_flow_effect, grid_2d_smoke_effect,
+};
 pub use liquid::{
     CAPABILITY_LIQUID, LIQUID_ENTRY_POINTS, LIQUID_LOOK_ENTRY, LIQUID_LOOK_WGSL, LIQUID_STAGE,
     LIQUID_WGSL, MAX_LIQUID_BLOCKS, MAX_LIQUID_PARTICLES, MAX_LIQUID_SUBSTEPS, MODULE_LIQUID_BLOCK,
@@ -716,6 +722,7 @@ impl AestraExtension for FluidExtension {
             StageTypeId::new(STAGE_LIQUID_SOLVER),
             Arc::new(liquid::LiquidSolverLowerer),
         )?;
+        grid_2d::register(registry)?;
         Ok(())
     }
 }

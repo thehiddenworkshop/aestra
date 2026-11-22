@@ -1793,39 +1793,74 @@ Acceptance:
 
 ## M18 — Grid2D infrastructure — P2
 
+Grid2D is a registered effect-space XY domain. Stage plugins can use
+`Grid2dLayout` to declare scalar or vector channels with the existing
+`FieldLayout` storage ABI and cover the grid with 2D compute dispatches.
+The reference Grid2D Diffusion stage seeds a density channel, diffuses it
+through a scratch buffer and publishes the updated field each tick. It uses
+the normal stage executor and honors the host's playback history policy.
+
+Open `sample-project/effects/grid_2d_diffusion.aestra.ron` and play it in the
+editor's XY viewport to see the density field. Edit width, height, cell size
+and diffusion rate in the module stack. The field view works for effects
+with zero particle emitters. Stage preparation checks grid storage and
+dispatch sizes against the device limits.
+
+Open `sample-project/effects/grid_2d_flow.aestra.ron` in the XY viewport to
+see Follow Field steer particles through a GPU vortex. The Vortex module
+exposes the grid dimensions, cell size and flow speed. Negative speed
+reverses the rotation. Follow Field bilinearly samples dense, cell-centered
+Grid2D velocity at each particle's effect-space XY position, clamping to
+the edge cells and preserving Z velocity. The stage and particles advance
+in lockstep without a CPU readback. The GPU field preview stays translucent
+so the tracers remain visible. The first compatible vector field is chosen
+when the module has no explicit domain or field.
+
 Tasks:
 
-- Grid2D simulation domain;
-- GPU storage;
-- channels;
-- scheduling;
-- module API;
-- plugin hooks;
-- debug view.
+- [x] Grid2D simulation domain and shared layout.
+- [x] GPU storage and scalar/vector channel layouts.
+- [x] Scheduling through the existing stage executor.
+- [x] Module and plugin hooks demonstrated by the diffusion stage.
+- [x] Grid2D density preview through the editor field view.
+- [x] Grid2D velocity sampling from Follow Field.
 
 Acceptance:
 
-- [ ] Grid2D can execute as a simulation stage.
-- [ ] Plugins can define solvers.
-- [ ] Particle modules can sample Grid2D.
+- [x] Grid2D can execute as a simulation stage.
+- [x] Plugins can define solvers.
+- [x] Particle modules can sample Grid2D velocity.
 
 ---
 
 ## M19 — Grid2D smoke / advection — P2
 
+Open `sample-project/effects/grid_2d_smoke.aestra.ron` in the editor's XY
+viewport and play it. The Smoke Advection module controls grid size,
+resolution, XY airflow, airflow variation, dissipation and the density
+source. It publishes XY velocity for Follow Field and uses the existing
+field preview to display density.
+
+The GPU stage backtraces density through a prescribed, time-varying velocity
+field, bilinearly samples the preceding tick, and applies exponential decay
+and a circular density source. Open boundaries let the plume leave the grid.
+The sample compiles at 96, 72 and 48 cells per side for the High, Medium and
+Low tiers while keeping the same effect-space bounds. Playback uses the
+host's history policy.
+
 Tasks:
 
-- velocity;
-- density;
-- advection;
-- dissipation;
-- particle/grid injection;
-- pixel presentation.
+- [x] GPU velocity and density fields.
+- [x] Density advection and dissipation.
+- [x] Authored density injection into the grid.
+- [x] XY viewport preview.
+- [ ] Particle-driven injection.
+- [ ] Pixel smoke presentation and asset thumbnails.
 
 Acceptance:
 
-- [ ] Interactive smoke runs in real time.
-- [ ] Grid resolution is quality-scalable.
+- [ ] Profile interactive smoke playback in the editor.
+- [x] Grid resolution is quality-scalable.
 
 ---
 

@@ -15,6 +15,7 @@ mod transform_context;
 pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod execution_ir;
+mod grid_2d;
 pub mod noise;
 mod outputs;
 mod particle_lights;
@@ -38,6 +39,7 @@ pub use execution_ir::{
     ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor,
     ResourceLifetime, StageOutput, execute_reference, lower_stage_fused,
 };
+pub use grid_2d::{Grid2dChannels, Grid2dLayout, Grid2dLayoutError};
 pub use host_transform::CompiledHostTransformTrack;
 pub use input_events::{
     EmissionCutoffs, EventInputError, HostInputEvent, InputSpawnBurst, input_spawn_bursts,
@@ -745,7 +747,7 @@ pub struct ExtensionModulePlan {
 pub struct CompiledFieldFollow {
     /// Index of the domain in [`CompiledEffect::extension_stages`].
     pub stage: usize,
-    /// The field sampled: its resource and grid layout (3 or 4 components; `xyz` is the vector).
+    /// The field sampled: planar XY velocity or spatial XYZ velocity in a 3- or 4-channel field.
     pub field: FieldLayout,
     /// How fast velocity adopts the field's value, per second.
     pub strength: f32,

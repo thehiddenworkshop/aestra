@@ -2016,8 +2016,9 @@ pub const FIELD_FOLLOW_PARAM_WORDS: usize = 14;
 
 /// Follow Field for stateful particles (fluid F2b): each live slot of the persistent state
 /// (`AESTRA_STATE_STRIDE` = 10 floats: position, velocity, age, lifetime, ordinal, distance residual) samples a vector
-/// grid field — a domain's [`aestra_runtime::FieldLayout`] — trilinearly at its position (cell-centred,
-/// clamped to the grid) and moves its velocity toward the sampled `xyz` by `min(strength × dt, 1)`.
+/// grid field at its effect-space position and moves its velocity toward the sample by
+/// `min(strength × dt, 1)`. Dense two-channel fields are sampled bilinearly in XY, preserving
+/// Z velocity. Spatial fields use trilinear sampling. Both clamp to the grid's edge cells.
 /// A gather over particles: no atomics, so reruns reproduce the same bits. The stateful backend runs it
 /// right after each tick's `death_integrate`/`spawn`, so the pull shapes the next tick's motion. A
 /// bricked field (fluid F7) is read through its brick table (binding 3; any buffer when the field
@@ -2036,6 +2037,11 @@ const FIELD_FOLLOW_WGSL: &str = r#"
 @group(0) @binding(3) var<storage, read> follow_table: array<u32>;
 
 const FOLLOW_STATE_STRIDE: u32 = 10u;
+
+fn follow_planar_value(cell: vec2<u32>) -> vec2<f32> {
+    let base = (cell.y * params[1] + cell.x) * 2u;
+    return vec2<f32>(field[base], field[base + 1u]);
+}
 
 fn follow_field_value(cell: vec3<i32>) -> vec3<f32> {
     let dims = vec3<i32>(i32(params[1]), i32(params[2]), i32(params[3]));
@@ -2092,6 +2098,25 @@ fn follow_field(@builtin(global_invocation_id) gid: vec3<u32>) {
     let origin = vec3<f32>(bitcast<f32>(params[5]), bitcast<f32>(params[6]), bitcast<f32>(params[7]));
     let cell_size = bitcast<f32>(params[8]);
     let position = vec3<f32>(state[s], state[s + 1u], state[s + 2u]);
+    let pull = min(bitcast<f32>(params[9]) * bitcast<f32>(params[10]), 1.0);
+    if (params[4] == 2u) {
+        let last = vec2<u32>(params[1] - 1u, params[2] - 1u);
+        let g = clamp((position.xy - origin.xy) / cell_size - vec2<f32>(0.5),
+                      vec2<f32>(0.0), vec2<f32>(last));
+        let lower = vec2<u32>(g);
+        let upper = min(lower + vec2<u32>(1u), last);
+        let weight = fract(g);
+        let bottom = mix(follow_planar_value(lower),
+                         follow_planar_value(vec2<u32>(upper.x, lower.y)), weight.x);
+        let top = mix(follow_planar_value(vec2<u32>(lower.x, upper.y)),
+                      follow_planar_value(upper), weight.x);
+        let sampled_velocity = mix(bottom, top, weight.y);
+        let velocity = vec2<f32>(state[s + 3u], state[s + 4u]);
+        let followed = velocity + (sampled_velocity - velocity) * pull;
+        state[s + 3u] = followed.x;
+        state[s + 4u] = followed.y;
+        return;
+    }
     let last = vec3<f32>(f32(params[1]), f32(params[2]), f32(params[3])) - vec3<f32>(1.0);
     var target_velocity: vec3<f32>;
     if (params[11] != 0u) {
@@ -2112,7 +2137,6 @@ fn follow_field(@builtin(global_invocation_id) gid: vec3<u32>) {
         let x3 = mix(follow_field_value(b + vec3<i32>(0, 1, 1)), follow_field_value(b + vec3<i32>(1, 1, 1)), t.x);
         target_velocity = mix(mix(x0, x1, t.y), mix(x2, x3, t.y), t.z);
     }
-    let pull = min(bitcast<f32>(params[9]) * bitcast<f32>(params[10]), 1.0);
     let velocity = vec3<f32>(state[s + 3u], state[s + 4u], state[s + 5u]);
     let followed = velocity + (target_velocity - velocity) * pull;
     state[s + 3u] = followed.x;

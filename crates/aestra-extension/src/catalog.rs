@@ -514,9 +514,9 @@ pub(crate) fn builtin_modules() -> Vec<ModuleMetadata> {
         metadata(
             MODULE_FOLLOW_FIELD,
             "Follow Field",
-            "Pulls this emitter's particles toward the velocity of a vector field an effect domain \
-             simulates — a fluid, say: each tick their velocity moves toward the field's value at the \
-             particle by strength × dt. The field lives on the GPU, so this runs on GPU simulation only.",
+            "Pulls particles toward the velocity of an effect's vector field each tick. Grid2D \
+             fields steer XY velocity. The module uses the first compatible vector field by default \
+             and requires GPU simulation.",
             "Simulation",
             StageKind::ParticleUpdate,
         )

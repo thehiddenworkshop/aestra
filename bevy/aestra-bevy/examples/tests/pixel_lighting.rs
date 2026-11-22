@@ -88,6 +88,229 @@ fn capture_app() -> App {
 
 #[test]
 #[ignore = "native GPU image test; run explicitly"]
+fn native_camera_2d_previews_the_grid_stage_without_particle_emitters() {
+    use aestra_bevy::{
+        EffectDimension,
+        gpu::{AestraDebugViews, GpuStageProgress},
+    };
+
+    aestra_fluid::link();
+    let effect = EffectAsset::load_ron(asset_root().join("effects/grid_2d_diffusion.aestra.ron"))
+        .expect("load the Grid2D sample");
+    assert_eq!(effect.dimension(), EffectDimension::TwoD);
+    assert!(effect.emitters.is_empty());
+    let mut player =
+        EffectPlayer::new(&effect).with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+    player.playing = false;
+    player.set_playback_time(1.0 / 60.0);
+
+    let mut app = capture_app();
+    app.insert_resource(AestraDebugViews { field_slices: true });
+    let world = app.world_mut();
+    let target = world
+        .resource_mut::<Assets<Image>>()
+        .add(pixel_render_target(UVec2::new(128, 96)).unwrap());
+    world.spawn((
+        Camera2d,
+        Msaa::Off,
+        Transform::from_xyz(0.0, 0.0, 140.0),
+        RenderTarget::Image(target.clone().into()),
+    ));
+    world.spawn((
+        Camera3d::default(),
+        Camera {
+            is_active: false,
+            ..default()
+        },
+    ));
+    let owner = world.spawn((player, Transform::default())).id();
+    let pixels = [(64, 48), (78, 48), (5, 5)];
+    let deadline = Instant::now() + Duration::from_secs(6);
+    let seed = loop {
+        let samples = capture(&mut app, &target, &pixels);
+        if samples[0] > 0 || Instant::now() >= deadline {
+            break samples;
+        }
+    };
+    let world = app.world();
+    let player = world.get::<EffectPlayer>(owner).unwrap();
+    assert!(
+        world
+            .get::<GpuStageProgress>(owner)
+            .is_some_and(|progress| progress.is_ready(player.instance())),
+        "Grid2D stage did not reach the seed tick"
+    );
+    let children = world
+        .get::<Children>(owner)
+        .expect("the field view has a quad");
+    let quad = children
+        .iter()
+        .find_map(|entity| world.get::<ViewVisibility>(entity));
+    assert!(
+        quad.copied().is_some_and(ViewVisibility::get),
+        "the field view is culled: {quad:?}"
+    );
+    assert!(seed[0] > 180 && seed[1] == 0 && seed[2] == 0, "{seed:?}");
+
+    app.world_mut()
+        .get_mut::<EffectPlayer>(owner)
+        .unwrap()
+        .set_playback_time(30.0 / 60.0);
+    let diffused = capture(&mut app, &target, &pixels);
+    assert!(
+        diffused[0] > 0 && diffused[0] < seed[0] && diffused[1] > 0 && diffused[2] == 0,
+        "seed {seed:?}, diffused {diffused:?}"
+    );
+}
+
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
+fn native_grid_2d_flow_moves_an_authored_follower_in_xy() {
+    use aestra_bevy::{
+        ColorKey, Curve, CurveKey, EmitterShape, Gradient, ModuleInstance, ModuleParameters,
+    };
+
+    aestra_fluid::link();
+    let mut effect = EffectAsset::load_ron(asset_root().join("effects/grid_2d_flow.aestra.ron"))
+        .expect("load the Grid2D Flow sample");
+    // Use one stationary birth from the authored emitter so its displacement is only from the grid.
+    let emitter = &mut effect.emitters[0];
+    for module in &mut emitter.modules {
+        match &mut module.parameters {
+            ModuleParameters::Emission {
+                spawn_rate,
+                burst_count,
+                ..
+            } => {
+                *spawn_rate = 0.0;
+                *burst_count = 1;
+            }
+            ModuleParameters::Shape { shape } => *shape = EmitterShape::Point,
+            ModuleParameters::Appearance { .. } => {
+                module.parameters = ModuleInstance::appearance(
+                    Curve::new(vec![CurveKey::new(0.0, 3.0)]),
+                    Curve::new(vec![CurveKey::new(0.0, 1.0)]),
+                    Gradient::new(vec![ColorKey::new(0.0, [1.0; 4])]),
+                )
+                .parameters;
+            }
+            _ => {}
+        }
+    }
+    let mut player =
+        EffectPlayer::new(&effect).with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+    player.playing = false;
+    player.set_playback_time(1.0 / 60.0);
+    let mut app = capture_app();
+    app.insert_resource(aestra_bevy::gpu::AestraDebugViews { field_slices: true });
+    let world = app.world_mut();
+    let target = world
+        .resource_mut::<Assets<Image>>()
+        .add(pixel_render_target(UVec2::new(128, 96)).unwrap());
+    world.spawn((
+        Camera2d,
+        Msaa::Off,
+        Transform::from_xyz(0.0, 0.0, 140.0),
+        RenderTarget::Image(target.clone().into()),
+    ));
+    let owner = world.spawn((player, Transform::IDENTITY)).id();
+    let above_birth: Vec<_> = (30..44)
+        .flat_map(|y| (68..82).map(move |x| (x, y)))
+        .collect();
+    let start = (79, 48);
+    let deadline = Instant::now() + Duration::from_secs(6);
+    loop {
+        let sample = capture_colors(&mut app, &target, &[start]);
+        // The XY vector preview writes red and green. Only the tracer contributes blue.
+        if sample[0][2] > 110 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "tracer did not appear at its birth position"
+        );
+    }
+
+    app.world_mut()
+        .get_mut::<EffectPlayer>(owner)
+        .unwrap()
+        .set_playback_time(0.5);
+    let after = capture_colors(&mut app, &target, &above_birth);
+    assert!(
+        after.iter().any(|color| color[2] > 110),
+        "tracer did not follow the vortex"
+    );
+    let [red, green, blue] = capture_colors(&mut app, &target, &[start])[0];
+    assert_eq!(blue, 0, "tracer stayed at its birth position");
+    assert!(red > 0 || green > 0, "the vector field preview is missing");
+}
+
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
+fn native_grid_2d_smoke_rises_in_the_xy_view() {
+    use aestra_bevy::gpu::{AestraDebugViews, GpuStageProgress};
+
+    aestra_fluid::link();
+    let effect = EffectAsset::load_ron(asset_root().join("effects/grid_2d_smoke.aestra.ron"))
+        .expect("load the Grid2D Smoke sample");
+    let mut player =
+        EffectPlayer::new(&effect).with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+    player.playing = false;
+    player.set_playback_time(0.4);
+
+    let mut app = capture_app();
+    app.insert_resource(AestraDebugViews { field_slices: true });
+    let world = app.world_mut();
+    let target = world
+        .resource_mut::<Assets<Image>>()
+        .add(pixel_render_target(UVec2::new(128, 112)).unwrap());
+    world.spawn((
+        Camera2d,
+        Msaa::Off,
+        Transform::from_xyz(0.0, 0.0, 140.0),
+        RenderTarget::Image(target.clone().into()),
+    ));
+    let owner = world.spawn((player, Transform::IDENTITY)).id();
+    let plume: Vec<_> = (56..65)
+        .flat_map(|y| (38..96).map(move |x| (x, y)))
+        .collect();
+    let mut samples = vec![(64, 84), (6, 6)];
+    samples.extend(plume);
+    let deadline = Instant::now() + Duration::from_secs(6);
+    let early = loop {
+        let pixels = capture(&mut app, &target, &samples);
+        if pixels[0] > 80 {
+            break pixels;
+        }
+        assert!(Instant::now() < deadline, "no density at the source");
+    };
+    assert!(
+        early[1..].iter().all(|&red| red == 0),
+        "smoke begins at the source"
+    );
+
+    app.world_mut()
+        .get_mut::<EffectPlayer>(owner)
+        .unwrap()
+        .set_playback_time(2.5);
+    let later = capture(&mut app, &target, &samples);
+    let world = app.world();
+    let player = world.get::<EffectPlayer>(owner).unwrap();
+    assert!(
+        world
+            .get::<GpuStageProgress>(owner)
+            .is_some_and(|progress| progress.is_ready(player.instance())),
+        "smoke did not reach the requested tick"
+    );
+    assert!(
+        later[2..].iter().filter(|&&red| red > 40).count() > 20,
+        "smoke did not rise through the view"
+    );
+    assert_eq!(later[1], 0, "the corner outside the grid stays clear");
+}
+
+#[test]
+#[ignore = "native GPU image test; run explicitly"]
 fn native_camera_2d_lights_move_quantize_and_clear_per_view() {
     let mut app = capture_app();
     let world = app.world_mut();

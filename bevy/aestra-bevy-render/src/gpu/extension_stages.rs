@@ -24,7 +24,8 @@
 //! effect), one grid field a stage declares ([`aestra_runtime::FieldLayout`]) is shown as a slice: a
 //! compute pass copies the slice from the field's buffer into a storage texture drawn on an unlit
 //! quad, a child of the effect. Scalar fields render as white with alpha = value × gain; vector fields
-//! as |xyz| × gain. The grid is placed in the effect's space (the domain-space decision is fluid F2).
+//! as the vector magnitude × gain. XY velocity slices stay translucent so tracers remain visible.
+//! The grid is placed in the effect's space (fluid F2).
 
 pub use super::output_context::AestraOutputEvent;
 pub(crate) use super::stage_inputs::ExtractedStages;
@@ -170,6 +171,7 @@ use super::stage_coupling::init_field_follow;
 #[derive(Component)]
 pub(super) struct FieldViewState {
     quad: Entity,
+    is_3d: bool,
     target: FieldViewTarget,
 }
 
@@ -318,6 +320,7 @@ fn pick_field(
 fn sync_field_views(
     mut commands: Commands,
     debug: Res<AestraDebugViews>,
+    device: Option<Res<RenderDevice>>,
     effects: Query<(
         Entity,
         &PresentedEffect,
@@ -326,7 +329,7 @@ fn sync_field_views(
         Option<&RenderLayers>,
         Option<&super::volume::VolumeViews>,
     )>,
-    cameras_3d: Query<(), With<Camera3d>>,
+    cameras_3d: Query<(&Camera, Option<&RenderLayers>), With<Camera3d>>,
     mut assets: (
         Option<ResMut<Assets<Image>>>,
         Option<ResMut<Assets<Mesh>>>,
@@ -343,7 +346,20 @@ fn sync_field_views(
                     request.and_then(|r| r.resource.as_ref()),
                 )
             })
-            .flatten();
+            .flatten()
+            .filter(|(_, layout)| {
+                let Some(device) = device.as_ref() else {
+                    return true;
+                };
+                let limits = device.limits();
+                let fits = layout.dims[0].max(layout.dims[1]) <= limits.max_texture_dimension_2d
+                    && layout.stored_cells() * layout.cell_bytes()
+                        <= limits.max_storage_buffer_binding_size;
+                if !fits {
+                    bevy::log::warn_once!("Aestra field preview exceeds the device limits");
+                }
+                fits
+            });
         let settings = request.cloned().unwrap_or_default();
         let Some((stage, layout)) = wanted else {
             if let Some(state) = state {
@@ -354,8 +370,18 @@ fn sync_field_views(
         };
         let slice = ((settings.slice.clamp(0.0, 1.0) * layout.dims[2] as f32) as u32)
             .min(layout.dims[2] - 1);
+        let default_layers = RenderLayers::default();
+        let is_3d = assets.1.is_some()
+            && assets.2.is_some()
+            && cameras_3d.iter().any(|(camera, view_layers)| {
+                camera.is_active
+                    && view_layers
+                        .unwrap_or(&default_layers)
+                        .intersects(layers.unwrap_or(&default_layers))
+            });
         if let Some(mut state) = state {
-            if state.target.stage == stage && state.target.layout == layout {
+            if state.target.stage == stage && state.target.layout == layout && state.is_3d == is_3d
+            {
                 state.target.slice = slice;
                 state.target.gain = settings.gain;
                 continue;
@@ -392,8 +418,7 @@ fn sync_field_views(
                 (slice as f32 + 0.5) * layout.cell_size,
             );
         let transform = Transform::from_translation(center);
-        // A 3-D preview draws an unlit quad; a 2-D view (no 3-D camera) draws a sprite.
-        let quad = match (!cameras_3d.is_empty(), assets.1.as_mut(), assets.2.as_mut()) {
+        let quad = match (is_3d, assets.1.as_mut(), assets.2.as_mut()) {
             (true, Some(meshes), Some(materials)) => commands
                 .spawn((
                     FieldViewQuad,
@@ -428,6 +453,7 @@ fn sync_field_views(
         }
         commands.entity(entity).insert(FieldViewState {
             quad,
+            is_3d,
             target: FieldViewTarget {
                 image: image.id(),
                 stage,
@@ -686,8 +712,14 @@ fn slice_field(@builtin(global_invocation_id) id: vec3<u32>) {
     if (params.components == 1u) {
         color = vec4<f32>(1.0, 1.0, 1.0, clamp(field[base] * params.gain, 0.0, 1.0));
     } else {
-        let v = vec3<f32>(field[base], field[base + 1u], field[base + 2u]) * params.gain;
-        color = vec4<f32>(clamp(abs(v), vec3<f32>(0.0), vec3<f32>(1.0)), clamp(length(v), 0.0, 1.0));
+        var z = 0.0;
+        if params.components >= 3u {
+            z = field[base + 2u];
+        }
+        let v = vec3<f32>(field[base], field[base + 1u], z) * params.gain;
+        let opacity = select(1.0, 0.22, params.components == 2u);
+        color = vec4<f32>(clamp(abs(v), vec3<f32>(0.0), vec3<f32>(1.0)),
+                          clamp(length(v), 0.0, 1.0) * opacity);
     }
     // Texture rows run downward; the grid's y runs upward.
     textureStore(slice_image, texel, color);

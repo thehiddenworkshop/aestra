@@ -2474,7 +2474,7 @@ fn derive_effect_requirements(emitters: &[CompiledEmitter]) -> EffectRequirement
 }
 
 /// Resolves a Follow Field module (fluid F2b) to the domain stage and vector field it samples: the
-/// named domain (else any), and the named field (else the first with at least three components).
+/// named domain (else any), and the named field (else the first supported vector field).
 fn resolve_field_follow(
     stages: &[aestra_runtime::CompiledExtensionStage],
     domain: &str,
@@ -2486,7 +2486,8 @@ fn resolve_field_follow(
             continue;
         }
         if let Some(layout) = stage.block.fields.iter().find(|layout| {
-            layout.components >= 3 && (field.is_empty() || layout.resource.as_str() == field)
+            layout.supports_particle_follow()
+                && (field.is_empty() || layout.resource.as_str() == field)
         }) {
             return Ok(aestra_runtime::CompiledFieldFollow {
                 stage: index,

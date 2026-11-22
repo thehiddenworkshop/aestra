@@ -1,0 +1,48 @@
+(
+    format_version: 4,
+    id: "a3db598d-c0b7-45f3-a392-c28df4e11e2f",
+    name: "Grid2D Diffusion",
+    duration: 4.0,
+    playback_mode: LoopRestart,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    simulation_stages: [
+        (
+            id: "416dec43-fc9b-b4a7-61c6-fb8339d01f36",
+            name: "Grid2D",
+            stage_type: "org.example.aestra-fluid::stage/grid_2d_diffusion",
+            modules: [
+                (
+                    id: "9d5a912b-b73f-4edf-ad88-f9713a083c92",
+                    module_type: "org.example.aestra-fluid::module/grid_2d_diffusion",
+                    enabled: true,
+                    parameters: Custom({
+                        "cell_size": Scalar(2.0),
+                        "height": U32(28),
+                        "rate": Scalar(0.2),
+                        "width": U32(40),
+                    }),
+                ),
+            ],
+        ),
+    ],
+    emitters: [],
+    extensions: [
+        (
+            plugin: "org.example.aestra-fluid",
+            version: "^0.1.0",
+        ),
+    ],
+    metadata: {
+        "aestra.dimension": "2d",
+    },
+)
