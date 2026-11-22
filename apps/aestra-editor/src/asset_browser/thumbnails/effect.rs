@@ -3,6 +3,7 @@ use super::*;
 mod capture;
 mod displacement;
 mod framing;
+mod grid;
 mod volume;
 use aestra_bevy_render::{
     ActiveBackend, EffectRuntimeStatus, PresentedEffect,
@@ -151,9 +152,10 @@ fn sample_time(duration: f32) -> Result<f32, String> {
 /// stages can have no standalone compute program and no volume/field-follow output;
 /// their presence must not block an otherwise ready particle thumbnail.
 fn requires_stage_progress(effect: &aestra_runtime::CompiledEffect) -> bool {
-    effect
-        .all_extension_stages()
-        .any(|stage| !stage.presentations.is_empty())
+    grid::renders_field(effect)
+        || effect
+            .all_extension_stages()
+            .any(|stage| !stage.presentations.is_empty())
         || effect
             .emitters
             .iter()
@@ -377,7 +379,11 @@ pub(super) fn assemble(
             return Err("Preview limit: 32768 trail history points".into());
         }
         let volume_bounds = volume::bounds(&instance.effect)?;
-        if (!has_renderer || instance.effect.max_particles == 0) && volume_bounds.is_none() {
+        let grid_bounds = grid::bounds(&instance.effect)?;
+        if (!has_renderer || instance.effect.max_particles == 0)
+            && volume_bounds.is_none()
+            && grid_bounds.is_none()
+        {
             continue;
         }
         for asset in &instance.effect.assets {
@@ -394,7 +400,7 @@ pub(super) fn assemble(
         player
             .instance
             .set_inherited_host_transform(instance.inherited);
-        if let Some((low, high)) = volume_bounds {
+        for (low, high) in volume_bounds.into_iter().chain(grid_bounds) {
             let matrix = Mat4::from_cols_array(
                 &player
                     .instance
@@ -444,7 +450,7 @@ pub(super) fn assemble(
         players.push(player);
     }
     if players.is_empty() || !min.is_finite() || !max.is_finite() {
-        return Err("No particles in the sampled effect interval".into());
+        return Err("No particles or fields in the sampled effect interval".into());
     }
     if textures.len() > 8 {
         return Err("Preview limit: eight textures".into());
@@ -555,6 +561,7 @@ impl GpuJob {
         let harness = CaptureHarness::new(
             prepared.center,
             prepared.radius,
+            grid::face_on(&prepared.players),
             LAYER,
             -10,
             commands,
@@ -584,6 +591,7 @@ impl GpuJob {
             .players
             .into_iter()
             .map(|player| {
+                let field = grid::view(player.effect());
                 let overrides = player
                     .effect()
                     .assets
@@ -594,26 +602,28 @@ impl GpuJob {
                             .map(|handle| (asset.source, handle.clone()))
                     })
                     .collect();
-                commands
-                    .spawn((
-                        {
-                            let mesh_overrides = player
-                                .effect()
-                                .assets
-                                .iter()
-                                .filter_map(|asset| {
-                                    meshes
-                                        .get(&epoch.0.join(&asset.path))
-                                        .map(|handle| (asset.source, handle.clone()))
-                                })
-                                .collect();
-                            player
-                                .with_texture_overrides(overrides)
-                                .with_mesh_overrides(mesh_overrides)
-                        },
-                        RenderLayers::layer(layer),
-                    ))
-                    .id()
+                let mut instance = commands.spawn((
+                    {
+                        let mesh_overrides = player
+                            .effect()
+                            .assets
+                            .iter()
+                            .filter_map(|asset| {
+                                meshes
+                                    .get(&epoch.0.join(&asset.path))
+                                    .map(|handle| (asset.source, handle.clone()))
+                            })
+                            .collect();
+                        player
+                            .with_texture_overrides(overrides)
+                            .with_mesh_overrides(mesh_overrides)
+                    },
+                    RenderLayers::layer(layer),
+                ));
+                if let Some(field) = field {
+                    instance.insert(field);
+                }
+                instance.id()
             })
             .collect();
         Self {
@@ -772,8 +782,13 @@ impl LivePreview {
         ));
         // Prefer the static capture's refined framing so the live animation lines
         // up with the thumbnail; fall back to the conservative history bounds.
-        let (camera_transform, projection) =
-            framing.unwrap_or_else(|| capture::default_framing(prepared.center, prepared.radius));
+        let (camera_transform, projection) = framing.unwrap_or_else(|| {
+            capture::default_framing(
+                prepared.center,
+                prepared.radius,
+                grid::face_on(&prepared.players),
+            )
+        });
         let camera = commands
             .spawn((
                 Camera3d::default(),
@@ -809,6 +824,7 @@ impl LivePreview {
             .players
             .into_iter()
             .map(|player| {
+                let field = grid::view(player.effect());
                 let overrides = player
                     .effect()
                     .assets
@@ -831,14 +847,16 @@ impl LivePreview {
                     .collect();
                 // Keep the prepared sample time until the GPU catches up. In particular,
                 // a volume-only preview must not chase a moving target before it can fade in.
-                commands
-                    .spawn((
-                        player
-                            .with_texture_overrides(overrides)
-                            .with_mesh_overrides(mesh_overrides),
-                        RenderLayers::layer(LIVE_LAYER),
-                    ))
-                    .id()
+                let mut instance = commands.spawn((
+                    player
+                        .with_texture_overrides(overrides)
+                        .with_mesh_overrides(mesh_overrides),
+                    RenderLayers::layer(LIVE_LAYER),
+                ));
+                if let Some(field) = field {
+                    instance.insert(field);
+                }
+                instance.id()
             })
             .collect();
         Self {

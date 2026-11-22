@@ -11,7 +11,11 @@ use super::*;
 /// The conservative default camera framing for a subject centered at `center`
 /// with bounding `radius`, before the fit refinement tightens it. Shared by the
 /// capture harness and the live hover preview so both start from the same view.
-pub(super) fn default_framing(center: Vec3, radius: f32) -> (Transform, OrthographicProjection) {
+pub(super) fn default_framing(
+    center: Vec3,
+    radius: f32,
+    face_on: bool,
+) -> (Transform, OrthographicProjection) {
     let projection = OrthographicProjection {
         scaling_mode: ScalingMode::FixedVertical {
             viewport_height: radius * 2.0,
@@ -20,9 +24,13 @@ pub(super) fn default_framing(center: Vec3, radius: f32) -> (Transform, Orthogra
         far: radius * 8.0 + 1.0,
         ..OrthographicProjection::default_3d()
     };
+    let direction = if face_on {
+        Vec3::Z
+    } else {
+        Vec3::new(0.7, 0.4, 1.0).normalize()
+    };
     let transform =
-        Transform::from_translation(center + Vec3::new(0.7, 0.4, 1.0).normalize() * radius * 3.0)
-            .looking_at(center, Vec3::Y);
+        Transform::from_translation(center + direction * radius * 3.0).looking_at(center, Vec3::Y);
     (transform, projection)
 }
 
@@ -58,6 +66,7 @@ impl CaptureHarness {
     pub(super) fn new(
         center: Vec3,
         radius: f32,
+        face_on: bool,
         layer: usize,
         order: isize,
         commands: &mut Commands,
@@ -66,7 +75,7 @@ impl CaptureHarness {
         let mut image = Image::new_target_texture(EDGE, EDGE, TextureFormat::Rgba8UnormSrgb, None);
         image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
         let target = images.add(image);
-        let (camera_transform, projection) = default_framing(center, radius);
+        let (camera_transform, projection) = default_framing(center, radius, face_on);
         let camera = commands
             .spawn((
                 Camera3d::default(),

@@ -85,6 +85,7 @@ fn fingerprint(compiled: &CompiledEffect) -> String {
 fn renderer_kind(renderer: &aestra_runtime::RendererPlan) -> &'static str {
     use aestra_runtime::RendererPlanKind::*;
     match renderer.kind {
+        Beam { .. } => "Beam",
         Sprite => "Sprite",
         Flipbook { .. } => "Flipbook",
         Trail { .. } => "Trail",

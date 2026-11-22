@@ -179,7 +179,12 @@ fn flipbook_frame(renderer: Renderer, normalized_age: f32, particle_index: u32) 
     let random_start = (renderer.flipbook_flags & 2u) != 0u;
     let looping = (renderer.flipbook_flags & 4u) != 0u;
     let seconds = select(clamp(normalized_age, 0.0, 1.0) * f32(count) / renderer.frame_rate, max(globals.time, 0.0), effect_time);
-    var frame = u32(floor(seconds * renderer.frame_rate));
+    let frame_time = seconds * renderer.frame_rate;
+    let frame_floor = floor(frame_time);
+    var frame = u32(frame_floor);
+    if effect_time && frame_time > frame_floor {
+        frame = u32(bitcast<f32>(bitcast<u32>(frame_time) + 1u));
+    }
     if random_start {
         frame += u32(hash01(particle_index, 9u) * f32(count));
     }
@@ -207,6 +212,9 @@ fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     }
     if renderers[params.renderer_index].renderer_kind == 4u {
         return aestra_trail_vertex(vertex_index, instance_index);
+    }
+    if renderers[params.renderer_index].renderer_kind == 5u {
+        return aestra_beam_vertex(vertex_index, instance_index);
     }
     let corners = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));
     let corner = corners[vertex_index];
@@ -347,6 +355,53 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
         output.particle_normalized_age = particles[slot].normalized_age;
     }
     output.sampling_coverage = 1.0;
+    return output;
+}
+
+fn aestra_beam_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexData {
+    let r = renderers[params.renderer_index];
+    let slot = alive_indices[params.alive_offset + instance_index];
+    let particle = particles[slot];
+    let start = (globals.world_from_effect * vec4<f32>(particle.position + r.frames[0].xyz, 1.0)).xyz;
+    let end = (globals.world_from_effect * vec4<f32>(particle.position + r.frames[1].xyz, 1.0)).xyz;
+    let delta = end - start;
+    var output: SpriteVertexData;
+    output.clip_position = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    if dot(delta, delta) < 1e-12 {
+        return output;
+    }
+    let direction = normalize(delta);
+    let forward = ribbon_unit(view.world_from_view[2].xyz, vec3<f32>(0.0, 0.0, 1.0));
+    let side = ribbon_unit(cross(direction, forward), ribbon_unit(view.world_from_view[0].xyz, vec3<f32>(1.0, 0.0, 0.0)));
+    let scale = max(length(globals.world_from_effect[0].xyz), max(length(globals.world_from_effect[1].xyz), length(globals.world_from_effect[2].xyz)));
+    let corner = vec2<f32>(f32(vertex_index % 2u), f32(vertex_index / 2u));
+    let across = corner.x * 2.0 - 1.0;
+    let endpoint = mix(start, end, corner.y);
+    let position = endpoint + side * (across * particle.size * r.frames[0].w * scale * 0.5);
+    let beam_clip_position = view.clip_from_world * vec4<f32>(position, 1.0);
+    output.clip_position = beam_clip_position;
+    output.world_position = position;
+    output.color = r.tint;
+    if r.particle_color != 0u {
+        if (r.attribute_flags.x & 8u) == 0u {
+            output.color = vec4<f32>(output.color.rgb * particle.color.rgb, output.color.a);
+        }
+        if (r.attribute_flags.x & 16u) == 0u {
+            output.color.a *= particle.color.a;
+        }
+    }
+    output.quad_position = vec2<f32>(across, corner.y * 2.0 - 1.0);
+    output.uv = mix(r.uv_min, r.uv_max, corner.yx);
+    output.ribbon_direction = direction;
+    output.visible = select(0u, 1u, particle_emitter(particle) == r.emitter_index);
+    output.softness = r.softness;
+    output.textured = r.textured | 2u;
+    output.effect_time = globals.time;
+    if (r.attribute_flags.x & 32u) == 0u {
+        output.particle_normalized_age = particle.normalized_age;
+    }
+    output.particle_random = aestra_particle_random(particle);
+    output.sampling_coverage = f32(1);
     return output;
 }
 

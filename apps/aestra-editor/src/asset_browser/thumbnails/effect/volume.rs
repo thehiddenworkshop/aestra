@@ -22,7 +22,12 @@ pub(super) fn bound_fluid_preview(effect: &mut EffectAsset) {
         let ModuleParameters::Custom(values) = &mut module.parameters else {
             continue;
         };
-        if module.module_type.0 == aestra_fluid::MODULE_GRID
+        if module.module_type.0 == aestra_fluid::MODULE_GRID_2D_SMOKE {
+            // Grid2D smoke stores its extent independently of its resolution.
+            if let Some(Value::U32(resolution)) = values.get_mut("resolution") {
+                *resolution = (*resolution).min(super::grid::MAX_EDGE);
+            }
+        } else if module.module_type.0 == aestra_fluid::MODULE_GRID
             || module.module_type.0 == aestra_fluid::MODULE_LIQUID_GRID
         {
             let stride = if module.module_type.0 == aestra_fluid::MODULE_LIQUID_GRID {
